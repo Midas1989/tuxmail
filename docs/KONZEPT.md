@@ -522,6 +522,15 @@ Mail wird extern verschoben (anderer Client, Webmail, Serverregel):
 
 ### 6.6 Messenger-Ansicht für E-Mails
 
+**Grundsatz:** Die Messenger-Ansicht sieht aus und funktioniert wie ein echter Messenger (WhatsApp/Signal/Telegram). **Ordner, Betreffzeilen, Mail-Köpfe (Von/An/CC) und Mail-Symbolleisten werden dort nicht angezeigt.** E-Mail ist nur ein weiterer Kanal.
+
+- **Aufbau:** Aktivitätsleiste · Chatliste · Unterhaltung · (optional Info-Bereich). Der Ordnerbaum existiert nur in der klassischen Ansicht.
+- **Chatliste:** Suchfeld („Suchen oder neuen Chat beginnen"), Filter *Alle · Ungelesen · Mail · WhatsApp · Signal · Telegram · Gruppen · Favoriten*, angeheftete Chats oben, Avatar mit kleinem Kanal-Abzeichen, letzte Nachricht mit „Du:" und Häkchen, Ungelesen-Zähler, Stummschalten, Bereich „Archiviert". Konversationen fassen automatisch alle Ordner zusammen (Posteingang, Gesendet, Archiv, Unterordner; ohne Spam/Papierkorb). „Chat archivieren" archiviert die zugehörigen Mails.
+- **Unterhaltung:** Kopf mit Avatar, Name und bekannten Kanälen; Blasen gruppiert, Zeit und Häkchen in der Blase, Datumstrenner („Heute", „Gestern"), Markierung „Ungelesene Nachrichten". Zitate und Signaturen sind ausgeblendet; das Original ist über das Blasen-Menü („Original-E-Mail anzeigen") erreichbar. Ein neuer Betreff erscheint nur als kleine Systemzeile. Newsletter erscheinen als kompakte Karte. Bilder als Medien-Vorschau, Dateien als Karten, Link-Vorschauen.
+- **Interaktion:** Antworten mit Zitat-Vorschau (setzt bei Mail korrekt `In-Reply-To`), Reaktionen (bei Mail lokal bzw. als RFC-9078-Reaktion), Weiterleiten, Kopieren, als Aufgabe/Termin, Löschen.
+- **Eingabe:** wachsende Eingabezeile, Enter sendet (Umschalt+Enter = neue Zeile, einstellbar), Emoji-Auswahl, „+"-Menü (Datei, Foto, aus Nextcloud/OpenCloud, *als vollständige E-Mail bearbeiten*), Kanalwahl als kleiner Chip. Bei Mail wird der Betreff automatisch gesetzt und nicht angezeigt; Signatur in Chat-Antworten standardmäßig aus (einstellbar).
+- **Mobil (PWA):** Chatliste → Unterhaltung im Vollbild mit Zurück-Pfeil, wie in Messenger-Apps.
+
 - **Blasen-Darstellung:** Eigene Mails rechts, fremde links, gruppiert nach Absender und Zeit.
 - **Zitat-Entfernung:** Zitierter Verlauf (`>`-Zeilen, „Am … schrieb …", Outlook-Header-Blöcke, `<blockquote>`) und Signaturen werden erkannt und eingeklappt – die Blase zeigt nur den **neuen** Text. Ein Klick zeigt die Originalmail vollständig.
 - **Anhänge** als Karten in der Blase (Vorschau für Bilder/PDF), Cloud-Links als Karte mit Symbol.
