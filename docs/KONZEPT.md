@@ -109,7 +109,7 @@ Ziel ist ein **lokal laufender Desktop-Client**, der klassische E-Mail-Arbeit (O
 - **Offline-Fähigkeit:** Lesen, Suchen, Entwürfe, Verschieben offline möglich; Aktionen werden in einer Warteschlange nachsynchronisiert.
 - **Sicherheit:** Zugangsdaten nie im Klartext; HTML-Mails in isolierter Sandbox; externe Inhalte standardmäßig blockiert.
 - **Barrierefreiheit:** Tastaturbedienung vollständig, Screenreader-Unterstützung (ARIA), Kontraste nach WCAG 2.1 AA.
-- **Mehrsprachigkeit:** Deutsch und Englisch ab Version 1, i18n-Framework von Beginn an.
+- **Mehrsprachigkeit:** Deutsch und Englisch ab Version 1 über **Sprachdateien** (siehe 16.4); weitere Sprachen ohne Programmänderung ergänzbar.
 - **Wartbarkeit:** Klare Trennung Kern / Protokolle / Oberfläche; automatisierte Tests gegen echte Testserver.
 
 ---
@@ -1164,6 +1164,14 @@ Ein Desktop-Client (Windows/Linux, portabel oder installiert) kann sich am eigen
 - Animationen dezent (≤ 200 ms), reduzierbar (`prefers-reduced-motion`).
 
 ---
+
+### 16.4 Sprachen & Sprachdateien
+- **Deutsch und Englisch** von Anfang an vollständig; Deutsch ist die Referenzsprache.
+- Alle Texte liegen in **Sprachdateien** im Repository unter `locales/` (`de.json`, `en.json`) – **eine gemeinsame Quelle** für Oberfläche (Desktop, Web, PWA) **und** Server-Texte (Push-Benachrichtigungen, Standardtexte der Abwesenheitsnotiz, Versand-Prüfungen, PDF-Kopfzeilen, Fehlermeldungen, E-Mails des Servers wie Einladungen/Passwort-Reset). Der Go-Kern bettet die Dateien ein (`internal/i18n`), das Frontend bindet dieselben Dateien beim Build ein.
+- Aufbau: verschachtelte Schlüssel nach Bereich (`mail.compose.send`), Platzhalter `{name}`, Mehrzahlformen nach Unicode-CLDR-Regeln, Metadaten (Name, Eigenname, Schreibrichtung). Datum, Uhrzeit, Zahlen, Währungen und relative Zeitangaben („vor 5 Minuten") werden über die Locale formatiert.
+- **Sprachwahl:** Deutsch / Englisch / Systemsprache – pro Benutzer; im Server-Modus erhalten Push-Benachrichtigungen und Server-Mails die Sprache des jeweiligen Benutzers.
+- **Neue Sprache hinzufügen:** `en.json` kopieren, übersetzen, fertig – Anleitung in `locales/README.md`. Zusätzlich können Sprachdateien zur Laufzeit aus dem Datenverzeichnis (`<data>/locales/xx.json`) geladen werden, um Sprachen zu ergänzen oder einzelne Begriffe zu überschreiben (z. B. firmeneigene Bezeichnungen), ohne neu zu bauen.
+- **Qualitätssicherung:** automatischer Test, dass alle Sprachdateien dieselben Schlüssel und Platzhalter haben; Prüfung auf fest verdrahtete Texte im Code; fehlende Übersetzungen fallen auf Deutsch zurück und werden im Entwicklungsmodus gemeldet. Optional Anbindung an eine Übersetzungsplattform (z. B. Weblate) für Community-Übersetzungen.
 
 ## 17. Sicherheit & Datenschutz
 
