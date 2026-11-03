@@ -2,7 +2,7 @@
 
 **Produktname:** *TuxMail* – E-Mail, Messenger, Kalender, Kontakte und Cloud-Dateien in einer Anwendung
 **Zielplattformen:** Windows 10/11 (x64, ARM64), Linux (x64, ARM64)
-**Stand:** 03.11.2026 – Version 1.4 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
+**Stand:** 03.11.2026 – Version 1.5 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
 
 ---
 
@@ -1042,6 +1042,37 @@ ansible-playbook -i inventory.ini deploy/ansible/site.yml \
 - Selbstregistrierung standardmäßig aus; optional per Einladungslink.
 - **Sicherheit:** Login-Ratenbegrenzung und temporäre Sperre, Passwort-Richtlinie, Audit-Log (Anmeldungen, Admin-Aktionen), Benachrichtigung bei neuer Anmeldung.
 - **Geheimnisse der Benutzer** (Mail-Passwörter, Tokens) werden pro Benutzer verschlüsselt; der Schlüssel wird aus dem Benutzerpasswort abgeleitet bzw. bei OIDC über einen Server-Schlüssel (KEK) geschützt.
+
+### 15.7 PWA für Android und iPhone mit Push-Benachrichtigungen
+- Der Web-Client des Server-Modus ist eine **installierbare Progressive Web App**: „Zum Startbildschirm hinzufügen" auf Android (Chrome, Firefox, Edge) und iPhone/iPad (Safari, ab iOS/iPadOS 16.4).
+- **Aktive Benachrichtigungen per Web Push** (VAPID, RFC 8030/8291/8292) – auch wenn die App geschlossen ist. Der Server versendet Push-Nachrichten bei neuer Mail, Chat-Nachricht, Termin-Erinnerung, „Warten auf Antwort", Zuweisung im gemeinsamen Postfach und Workflow-Benachrichtigungen.
+  - Android: Push funktioniert im Browser und in der installierten PWA.
+  - **iPhone: Apple erlaubt Web Push nur für PWAs, die zum Home-Bildschirm hinzugefügt wurden** – TuxMail zeigt dafür in Safari einen Installationshinweis mit Anleitung.
+- Einstellungen je Gerät: Benachrichtigungen an/aus, **Ruhezeiten**, Auswahl je Konto/Kanal/Ordner (z. B. nur Posteingang Firma + Signal), **Datenschutzmodus** („Neue Nachricht von Anna" mit Vorschau oder nur „Neue Nachricht" ohne Inhalt – Inhalte gehen dann nicht über die Push-Dienste von Apple/Google), Testbenachrichtigung.
+- Tippen auf die Benachrichtigung öffnet direkt die betreffende Mail bzw. Konversation; gruppierte Benachrichtigungen pro Konversation; Ungelesen-Zähler auf dem App-Symbol (Badging API, sofern unterstützt).
+- Offline-Fähigkeit: App-Shell und zuletzt geöffnete Konversationen werden im Service Worker zwischengespeichert; Entwürfe werden lokal gehalten und beim nächsten Kontakt gesendet.
+- Später optional: native Apps (z. B. über Capacitor) für noch zuverlässigere Zustellung und Teilen-Menü – die PWA deckt Version 1.0 ab.
+
+### 15.8 Client-Anmeldung am Server & automatische Einrichtung
+Ein Desktop-Client (Windows/Linux, portabel oder installiert) kann sich am eigenen TuxMail-Server anmelden und wird dadurch **automatisch eingerichtet**.
+
+**Ablauf „Mit TuxMail-Server verbinden"**
+1. Im Client Server-Adresse eingeben (oder Link/QR-Code aus der Web-Oberfläche verwenden).
+2. Anmeldung **per Gerätebestätigung** (wie beim Fernseher, angelehnt an RFC 8628): Der Client zeigt einen kurzen Code, der Browser öffnet sich, man bestätigt dort – inkl. Zwei-Faktor oder OIDC/Single-Sign-On. Alternativ direkte Anmeldung mit Benutzername, Passwort und TOTP.
+3. Der Server stellt ein **Geräte-Token** aus (widerrufbar, in der Geräteliste sichtbar).
+4. Der Client lädt das **Einrichtungsprofil**: Konten (Mail, Kalender, Kontakte, Cloud, Messenger-Bridge), Identitäten/Aliase, Signaturen, Workflows, Suchprofile, Ansichtseinstellungen. Der Benutzer wählt per Häkchen aus, was übernommen wird.
+5. **Zugangsdaten** werden nur auf ausdrücklichen Wunsch übertragen – **Ende-zu-Ende-verschlüsselt** an einen Schlüssel, den der Client bei der Anmeldung erzeugt hat.
+
+**Zwei Betriebsarten nach der Einrichtung**
+| Modus | Beschreibung | Geeignet für |
+|---|---|---|
+| **Thin Client** | Der Server synchronisiert alle Konten; der Client zeigt nur an und arbeitet über die Server-API (mit lokalem Cache für Offline-Lesen). | Firmen, viele Geräte, Messenger über Bridge, schwache Rechner |
+| **Lokal (provisioniert)** | Der Client synchronisiert die Konten selbst; vom Server kommen nur Konfiguration und laufende **Einstellungs-Synchronisation** (Signaturen, Workflows, Regeln bleiben auf allen Geräten gleich). | Laptops mit viel Offline-Arbeit, maximale Unabhängigkeit |
+
+**Für Administratoren**
+- **Einrichtungsvorlagen** (z. B. Firmen-IMAP/SMTP/CalDAV/CardDAV, Nextcloud, Signaturvorlage mit `%NAME%`, `%EMAIL%`, `%TELEFON%`) je Benutzer oder Gruppe – neue Mitarbeiter melden sich an und haben alles fertig eingerichtet.
+- Vorgabe, welche Modi erlaubt sind, ob Zugangsdaten übertragen werden dürfen und ob portabler Betrieb erlaubt ist.
+- Geräteübersicht pro Benutzer mit Sperren/Fernabmeldung.
 
 ## 16. Benutzeroberfläche & UX
 
