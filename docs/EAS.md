@@ -57,6 +57,10 @@ Dieses Dokument beschreibt die EAS-Implementierung (`internal/providers/eas`), i
 
 `autoconfig.Discoverer.UseAutodiscover = true` (opt-in; Rang nach Mozilla-Autoconfig, vor DNS-SRV). Reihenfolge: JSON v2 `https://autodiscover.<domain>/autodiscover/autodiscover.json/v1.0/<mail>?Protocol=ActiveSync`, POX `https://<domain>/autodiscover/autodiscover.xml`, POX `https://autodiscover.<domain>/…`, unauthentifizierter HTTP-Redirect, SRV `_autodiscover._tcp.<domain>`, zuletzt Exchange Online JSON (`outlook.office365.com`) – nur wenn der MX auf `*.mail.protection.outlook.com` zeigt. POX-Redirects (`Action/Redirect`) und HTTP-Redirects (nur auf HTTPS) werden verfolgt; Basic-Auth nur über HTTPS (`AutodiscoverPassword`). Ergebnis: Kandidat `kind: "eas"` mit `easUrl`; bei Exchange Online `oauthProvider: "microsoft"`.
 
+## Einbindung in die App
+
+`internal/app/eas.go` registriert den Provider mit `EASStoreState` und Remote-Wipe (`WipeEASAccountData`), verwendet `send.KindFactory` mit `EASFactory` (gemeinsamer Zustand), synchronisiert Kalender/Kontakte/Aufgaben aller EAS-Konten alle 15 Minuten (`App.SyncEASPIM`) und liefert mit `App.EASVacationServers` die Einträge für `vacation.Config.Servers`. Der Kontoassistent nutzt Autodiscover und legt Konten vom Typ `eas` an (`easUrl`, Benutzername auch `DOMÄNE\benutzer`, Passwort; `incoming.auth = "oauth2"` benötigt das OAuth-Modul).
+
 ## Bekannte Einschränkungen
 
 - **Append:** EAS kann keine beliebigen Nachrichten hochladen. Ab 16.0 wird Append in den Entwürfe-Ordner als Entwurf (Sync Add mit Email2/AirSyncBase, inkl. Anhängen) umgesetzt; sonst `ErrNotSupported` (permanent). Kopieren in andere Ordner und das Ablegen gesendeter Mails übernimmt der Server.

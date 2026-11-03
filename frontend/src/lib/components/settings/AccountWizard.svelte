@@ -42,6 +42,7 @@
   let incoming = $state<ServerConfig>({ host: '', port: 993, tls: 'tls', auth: 'password', username: '' });
   let outgoing = $state<ServerConfig>({ host: '', port: 465, tls: 'tls', auth: 'password', username: '' });
   let allowInsecure = $state(false);
+  let easUrl = $state('');
 
   const needsOutgoing = $derived(protocol === 'imap' || protocol === 'pop3');
   const insecure = $derived(incoming.tls === 'none' || (needsOutgoing && outgoing.tls === 'none'));
@@ -65,6 +66,7 @@
       if (discovery.incoming) incoming = { ...discovery.incoming };
       if (discovery.outgoing) outgoing = { ...discovery.outgoing };
       protocol = discovery.kind;
+      easUrl = discovery.easUrl ?? '';
       step = discovery.source === 'none' ? 'manual' : 'discovered';
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -102,6 +104,7 @@
         password,
         incoming,
         outgoing: needsOutgoing ? outgoing : undefined,
+        easUrl: protocol === 'eas' && easUrl ? easUrl : undefined,
       });
       step = 'done';
     } catch (err) {
@@ -181,6 +184,9 @@
       <fieldset>
         <legend>{t('onboarding.account.incoming')}</legend>
         <div class="grid">
+          {#if protocol === 'eas'}
+            <label class="wide"><span class="label">{t('onboarding.account.easUrl')}</span><input class="input" type="url" bind:value={easUrl} placeholder="https://mail.example.com/Microsoft-Server-ActiveSync" /></label>
+          {/if}
           <label class="wide"><span class="label">{t('onboarding.account.host')}</span><input class="input" bind:value={incoming.host} required /></label>
           <label><span class="label">{t('onboarding.account.port')}</span><input class="input" type="number" min="1" max="65535" bind:value={incoming.port} required /></label>
           <label>

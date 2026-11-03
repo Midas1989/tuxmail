@@ -331,6 +331,8 @@ type DiscoveryResult struct {
 	Incoming       *ServerConfig `json:"incoming,omitempty"`
 	Outgoing       *ServerConfig `json:"outgoing,omitempty"`
 	OAuthAvailable bool          `json:"oauthAvailable,omitempty"`
+	// EASURL is the ActiveSync endpoint found by Autodiscover (kind "eas").
+	EASURL string `json:"easUrl,omitempty"`
 }
 
 // NewAccountInput creates an account.
@@ -342,6 +344,9 @@ type NewAccountInput struct {
 	Password    string        `json:"password,omitempty"`
 	Incoming    *ServerConfig `json:"incoming,omitempty"`
 	Outgoing    *ServerConfig `json:"outgoing,omitempty"`
+	// EASURL is the ActiveSync server URL of kind "eas" accounts (optional
+	// when incoming.host is set; the username may be DOMAIN\user).
+	EASURL string `json:"easUrl,omitempty"`
 }
 
 // ==== Push / notifications =====================================================

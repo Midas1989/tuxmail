@@ -440,6 +440,8 @@ export interface DiscoveryResult {
   incoming?: ServerConfig;
   outgoing?: ServerConfig;
   oauthAvailable?: boolean;
+  /** ActiveSync endpoint found by Autodiscover (kind "eas"). */
+  easUrl?: string;
 }
 
 export interface NewAccountInput {
@@ -450,6 +452,8 @@ export interface NewAccountInput {
   password?: string;
   incoming?: ServerConfig;
   outgoing?: ServerConfig;
+  /** ActiveSync server URL (kind "eas"); username may be DOMAIN\\user. */
+  easUrl?: string;
 }
 
 // ---------------------------------------------------------------------------

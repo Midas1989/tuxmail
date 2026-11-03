@@ -38,7 +38,7 @@ type MailSender struct {
 // newMailSender builds the send service with adapters on this App.
 func newMailSender(a *App, opts *SendOptions) (*MailSender, error) {
 	ad := &sendAdapters{a: a}
-	cfg := send.Config{Identities: a.st, Transports: send.SMTPFactory{Secrets: a.opts.Secrets}, Hooks: a.bus, Events: a.bus,
+	cfg := send.Config{Identities: a.st, Transports: a.transports(), Hooks: a.bus, Events: a.bus,
 		CloudLinks: a.st, Secrets: a.opts.Secrets, Sent: ad, Relations: ad, Flags: ad,
 		FollowUps: followup.New(a.st, a.bus, followup.Options{Logger: a.log}), Queue: send.StoreQueue{Store: a.st}, Blobs: ad,
 		Now: a.opts.Now, Logger: a.log}

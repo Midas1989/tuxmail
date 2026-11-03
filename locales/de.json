@@ -1185,6 +1185,7 @@
       "errEmail": "Bitte eine gültige E-Mail-Adresse eingeben.",
       "errInsecure": "Bitte bestätige die unverschlüsselte Verbindung.",
       "host": "Server",
+      "easUrl": "ActiveSync-URL (optional; Benutzername ggf. DOMÄNE\\benutzer)",
       "incoming": "Posteingangsserver",
       "insecureConfirm": "Unverschlüsselte Verbindung bestätigen",
       "insecureWarning": "Unverschlüsselte Verbindung: Passwort und Mails sind mitlesbar. Trotzdem verwenden?",

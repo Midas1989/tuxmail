@@ -1186,6 +1186,7 @@
       "errEmail": "Please enter a valid email address.",
       "errInsecure": "Please confirm the unencrypted connection.",
       "host": "Server",
+      "easUrl": "ActiveSync URL (optional; username may be DOMAIN\\user)",
       "incoming": "Incoming server",
       "insecureConfirm": "Confirm unencrypted connection",
       "insecureWarning": "Unencrypted connection: password and mail can be read in transit. Use anyway?",

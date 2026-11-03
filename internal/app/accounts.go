@@ -91,8 +91,11 @@ func (a *App) ListPersons(ctx context.Context) ([]Person, error) {
 // autoconfigDiscoverer is the default Discoverer (internal/autoconfig).
 type autoconfigDiscoverer struct{}
 
-func (autoconfigDiscoverer) Discover(ctx context.Context, email, _ string) (DiscoveryResult, error) {
-	cands, err := autoconfig.New().Discover(ctx, email)
+func (autoconfigDiscoverer) Discover(ctx context.Context, email, password string) (DiscoveryResult, error) {
+	d := autoconfig.New()
+	d.UseAutodiscover = true // Microsoft Autodiscover -> EAS (KONZEPT 7.5)
+	d.AutodiscoverPassword = func(string) string { return password }
+	cands, err := d.Discover(ctx, email)
 	res := DiscoveryResult{Source: "none", Kind: string(domain.KindIMAP)}
 	if _, dom, e := autoconfig.SplitAddress(email); e == nil {
 		res.DisplayName = dom
@@ -104,6 +107,8 @@ func (autoconfigDiscoverer) Discover(ctx context.Context, email, _ string) (Disc
 	switch c.Source {
 	case autoconfig.SourceSRV:
 		res.Source = "srv"
+	case autoconfig.SourceAutodiscover:
+		res.Source = "autodiscover"
 	case autoconfig.SourceHeuristic, autoconfig.SourceMX:
 		res.Source = "guess"
 	default:
@@ -119,6 +124,7 @@ func (autoconfigDiscoverer) Discover(ctx context.Context, email, _ string) (Disc
 		res.Outgoing = &out
 	}
 	res.OAuthAvailable = c.OAuthProvider != ""
+	res.EASURL = c.EASURL
 	return res, nil
 }
 
@@ -150,6 +156,9 @@ func (a *App) CreateAccount(ctx context.Context, in NewAccountInput) (Account, e
 		Outgoing: in.Outgoing, Enabled: true, Extra: map[string]string{}}
 	if in.Email != "" {
 		acc.Extra["address"] = in.Email
+	}
+	if err := applyEASInput(&acc, in); err != nil {
+		return Account{}, err
 	}
 	accs, err := a.st.ListAccounts(ctx)
 	if err != nil {

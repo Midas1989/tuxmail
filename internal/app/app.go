@@ -104,6 +104,9 @@ type App struct {
 
 	remoteMu sync.Mutex
 	remote   map[string]*remoteSession // provisioning sessions by server URL
+
+	syncCreds tsync.Credentials // credentials of the sync engine (EAS PIM, OOF)
+	easPIM    easPIM            // EAS calendar/contacts scheduling (eas.go)
 }
 
 // New creates the application layer.
@@ -174,9 +177,11 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		if ms, ok := a.opts.Sender.(*MailSender); ok {
 			cfg.Sender = syncSender{act: func() *send.Actions { return ms.Actions }}
 		}
+		a.configureEASSync(&cfg)
 		if opts.Sync.Configure != nil {
 			opts.Sync.Configure(&cfg)
 		}
+		a.syncCreds = cfg.Credentials
 		m, err := tsync.New(cfg)
 		if err != nil {
 			return nil, err
@@ -283,6 +288,7 @@ func (a *App) tick(ctx context.Context) {
 	}
 	a.sendDueScheduled(ctx)
 	a.runSendOps(ctx)
+	a.syncEASPIMDue(ctx)
 	if hashes, err := a.st.PurgeUploads(ctx, a.now().Add(-24*time.Hour)); err == nil && a.blobs != nil {
 		for _, h := range hashes {
 			_ = a.blobs.Delete(h)
