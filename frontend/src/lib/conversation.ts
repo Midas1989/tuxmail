@@ -4,7 +4,7 @@
 // quote detection, bubble grouping and the selection mapping between the
 // classic list and the chat timeline. Kept framework-free for unit tests.
 
-import type { ConversationItem, Folder, FolderRole } from './types';
+import type { ContactCard, ConversationItem, Folder, FolderRole } from './types';
 
 // ---------------------------------------------------------------------------
 // Item ids
@@ -99,12 +99,99 @@ export function splitQuoted(text: string): SplitText {
 }
 
 // ---------------------------------------------------------------------------
-// Timeline grouping
+// Mail body: new text, signature, quoted history
+// ---------------------------------------------------------------------------
+
+export interface MailParts {
+  body: string;
+  signature: string;
+  quoted: string;
+}
+
+/**
+ * Split a plain-text mail into the new text, the sender's signature (after
+ * the "-- " delimiter, up to the quoted history) and the quoted history.
+ */
+export function splitMail(text: string): MailParts {
+  const { body, quoted } = splitQuoted(text);
+  const lines = quoted.split('\n');
+  if (lines[0] === '--' || lines[0] === '-- ' || quoted.startsWith('-- ') || quoted.startsWith('--\n')) {
+    const rest = splitQuoted(lines.slice(1).join('\n'));
+    // rest.body = signature lines before the next quote header
+    return { body, signature: rest.body.trim(), quoted: rest.quoted };
+  }
+  return { body, signature: '', quoted };
+}
+
+const PHONE_RE = /(?:(?:tel|telefon|phone|mobil|mobile|handy|fax|fon)\.?:?\s*)?(\+?\d[\d\s()/.-]{6,}\d)/i;
+const URL_RE = /\b((?:https?:\/\/)?(?:www\.)[\w.-]+\.[a-z]{2,}(?:\/\S*)?|https?:\/\/[\w.-]+\.[a-z]{2,}(?:\/\S*)?)/i;
+const MAIL_RE = /[\w.+-]+@[\w-]+\.[\w.-]+/;
+const ADDRESS_RE = /\b\d{5}\s+\p{L}/u;
+const COMPANY_RE = /\b(GmbH|AG|KG|e\.\s?V\.|Ltd|Inc|LLC|UG|OHG|GbR|SE|Partner|Kanzlei|Verlag|Stadtwerke)\b/i;
+const GREETING_RE = /^(viele|liebe|beste|freundliche|mit freundlichen|best|kind|regards|cheers|gruß|grüße|lg|vg|mfg)\b/i;
+
+/** Parse a signature block into a contact card ("Visitenkarte"). Heuristic. */
+export function parseSignature(signature: string): ContactCard {
+  const card: ContactCard = { phones: [], emails: [] };
+  const lines = signature
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !GREETING_RE.test(l));
+  const free: string[] = [];
+  for (const line of lines) {
+    let rest = line;
+    const mail = MAIL_RE.exec(rest);
+    if (mail) {
+      card.emails.push(mail[0]);
+      rest = rest.replace(mail[0], '').trim();
+    }
+    const url = URL_RE.exec(rest);
+    if (url && !card.website) {
+      card.website = url[1];
+      rest = rest.replace(url[0], '').trim();
+    }
+    const phone = PHONE_RE.exec(rest);
+    if (phone && phone[1].replace(/\D/g, '').length >= 7) {
+      card.phones.push(phone[1].trim());
+      continue;
+    }
+    if (!rest || /^[|·,–-]+$/.test(rest)) continue;
+    if (ADDRESS_RE.test(rest) && !card.address) {
+      card.address = rest;
+      continue;
+    }
+    if (COMPANY_RE.test(rest) && !card.company) {
+      card.company = rest;
+      continue;
+    }
+    free.push(rest);
+  }
+  if (free.length) card.name = free.shift();
+  if (free.length && !card.title) card.title = free.shift();
+  if (free.length && !card.company) card.company = free.shift();
+  if (!card.address && free.length && /\d/.test(free[0])) card.address = free.shift();
+  return card;
+}
+
+// ---------------------------------------------------------------------------
+// Timeline (messenger view)
 // ---------------------------------------------------------------------------
 
 export type TimelineEntry =
   | { type: 'day'; key: string; date: string }
-  | { type: 'item'; key: string; item: ConversationItem; groupStart: boolean; groupEnd: boolean };
+  | { type: 'unread'; key: string; count: number }
+  | { type: 'subject'; key: string; subject: string; changed: boolean }
+  | {
+      type: 'item';
+      key: string;
+      item: ConversationItem;
+      groupStart: boolean;
+      groupEnd: boolean;
+      /** The channel differs from the previous bubble (show a small indicator). */
+      channelChanged: boolean;
+      /** Show the reply quote (hidden when it just answers the bubble right above). */
+      showReplyQuote: boolean;
+    };
 
 /** Bubbles of the same sender within this window are visually grouped. */
 export const GROUP_WINDOW_MS = 5 * 60 * 1000;
@@ -114,33 +201,69 @@ function localDayKey(iso: string): string {
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-/** `dayKey` maps a timestamp to its calendar day (pass the Formatter's, so the user's time zone applies). */
-export function buildTimeline(items: ConversationItem[], dayKey: (iso: string) => string = localDayKey): TimelineEntry[] {
-  const sorted = [...items].sort((a, b) => a.sentAt.localeCompare(b.sentAt));
+export interface TimelineOptions {
+  /** Maps a timestamp to its calendar day (pass the Formatter's so the user's time zone applies). */
+  dayKey?: (iso: string) => string;
+  /** First unread item: an "unread messages" marker is inserted before it. */
+  unreadFromId?: string | null;
+}
+
+export function buildTimeline(items: ConversationItem[], opts: TimelineOptions | ((iso: string) => string) = {}): TimelineEntry[] {
+  const o: TimelineOptions = typeof opts === 'function' ? { dayKey: opts } : opts;
+  const dayKey = o.dayKey ?? localDayKey;
+  const sorted = [...items].filter((i) => !i.deleted).sort((a, b) => a.sentAt.localeCompare(b.sentAt));
   const out: TimelineEntry[] = [];
   let lastDay = '';
+  let lastSubject: string | null = null;
+  const unreadIdx = o.unreadFromId ? sorted.findIndex((i) => i.id === o.unreadFromId) : -1;
+  const breaks = new Set<number>(); // indices that start a new visual group
   for (let i = 0; i < sorted.length; i++) {
     const it = sorted[i];
     const dk = dayKey(it.sentAt);
     if (dk !== lastDay) {
       out.push({ type: 'day', key: 'day:' + dk, date: it.sentAt });
       lastDay = dk;
+      breaks.add(i);
+    }
+    if (i === unreadIdx) {
+      out.push({ type: 'unread', key: 'unread', count: sorted.length - i });
+      breaks.add(i);
+    }
+    if (it.channel === 'email' && it.subject && it.display !== 'card') {
+      const norm = normalizeSubject(it.subject);
+      if (norm && norm !== lastSubject) {
+        out.push({ type: 'subject', key: 'subj:' + it.id, subject: norm, changed: lastSubject !== null });
+        breaks.add(i);
+      }
+      lastSubject = norm;
     }
     const prev = sorted[i - 1];
-    const next = sorted[i + 1];
     const samePrev =
       !!prev &&
+      !breaks.has(i) &&
       prev.senderPersonId === it.senderPersonId &&
-      prev.channel === it.channel &&
-      dayKey(prev.sentAt) === dk &&
+      prev.display !== 'card' &&
+      it.display !== 'card' &&
       Date.parse(it.sentAt) - Date.parse(prev.sentAt) < GROUP_WINDOW_MS;
-    const sameNext =
-      !!next &&
-      next.senderPersonId === it.senderPersonId &&
-      next.channel === it.channel &&
-      dayKey(next.sentAt) === dk &&
-      Date.parse(next.sentAt) - Date.parse(it.sentAt) < GROUP_WINDOW_MS;
-    out.push({ type: 'item', key: it.id, item: it, groupStart: !samePrev, groupEnd: !sameNext });
+    const entry: TimelineEntry = {
+      type: 'item',
+      key: it.id,
+      item: it,
+      groupStart: !samePrev,
+      groupEnd: true,
+      channelChanged: !!prev && prev.channel !== it.channel,
+      showReplyQuote: !!it.replyTo && (!prev || prev.id !== it.replyTo.itemId || it.channel !== 'email'),
+    };
+    if (samePrev) {
+      for (let k = out.length - 1; k >= 0; k--) {
+        const e = out[k];
+        if (e.type === 'item') {
+          e.groupEnd = false;
+          break;
+        }
+      }
+    }
+    out.push(entry);
   }
   return out;
 }

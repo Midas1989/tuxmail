@@ -46,7 +46,7 @@
 </script>
 
 <a class="skip" href="#main">{t('common.a11y.skipToContent')}</a>
-<div class="app">
+<div class="app" class:chat-open={app.route === 'mail' && prefs.viewMode === 'chat' && app.selectedConversationId != null}>
   <ActivityBar />
   <main id="main" class="main" tabindex="-1">
     {#if app.loadError}
@@ -120,6 +120,13 @@
   @media (max-width: 639px) {
     .app {
       padding-bottom: 60px;
+    }
+    /* Phones: an open chat is full screen, like messenger apps. */
+    .app.chat-open {
+      padding-bottom: 0;
+    }
+    .app.chat-open :global(.rail) {
+      display: none;
     }
   }
 </style>

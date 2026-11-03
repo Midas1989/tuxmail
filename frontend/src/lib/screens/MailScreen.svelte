@@ -16,8 +16,7 @@
   import Sidebar from '../components/Sidebar.svelte';
   import MessageList from '../components/mail/MessageList.svelte';
   import ReadingPane from '../components/mail/ReadingPane.svelte';
-  import ConversationList from '../components/chat/ConversationList.svelte';
-  import ChatTimeline from '../components/chat/ChatTimeline.svelte';
+  import ChatWorkspace from '../components/chat/ChatWorkspace.svelte';
 
   let searchText = $state(app.search);
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -36,7 +35,7 @@
     void app.setSearch('');
   }
 
-  const hasSelection = $derived(prefs.viewMode === 'classic' ? app.selectedMessageId != null : app.selectedConversationId != null);
+  const hasSelection = $derived(app.selectedMessageId != null);
 
   function toggleTheme() {
     prefs.theme = prefs.effectiveTheme === 'dark' ? 'light' : 'dark';
@@ -44,6 +43,9 @@
   }
 </script>
 
+{#if prefs.viewMode === 'chat'}
+<ChatWorkspace />
+{:else}
 <div class="mail">
   <div class="sidebar-inline"><Sidebar /></div>
   {#if app.sidebarOpen}
@@ -66,7 +68,7 @@
               (e.currentTarget as HTMLInputElement).blur();
             }
           }}
-          placeholder={prefs.viewMode === 'classic' ? t('search.bar.placeholderMail') : t('search.bar.placeholderChat')}
+          placeholder={t('search.bar.placeholderMail')}
           aria-label={t('search.bar.label')}
           data-search
         />
@@ -82,10 +84,10 @@
         <span class="conn" role="status"><WifiOff size={15} /> {t(`common.conn.${app.connection}`)}</span>
       {/if}
       <div class="seg view-toggle" role="radiogroup" aria-label={t('mail.view.label')} title="Ctrl+Shift+V">
-        <button role="radio" aria-checked={prefs.viewMode === 'classic'} onclick={() => app.setViewMode('classic')}>
+        <button role="radio" aria-checked={true} onclick={() => app.setViewMode('classic')}>
           <Rows3 size={15} aria-hidden="true" /><span class="hide-xs">{t('mail.view.classic')}</span>
         </button>
-        <button role="radio" aria-checked={prefs.viewMode === 'chat'} onclick={() => app.setViewMode('chat')}>
+        <button role="radio" aria-checked={false} onclick={() => app.setViewMode('chat')}>
           <MessagesSquare size={15} aria-hidden="true" /><span class="hide-xs">{t('mail.view.chat')}</span>
         </button>
       </div>
@@ -96,16 +98,13 @@
     </header>
 
     <div class="panes" class:has-selection={hasSelection} data-mode={prefs.viewMode}>
-      {#if prefs.viewMode === 'classic'}
-        <div class="pane-list"><MessageList /></div>
-        <div class="pane-detail"><ReadingPane /></div>
-      {:else}
-        <div class="pane-list"><ConversationList /></div>
-        <div class="pane-detail"><ChatTimeline /></div>
-      {/if}
+      <div class="pane-list"><MessageList /></div>
+      <div class="pane-detail"><ReadingPane /></div>
     </div>
   </div>
 </div>
+{/if}
+
 
 <style>
   .mail {

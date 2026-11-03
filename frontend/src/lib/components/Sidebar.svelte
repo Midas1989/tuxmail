@@ -13,7 +13,7 @@
   import SquarePen from '@lucide/svelte/icons/square-pen';
   import { app } from '../state';
   import type { SidebarSel } from '../state';
-  import type { Account, Folder, FolderRole } from '../types';
+  import { messengerChannel, type Account, type Folder, type FolderRole } from '../types';
   import { t } from '../i18n/index.svelte';
   import ChannelIcon from './common/ChannelIcon.svelte';
 
@@ -208,7 +208,7 @@
         <li role="none">
           <button role="treeitem" aria-selected={isSel(s)} tabindex={isSel(s) ? 0 : -1} class="row" style:--depth={0} onclick={() => app.select(s)}>
             <span class="twisty"></span>
-            <ChannelIcon channel={acc.kind === 'signal' ? 'signal' : 'whatsapp'} size={16} />
+            <ChannelIcon channel={messengerChannel(acc.kind) ?? 'whatsapp'} size={16} />
             <span class="name">{acc.displayName}</span>
             <span class="addr">{acc.extra?.address}</span>
           </button>

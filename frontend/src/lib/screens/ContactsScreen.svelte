@@ -27,8 +27,8 @@
     await app.selectConversation(1000 + p.id);
   }
 
-  function channelOf(kind: HandleKind): 'whatsapp' | 'signal' | null {
-    return kind === 'whatsapp' || kind === 'signal' ? kind : null;
+  function channelOf(kind: HandleKind): 'whatsapp' | 'signal' | 'telegram' | null {
+    return kind === 'whatsapp' || kind === 'signal' || kind === 'telegram' ? kind : null;
   }
 </script>
 

@@ -21,10 +21,16 @@ export type AccountKind =
   | 'vaultwarden'
   | 'whatsapp'
   | 'signal'
+  | 'telegram'
   | 'matrix_bridge';
 
 export const MAIL_KINDS: readonly AccountKind[] = ['imap', 'pop3', 'jmap', 'eas', 'graph', 'ews', 'gmail'];
-export const MESSENGER_KINDS: readonly AccountKind[] = ['whatsapp', 'signal', 'matrix_bridge'];
+export const MESSENGER_KINDS: readonly AccountKind[] = ['whatsapp', 'signal', 'telegram', 'matrix_bridge'];
+
+/** Messenger channel of an account kind (null for mail/PIM accounts). */
+export function messengerChannel(kind: AccountKind): 'whatsapp' | 'signal' | 'telegram' | null {
+  return kind === 'whatsapp' || kind === 'signal' || kind === 'telegram' ? kind : null;
+}
 
 export type TLSMode = 'tls' | 'starttls' | 'none';
 export type AuthMethod = 'password' | 'oauth2' | 'client_cert';
@@ -62,6 +68,10 @@ export interface Identity {
   defaultSignatureId?: number;
   replySignatureId?: number;
   isDefault: boolean;
+  /** Signature for mails sent from chat mode: full (reply/default), short, or none. Default 'full'. */
+  chatSignatureMode?: 'full' | 'short' | 'off';
+  /** Optional compact signature for chat mode (e.g. name + phone). */
+  chatSignatureId?: number;
 }
 
 export interface Signature {
@@ -102,8 +112,8 @@ export interface Address {
 // View-level DTOs (application layer -> UI)
 // ---------------------------------------------------------------------------
 
-export type Channel = 'email' | 'whatsapp' | 'signal';
-export type HandleKind = 'email' | 'phone' | 'whatsapp' | 'signal';
+export type Channel = 'email' | 'whatsapp' | 'signal' | 'telegram';
+export type HandleKind = 'email' | 'phone' | 'whatsapp' | 'signal' | 'telegram';
 
 export interface PersonHandle {
   kind: HandleKind;
@@ -118,6 +128,8 @@ export interface Person {
   handles: PersonHandle[];
   /** Optional avatar URL (blob/data URL); the UI falls back to initials. */
   avatarUrl?: string;
+  /** Messenger presence ("last seen"), if the channel shares it. */
+  lastSeen?: string;
 }
 
 export type CloudProvider = 'nextcloud' | 'opencloud' | 'vaultwarden';
@@ -137,6 +149,15 @@ export interface Attachment {
   inline?: boolean;
   /** Set when the "attachment" is actually a cloud share link. */
   cloudLink?: CloudLinkInfo;
+  /** Thumbnail/preview (images, videos); data: or blob: URL or core-served URL. */
+  previewUrl?: string;
+  width?: number;
+  height?: number;
+  /** Voice notes / audio. */
+  durationSec?: number;
+  waveform?: number[];
+  /** Playable source, if available. */
+  url?: string;
 }
 
 /** Row of the classic message list. */
@@ -192,6 +213,19 @@ export interface Conversation {
   snippet: string;
   lastSenderName?: string;
   isGroup: boolean;
+  favorite: boolean;
+  /** Manually marked unread ("Als ungelesen markieren"). */
+  markedUnread: boolean;
+  blocked?: boolean;
+  /** Last item info for the chat list preview. */
+  lastIsOwn: boolean;
+  lastStatus?: DeliveryStatus;
+  lastChannel?: Channel;
+  /** Avatar (photo) of the person/group, if known. */
+  avatarUrl?: string;
+  /** Last item had no text but media: the UI shows a localized label. */
+  lastMedia?: 'photo' | 'voice' | 'file';
+  lastMediaName?: string;
 }
 
 export type DeliveryStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
@@ -217,8 +251,54 @@ export interface ConversationItem {
   /** Set for mail items: the MessageSummary id. */
   messageId?: number;
   status?: DeliveryStatus;
-  reactions?: { emoji: string; count: number }[];
+  reactions?: Reaction[];
   unread?: boolean;
+  /** 'card' = compact rendering for newsletters / HTML-heavy mails. */
+  display?: 'bubble' | 'card';
+  card?: { title: string; excerpt: string };
+  /** The message this one answers (quote shown above the text). */
+  replyTo?: { itemId: string; senderName: string; excerpt: string };
+  linkPreview?: LinkPreview;
+  /** Incoming mail signature (hidden in the bubble, shown as contact card in the info panel). */
+  signature?: string;
+  deleted?: boolean;
+}
+
+export interface Reaction {
+  emoji: string;
+  count: number;
+  /** Includes a reaction of the current user. */
+  mine?: boolean;
+}
+
+export interface LinkPreview {
+  url: string;
+  title: string;
+  description?: string;
+  siteName?: string;
+  imageUrl?: string;
+}
+
+export type ChatFilter = 'all' | 'unread' | 'mail' | 'whatsapp' | 'signal' | 'telegram' | 'groups' | 'favorites';
+
+export interface ConversationPatch {
+  pinned?: boolean;
+  muted?: boolean;
+  archived?: boolean;
+  favorite?: boolean;
+  markedUnread?: boolean;
+  blocked?: boolean;
+}
+
+/** Fields parsed from a mail signature ("Visitenkarte"). */
+export interface ContactCard {
+  name?: string;
+  title?: string;
+  company?: string;
+  phones: string[];
+  emails: string[];
+  address?: string;
+  website?: string;
 }
 
 export interface Page<T> {
@@ -241,6 +321,7 @@ export interface OutgoingAttachment {
   mimeType: string;
   size: number;
   delivery: AttachmentDelivery;
+  durationSec?: number;
 }
 
 export interface PasswordDelivery {
@@ -269,6 +350,10 @@ export interface OutgoingMessage {
   forwardOfMessageId?: number;
   attachments: OutgoingAttachment[];
   passwordDelivery?: PasswordDelivery;
+  /** Messenger-style reply: the bubble being answered. */
+  replyToItemId?: string;
+  /** Mail from chat mode: signature to append (resolved by the UI), null = none. */
+  signatureId?: number | null;
 }
 
 export interface SendResult {

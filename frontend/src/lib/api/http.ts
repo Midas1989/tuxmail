@@ -20,6 +20,14 @@
 //   GET  /api/conversations/{id}                -> Conversation
 //   GET  /api/conversations/{id}/items?before=&limit= -> ConversationItem[]
 //   POST /api/conversations/{id}/read
+//   PATCH /api/conversations/{id}               ConversationPatch -> Conversation
+//   DELETE /api/conversations/{id}
+//   POST /api/conversations/{id}/items/{itemId}/reactions  {emoji} -> {reactions, sentAsRfc9078}
+//   DELETE /api/conversations/{id}/items/{itemId}
+//   POST /api/conversations/{id}/items/{itemId}/create     {kind: task|event} -> {id}
+//   POST /api/items/{itemId}/forward            {conversationId} -> SendResult
+//   PUT  /api/persons/{id}/card                 ContactCard
+//   PUT  /api/identities/{id}                   Identity -> Identity
 //   POST /api/send                              OutgoingMessage -> SendResult
 //   POST /api/uploads                           raw body, X-Filename header -> {uploadToken}
 //   GET  /api/push/vapid-public-key             -> {key}
@@ -56,6 +64,9 @@ Account,
   Conversation,
   ConversationGrouping,
   ConversationItem,
+  ContactCard,
+  ConversationPatch,
+  Reaction,
   DeviceAuthorization,
   DeviceTokenResult,
   DiscoveryResult,
@@ -205,6 +216,8 @@ export class HttpTransport implements Api {
       accountId: s.kind === 'account' ? s.accountId : undefined,
       folderId: s.kind === 'folder' ? s.folderId : undefined,
       grouping: q.grouping,
+      filter: q.filter,
+      archived: q.archived ? 1 : undefined,
       offset: q.offset,
       limit: q.limit,
       q: q.search,
@@ -222,6 +235,30 @@ export class HttpTransport implements Api {
   }
   markConversationRead(conversationId: number): Promise<void> {
     return this.request('POST', `/api/conversations/${conversationId}/read`);
+  }
+  updateConversation(conversationId: number, patch: ConversationPatch): Promise<Conversation> {
+    return this.request('PATCH', `/api/conversations/${conversationId}`, patch);
+  }
+  deleteConversation(conversationId: number): Promise<void> {
+    return this.request('DELETE', `/api/conversations/${conversationId}`);
+  }
+  reactToItem(conversationId: number, itemId: string, emoji: string): Promise<{ reactions: Reaction[]; sentAsRfc9078?: boolean }> {
+    return this.request('POST', `/api/conversations/${conversationId}/items/${encodeURIComponent(itemId)}/reactions`, { emoji });
+  }
+  deleteItem(conversationId: number, itemId: string): Promise<void> {
+    return this.request('DELETE', `/api/conversations/${conversationId}/items/${encodeURIComponent(itemId)}`);
+  }
+  forwardItem(itemId: string, targetConversationId: number): Promise<SendResult> {
+    return this.request('POST', `/api/items/${encodeURIComponent(itemId)}/forward`, { conversationId: targetConversationId });
+  }
+  createFromItem(conversationId: number, itemId: string, kind: 'task' | 'event'): Promise<{ id: string }> {
+    return this.request('POST', `/api/conversations/${conversationId}/items/${encodeURIComponent(itemId)}/create`, { kind });
+  }
+  saveContactCard(personId: number, card: ContactCard): Promise<void> {
+    return this.request('PUT', `/api/persons/${personId}/card`, card);
+  }
+  updateIdentity(identity: Identity): Promise<Identity> {
+    return this.request('PUT', `/api/identities/${identity.id}`, identity);
   }
   send(message: OutgoingMessage): Promise<SendResult> {
     return this.request('POST', '/api/send', message);

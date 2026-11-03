@@ -47,7 +47,7 @@ const BRAND_ICONS: Record<string, string> = {
   'icons/icon-192.png': 'icon-192.png',
   'icons/icon-512.png': 'icon-512.png',
   'icons/icon-maskable-512.png': 'icon-maskable-512.png',
-  'icons/apple-touch-icon.png': 'icon-180.png',
+  'icons/apple-touch-icon.png': 'apple-touch-icon-180.png',
   'favicon.ico': 'favicon.ico',
 };
 

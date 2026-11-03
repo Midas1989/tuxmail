@@ -3,6 +3,7 @@
   import Mail from '@lucide/svelte/icons/mail';
   import MessageCircle from '@lucide/svelte/icons/message-circle';
   import Shield from '@lucide/svelte/icons/shield';
+  import Send from '@lucide/svelte/icons/send';
   import type { Channel } from '../../types';
   import { t } from '../../i18n/index.svelte';
 
@@ -22,6 +23,8 @@
     <Mail size={badge ? size - 4 : size} aria-hidden="true" />
   {:else if channel === 'whatsapp'}
     <MessageCircle size={badge ? size - 4 : size} aria-hidden="true" />
+  {:else if channel === 'telegram'}
+    <Send size={badge ? size - 4 : size} aria-hidden="true" />
   {:else}
     <Shield size={badge ? size - 4 : size} aria-hidden="true" />
   {/if}
@@ -44,6 +47,12 @@
   }
   .ch-signal {
     color: var(--tm-signal);
+  }
+  .ch-telegram {
+    color: var(--tm-telegram);
+  }
+  .badge.ch-telegram {
+    background: var(--tm-telegram);
   }
   .badge {
     border-radius: 999px;

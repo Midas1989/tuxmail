@@ -34,9 +34,10 @@
   --tm-bubble-own-fg: #ffffff;
   --tm-bubble-other: #ffffff;
   --tm-bubble-other-fg: #16181d;
-  --tm-chat-bg: #eef1f5;
+  --tm-chat-bg: #e9eef5;
   --tm-whatsapp: #16a34a;
   --tm-signal: #3a76f0;
+  --tm-telegram: #229ed9;
   --tm-mail: #64748b;
   --tm-focus: #f59e0b;
   --tm-shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 1px 3px rgb(16 24 40 / 0.08);
@@ -99,7 +100,7 @@
   --tm-bubble-own-fg: #ffffff;
   --tm-bubble-other: #222731;
   --tm-bubble-other-fg: #e7e9ee;
-  --tm-chat-bg: #11141a;
+  --tm-chat-bg: #0e1218;
   --tm-mail: #94a3b8;
   --tm-shadow: 0 1px 2px rgb(0 0 0 / 0.4);
   --tm-shadow-lg: 0 16px 40px rgb(0 0 0 / 0.55);
@@ -129,6 +130,7 @@
   --color-chat: var(--tm-chat-bg);
   --color-whatsapp: var(--tm-whatsapp);
   --color-signal: var(--tm-signal);
+  --color-telegram: var(--tm-telegram);
   --color-mail: var(--tm-mail);
   --radius-sm: var(--tm-radius-sm);
   --radius-md: var(--tm-radius);

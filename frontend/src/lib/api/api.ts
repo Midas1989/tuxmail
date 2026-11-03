@@ -12,6 +12,10 @@ import type {
   Conversation,
   ConversationGrouping,
   ConversationItem,
+  ChatFilter,
+  ContactCard,
+  ConversationPatch,
+  Reaction,
   DeviceAuthorization,
   DeviceTokenResult,
   DiscoveryResult,
@@ -64,6 +68,10 @@ export interface ConversationQuery {
   offset: number;
   limit: number;
   search?: string;
+  /** Messenger filter pills. */
+  filter?: ChatFilter;
+  /** true = only archived chats, false/undefined = only non-archived. */
+  archived?: boolean;
 }
 
 export interface ItemsQuery {
@@ -102,6 +110,21 @@ export interface Api {
   /** Map a mail to the conversation (and bubble) it belongs to for the given grouping. */
   conversationForMessage(messageId: number, grouping: ConversationGrouping): Promise<ConversationRef>;
   markConversationRead(conversationId: number): Promise<void>;
+  /** Pin, mute, archive (archives the underlying mails), favorite, mark unread, block. */
+  updateConversation(conversationId: number, patch: ConversationPatch): Promise<Conversation>;
+  /** Delete a chat: mails go to the trash of their account, messenger messages are deleted. */
+  deleteConversation(conversationId: number): Promise<void>;
+  /** Toggle an emoji reaction of the current user. Mail: stored locally, sent as RFC 9078 reaction when supported. */
+  reactToItem(conversationId: number, itemId: string, emoji: string): Promise<{ reactions: Reaction[]; sentAsRfc9078?: boolean }>;
+  deleteItem(conversationId: number, itemId: string): Promise<void>;
+  /** Forward a bubble to another conversation (core picks the channel). */
+  forwardItem(itemId: string, targetConversationId: number): Promise<SendResult>;
+  /** "Als Aufgabe / Termin". */
+  createFromItem(conversationId: number, itemId: string, kind: 'task' | 'event'): Promise<{ id: string }>;
+  /** Create/update the contact of a person from a parsed signature. */
+  saveContactCard(personId: number, card: ContactCard): Promise<void>;
+  /** Update chat-mode signature settings of an identity. */
+  updateIdentity(identity: Identity): Promise<Identity>;
 
   // Actions (local first, queued by the core's op log)
   send(message: OutgoingMessage): Promise<SendResult>;
