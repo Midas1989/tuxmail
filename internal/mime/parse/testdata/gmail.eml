@@ -1,0 +1,49 @@
+Delivered-To: anna@example.net
+Received: by 2002:a05:6000:1:b0:1 with SMTP id x; Mon, 15 Jan 2024 02:31:00 -0800 (PST)
+ARC-Authentication-Results: i=1; mx.google.com; dkim=pass header.i=@gmail.com
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20230601 header.b=abc;
+       spf=softfail (google.com: domain of transitioning bob@gmail.com does not designate 1.2.3.4 as permitted sender) smtp.mailfrom=bob@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com
+MIME-Version: 1.0
+From: Bob Example <bob@gmail.com>
+Date: Mon, 15 Jan 2024 11:31:00 +0100
+Message-ID: <CAF=abc123+xyz@mail.gmail.com>
+Subject: Re: Lunch?
+To: Anna <anna@example.net>
+In-Reply-To: <lunch-1@example.net>
+References: <lunch-1@example.net>
+Content-Type: multipart/mixed; boundary="0000000000001111"
+
+--0000000000001111
+Content-Type: multipart/alternative; boundary="0000000000002222"
+
+--0000000000002222
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+Sure, 12:30 works =F0=9F=98=8A
+
+On Mon, Jan 15, 2024 at 10:00 AM Anna <anna@example.net> wrote:
+
+> Lunch tomorrow?
+>
+
+--0000000000002222
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div dir=3D"ltr">Sure, 12:30 works =F0=9F=98=8A</div><br><div class=3D"gmail_q=
+uote"><div dir=3D"ltr" class=3D"gmail_attr">On Mon, Jan 15, 2024 at 10:00 AM An=
+na &lt;<a href=3D"mailto:anna@example.net">anna@example.net</a>&gt; wrote:<br></d=
+iv><blockquote class=3D"gmail_quote">Lunch tomorrow?</blockquote></div>
+
+--0000000000002222--
+--0000000000001111
+Content-Type: application/pdf; name="=?UTF-8?B?TWVuw7wgMjAyNC5wZGY=?="
+Content-Disposition: attachment; filename="=?UTF-8?B?TWVuw7wgMjAyNC5wZGY=?="
+Content-Transfer-Encoding: base64
+X-Attachment-Id: f_lr1
+
+JVBERi0xLjQKJcOkw7zDtsOfCg==
+--0000000000001111--
