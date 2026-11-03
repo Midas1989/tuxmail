@@ -2,7 +2,7 @@
 
 **Produktname:** *TuxMail* – E-Mail, Messenger, Kalender, Kontakte und Cloud-Dateien in einer Anwendung
 **Zielplattformen:** Windows 10/11 (x64, ARM64), Linux (x64, ARM64)
-**Stand:** 03.11.2026 – Version 1.2 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
+**Stand:** 03.11.2026 – Version 1.3 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
 
 ---
 
@@ -79,6 +79,11 @@ Ziel ist ein **lokal laufender Desktop-Client**, der klassische E-Mail-Arbeit (O
 | M-18 | Mail | Rechtschreibprüfung, Serienmails | Muss |
 | M-19 | Mail | Exchange-Delegation, geteilte Postfächer, Send-As/On-Behalf | Soll |
 | M-20 | Mail | KI-Assistenz optional: lokal (Ollama) oder Cloud (OpenAI, Gemini, DeepSeek u. a.) | Kann |
+| M-21 | Mail | Druckansicht, PDF-Export, automatische PDF/A-Archivierung (z. B. Rechnungen) | Muss |
+| M-22 | Mail | „Warten auf Antwort"-Erinnerungen | Muss |
+| M-23 | Mail | Versand-Prüfungen (externe/private Empfänger, Anhang, Verschlüsselung, sensible Daten) | Muss |
+| M-24 | Mail | Gemeinsame Postfächer mit Zuweisung und internen Kommentaren (Server-Modus) | Soll |
+| W-01 | System | Bereichsübergreifendes Workflow-System (Auslöser, Bedingungen, Aktionen, grafischer Editor, YAML) | Muss |
 | K-04 | Kalender | Videokonferenz-Links (Nextcloud Talk, Jitsi, Teams) | Soll |
 | K-01 | Kalender | Volle Integration: Termine, Serien, Einladungen, Erinnerungen, Aufgaben | Muss |
 | K-02 | Kalender | CalDAV, Google Calendar, Microsoft Graph, EAS, EWS, lokale Kalender | Muss |
@@ -90,6 +95,7 @@ Ziel ist ein **lokal laufender Desktop-Client**, der klassische E-Mail-Arbeit (O
 | X-02 | Messenger | Signal (mehrere Konten) | Soll |
 | X-03 | Messenger | Instagram, Facebook Messenger | Kann (experimentell) |
 | X-04 | Messenger | Google Messages (RCS/SMS), Google Chat (Workspace) | Kann |
+| X-05 | Messenger | Telegram, Matrix | Muss |
 | F-01 | Dateien | Nextcloud & OpenCloud: Dateien als Anhang holen und Anhänge dort speichern | Muss |
 | F-02 | Dateien | Anhang wahlweise direkt oder als Freigabelink mit Passwort/Ablaufdatum | Muss |
 | F-03 | Dateien | Vaultwarden (Bitwarden) Send als Versandweg | Soll |
@@ -617,10 +623,26 @@ Bei einem erkannten Mail-Konto werden automatisch **passende Kalender und Adress
 - Server-Suche als Ergänzung für nicht lokal gespeicherte Mails (IMAP `SEARCH`, EAS `Search`, Graph `$search`).
 - Eine Suche findet auch Messenger-Nachrichten, Termine und Kontakte (umschaltbare Filter).
 
-### 8.5 Regeln & Automatisierung
-- Lokale Regel-Engine (Bedingungen: Absender, Empfänger, Betreff, Header, Größe, Konto; Aktionen: verschieben, markieren, Label, weiterleiten, Benachrichtigung, Konversation stummschalten).
-- Serverseitige Regeln per **Sieve** (Editor mit grafischer Oberfläche und Rohansicht) bzw. Graph/EWS-Posteingangsregeln.
-- Abwesenheitsnotiz (Sieve `vacation`, Graph `automaticRepliesSetting`, EAS `Settings/Oof`).
+### 8.5 Workflow-System (Regeln & Automatisierung)
+Statt einer reinen Mail-Regel-Engine erhält TuxMail ein **allgemeines Workflow-System**, das über alle Bereiche hinweg arbeitet: Mail, Messenger, Kalender, Kontakte, Dateien/Cloud und KI. Klassische Mail-Regeln sind darin nur ein Spezialfall.
+
+**Aufbau eines Workflows: Auslöser → Bedingungen → Aktionen**
+
+| Baustein | Beispiele |
+|---|---|
+| **Auslöser** | Mail empfangen / gesendet / verschoben / markiert · Messenger-Nachricht empfangen · **keine Antwort nach X Tagen** (8.12) · Termin beginnt in X Minuten / wurde angenommen · Kontakt neu · Datei in Cloud-Ordner neu · Zeitplan (täglich, wöchentlich, Cron) · manuell (Schaltfläche, Befehlspalette, Kontextmenü) · Webhook (nur Server-Modus) |
+| **Bedingungen** | Absender/Empfänger/Domain, Betreff/Text (enthält, Regex), Header, Konto, Ordner, Kategorie (8.8), Anhang (Typ, Name, Größe), Rechnungserkennung inkl. **ZUGFeRD/XRechnung**, Kanal (Mail/WhatsApp/Signal/…), Kontaktgruppe, Uhrzeit/Wochentag, PGP-Status, KI-Klassifikation; verknüpfbar mit UND/ODER/NICHT |
+| **Aktionen** | verschieben, kopieren, markieren, Label/Kategorie, löschen, archivieren · antworten mit Vorlage, weiterleiten, Abwesenheitsnotiz · **als PDF archivieren** (8.11) · Anhänge in Nextcloud/OpenCloud ablegen · Termin/Aufgabe erzeugen · Kontakt anlegen/aktualisieren · Benachrichtigung (Desktop, Push, an mich per Signal/Telegram/Matrix) · Konversation stummschalten/anheften · **im gemeinsamen Postfach zuweisen** (8.14) · KI zusammenfassen/klassifizieren · HTTP-Webhook aufrufen (z. B. n8n, Node-RED, Home Assistant) · Variable setzen · Unter-Workflow starten |
+
+**Eigenschaften**
+- **Grafischer Editor** (Bausteine untereinander, Wenn/Dann-Verzweigungen) und gleichwertige **Textansicht in YAML** zum Kopieren, Versionieren und Teilen. Workflows sind exportier-/importierbar und Teil des Backups „Nur Konfiguration".
+- **Vorlagen-Galerie** für typische Abläufe: „Rechnungen als PDF in Nextcloud ablegen", „Newsletter automatisch archivieren", „Warten auf Antwort", „VIP-Mails per Signal melden", „Anhänge > 10 MB automatisch als Cloud-Link", „Bewerbungen ins Team-Postfach und Ticket zuweisen".
+- **Testlauf (Trockenlauf):** Workflow gegen vorhandene Mails simulieren und anzeigen, was passieren würde – ohne etwas zu ändern. Rückwirkend auf bestehende Ordner anwendbar.
+- **Ausführungsprotokoll** je Workflow (wann, worauf, welches Ergebnis, Fehler) mit Wiederholen-Schaltfläche.
+- **Ausführungsort:** lokal im Desktop-Client oder im **Server-Modus** dauerhaft im Hintergrund (läuft auch, wenn kein Client offen ist). Wo möglich, werden einfache Mail-Bedingungen zusätzlich als **Sieve**-Skript auf den Server übertragen bzw. als Graph/EWS-Posteingangsregel angelegt, damit sie auch ohne TuxMail greifen.
+- **Sicherheit:** Aktionen mit Außenwirkung (automatisch antworten, weiterleiten, Webhook) zeigen beim Aktivieren eine Bestätigung; Schleifenschutz (max. Auslösungen pro Nachricht/Zeit), Ratenbegrenzung, keine Weiterleitung entschlüsselter PGP-Inhalte ohne ausdrückliche Freigabe.
+- **Technik:** Ereignisse kommen über den bestehenden Event-Bus (4.2); Workflows werden durch eine eigene Engine (`internal/workflow`) mit persistenter Warteschlange (Op-Queue) ausgeführt, damit nach Neustart nichts verloren geht. Bedingungen werden mit einer sicheren Ausdruckssprache (z. B. `expr-lang/expr`) ausgewertet – kein beliebiger Code.
+- Abwesenheitsnotiz (Sieve `vacation`, Graph `automaticRepliesSetting`, EAS `Settings/Oof`) bleibt als eigene, einfache Einstellung erhalten.
 
 ### 8.6 Verschlüsselung
 **OpenPGP ist Bestandteil des Mail-MVP (Phase 1)** – nicht erst des Feinschliffs.
@@ -675,6 +697,45 @@ Bei einem erkannten Mail-Konto werden automatisch **passende Kalender und Adress
   - **Verschlüsselte (PGP) Mails werden nie an Cloud-Anbieter gesendet**, an lokale Modelle nur nach ausdrücklicher Freigabe.
   - Kein automatischer Hintergrund-Versand an Cloud-KI – nur auf Aktion des Benutzers (Ausnahme: lokale Modelle, wenn freigegeben).
 - **Transparenz:** KI-Texte sind immer Vorschläge und werden nie automatisch gesendet; jede Anfrage an einen Cloud-Anbieter wird im Protokoll „KI-Aktivität" aufgeführt (Zeitpunkt, Anbieter, Zweck, Größe).
+
+### 8.11 Druckansicht & PDF-Archivierung
+- **Druckansicht** für Mail, ganze Konversation (klassisch oder als Chat-Verlauf), Termin, Tages-/Wochenkalender und Kontakt; Kopfzeile mit Absender/Empfänger/Datum, Anhangsliste, wählbar mit/ohne externe Bilder.
+- **PDF-Export** einzeln oder für viele Mails auf einmal (z. B. ganzer Ordner, Suchergebnis).
+- **Archiv-PDF nach PDF/A-3:** Die Original-Mail (`.eml`) und alle Anhänge werden **in die PDF eingebettet** – revisionssicher lesbar und trotzdem vollständig. Dateiname nach Muster, z. B. `{{datum}}_{{absender}}_{{betreff}}.pdf`.
+- **Automatisch per Workflow** (8.5): z. B. „Jede Rechnung als PDF in Nextcloud `/Buchhaltung/{{jahr}}/{{monat}}/` ablegen". Rechnungen werden erkannt über Kategorie (8.8), Schlagwörter, PDF-Anhänge und strukturierte E-Rechnungen (**ZUGFeRD/Factur-X, XRechnung**) – deren Daten (Rechnungsnummer, Betrag, Fälligkeit) können für Dateinamen und eine Aufgabe „Rechnung bezahlen bis …" verwendet werden.
+- Ziele: lokaler Ordner, Nextcloud, OpenCloud, WebDAV; Duplikatschutz über Message-ID.
+- **Technik:** Desktop rendert über das System-WebView (WebView2 `PrintToPdf`, WebKitGTK-Druckausgabe) – identisch zur Anzeige. Im Server-Modus wird ein eigener Go-Renderer für den Mailkopf plus HTML-Rendering über einen optionalen Headless-Chromium-Dienst (z. B. Gotenberg im docker-compose) genutzt; PDF/A-Anreicherung und Einbettung mit `pdfcpu`.
+- Hinweis: TuxMail unterstützt eine geordnete Ablage; ob diese den Anforderungen der GoBD genügt, hängt vom Gesamtverfahren (Verfahrensdokumentation, Unveränderbarkeit des Speicherorts) ab.
+
+### 8.12 „Warten auf Antwort"
+- Beim Senden (oder nachträglich) Schalter **„Erinnern, wenn keine Antwort bis …"** (morgen, 3 Tage, 1 Woche, Datum).
+- TuxMail erkennt Antworten über das Konversations-Mapping (Kapitel 6) – auch, wenn die Antwort über einen **anderen Kanal** (z. B. WhatsApp derselben Person) kommt (einstellbar).
+- Kommt keine Antwort: Mail erscheint wieder oben im Posteingang bzw. im Bereich **„Wartet auf Antwort"**, mit Schnellaktion „Nachfassen" (Vorlage + KI-Vorschlag).
+- Automatische Vorschläge: Mails mit Fragen („?", „bitte um Rückmeldung", „bis wann") werden als Kandidaten markiert.
+- Technisch ein Workflow-Auslöser („keine Antwort nach X") – auch in eigenen Workflows nutzbar.
+
+### 8.13 Versand-Prüfungen
+Vor dem Senden prüft TuxMail die Mail und zeigt Hinweise – einzeln abschaltbar, als Warnung oder als Sperre konfigurierbar:
+- **Externe Empfänger:** Warnung, wenn eine Firmenmail Empfänger außerhalb der eigenen Domain(s) enthält; deutlich bei **vielen** externen Empfängern in An/CC („BCC verwenden?").
+- **Private Adressen in Firmenmails** (oder umgekehrt): z. B. gmail/gmx-Adressen im CC einer dienstlichen Mail; falsche Identität für den Empfänger (Firmenkontakt, aber privates Absenderkonto).
+- **Anhang vergessen** (Schlüsselwörter „anbei", „im Anhang", „attached"), **Anhang zu groß** → Cloud-Link-Vorschlag.
+- **Verschlüsselung:** Empfänger hat PGP-Schlüssel, Mail ist aber unverschlüsselt; vertrauliche Schlagwörter („vertraulich", „Gehalt", IBAN) ohne Verschlüsselung.
+- **Sensible Daten:** IBAN, Kreditkartennummern, Passwörter im Klartext erkannt.
+- **Fehlender Betreff**, leere Mail, Platzhalter nicht ersetzt (`{{vorname}}`), „Allen antworten" an große Verteiler, Antwort an eine alte Konversation (> 6 Monate).
+- **Uhrzeit-Hinweis:** Versand außerhalb der Arbeitszeit des Empfängers → „Später senden?"
+- Eigene Prüfungen lassen sich als Workflow mit Auslöser „vor dem Senden" ergänzen; im Server-Modus können Administratoren Prüfungen für alle Benutzer vorgeben.
+
+### 8.14 Gemeinsame Postfächer (Server-Modus)
+Im Server-Modus können mehrere TuxMail-Benutzer ein Postfach gemeinsam bearbeiten (z. B. `info@`, `support@`, `bewerbung@`):
+- Das Postfach wird **einmal** auf dem Server verbunden; Benutzer/Gruppen erhalten Rechte (lesen, beantworten, zuweisen, verwalten).
+- **Zuweisung** von Konversationen an Personen („Mir zuweisen", „an Anna"), **Status** (offen, in Bearbeitung, wartet, erledigt), Fälligkeit, Prioritäten.
+- **Interne Kommentare und @Erwähnungen** an der Konversation – für Kunden unsichtbar; Erwähnungen erzeugen Benachrichtigungen.
+- **Kollisionserkennung:** „Anna schreibt gerade eine Antwort" – verhindert doppelte Antworten; Entwürfe sind für das Team sichtbar (optional).
+- Antworten gehen mit der Postfach-Identität (z. B. „Firma Support") und optional persönlicher Signatur des Bearbeiters.
+- Gemeinsame Textbausteine, Vorlagen und Workflows (z. B. automatische Zuweisung nach Stichwort oder reihum).
+- Ansichten: „Mir zugewiesen", „Nicht zugewiesen", „Erledigt"; einfache Statistik (Anzahl, Reaktionszeit).
+- Auch Messenger-Konten (z. B. ein Firmen-WhatsApp über Bridge) können als gemeinsames Postfach betrieben werden.
+- Rechte- und Audit-Log: wer hat was gelesen, beantwortet, zugewiesen.
 
 ---
 
@@ -739,8 +800,8 @@ Keiner der großen Messenger bietet eine offizielle API für **private Konten** 
 | **Facebook Messenger** | `messagix` (mautrix-meta) | wie Instagram | Chats, Gruppen, Medien | **Hoch** |
 | **Google Messages** (RCS/SMS des Android-Handys) | `libgm` aus mautrix-gmessages (AGPL-3.0) | QR-Code / Google-Konto-Kopplung | SMS/RCS über das eigene Smartphone | Mittel |
 | **Google Chat** (Workspace) | Offizielle Google Chat API | OAuth2 | Spaces, Direktnachrichten | Gering (nur Workspace) |
-| Optional: Telegram | `gotd/td` (offizielle MTProto-API erlaubt Drittclients) | Telefonnummer + Code | voll | Gering |
-| Optional: Matrix | `mautrix-go` | Login | voll | Gering |
+| **Telegram** (Version 1.0) | `gotd/td` (offizielle MTProto-API, Drittclients ausdrücklich erlaubt; eigene `api_id` des Projekts) | Telefonnummer + Code bzw. QR-Code, 2FA-Passwort | Chats, Gruppen, Kanäle, Medien, Reaktionen, Antworten, Bearbeiten | Gering |
+| **Matrix** (Version 1.0) | `mautrix-go` (inkl. Ende-zu-Ende-Verschlüsselung über Olm/Megolm, Geräteverifizierung) | Login mit Passwort oder SSO/OIDC | Räume, Direktchats, Medien, Reaktionen, Threads | Gering |
 
 > **Offizielle Alternative für Unternehmen:** WhatsApp Business Cloud API und die Meta Messenger-/Instagram-Plattform für **Unternehmensseiten** sind offiziell und sperrsicher – aber nur für Business-Konten nutzbar. Beide werden als zusätzlicher, offizieller Connector-Typ vorgesehen.
 
@@ -1062,7 +1123,7 @@ Mailclient/
 │   ├── core/
 │   │   ├── threading/         # Konversations-Engine (Kapitel 6)
 │   │   ├── persons/           # Personen-Resolver
-│   │   ├── rules/             # Regel-Engine
+│   │   ├── workflow/          # Workflow-Engine (Auslöser, Bedingungen, Aktionen)
 │   │   ├── opqueue/           # Operations-Queue
 │   │   ├── sync/              # Sync-Scheduler
 │   │   └── search/
@@ -1127,14 +1188,15 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | **4 – Import/Export & Backup** | EML/MBOX/Maildir/PST, ICS, vCard/CSV/LDIF, Backup/Restore (alle Modi), Thunderbird-Import | Datenhoheit | 2 PM |
 | **5 – Microsoft & Google** | OAuth2, Graph, Gmail API, Google Calendar/People, **ActiveSync**, EWS (On-Prem) | Unternehmenstauglich | 5 PM |
 | **6 – Cloud-Anhänge** | Nextcloud, OpenCloud, Vaultwarden Send, Link-Verwaltung, Anhang-Ablage-Regeln | Cloud-Workflow | 2 PM |
-| **7 – Messenger** | Plugin-Host, **WhatsApp, Signal** (Pflicht für 1.0), gemischte Personen-Zeitleiste | Unified Inbox | 4 PM |
+| **7 – Messenger** | Plugin-Host, **WhatsApp, Signal, Telegram, Matrix** (Pflicht für 1.0), gemischte Personen-Zeitleiste | Unified Inbox | 5,5 PM |
 | **8 – Bridge-Modus** | `plugin-matrix-bridge`, Bridge-Zuordnung, Kopplungsassistent, docker-compose mit Homeserver + Bridges | Messenger 24/7 | 2 PM |
 | **9 – Server & Web-Client** | `tuxmail serve`, API-Generierung (Connect-RPC), Transport-Abstraktion im Frontend, Benutzerverwaltung, OIDC, PWA/Web-Push, Docker-Image | Zugriff über Browser | 4 PM |
+| **9b – Workflows & Team** | Workflow-Engine + grafischer Editor + YAML, Vorlagen, Trockenlauf, Protokoll; „Warten auf Antwort"; Versand-Prüfungen; Druck/PDF/A-Archivierung inkl. E-Rechnungserkennung; gemeinsame Postfächer (Zuweisung, Kommentare, Kollisionserkennung) | Automatisierung & Teamarbeit | 5 PM |
 | **10 – Feinschliff & Release 1.0** | Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (lokal + Cloud-Anbieter), S/MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Sicherheitsprüfung des Web-Modus, Dokumentation | Release | 5 PM |
-| | | **Summe 1.0** | **≈ 41,5 PM** |
-| *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat, optional Telegram, Mobil-App | Optionale Kanäle | *≈ 3–4 PM* |
+| | | **Summe 1.0** | **≈ 48 PM** |
+| *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat, Mobil-App | Optionale Kanäle | *≈ 3–4 PM* |
 
-- Mit 3 Entwicklern: **ca. 14–16 Monate** bis Version 1.0; ein nutzbarer Mail-Client mit PGP und Konversationsansicht (Phasen 0–2) nach **ca. 5 Monaten**.
+- Mit 3 Entwicklern: **ca. 16–18 Monate** bis Version 1.0 (mit 4 Entwicklern ca. 12–14 Monate); ein nutzbarer Mail-Client mit PGP und Konversationsansicht (Phasen 0–2) nach **ca. 5 Monaten**.
 - Phasen 5–8 lassen sich nach Phase 2 teilweise **parallel** bearbeiten.
 
 ### Meilensteine
@@ -1175,9 +1237,10 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | 5 | Bridge-Modus | **Bestandteil von Version 1.0** | Kapitel 11.3, Phase 8 der Roadmap |
 | 6 | Web-/Mobil-Client | **Web-Client in Version 1.0**, Mobil-App später über dieselbe API | Kapitel 4.2, 4.5, Phase 9 der Roadmap |
 | 7 | Cloud-Link-Passwort | **Bei jedem Versand fragen** (Wahl pro Empfänger merkbar) | Kapitel 12.2 |
-| 8 | Messenger für 1.0 | **WhatsApp und Signal**; Instagram, Facebook, Google Messages/Chat nach 1.0 | Kapitel 11, Roadmap |
+| 8 | Messenger für 1.0 | **WhatsApp, Signal, Telegram, Matrix**; Instagram, Facebook, Google Messages/Chat nach 1.0 | Kapitel 11, Roadmap |
 | 9 | OpenPGP | **Bereits im Mail-MVP** (inkl. Autocrypt, WKD, geschützte Header) | Kapitel 8.6, Phase 1 |
 | 10 | Zusatzfunktionen 1.0 | Spam-Filter & Newsletter-Abmeldung, smarte Kategorien, Rechtschreibprüfung & Serienmails, Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (optional; lokal oder OpenAI/Gemini/DeepSeek) | Kapitel 7.3a, 8.7–8.10, 9.1 |
+| 12 | Weitere Funktionen 1.0 | **Workflow-System** (ersetzt reine Regeln), Druck & PDF/A-Archivierung, „Warten auf Antwort", Versand-Prüfungen, gemeinsame Postfächer (Server-Modus), **Telegram und Matrix** als zusätzliche Messenger | Kapitel 8.5, 8.11–8.14, 11.2 |
 | 11 | Bewusst **nicht** in 1.0 | Wegwerf-Aliase (SimpleLogin/addy.io), Terminbuchungsseite | ggf. nach 1.0 |
 
 ---
