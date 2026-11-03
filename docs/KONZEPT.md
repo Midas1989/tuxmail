@@ -520,6 +520,15 @@ Mail wird extern verschoben (anderer Client, Webmail, Serverregel):
      nicht an der Zeile) – taucht die Mail z. B. per Import wieder auf, ist sie sofort korrekt eingeordnet.
 ```
 
+### 6.5a Drei Ansichten: Klassisch · Hybrid · Chat
+| Ansicht | Links | Rechts | Geeignet für |
+|---|---|---|---|
+| **Klassisch** | Ordnerbaum | Liste + Lesebereich | klassische Mail-Arbeit |
+| **Hybrid** | Ordnerbaum (inkl. Projekte, Suchordner, Tags) | Konversation als **Blasen** | Ordner-Organisation + Chat-Lesbarkeit |
+| **Chat** | Chatliste (ohne Ordner) | Unterhaltung | Messenger-Gefühl |
+
+**Hybrid-Ansicht im Detail:** In einem Ordner zeigt die Liste alle Konversationen mit Nachrichten in diesem Ordner. Beim Öffnen erscheint die **ganze** Konversation als Blasen; die Blasen, die **in dem aktuellen Ordner liegen, sind hervorgehoben** (Akzentrahmen + kleiner Ordner-Chip), die übrigen leicht abgeblendet mit Chip ihres Ordners (z. B. „Gesendet", „Archiv/2026"). Schalter „Nur Nachrichten aus diesem Ordner"; automatisches Springen zur ersten hervorgehobenen Blase; einzelne Blase per Drag & Drop in einen anderen Ordner verschieben. Wechsel der Ansichten mit `Strg+Umschalt+V`, Standardansicht pro Ordner einstellbar.
+
 ### 6.6 Messenger-Ansicht für E-Mails
 
 **Grundsatz:** Die Messenger-Ansicht sieht aus und funktioniert wie ein echter Messenger (WhatsApp/Signal/Telegram). **Ordner, Betreffzeilen, Mail-Köpfe (Von/An/CC) und Mail-Symbolleisten werden dort nicht angezeigt.** E-Mail ist nur ein weiterer Kanal.
@@ -620,6 +629,25 @@ Bei einem erkannten Mail-Konto werden automatisch **passende Kalender und Adress
 - Markierungen/Schlagworte (IMAP-Keywords, Gmail-Labels, Outlook-Kategorien vereinheitlicht), Farben.
 - Archivieren mit einem Klick (pro Konto konfigurierbares Archivschema, z. B. `Archiv/2026`).
 
+### 8.1a Tags (Schlagworte)
+- Farbige, optional hierarchische Tags (z. B. `Kunde/Müller`) für **Mails, Chat-Nachrichten, Konversationen, Termine, Kontakte und Dateien**.
+- Vergabe über Blasen-/Kontextmenü, Mehrfachauswahl, Taste `t`, Workflows; Anzeige als Chips in Listen und Blasen; Tag-Bereich in der Seitenleiste mit Zählern; Tag-Filter in der Chat-Ansicht; Verwaltung (umbenennen, zusammenführen, Farbe, Symbol).
+- **Synchronisation:** Abbildung auf IMAP-Keywords, Gmail-Labels und Outlook-Kategorien, damit Tags auch in anderen Programmen sichtbar sind; Chat-Tags bleiben lokal bzw. auf dem TuxMail-Server.
+- In der Suche über `tag:` nutzbar, als Facette sichtbar.
+
+### 8.1b Projektordner
+Ein **Projekt** bündelt alles, was zu einem Vorhaben gehört – unabhängig davon, in welchem Konto, Ordner oder Kanal es liegt:
+- **Zusatzinfos:** Name, Kürzel (z. B. `HB-2026`), Beschreibung, Status (geplant, aktiv, pausiert, erledigt, archiviert), Farbe, Kunde/Organisation, Start/Fälligkeit, Budget, **eigene Felder** (per Projektvorlage definierbar), Notizen, Mitglieder mit Rollen, verknüpfter **Cloud-Ordner** (Nextcloud/OpenCloud).
+- **Inhalte:** Mails, Konversationen, Chats und einzelne Nachrichten, **Kalendereinträge und Aufgaben**, **Kontakte**, Dateien/Cloud-Links, Suchordner.
+- **Projekt-Dashboard** mit Reitern: Übersicht · **Zeitachse** (alles chronologisch) · Kommunikation · Termine & Aufgaben · Kontakte · Dateien · **Workflows** · Regeln.
+- **Automatische Zuordnung** per Regel in der Such-Abfragesprache (z. B. `from:*@mueller-gmbh.de OR subject:"HB-2026"`).
+- **Workflow-Einbindung:** Auslöser (Element hinzugefügt, Status geändert, Fälligkeit naht), Aktionen (zu Projekt hinzufügen, Status setzen, Projekt aus Vorlage anlegen); Workflows lassen sich direkt an ein Projekt binden.
+- Projektvorlagen (eigene Felder, Standard-Tags, Standard-Workflows); im Server-Modus mit dem Team teilbar.
+
+### 8.1c Suchordner
+- Jede Suche (einfach oder Experte) kann als **Suchordner** gespeichert werden: erscheint im Ordnerbaum (global, unter einem Konto oder in einem Projekt) mit Ungelesen-Zähler und aktualisiert sich laufend.
+- Nutzbar in allen drei Ansichten, als **Chat-Ordner** und als Bereich für Workflow-Auslöser („wenn eine Mail neu in den Suchordner fällt").
+
 ### 8.2 Verfassen
 - WYSIWYG-Editor (TipTap/ProseMirror) mit Umschaltung auf Nur-Text; Markdown-Eingabe optional.
 - **Identitäten/Aliase:** Absender-Auswahl im Kopf; automatische Wahl der Identität anhand der Adresse, an die die Originalmail ging. Freie Absenderadresse für Catch-All-Domains (z. B. `shop-xy@meinedomain.de`).
@@ -692,6 +720,11 @@ Statt einer reinen Mail-Regel-Engine erhält TuxMail ein **allgemeines Workflow-
 - **Ausführungsort:** lokal im Desktop-Client oder im **Server-Modus** dauerhaft im Hintergrund (läuft auch, wenn kein Client offen ist). Wo möglich, werden einfache Mail-Bedingungen zusätzlich als **Sieve**-Skript auf den Server übertragen bzw. als Graph/EWS-Posteingangsregel angelegt, damit sie auch ohne TuxMail greifen.
 - **Sicherheit:** Aktionen mit Außenwirkung (automatisch antworten, weiterleiten, Webhook) zeigen beim Aktivieren eine Bestätigung; Schleifenschutz (max. Auslösungen pro Nachricht/Zeit), Ratenbegrenzung, keine Weiterleitung entschlüsselter PGP-Inhalte ohne ausdrückliche Freigabe.
 - **Technik:** Ereignisse kommen über den bestehenden Event-Bus (4.2); Workflows werden durch eine eigene Engine (`internal/workflow`) mit persistenter Warteschlange (Op-Queue) ausgeführt, damit nach Neustart nichts verloren geht. Bedingungen werden mit einer sicheren Ausdruckssprache (z. B. `expr-lang/expr`) ausgewertet – kein beliebiger Code.
+- **Expertenmodus für Workflows** (wie bei der Suche): Neben dem grafischen Editor gibt es
+  - eine kompakte **Regel-Syntax** mit Objekt-Eingabe (Chips) und kontextabhängiger Autovervollständigung, z. B.
+    `WHEN mail.received IN account:"Firma" IF from:*@kunde.de AND has:attachment THEN tag "Kunde", move "Kunden/Eingang", notify signal "Neue Kundenmail: {{betreff}}"` – Bedingungen verwenden **dieselbe Abfragesprache wie die Suche**;
+  - die **YAML-Ansicht** mit Syntaxhervorhebung, Zeilennummern, Fehlermarkierung mit Zeile/Spalte und Autovervollständigung (inkl. JSON-Schema für externe Editoren).
+  Zwischen den drei Modi kann verlustfrei gewechselt werden, soweit darstellbar.
 - **Abwesenheitsnotiz** ist ein fester Bestandteil des Workflow-Systems (eingebauter Workflow-Typ mit eigener, einfacher Oberfläche):
   - Zeitraum (von/bis, optional), gültig für ausgewählte Konten/Identitäten.
   - Getrennte Texte für **interne** und **externe** Absender; Betreff und Text mit Platzhaltern (z. B. `{{bis_datum}}`, `{{vertretung}}`).
