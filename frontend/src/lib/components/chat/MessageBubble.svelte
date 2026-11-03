@@ -14,7 +14,7 @@
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
   import Newspaper from '@lucide/svelte/icons/newspaper';
   import type { ConversationItem } from '../../types';
-  import { formatTime, t } from '../../i18n/index.svelte';
+  import { fmt, formatTime, t } from '../../i18n/index.svelte';
   import { highlight, isEmojiOnly, linkify } from '../../richtext';
   import { hueFor } from '../../conversation';
   import { longpress } from '../../actions';
@@ -22,6 +22,11 @@
   import AttachmentCard from '../common/AttachmentCard.svelte';
   import Avatar from '../common/Avatar.svelte';
   import VoicePlayer from './VoicePlayer.svelte';
+  import Star from '@lucide/svelte/icons/star';
+  import Pin from '@lucide/svelte/icons/pin';
+  import CalendarClock from '@lucide/svelte/icons/calendar-clock';
+  import Languages from '@lucide/svelte/icons/languages';
+  import { prefs } from '../../state';
 
   interface Props {
     item: ConversationItem;
@@ -39,15 +44,20 @@
     onoriginal: (item: ConversationItem) => void;
     onimage: (item: ConversationItem, index: number) => void;
     onfocusitem: (id: string) => void;
+    translation?: { text: string; sourceLang: string; showOriginal: boolean } | null;
+    ontoggletranslation?: (item: ConversationItem) => void;
+    onslot?: (item: ConversationItem, start: string) => void;
   }
-  let { item, groupStart, groupEnd, channelChanged, showReplyQuote, isGroupChat, focused, query, activeHit, onmenu, onreact, onjump, onoriginal, onimage, onfocusitem }: Props = $props();
+  let { item, groupStart, groupEnd, channelChanged, showReplyQuote, isGroupChat, focused, query, activeHit, onmenu, onreact, onjump, onoriginal, onimage, onfocusitem, translation = null, ontoggletranslation, onslot }: Props = $props();
+  let sigOpen = $state(false);
+  const sigShown = $derived(prefs.chatSignatures === 'shown' || sigOpen);
 
   const images = $derived(item.attachments.filter((a) => a.mimeType.startsWith('image/') && a.previewUrl));
   const voices = $derived(item.attachments.filter((a) => a.mimeType.startsWith('audio/')));
   const files = $derived(item.attachments.filter((a) => !images.includes(a) && !voices.includes(a)));
   const segments = $derived(highlight(linkify(item.body), query));
   const bigEmoji = $derived(!item.attachments.length && !item.replyTo && isEmojiOnly(item.body));
-  const hasHidden = $derived(item.channel === 'email' && (!!item.quoted || !!item.signature));
+  const hasHidden = $derived(item.channel === 'email' && !!item.quoted);
   const senderHue = $derived(hueFor(item.senderPersonId));
   const label = $derived(`${item.isOwn ? t('chat.you') : item.senderName}, ${formatTime(item.sentAt)}, ${t(`common.channel.${item.channel}`)}`);
   const gallery = $derived(images.slice(0, 4));
@@ -81,6 +91,7 @@
     class:focused
     class:hit={activeHit}
     class:emoji={bigEmoji}
+    class:scheduled={!!item.scheduledFor}
     aria-label={label}
     tabindex={focused ? 0 : -1}
     onfocus={() => onfocusitem(item.id)}
@@ -90,6 +101,9 @@
   >
     {#if isGroupChat && groupStart && !item.isOwn}
       <div class="sender" style:--h={senderHue}>{item.senderName}</div>
+    {/if}
+    {#if item.scheduledFor}
+      <div class="sched-label"><Clock size={12} aria-hidden="true" /> {t('chat.schedule.for', { when: fmt().dateTime(item.scheduledFor) })}</div>
     {/if}
     {#if item.relation === 'forward'}
       <div class="fwd"><Forward size={12} aria-hidden="true" /> {t('chat.forwarded')}</div>
@@ -137,6 +151,41 @@
       {:else if item.relation === 'forward' && !item.attachments.length}
         <div class="text muted">{t('chat.forwardedNoText')}</div>
       {/if}
+      {#if item.meeting}
+        {@const mt = item.meeting}
+        <div class="meeting">
+          <div class="mt-head"><CalendarClock size={16} aria-hidden="true" /> <strong>{mt.title}</strong> <small>{t('chat.meeting.minutes', { count: mt.durationMin })}</small></div>
+          <div class="slots" role="group" aria-label={t('chat.meeting.slots')}>
+            {#each mt.slots as sl (sl.start)}
+              <button
+                class="slot"
+                class:chosen={mt.chosen === sl.start}
+                disabled={mt.status === 'booked'}
+                onclick={(e) => (e.stopPropagation(), onslot?.(item, sl.start))}
+                title={mt.status === 'open' ? t('chat.meeting.pickDemo') : ''}>{fmt().full(sl.start)}</button
+              >
+            {/each}
+          </div>
+          <small class="mt-status">{mt.status === 'booked' ? t('chat.meeting.bookedShort') : t('chat.meeting.waiting')}</small>
+        </div>
+      {/if}
+      {#if item.signature}
+        {#if sigShown}
+          <pre class="signature">{item.signature}</pre>
+        {/if}
+        {#if prefs.chatSignatures === 'collapsed'}
+          <button class="sig-toggle" aria-expanded={sigOpen} onclick={(e) => (e.stopPropagation(), (sigOpen = !sigOpen))}>
+            {t('chat.signature.label')} <ChevronDown size={11} class={sigOpen ? 'rot' : ''} />
+          </button>
+        {/if}
+      {/if}
+      {#if translation}
+        <div class="translation">
+          <span class="tr-label"><Languages size={12} aria-hidden="true" /> {t('chat.ai.translated', { lang: translation.sourceLang.toUpperCase() })}</span>
+          {#if !translation.showOriginal}<span class="tr-text">{translation.text}</span>{/if}
+          <button class="tr-toggle" onclick={(e) => (e.stopPropagation(), ontoggletranslation?.(item))}>{translation.showOriginal ? t('chat.ai.showTranslation') : t('chat.ai.showOriginal')}</button>
+        </div>
+      {/if}
       {#if item.linkPreview}
         {@const lp = item.linkPreview}
         <a class="link-preview" href={lp.url} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>
@@ -148,6 +197,8 @@
     {/if}
 
     <span class="meta">
+      {#if item.pinned}<Pin size={11} aria-label={t('chat.pin.pinned')} />{/if}
+      {#if item.starred}<Star size={11} class="starred-ic" aria-label={t('chat.starred.starred')} />{/if}
       {#if channelChanged}<ChannelIcon channel={item.channel} size={11} />{/if}
       <time datetime={item.sentAt}>{formatTime(item.sentAt)}</time>
       {#if item.isOwn}
@@ -494,6 +545,126 @@
   }
   .own .card-open {
     color: inherit;
+  }
+  .bubble.scheduled {
+    opacity: 0.62;
+    border: 1px dashed color-mix(in srgb, currentColor 45%, transparent);
+  }
+  .sched-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  :global(.starred-ic) {
+    color: #f59e0b;
+    fill: #f59e0b;
+  }
+  .signature {
+    margin: 6px 0 0;
+    padding-top: 4px;
+    border-top: 1px dashed color-mix(in srgb, currentColor 25%, transparent);
+    font: inherit;
+    font-size: 12px;
+    white-space: pre-wrap;
+    opacity: 0.75;
+  }
+  .sig-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    margin-top: 2px;
+    padding: 0 4px;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 10.5px;
+    opacity: 0.5;
+  }
+  .sig-toggle:hover {
+    opacity: 0.9;
+  }
+  .sig-toggle :global(.rot) {
+    transform: rotate(180deg);
+  }
+  .translation {
+    margin-top: 6px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    background: color-mix(in srgb, currentColor 7%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .tr-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    opacity: 0.7;
+  }
+  .tr-text {
+    font-size: 14px;
+  }
+  .tr-toggle {
+    align-self: flex-start;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-size: 11.5px;
+    text-decoration: underline;
+    padding: 0;
+    opacity: 0.8;
+  }
+  .meeting {
+    margin-top: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .mt-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mt-head small {
+    opacity: 0.7;
+  }
+  .slots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .slot {
+    padding: 4px 10px;
+    border-radius: 99px;
+    border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
+    background: color-mix(in srgb, currentColor 6%, transparent);
+    color: inherit;
+    font: inherit;
+    font-size: 12px;
+  }
+  .slot:not(:disabled):hover {
+    background: color-mix(in srgb, currentColor 16%, transparent);
+  }
+  .slot:disabled {
+    opacity: 0.5;
+  }
+  .slot.chosen {
+    opacity: 1;
+    background: var(--tm-brand);
+    border-color: var(--tm-brand);
+    color: var(--tm-brand-navy);
+    font-weight: 700;
+  }
+  .mt-status {
+    font-size: 11px;
+    opacity: 0.7;
   }
   .menu-btn {
     position: absolute;

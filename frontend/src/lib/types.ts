@@ -226,6 +226,16 @@ export interface Conversation {
   /** Last item had no text but media: the UI shows a localized label. */
   lastMedia?: 'photo' | 'voice' | 'file';
   lastMediaName?: string;
+  /** Up to three pinned messages (banner at the top of the chat). */
+  pinnedItemIds?: string[];
+  /** Hidden until this time (snooze). */
+  snoozedUntil?: string;
+  /** Snooze ended: shown on top with a "back" marker until opened. */
+  returnedFromSnooze?: boolean;
+  /** Unsent text in the composer ("Draft: …" in the list). */
+  draft?: string;
+  /** Number of scheduled (not yet sent) messages. */
+  scheduledCount?: number;
 }
 
 export type DeliveryStatus = 'pending' | 'sent' | 'delivered' | 'read' | 'failed';
@@ -254,7 +264,7 @@ export interface ConversationItem {
   reactions?: Reaction[];
   unread?: boolean;
   /** 'card' = compact rendering for newsletters / HTML-heavy mails. */
-  display?: 'bubble' | 'card';
+  display?: 'bubble' | 'card' | 'system';
   card?: { title: string; excerpt: string };
   /** The message this one answers (quote shown above the text). */
   replyTo?: { itemId: string; senderName: string; excerpt: string };
@@ -262,6 +272,17 @@ export interface ConversationItem {
   /** Incoming mail signature (hidden in the bubble, shown as contact card in the info panel). */
   signature?: string;
   deleted?: boolean;
+  starred?: boolean;
+  pinned?: boolean;
+  /** Scheduled, not yet sent message ("Scheduled for …"). */
+  scheduledFor?: string;
+  scheduledId?: string;
+  /** System line in the timeline (rendered localized by the UI). */
+  system?: { kind: 'eventCreated'; title: string; start: string };
+  /** Meeting proposal with selectable slots. */
+  meeting?: MeetingProposal;
+  /** Encrypted (PGP/S-MIME) items are never sent to cloud AI providers. */
+  encrypted?: boolean;
 }
 
 export interface Reaction {
@@ -282,6 +303,8 @@ export interface LinkPreview {
 export type ChatFilter = 'all' | 'unread' | 'mail' | 'whatsapp' | 'signal' | 'telegram' | 'groups' | 'favorites';
 
 export interface ConversationPatch {
+  /** ISO time, null = wake up now. */
+  snoozedUntil?: string | null;
   pinned?: boolean;
   muted?: boolean;
   archived?: boolean;
@@ -354,6 +377,8 @@ export interface OutgoingMessage {
   replyToItemId?: string;
   /** Mail from chat mode: signature to append (resolved by the UI), null = none. */
   signatureId?: number | null;
+  /** Schedule instead of sending now (ISO). */
+  sendAt?: string;
 }
 
 export interface SendResult {
@@ -364,6 +389,8 @@ export interface SendResult {
   queued: boolean;
   /** Generated share passwords; returned so the UI can copy them when mode === 'none'. */
   sharePasswords?: { filename: string; password: string }[];
+  /** Set when the message was scheduled (sendAt). */
+  scheduledId?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -628,4 +655,107 @@ export interface LocaleInfo {
   name: string;
   nativeName: string;
   direction: 'ltr' | 'rtl';
+}
+
+// ---------------------------------------------------------------------------
+// Chat-mode features: folders, starred/pinned, focus, drafts, scheduling,
+// snippets, AI, meeting proposals
+// ---------------------------------------------------------------------------
+
+export interface ChatFolderRules {
+  includeConversationIds: number[];
+  includePersonIds: number[];
+  excludeConversationIds: number[];
+  channels: Channel[];
+  accountIds: number[];
+  groups: 'any' | 'only' | 'exclude';
+  unreadOnly: boolean;
+  excludeMuted: boolean;
+  excludeArchived: boolean;
+}
+
+/** User-defined chat list (Telegram-style folder). Unrelated to mail folders. */
+export interface ChatFolder {
+  id: string;
+  name: string;
+  emoji?: string;
+  rules: ChatFolderRules;
+  order: number;
+  /** Filled by the core in listChatFolders. */
+  unreadCount?: number;
+}
+
+export interface StarredItem {
+  item: ConversationItem;
+  conversationTitle: string;
+}
+
+export interface FocusSettings {
+  enabled: boolean;
+  vipPersonIds: number[];
+  vipConversationIds: number[];
+  /** Also treat people I write with frequently as VIP. */
+  includeFrequent: boolean;
+  schedule?: { enabled: boolean; start: string; end: string; days: number[] };
+}
+
+export interface ChatDraft {
+  text: string;
+  replyToItemId?: string;
+  channelKey?: string;
+  updatedAt?: string;
+}
+
+export interface ScheduledMessage {
+  id: string;
+  conversationId: number;
+  conversationTitle: string;
+  channel: Channel;
+  sendAt: string;
+  text: string;
+  itemId: string;
+}
+
+export interface Snippet {
+  id: string;
+  /** Without the slash, e.g. "danke". */
+  trigger: string;
+  title: string;
+  /** May contain {vorname}, {name}, {datum}, {uhrzeit}, {meinname}. */
+  text: string;
+}
+
+export type AiProvider = 'none' | 'ollama' | 'openai' | 'gemini' | 'deepseek' | 'anthropic' | 'mistral' | 'custom';
+
+export interface AiSettings {
+  provider: AiProvider;
+  baseUrl: string;
+  model: string;
+  /** Write-only: the core never returns the key, only apiKeySet. */
+  apiKey?: string;
+  apiKeySet: boolean;
+  /** Per account: may content of this account be sent to the provider? */
+  accountPermissions: Record<string, boolean>;
+  maskPersonalData: boolean;
+}
+
+export interface AiSummary {
+  summary: string;
+  bullets: string[];
+  /** Number of items that were left out (e.g. encrypted). */
+  skipped: number;
+}
+
+export interface TimeSlot {
+  start: string;
+  end: string;
+}
+
+export interface MeetingProposal {
+  id: string;
+  title: string;
+  durationMin: number;
+  slots: TimeSlot[];
+  status: 'open' | 'booked';
+  chosen?: string;
 }

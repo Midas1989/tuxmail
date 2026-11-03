@@ -19,6 +19,16 @@
   import Maximize2 from '@lucide/svelte/icons/maximize-2';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Reply from '@lucide/svelte/icons/reply';
+  import Clock from '@lucide/svelte/icons/clock';
+  import Sparkles from '@lucide/svelte/icons/sparkles';
+  import CalendarClock from '@lucide/svelte/icons/calendar-clock';
+  import { longpress } from '../../actions';
+  import { detectTrigger, fillSnippet, fuzzy, timePresets, toLocalInput, type Trigger } from '../../chatfeatures';
+  import type { Address, Snippet } from '../../types';
+  import Modal from '../common/Modal.svelte';
+  import Avatar from '../common/Avatar.svelte';
+  import MeetingDialog from './MeetingDialog.svelte';
+  import { fmt, i18n } from '../../i18n/index.svelte';
   import { app, prefs } from '../../state';
   import type { ChannelOption } from '../../state';
   import { textToHtml } from '../../state/app.svelte';
@@ -51,15 +61,107 @@
   let chunks: Blob[] = [];
   let stream: MediaStream | null = null;
 
+  // drafts, AI suggestions, "/" and "@", scheduling, meeting proposals
+  let suggestions = $state<string[]>([]);
+  let trigger = $state<Trigger | null>(null);
+  let triggerIndex = $state(0);
+  let mentionCc = $state<Address[]>([]);
+  let sendMenu = $state<{ x: number; y: number } | null>(null);
+  let scheduleOpen = $state(false);
+  let scheduleCustom = $state(toLocalInput(new Date(Date.now() + 2 * 3600_000)));
+  let meetingOpen = $state(false);
+  let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  let loadedFor: number | null = null;
+
   const options = $derived(app.selectedConversationId != null ? app.channelOptions() : []);
   $effect(() => {
-    void app.selectedConversationId;
+    const id = app.selectedConversationId;
     selectedKey = null;
     text = '';
     pending = [];
     sigChoice = undefined;
     sigOpen = false;
+    mentionCc = [];
+    suggestions = [];
+    trigger = null;
+    loadedFor = id;
+    if (id == null) return;
+    void app.api.getDraft(id).then((d) => {
+      if (loadedFor !== id || !d) return;
+      text = d.text;
+      if (d.channelKey) selectedKey = d.channelKey;
+      queueMicrotask(autosize);
+    });
   });
+
+  // Reply suggestions when the last message is from the other side.
+  $effect(() => {
+    const id = app.selectedConversationId;
+    const last = app.items.filter((i) => !i.scheduledFor && !i.system).at(-1);
+    if (id == null || !last || last.isOwn || !app.aiReady) {
+      suggestions = [];
+      return;
+    }
+    void app.api.aiSuggestReplies(id).then((s) => {
+      if (app.selectedConversationId === id) suggestions = s;
+    }, () => (suggestions = []));
+  });
+
+  function saveDraftSoon() {
+    const id = app.selectedConversationId;
+    if (id == null) return;
+    if (draftTimer) clearTimeout(draftTimer);
+    const snapshot = { text, replyToItemId: app.replyingTo?.id, channelKey: selectedKey ?? undefined };
+    draftTimer = setTimeout(() => void app.api.saveDraft(id, snapshot.text.trim() ? snapshot : null), 500);
+  }
+
+  const participants = $derived((app.conversation?.participantIds ?? []).map((id) => app.person(id)).filter((p) => !!p));
+  const triggerList = $derived.by((): { id: string; label: string; detail: string; snippet?: Snippet; personId?: number }[] => {
+    if (!trigger) return [];
+    if (trigger.kind === 'slash') {
+      return app.snippets
+        .map((sn) => ({ sn, score: Math.max(fuzzy(sn.trigger, trigger!.query), fuzzy(sn.title, trigger!.query) - 5) }))
+        .filter((x) => x.score >= 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map(({ sn }) => ({ id: sn.id, label: '/' + sn.trigger, detail: sn.title, snippet: sn }));
+    }
+    if (!(app.conversation && (app.conversation.isGroup || app.conversation.participantIds.length > 1))) return [];
+    return participants
+      .filter((p) => fuzzy(p!.displayName, trigger!.query) >= 0)
+      .slice(0, 8)
+      .map((p) => ({ id: 'p' + p!.id, label: p!.displayName, detail: p!.handles.find((h) => h.kind === 'email')?.value ?? '', personId: p!.id }));
+  });
+
+  function updateTrigger() {
+    if (!textarea) return;
+    trigger = detectTrigger(text, textarea.selectionStart ?? text.length);
+    triggerIndex = 0;
+  }
+
+  function acceptTrigger(entry: (typeof triggerList)[number]) {
+    if (!trigger) return;
+    let insert = '';
+    if (entry.snippet) {
+      const p = app.person(app.conversation?.participantIds[0] ?? -1);
+      const me = app.identities.find((i) => i.id === option?.identityId) ?? app.identities[0];
+      insert = fillSnippet(entry.snippet.text, { firstName: app.conversation?.isGroup ? undefined : p?.displayName.split(' ')[0], name: p?.displayName, myName: me?.name, locale: i18n.locale });
+    } else if (entry.personId != null) {
+      const p = app.person(entry.personId)!;
+      insert = '@' + p.displayName.split(' ')[0] + ' ';
+      const email = p.handles.find((h) => h.kind === 'email')?.value;
+      if (isMail && email && !mentionCc.some((a) => a.email === email)) mentionCc = [...mentionCc, { name: p.displayName, email }];
+    }
+    const pos = trigger.from + insert.length;
+    text = text.slice(0, trigger.from) + insert + text.slice(trigger.to);
+    trigger = null;
+    queueMicrotask(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(pos, pos);
+      autosize();
+    });
+    saveDraftSoon();
+  }
   const option = $derived<ChannelOption | undefined>(options.find((o) => o.key === selectedKey) ?? options[0]);
   const isMail = $derived(option?.channel === 'email');
   const signature = $derived.by((): Signature | null => {
@@ -95,7 +197,7 @@
     return out;
   }
 
-  async function send() {
+  async function send(sendAt?: string) {
     if (!option || empty || sending) return;
     sending = true;
     const body = text;
@@ -106,7 +208,11 @@
       pending = [];
       app.replyingTo = null;
       queueMicrotask(autosize);
-      await app.sendChat(body, option, { replyTo, signature, attachments });
+      const cc = mentionCc;
+      mentionCc = [];
+      suggestions = [];
+      if (app.selectedConversationId != null) void app.api.saveDraft(app.selectedConversationId, null);
+      await app.sendChat(body, option, { replyTo, signature, attachments, cc, sendAt });
       sigChoice = undefined;
     } catch (err) {
       text = body;
@@ -141,6 +247,24 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    if (trigger && triggerList.length) {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        triggerIndex = (triggerIndex + (e.key === 'ArrowDown' ? 1 : -1) + triggerList.length) % triggerList.length;
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        acceptTrigger(triggerList[triggerIndex]);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        trigger = null;
+        return;
+      }
+    }
     if (e.key !== 'Enter' || e.isComposing) return;
     const sendNow = prefs.chatEnterSends ? !e.shiftKey && !e.ctrlKey : e.ctrlKey || e.metaKey;
     if (sendNow) {
@@ -171,6 +295,7 @@
     { id: 'photo', label: t('chat.composer.photo'), icon: ImageIcon, run: () => photoInput?.click() },
     { id: 'nextcloud', label: t('chat.composer.fromNextcloud'), icon: Cloud, run: () => app.toast(t('chat.composer.cloudSoon')) },
     { id: 'opencloud', label: t('chat.composer.fromOpenCloud'), icon: Cloud, run: () => app.toast(t('chat.composer.cloudSoon')) },
+    { id: 'meeting', label: t('chat.meeting.title'), icon: CalendarClock, run: () => void (meetingOpen = true) },
     ...(options.some((o) => o.channel === 'email') ? [{ id: 'full', label: t('chat.composer.fullMail'), icon: Maximize2, run: () => expandToFullMail() }] : []),
   ]);
 
@@ -267,6 +392,58 @@
     </div>
   {/if}
 
+  {#if suggestions.length && !text}
+    <div class="ai-chips" role="group" aria-label={t('chat.ai.suggestions')}>
+      <Sparkles size={14} aria-hidden="true" />
+      {#each suggestions as sg (sg)}
+        <button
+          class="ai-chip"
+          onclick={() => {
+            text = sg;
+            queueMicrotask(() => {
+              textarea?.focus();
+              autosize();
+            });
+          }}>{sg}</button
+        >
+      {/each}
+    </div>
+  {:else if !app.aiReady && !text && app.items.at(-1) && !app.items.at(-1)?.isOwn}
+    <div class="ai-chips">
+      <button class="ai-hint" onclick={() => app.openAiSettings()}><Sparkles size={13} /> {t('chat.ai.enableHint')}</button>
+    </div>
+  {/if}
+
+  {#if mentionCc.length && isMail}
+    <div class="cc-chips">
+      <span class="cc-label">{t('chat.mention.cc')}</span>
+      {#each mentionCc as a (a.email)}
+        <span class="cc-chip" title={a.email}>{a.name ?? a.email}<button aria-label={t('compose.removeRecipient', { name: a.name ?? a.email })} onclick={() => (mentionCc = mentionCc.filter((x) => x.email !== a.email))}><X size={11} /></button></span>
+      {/each}
+    </div>
+  {/if}
+
+  {#if trigger && triggerList.length}
+    <ul class="trigger-pop" role="listbox" id="composer-trigger" aria-label={trigger.kind === 'slash' ? t('chat.snippets.title') : t('chat.mention.title')}>
+      {#each triggerList as entry, i (entry.id)}
+        <li
+          id="trig-{i}"
+          role="option"
+          aria-selected={i === triggerIndex}
+          onmousedown={(e) => {
+            e.preventDefault();
+            acceptTrigger(entry);
+          }}
+          onmousemove={() => (triggerIndex = i)}
+        >
+          {#if entry.personId != null}<Avatar name={entry.label} seed={entry.personId} size={24} />{/if}
+          <span class="t-label">{entry.label}</span>
+          <span class="t-detail">{entry.snippet ? entry.snippet.text.slice(0, 60) : entry.detail}</span>
+        </li>
+      {/each}
+    </ul>
+  {/if}
+
   {#if recording}
     <div class="rec-bar" role="status">
       <button class="icon-btn" aria-label={t('chat.composer.cancelVoice')} onclick={cancelRecording}><Trash size={18} /></button>
@@ -307,15 +484,33 @@
           rows="1"
           placeholder={isMail ? t('chat.placeholderMail') : t('chat.placeholder')}
           aria-label={t('chat.placeholder')}
-          oninput={autosize}
+          oninput={() => {
+            autosize();
+            updateTrigger();
+            saveDraftSoon();
+          }}
+          onkeyup={(e) => ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key) && updateTrigger()}
+          onclick={updateTrigger}
+          onblur={() => setTimeout(() => (trigger = null), 150)}
           {onkeydown}
+          role="combobox"
+          aria-expanded={!!trigger && triggerList.length > 0}
+          aria-controls="composer-trigger"
+          aria-activedescendant={trigger && triggerList.length ? `trig-${triggerIndex}` : undefined}
+          aria-autocomplete="list"
           data-chat-input
         ></textarea>
       </div>
       {#if empty}
         <button class="send mic" aria-label={t('chat.composer.voice')} title={t('chat.composer.voice')} onclick={startRecording} disabled={!option}><Mic size={19} /></button>
       {:else}
-        <button class="send" disabled={sending || !option} onclick={send} aria-label={t('common.action.send')} title={prefs.chatEnterSends ? t('common.action.send') + ' (Enter)' : t('common.action.send') + ' (Ctrl+Enter)'}><SendHorizontal size={18} /></button>
+        <button
+          class="send"
+          disabled={sending || !option}
+          onclick={() => send()}
+          use:longpress={(x, y) => (sendMenu = { x: x - 200, y: y - 100 })}
+          aria-haspopup="menu"
+          aria-label={t('common.action.send')} title={prefs.chatEnterSends ? t('common.action.send') + ' (Enter)' : t('common.action.send') + ' (Ctrl+Enter)'}><SendHorizontal size={18} /></button>
       {/if}
     </div>
     {#if isMail}
@@ -349,6 +544,47 @@
   <input type="file" multiple hidden accept="image/*,video/*" bind:this={photoInput} onchange={(e) => addFiles((e.currentTarget as HTMLInputElement).files)} />
 </div>
 
+{#if sendMenu}
+  <ContextMenu
+    x={sendMenu.x}
+    y={sendMenu.y}
+    label={t('common.action.send')}
+    onclose={() => (sendMenu = null)}
+    items={[
+      { id: 'now', label: t('common.action.send'), icon: SendHorizontal, run: () => send() },
+      { id: 'later', label: t('chat.schedule.later'), icon: Clock, run: () => void (scheduleOpen = true) },
+    ]}
+  />
+{/if}
+{#if scheduleOpen}
+  <Modal title={t('chat.schedule.later')} onclose={() => (scheduleOpen = false)} width="380px">
+    <div class="presets">
+      {#each timePresets(new Date()) as p (p.id)}
+        <button
+          class="preset"
+          onclick={() => {
+            scheduleOpen = false;
+            void send(p.at.toISOString());
+          }}><span>{t(`chat.time.${p.id}`)}</span><small>{fmt().dateTime(p.at)}</small></button
+        >
+      {/each}
+    </div>
+    <label><span class="label">{t('chat.time.custom')}</span><input class="input" type="datetime-local" bind:value={scheduleCustom} /></label>
+    {#snippet footer()}
+      <button class="btn" onclick={() => (scheduleOpen = false)}>{t('common.action.cancel')}</button>
+      <button
+        class="btn btn-primary"
+        onclick={() => {
+          scheduleOpen = false;
+          void send(new Date(scheduleCustom).toISOString());
+        }}><Clock size={14} /> {t('chat.schedule.action')}</button
+      >
+    {/snippet}
+  </Modal>
+{/if}
+{#if meetingOpen && option}
+  <MeetingDialog {option} onclose={() => (meetingOpen = false)} />
+{/if}
 {#if plusMenu}
   <ContextMenu x={plusMenu.x} y={plusMenu.y - 44 * plusItems.length} items={plusItems} label={t('chat.composer.attach')} onclose={() => (plusMenu = null)} width={250} />
 {/if}
@@ -358,9 +594,134 @@
 
 <style>
   .composer {
+    position: relative;
     padding: 8px 12px 10px;
     background: var(--tm-surface-2);
     border-top: 1px solid var(--tm-line);
+  }
+  .ai-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    color: var(--tm-brand);
+  }
+  .ai-chip {
+    padding: 5px 12px;
+    border-radius: 99px;
+    border: 1px solid color-mix(in srgb, var(--tm-brand) 45%, var(--tm-line));
+    background: var(--tm-surface);
+    color: var(--tm-fg);
+    font: inherit;
+    font-size: 13px;
+  }
+  .ai-chip:hover {
+    background: color-mix(in srgb, var(--tm-brand) 12%, var(--tm-surface));
+  }
+  .ai-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: none;
+    background: transparent;
+    color: var(--tm-faint);
+    font: inherit;
+    font-size: 12px;
+    padding: 0;
+  }
+  .ai-hint:hover {
+    color: var(--tm-accent-text);
+  }
+  .cc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .cc-label {
+    color: var(--tm-muted);
+    font-weight: 600;
+  }
+  .cc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    height: 22px;
+    padding: 0 4px 0 9px;
+    border-radius: 99px;
+    background: var(--tm-accent-soft);
+    color: var(--tm-accent-text);
+  }
+  .cc-chip button {
+    display: inline-flex;
+    border: none;
+    background: transparent;
+    color: inherit;
+    padding: 2px;
+  }
+  .trigger-pop {
+    position: absolute;
+    left: 60px;
+    right: 60px;
+    bottom: calc(100% - 4px);
+    z-index: 20;
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    border-radius: 12px;
+    background: var(--tm-surface);
+    border: 1px solid var(--tm-line);
+    box-shadow: var(--tm-shadow-lg);
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .trigger-pop li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .trigger-pop li[aria-selected='true'] {
+    background: var(--tm-accent-soft);
+  }
+  .t-label {
+    font-weight: 650;
+    font-family: var(--tm-mono);
+  }
+  .t-detail {
+    color: var(--tm-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+  }
+  .presets {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .preset {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid var(--tm-line);
+    border-radius: 10px;
+    background: var(--tm-surface);
+    color: var(--tm-fg);
+    font: inherit;
+  }
+  .preset:hover {
+    background: var(--tm-surface-2);
+  }
+  .preset small {
+    color: var(--tm-muted);
   }
   .reply-bar {
     display: flex;

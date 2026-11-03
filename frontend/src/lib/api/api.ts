@@ -12,7 +12,17 @@ import type {
   Conversation,
   ConversationGrouping,
   ConversationItem,
+  AiSettings,
+  AiSummary,
+  ChatDraft,
   ChatFilter,
+  ChatFolder,
+  FocusSettings,
+  ScheduledMessage,
+  Snippet,
+  StarredItem,
+  TimeSlot,
+  Channel,
   ContactCard,
   ConversationPatch,
   Reaction,
@@ -72,6 +82,12 @@ export interface ConversationQuery {
   filter?: ChatFilter;
   /** true = only archived chats, false/undefined = only non-archived. */
   archived?: boolean;
+  /** User-defined chat folder. */
+  folderId?: string;
+  /** Focus mode: 'vip' = only important chats, 'waiting' = the others. */
+  focus?: 'vip' | 'waiting';
+  /** Include snoozed chats (normally hidden until they wake up). */
+  includeSnoozed?: boolean;
 }
 
 export interface ItemsQuery {
@@ -163,6 +179,49 @@ export interface Api {
   listLocales(): Promise<LocaleInfo[]>;
   /** Nested JSON in the same shape as locales/de.json. */
   getLocale(code: string): Promise<Record<string, unknown>>;
+
+  // Chat folders (Telegram-style lists; independent of mail folders)
+  listChatFolders(): Promise<ChatFolder[]>;
+  saveChatFolder(folder: ChatFolder): Promise<ChatFolder>;
+  deleteChatFolder(id: string): Promise<void>;
+
+  // Starred & pinned messages
+  setItemStarred(conversationId: number, itemId: string, starred: boolean): Promise<void>;
+  /** Max. three pinned messages per chat (error code "pin_limit"). */
+  setItemPinned(conversationId: number, itemId: string, pinned: boolean): Promise<void>;
+  listStarredItems(conversationId?: number): Promise<StarredItem[]>;
+
+  // Focus mode
+  getFocusSettings(): Promise<FocusSettings>;
+  saveFocusSettings(settings: FocusSettings): Promise<FocusSettings>;
+  /** People I write with frequently (focus mode option). */
+  frequentContacts(): Promise<number[]>;
+
+  // Drafts & scheduled sending (OutgoingMessage.sendAt)
+  getDraft(conversationId: number): Promise<ChatDraft | null>;
+  saveDraft(conversationId: number, draft: ChatDraft | null): Promise<void>;
+  listScheduled(conversationId?: number): Promise<ScheduledMessage[]>;
+  updateScheduled(id: string, patch: { text?: string; sendAt?: string }): Promise<ScheduledMessage>;
+  cancelScheduled(id: string): Promise<void>;
+  sendScheduledNow(id: string): Promise<void>;
+
+  // Quick replies ("/")
+  listSnippets(): Promise<Snippet[]>;
+  saveSnippet(snippet: Snippet): Promise<Snippet>;
+  deleteSnippet(id: string): Promise<void>;
+
+  // AI assistance (KONZEPT 8.10); errors with code "ai_not_configured" when no provider is set
+  getAiSettings(): Promise<AiSettings>;
+  saveAiSettings(settings: AiSettings): Promise<AiSettings>;
+  aiSuggestReplies(conversationId: number): Promise<string[]>;
+  aiTranslate(conversationId: number, itemId: string, targetLang: string): Promise<{ text: string; sourceLang: string }>;
+  aiSummarize(conversationId: number): Promise<AiSummary>;
+
+  // Meeting proposals
+  findFreeSlots(query: { from: string; to: string; durationMin: number }): Promise<TimeSlot[]>;
+  proposeMeeting(conversationId: number, proposal: { title: string; durationMin: number; slots: TimeSlot[]; channel: Channel; identityId?: number; accountId?: number }): Promise<SendResult>;
+  /** The recipient chose a slot (in the demo: click on the slot in your own proposal). Creates the event. */
+  acceptMeetingSlot(conversationId: number, proposalId: string, slotStart: string): Promise<void>;
 
   // Live events
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe;

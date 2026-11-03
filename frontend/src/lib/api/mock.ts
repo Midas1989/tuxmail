@@ -19,6 +19,16 @@ Account,
   ConversationItem,
   DeliveryStatus,
   ContactCard,
+  AiSettings,
+  AiSummary,
+  ChatDraft,
+  ChatFolder,
+  FocusSettings,
+  MeetingProposal,
+  ScheduledMessage,
+  Snippet,
+  StarredItem,
+  TimeSlot,
   ConversationPatch,
   Reaction,
   LinkPreview,
@@ -51,6 +61,7 @@ Account,
 import * as data from './mockData';
 import { runSearch, type SearchDoc } from '../search/engine';
 import { DEFAULT_REGION } from '../format';
+import { EMPTY_RULES, isVip, matchesFolder } from '../chatfeatures';
 
 const SEEN: Flag = '\\Seen';
 const ANSWERED: Flag = '\\Answered';
@@ -81,6 +92,8 @@ interface ChatRecord {
 }
 
 interface ConvFlags {
+  snoozedUntil?: string | null;
+  returnedFromSnooze?: boolean;
   pinned?: boolean;
   muted?: boolean;
   archived?: boolean;
@@ -146,6 +159,15 @@ function relTime(v: string | undefined, now: Date): string | undefined {
   return new Date(now.getTime() - ms).toISOString();
 }
 
+/** Deep copy; falls back to JSON for values that structuredClone rejects (e.g. reactive proxies from the UI). */
+function clone<T>(v: T): T {
+  try {
+    return structuredClone(v);
+  } catch {
+    return v === undefined ? v : (JSON.parse(JSON.stringify(v)) as T);
+  }
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const AUTO_REPLIES = ['👍', 'Alles klar, danke!', 'Super, bis später 🙂', 'Passt!', 'Ok, ich melde mich.'];
@@ -172,12 +194,12 @@ export class MockTransport implements Api {
   constructor(opts: MockOptions = {}) {
     this.opts = opts;
     this.latency = opts.latencyMs ?? 60;
-    this.accounts = structuredClone(data.accounts);
-    this.identities = structuredClone(data.identities);
-    this.signatures = structuredClone(data.signatures);
-    this.persons = structuredClone(data.persons).map((p) => ({ ...p, lastSeen: relTime(p.lastSeen, opts.now ?? new Date()) }));
-    this.folders = structuredClone(data.folders);
-    this.chats = structuredClone(data.chats);
+    this.accounts = clone(data.accounts);
+    this.identities = clone(data.identities);
+    this.signatures = clone(data.signatures);
+    this.persons = clone(data.persons).map((p) => ({ ...p, lastSeen: relTime(p.lastSeen, opts.now ?? new Date()) }));
+    this.folders = clone(data.folders);
+    this.chats = clone(data.chats);
     this.seed(opts.now ?? new Date());
   }
 
@@ -286,7 +308,7 @@ export class MockTransport implements Api {
           if (extra?.seconds) Object.assign(a, { durationSec: extra.seconds, waveform: waveform(c.id) });
           return a;
         }),
-        reactions: c.reactions ? structuredClone(c.reactions) : undefined,
+        reactions: c.reactions ? clone(c.reactions) : undefined,
         status: c.from === data.ME ? 'read' : undefined,
         replyTo: c.replyTo,
         link: c.link,
@@ -300,7 +322,7 @@ export class MockTransport implements Api {
 
   private async reply<T>(value: T): Promise<T> {
     if (this.latency > 0) await sleep(this.latency * (0.5 + Math.random()));
-    return structuredClone(value);
+    return clone(value);
   }
 
   private emit(e: ApiEvent): void {
@@ -368,13 +390,12 @@ export class MockTransport implements Api {
   private mailItem(m: MessageDetail, conversationId: number): ConversationItem {
     const meta = this.meta.get(m.id)!;
     const split = splitMail(m.text ?? '');
-    const own = meta.fromPerson === data.ME;
     const parent = meta.relation === 'reply' && m.inReplyTo[0] ? [...this.messages.values()].find((x) => x.messageId === m.inReplyTo[0]) : undefined;
     const isCard = !!m.html;
     return {
       display: isCard ? 'card' : 'bubble',
       card: isCard ? { title: m.subject, excerpt: this.excerpt(split.body, 160) } : undefined,
-      signature: !own && split.signature ? split.signature : undefined,
+      signature: split.signature || undefined,
       replyTo: parent
         ? { itemId: mailItemId(parent.id), senderName: this.person(this.meta.get(parent.id)!.fromPerson).displayName, excerpt: this.excerpt(splitMail(parent.text ?? '').body) }
         : undefined,
@@ -388,7 +409,8 @@ export class MockTransport implements Api {
       isOwn: meta.fromPerson === data.ME,
       sentAt: m.date,
       body: split.body,
-      quoted: [split.signature && own ? '-- \n' + split.signature : '', split.quoted].filter(Boolean).join('\n\n') || undefined,
+      quoted: split.quoted || undefined,
+      meeting: this.meetingByItem.get(mailItemId(m.id)) ? this.proposals.get(this.meetingByItem.get(mailItemId(m.id))!) : undefined,
       subject: m.subject,
       relation: meta.relation,
       attachments: m.attachments,
@@ -415,6 +437,7 @@ export class MockTransport implements Api {
       unread: !c.seen,
       linkPreview: c.link,
       relation: c.forwarded ? 'forward' : undefined,
+      meeting: this.meetingByItem.get(chatItemId(c.id)) ? this.proposals.get(this.meetingByItem.get(chatItemId(c.id))!) : undefined,
       replyTo: (() => {
         const r = c.replyTo != null ? this.chatMsgs.find((x) => x.id === c.replyTo) : undefined;
         return r ? { itemId: chatItemId(r.id), senderName: this.person(r.from).displayName, excerpt: this.excerpt(r.text || r.attachments[0]?.filename || '') } : undefined;
@@ -432,11 +455,18 @@ export class MockTransport implements Api {
       Conversation,
       'lastActivity' | 'unreadCount' | 'snippet' | 'lastSenderName' | 'channels' | 'pinned' | 'muted' | 'archived' | 'favorite' | 'markedUnread' | 'lastIsOwn' | 'lastStatus' | 'lastChannel'
     >;
-    const finish = (conv: Base, items: ConversationItem[], mailIds: number[]) => {
-      if (items.length === 0) return;
-      items.sort((a, b) => a.sentAt.localeCompare(b.sentAt));
-      const last = items[items.length - 1];
+    const finish = (conv: Base, realItems: ConversationItem[], mailIds: number[]) => {
+      if (realItems.length === 0) return;
+      realItems.sort((a, b) => a.sentAt.localeCompare(b.sentAt));
+      const last = realItems[realItems.length - 1];
       const f = this.flags(conv.id);
+      const pinnedIds = this.pinnedItems.get(conv.id) ?? [];
+      const scheduled = [...this.scheduled.values()].filter((r) => r.conversationId === conv.id);
+      const items = [
+        ...realItems.map((i) => ({ ...i, conversationId: conv.id, starred: this.starred.has(i.id) || undefined, pinned: pinnedIds.includes(i.id) || undefined })),
+        ...(this.extraItems.get(conv.id) ?? []),
+        ...scheduled.map((r) => this.scheduledItem(r)),
+      ].sort((a, b) => a.sentAt.localeCompare(b.sentAt));
       const media = last.attachments[0];
       out.push({
         conv: {
@@ -457,6 +487,11 @@ export class MockTransport implements Api {
           lastIsOwn: last.isOwn,
           lastStatus: last.isOwn ? (last.status ?? 'sent') : undefined,
           lastChannel: last.channel,
+          pinnedItemIds: pinnedIds.length ? pinnedIds : undefined,
+          snoozedUntil: f.snoozedUntil ?? undefined,
+          returnedFromSnooze: f.returnedFromSnooze || undefined,
+          draft: this.drafts.get(conv.id)?.text || undefined,
+          scheduledCount: scheduled.length || undefined,
         },
         items,
         mailIds,
@@ -534,7 +569,7 @@ export class MockTransport implements Api {
     return out;
   }
 
-  private findConversation(id: number) {
+  private findConversation(id: number, _includeSnoozed = true) {
     const grouping: ConversationGrouping = id >= 1000 ? 'person' : 'thread';
     const c = this.buildConversations(grouping).find((x) => x.conv.id === id);
     if (!c) throw new ApiError('Konversation nicht gefunden', 404, 'not_found');
@@ -655,8 +690,18 @@ export class MockTransport implements Api {
   }
 
   listConversations(q: ConversationQuery): Promise<Page<Conversation>> {
+    this.wakeSnoozed();
     let all = this.buildConversations(q.grouping);
     const s = q.scope;
+    if (!q.includeSnoozed) all = all.filter((c) => !c.conv.snoozedUntil);
+    if (q.folderId) {
+      const folder = this.chatFolders.find((f) => f.id === q.folderId);
+      if (folder) all = all.filter((c) => matchesFolder(c.conv, folder.rules));
+    }
+    if (q.focus) {
+      const freq = this.frequentIds();
+      all = all.filter((c) => isVip(c.conv, this.focus, freq) === (q.focus === 'vip'));
+    }
     all = all.filter((c) => !!c.conv.archived === !!q.archived);
     switch (q.filter) {
       case 'unread':
@@ -686,7 +731,7 @@ export class MockTransport implements Api {
       all = all.filter((c) => (c.conv.title + ' ' + c.items.map((i) => i.body + ' ' + (i.subject ?? '')).join(' ')).toLowerCase().includes(needle));
     }
     const convs = all.map((c) => c.conv);
-    convs.sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.lastActivity.localeCompare(a.lastActivity));
+    convs.sort((a, b) => Number(b.pinned) - Number(a.pinned) || Number(!!b.returnedFromSnooze) - Number(!!a.returnedFromSnooze) || b.lastActivity.localeCompare(a.lastActivity));
     return this.reply({ items: convs.slice(q.offset, q.offset + q.limit), total: convs.length, offset: q.offset });
   }
 
@@ -730,6 +775,7 @@ export class MockTransport implements Api {
     }
     const f = this.convFlags.get(conversationId);
     if (f?.markedUnread) f.markedUnread = false;
+    if (f?.returnedFromSnooze) f.returnedFromSnooze = false;
     this.emit({ type: 'conversation.updated', conversationId });
     for (const f of touched) this.emit({ type: 'folder.updated', folderId: f, accountId: this.folder(f)?.accountId ?? 0 });
     await this.reply(null);
@@ -740,9 +786,17 @@ export class MockTransport implements Api {
   }
 
   async updateConversation(conversationId: number, patch: ConversationPatch): Promise<Conversation> {
-    const c = this.findConversation(conversationId);
+    const c = this.findConversation(conversationId, true);
     const before = this.flags(conversationId);
-    const next = { ...before, ...patch };
+    const next: ConvFlags = { ...before, ...patch };
+    if (patch.snoozedUntil === null) {
+      next.snoozedUntil = undefined;
+      next.returnedFromSnooze = true;
+    } else if (patch.snoozedUntil) {
+      next.returnedFromSnooze = false;
+      const ms = Date.parse(patch.snoozedUntil) - Date.now();
+      if (ms > 0 && ms < 2 ** 31 - 1) setTimeout(() => this.emit({ type: 'conversation.updated', conversationId }), ms + 50);
+    }
     this.convFlags.set(conversationId, next);
     // Archiving a chat archives the underlying mails (inbox -> archive), unarchiving restores them.
     if (patch.archived === true && !before.archived) {
@@ -769,7 +823,7 @@ export class MockTransport implements Api {
     }
     this.emit({ type: 'conversation.updated', conversationId });
     for (const a of this.accounts) this.emit({ type: 'folder.updated', folderId: 0, accountId: a.id });
-    return this.reply(this.findConversation(conversationId).conv);
+    return this.reply(this.findConversation(conversationId, true).conv);
   }
 
   private chatsOf(conversationId: number): data.ChatSpec[] {
@@ -794,7 +848,7 @@ export class MockTransport implements Api {
 
   async reactToItem(conversationId: number, itemId: string, emoji: string): Promise<{ reactions: Reaction[]; sentAsRfc9078?: boolean }> {
     const toggle = (list: Reaction[] = []): Reaction[] => {
-      const out = structuredClone(list);
+      const out = clone(list);
       const mine = out.find((r) => r.mine);
       if (mine) {
         mine.count--;
@@ -855,7 +909,7 @@ export class MockTransport implements Api {
     const chat = this.chatsOf(targetConversationId)[0];
     if (chat) {
       const rec = this.pushChat(chat.id, data.ME, text, 'sent');
-      rec.attachments = structuredClone(attachments);
+      rec.attachments = clone(attachments);
       rec.forwarded = true;
       this.convIdsForChat(chat).forEach((c) => this.emit({ type: 'conversation.updated', conversationId: c, itemId: chatItemId(rec.id) }));
       return this.reply({ conversationId: targetConversationId, itemId: chatItemId(rec.id), queued: false });
@@ -875,7 +929,7 @@ export class MockTransport implements Api {
   }
 
   async saveContactCard(personId: number, card: ContactCard): Promise<void> {
-    this.contactCards.set(personId, structuredClone(card));
+    this.contactCards.set(personId, clone(card));
     const p = this.person(personId);
     for (const ph of card.phones) {
       const v = ph.replace(/[^\d+]/g, '');
@@ -885,7 +939,7 @@ export class MockTransport implements Api {
   }
 
   async updateIdentity(identity: Identity): Promise<Identity> {
-    this.identities = this.identities.map((i) => (i.id === identity.id ? structuredClone(identity) : i));
+    this.identities = this.identities.map((i) => (i.id === identity.id ? clone(identity) : i));
     return this.reply(identity);
   }
 
@@ -900,6 +954,7 @@ export class MockTransport implements Api {
   }
 
   async send(msg: OutgoingMessage): Promise<SendResult> {
+    if (msg.sendAt && Date.parse(msg.sendAt) > Date.now()) return this.schedule(msg);
     if (msg.channel === 'email') return this.sendMail(msg);
     return this.sendChat(msg);
   }
@@ -963,7 +1018,7 @@ export class MockTransport implements Api {
     if (passwords.length && pd && pd.mode === 'separate_mail') {
       const pid = this.nextId++;
       const text = `Hallo,\n\ndas Passwort für die Freigabe aus meiner vorherigen Mail lautet:\n\n${passwords.join('\n')}`;
-      this.messages.set(pid, { ...structuredClone(detail), id: pid, subject: 'Passwort: ' + msg.subject, text, html: undefined, preview: preview(text), attachments: [], hasAttachments: false, messageId: `tm-${pid}@${ident.email.split('@')[1]}` });
+      this.messages.set(pid, { ...clone(detail), id: pid, subject: 'Passwort: ' + msg.subject, text, html: undefined, preview: preview(text), attachments: [], hasAttachments: false, messageId: `tm-${pid}@${ident.email.split('@')[1]}` });
       this.meta.set(pid, { ...this.meta.get(id)! });
     }
     if (passwords.length && pd && pd.mode === 'messenger' && pd.messengerAccountId != null) {
@@ -1098,7 +1153,7 @@ export class MockTransport implements Api {
     return this.reply(this.notificationSettings);
   }
   saveNotificationSettings(settings: NotificationSettings): Promise<NotificationSettings> {
-    this.notificationSettings = structuredClone(settings);
+    this.notificationSettings = clone(settings);
     return this.reply(this.notificationSettings);
   }
   async sendTestNotification(): Promise<void> {
@@ -1333,7 +1388,7 @@ export class MockTransport implements Api {
     return this.reply(this.searchProfiles);
   }
   async saveSearchProfile(profile: SearchProfile): Promise<SearchProfile> {
-    const p = { ...structuredClone(profile), id: profile.id || 'p-' + Math.random().toString(36).slice(2, 8) };
+    const p = { ...clone(profile), id: profile.id || 'p-' + Math.random().toString(36).slice(2, 8) };
     this.searchProfiles = [...this.searchProfiles.filter((x) => x.id !== p.id), p];
     return this.reply(p);
   }
@@ -1379,6 +1434,387 @@ export class MockTransport implements Api {
   }
   getLocale(code: string): Promise<Record<string, unknown>> {
     return Promise.reject(new ApiError(`Locale ${code} not available`, 404, 'not_found'));
+  }
+
+
+  // ===== chat-mode features ====================================================
+
+  private starred = new Set<string>();
+  private pinnedItems = new Map<number, string[]>();
+  private extraItems = new Map<number, ConversationItem[]>();
+  private drafts = new Map<number, ChatDraft>();
+  private scheduled = new Map<string, { id: string; conversationId: number; msg: OutgoingMessage; timer?: ReturnType<typeof setTimeout> }>();
+  private proposals = new Map<string, MeetingProposal>();
+  private meetingByItem = new Map<string, string>();
+  private events: { id: string; title: string; start: string; end: string }[] = [];
+  private seq = 0;
+  private snippets: Snippet[] = [
+    { id: 'sn1', trigger: 'danke', title: 'Danke', text: 'Vielen Dank, {vorname}! Ich melde mich, sobald ich mehr weiß.' },
+    { id: 'sn2', trigger: 'termin', title: 'Terminbestätigung', text: 'Hallo {vorname}, der Termin passt mir. Bis dann!' },
+    { id: 'sn3', trigger: 'adresse', title: 'Adresse Kanzlei', text: 'Kanzlei Sommer & Partner, Leopoldstraße 18, 80802 München' },
+    { id: 'sn4', trigger: 'iban', title: 'Bankverbindung', text: 'IBAN DE12 7015 0000 0123 4567 89 · BIC SSKMDEMMXXX' },
+    { id: 'sn5', trigger: 'unterwegs', title: 'Unterwegs', text: 'Bin gerade unterwegs und melde mich heute ({datum}) später zurück.' },
+  ];
+  private chatFolders: ChatFolder[] = [
+    { id: 'work', name: 'Arbeit', emoji: '💼', order: 0, rules: { ...EMPTY_RULES, accountIds: [2], includeConversationIds: [108] } },
+    { id: 'family', name: 'Familie', emoji: '🏡', order: 1, rules: { ...EMPTY_RULES, includePersonIds: [4, 13], includeConversationIds: [102] } },
+    { id: 'clients', name: 'Kunden', emoji: '🤝', order: 2, rules: { ...EMPTY_RULES, includePersonIds: [2, 6] } },
+  ];
+  private focus: FocusSettings = {
+    enabled: false,
+    vipPersonIds: [2, 4, 13],
+    vipConversationIds: [102],
+    includeFrequent: true,
+    schedule: { enabled: false, start: '09:00', end: '12:00', days: [1, 2, 3, 4, 5] },
+  };
+  private ai: AiSettings = { provider: 'none', baseUrl: '', model: '', apiKeySet: false, accountPermissions: {}, maskPersonalData: true };
+
+  private wakeSnoozed(): void {
+    const now = Date.now();
+    for (const f of this.convFlags.values()) {
+      if (f.snoozedUntil && Date.parse(f.snoozedUntil) <= now) {
+        f.snoozedUntil = undefined;
+        f.returnedFromSnooze = true;
+      }
+    }
+  }
+
+  private frequentIds(): number[] {
+    const counts = new Map<number, number>();
+    for (const c of this.chatMsgs) counts.set(c.from, (counts.get(c.from) ?? 0) + 1);
+    for (const m of this.meta.values()) if (m.fromPerson === data.ME) for (const p of m.personIds) counts.set(p, (counts.get(p) ?? 0) + 1);
+    counts.delete(data.ME);
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([p]) => p);
+  }
+
+  async listChatFolders(): Promise<ChatFolder[]> {
+    this.wakeSnoozed();
+    const all = this.buildConversations('person').map((c) => c.conv).filter((c) => !c.archived && !c.snoozedUntil);
+    const out = [...this.chatFolders]
+      .sort((a, b) => a.order - b.order)
+      .map((f) => ({ ...f, unreadCount: all.filter((c) => matchesFolder(c, f.rules) && !c.muted && c.unreadCount > 0).length }));
+    return this.reply(out);
+  }
+  async saveChatFolder(folder: ChatFolder): Promise<ChatFolder> {
+    const f = { ...clone(folder), id: folder.id || 'cf-' + ++this.seq, order: folder.order ?? this.chatFolders.length };
+    this.chatFolders = [...this.chatFolders.filter((x) => x.id !== f.id), f];
+    this.emit({ type: 'conversation.updated', conversationId: 0 });
+    return this.reply(f);
+  }
+  async deleteChatFolder(id: string): Promise<void> {
+    this.chatFolders = this.chatFolders.filter((f) => f.id !== id);
+    await this.reply(null);
+  }
+
+  async setItemStarred(conversationId: number, itemId: string, starred: boolean): Promise<void> {
+    if (starred) this.starred.add(itemId);
+    else this.starred.delete(itemId);
+    this.emit({ type: 'conversation.updated', conversationId });
+    await this.reply(null);
+  }
+  async setItemPinned(conversationId: number, itemId: string, pinned: boolean): Promise<void> {
+    const list = (this.pinnedItems.get(conversationId) ?? []).filter((i) => i !== itemId);
+    if (pinned) {
+      if (list.length >= 3) throw new ApiError('Maximal drei angeheftete Nachrichten', 400, 'pin_limit');
+      list.push(itemId);
+    }
+    this.pinnedItems.set(conversationId, list);
+    this.emit({ type: 'conversation.updated', conversationId });
+    await this.reply(null);
+  }
+  async listStarredItems(conversationId?: number): Promise<StarredItem[]> {
+    const convs = this.buildConversations('person').concat(this.buildConversations('thread'));
+    const out: StarredItem[] = [];
+    const seen = new Set<string>();
+    for (const c of convs) {
+      if (conversationId != null && c.conv.id !== conversationId) continue;
+      for (const i of c.items) {
+        if (!i.starred || seen.has(i.id)) continue;
+        seen.add(i.id);
+        out.push({ item: i, conversationTitle: c.conv.title });
+      }
+    }
+    out.sort((a, b) => b.item.sentAt.localeCompare(a.item.sentAt));
+    return this.reply(out);
+  }
+
+  getFocusSettings(): Promise<FocusSettings> {
+    return this.reply(this.focus);
+  }
+  async saveFocusSettings(settings: FocusSettings): Promise<FocusSettings> {
+    this.focus = clone(settings);
+    this.emit({ type: 'conversation.updated', conversationId: 0 });
+    return this.reply(this.focus);
+  }
+  frequentContacts(): Promise<number[]> {
+    return this.reply(this.frequentIds());
+  }
+
+  async getDraft(conversationId: number): Promise<ChatDraft | null> {
+    return this.reply(this.drafts.get(conversationId) ?? null);
+  }
+  async saveDraft(conversationId: number, draft: ChatDraft | null): Promise<void> {
+    if (draft && draft.text.trim()) this.drafts.set(conversationId, { ...draft, updatedAt: new Date().toISOString() });
+    else this.drafts.delete(conversationId);
+    await this.reply(null);
+  }
+
+  private scheduledItem(r: { id: string; conversationId: number; msg: OutgoingMessage }): ConversationItem {
+    return {
+      id: 's:' + r.id,
+      conversationId: r.conversationId,
+      channel: r.msg.channel,
+      accountId: r.msg.accountId ?? this.identities.find((i) => i.id === r.msg.identityId)?.accountId ?? 0,
+      senderPersonId: data.ME,
+      senderName: this.person(data.ME).displayName,
+      isOwn: true,
+      sentAt: r.msg.sendAt!,
+      body: r.msg.text.split('\n-- \n')[0],
+      attachments: [],
+      status: 'pending',
+      scheduledFor: r.msg.sendAt,
+      scheduledId: r.id,
+    };
+  }
+
+  private armSchedule(rec: { id: string; conversationId: number; msg: OutgoingMessage; timer?: ReturnType<typeof setTimeout> }) {
+    if (rec.timer) clearTimeout(rec.timer);
+    const ms = Date.parse(rec.msg.sendAt!) - Date.now();
+    if (ms < 2 ** 31 - 1) rec.timer = setTimeout(() => void this.sendScheduledNow(rec.id), Math.max(0, ms));
+  }
+
+  private schedule(msg: OutgoingMessage): Promise<SendResult> {
+    const conversationId = msg.conversationId ?? 0;
+    const rec = { id: 'sch' + ++this.seq, conversationId, msg: clone(msg) };
+    this.scheduled.set(rec.id, rec);
+    this.armSchedule(rec);
+    this.emit({ type: 'conversation.updated', conversationId, itemId: 's:' + rec.id });
+    return this.reply({ conversationId, itemId: 's:' + rec.id, scheduledId: rec.id, queued: true });
+  }
+
+  private scheduledInfo(r: { id: string; conversationId: number; msg: OutgoingMessage }): ScheduledMessage {
+    const conv = (() => {
+      try {
+        return this.findConversation(r.conversationId).conv.title;
+      } catch {
+        return '';
+      }
+    })();
+    return { id: r.id, conversationId: r.conversationId, conversationTitle: conv, channel: r.msg.channel, sendAt: r.msg.sendAt!, text: r.msg.text.split('\n-- \n')[0], itemId: 's:' + r.id };
+  }
+
+  listScheduled(conversationId?: number): Promise<ScheduledMessage[]> {
+    const list = [...this.scheduled.values()].filter((r) => conversationId == null || r.conversationId === conversationId).map((r) => this.scheduledInfo(r));
+    list.sort((a, b) => a.sendAt.localeCompare(b.sendAt));
+    return this.reply(list);
+  }
+  async updateScheduled(id: string, patch: { text?: string; sendAt?: string }): Promise<ScheduledMessage> {
+    const r = this.scheduled.get(id);
+    if (!r) throw new ApiError('Geplante Nachricht nicht gefunden', 404, 'not_found');
+    if (patch.text != null) {
+      const sig = r.msg.text.includes('\n-- \n') ? '\n-- \n' + r.msg.text.split('\n-- \n')[1] : '';
+      r.msg.text = patch.text + sig;
+    }
+    if (patch.sendAt) r.msg.sendAt = patch.sendAt;
+    this.armSchedule(r);
+    this.emit({ type: 'conversation.updated', conversationId: r.conversationId });
+    return this.reply(this.scheduledInfo(r));
+  }
+  async cancelScheduled(id: string): Promise<void> {
+    const r = this.scheduled.get(id);
+    if (r?.timer) clearTimeout(r.timer);
+    this.scheduled.delete(id);
+    if (r) this.emit({ type: 'conversation.updated', conversationId: r.conversationId });
+    await this.reply(null);
+  }
+  async sendScheduledNow(id: string): Promise<void> {
+    const r = this.scheduled.get(id);
+    if (!r) return;
+    if (r.timer) clearTimeout(r.timer);
+    this.scheduled.delete(id);
+    const { sendAt: _s, ...msg } = r.msg;
+    await this.send(msg);
+  }
+
+  listSnippets(): Promise<Snippet[]> {
+    return this.reply(this.snippets);
+  }
+  async saveSnippet(snippet: Snippet): Promise<Snippet> {
+    const sn = { ...snippet, id: snippet.id || 'sn' + ++this.seq, trigger: snippet.trigger.replace(/^\//, '').trim() };
+    this.snippets = [...this.snippets.filter((x) => x.id !== sn.id), sn];
+    return this.reply(sn);
+  }
+  async deleteSnippet(id: string): Promise<void> {
+    this.snippets = this.snippets.filter((x) => x.id !== id);
+    await this.reply(null);
+  }
+
+  // ---- AI (canned demo results) ---------------------------------------------------
+
+  getAiSettings(): Promise<AiSettings> {
+    const { apiKey: _k, ...rest } = this.ai;
+    return this.reply(rest as AiSettings);
+  }
+  async saveAiSettings(settings: AiSettings): Promise<AiSettings> {
+    const apiKeySet = settings.apiKey ? true : settings.provider === this.ai.provider ? this.ai.apiKeySet : false;
+    this.ai = { ...clone(settings), apiKey: undefined, apiKeySet };
+    return this.getAiSettings();
+  }
+  private requireAi(): void {
+    if (this.ai.provider === 'none') throw new ApiError('Kein KI-Anbieter eingerichtet', 412, 'ai_not_configured');
+  }
+  async aiSuggestReplies(conversationId: number): Promise<string[]> {
+    this.requireAi();
+    await sleep(Math.max(this.latency * 6, 0));
+    const items = this.findConversation(conversationId).items.filter((i) => !i.scheduledFor && !i.system);
+    const last = [...items].reverse().find((i) => !i.isOwn);
+    if (last && /\?/.test(last.body)) return this.reply(['Ja, das passt mir gut!', 'Ich schaue nach und melde mich gleich.', 'Können wir kurz telefonieren?']);
+    if (last?.channel === 'email') return this.reply(['Vielen Dank, ich prüfe das.', 'Danke für die Info – passt so.', 'Ich melde mich bis morgen dazu.']);
+    return this.reply(['Danke dir! 🙂', 'Super, freu mich!', 'Alles klar 👍']);
+  }
+  async aiTranslate(conversationId: number, itemId: string, targetLang: string): Promise<{ text: string; sourceLang: string }> {
+    this.requireAi();
+    await sleep(Math.max(this.latency * 5, 0));
+    const item = this.findConversation(conversationId).items.find((i) => i.id === itemId);
+    const text = item?.body ?? '';
+    const en: Record<string, string> = {
+      'Hast du die Mail mit der Korrektur gesehen? 🙂': 'Did you see the e-mail with the correction? 🙂',
+      'Sieht super aus, freu mich!': 'Looks great, looking forward to it!',
+      'Treffpunkt 7:45 am Parkplatz Kesselberg': 'Meeting point 7:45 at the Kesselberg car park',
+      'Wer ist Samstag dabei? 🥾': 'Who is in on Saturday? 🥾',
+      'Papa ist ganz stolz 😄': 'Dad is really proud 😄',
+      'Bild vom neuen Gartenhaus': 'Picture of the new garden shed',
+      'Kommst du morgen ins Büro?': 'Are you coming to the office tomorrow?',
+    };
+    const translated = targetLang.startsWith('en') ? (en[text] ?? `${text} (EN)`) : (Object.entries(en).find(([, v]) => v === text)?.[0] ?? `${text} (DE)`);
+    return this.reply({ text: translated, sourceLang: targetLang.startsWith('en') ? 'de' : 'en' });
+  }
+  async aiSummarize(conversationId: number): Promise<AiSummary> {
+    this.requireAi();
+    await sleep(Math.max(this.latency * 8, 0));
+    const c = this.findConversation(conversationId);
+    const items = c.items.filter((i) => !i.scheduledFor && !i.system);
+    const names = [...new Set(items.filter((i) => !i.isOwn).map((i) => i.senderName.split(' ')[0]))];
+    const subjects = [...new Set(items.filter((i) => i.subject).map((i) => normalizeSubject(i.subject!)))].slice(-3);
+    const unread = items.filter((i) => i.unread).length;
+    const last = items[items.length - 1];
+    const bullets = [
+      `${items.length} messages with ${names.join(', ') || '—'} across ${[...new Set(items.map((i) => i.channel))].join(' & ')}.`,
+      ...(subjects.length ? [`Topics: ${subjects.join('; ')}.`] : []),
+      ...(unread ? [`${unread} unread – the latest asks: “${this.excerpt(last?.body ?? '', 80)}”`] : []),
+      ...(items.some((i) => i.attachments.length) ? [`Shared files: ${[...new Set(items.flatMap((i) => i.attachments.map((a) => a.filename)))].slice(0, 3).join(', ')}.`] : []),
+    ];
+    return this.reply({ summary: `Conversation “${c.conv.title}”: ${bullets[0]}`, bullets, skipped: items.filter((i) => i.encrypted).length });
+  }
+
+  // ---- meeting proposals -----------------------------------------------------------
+
+  /** Demo calendar: recurring busy blocks on weekdays + created events. */
+  private busy(day: Date): [number, number][] {
+    const d = day.getDay();
+    const at = (h: number, m = 0) => {
+      const x = new Date(day);
+      x.setHours(h, m, 0, 0);
+      return x.getTime();
+    };
+    const blocks: Record<number, [number, number, number, number][]> = {
+      1: [[10, 0, 11, 0]],
+      2: [[14, 0, 15, 30]],
+      3: [[9, 0, 10, 0], [13, 0, 14, 0]],
+      4: [[10, 0, 11, 0]],
+      5: [[15, 0, 17, 0]],
+    };
+    const out: [number, number][] = (blocks[d] ?? []).map(([h1, m1, h2, m2]) => [at(h1, m1), at(h2, m2)]);
+    for (const e of this.events) out.push([Date.parse(e.start), Date.parse(e.end)]);
+    return out;
+  }
+
+  async findFreeSlots(query: { from: string; to: string; durationMin: number }): Promise<TimeSlot[]> {
+    const out: TimeSlot[] = [];
+    const day = new Date(query.from);
+    day.setHours(0, 0, 0, 0);
+    const end = new Date(query.to);
+    end.setHours(23, 59, 0, 0);
+    const now = Date.now();
+    const dur = query.durationMin * 60_000;
+    while (day <= end && out.length < 15) {
+      if (day.getDay() >= 1 && day.getDay() <= 5) {
+        const busy = this.busy(day);
+        let perDay = 0;
+        for (let mins = 9 * 60; mins + query.durationMin <= 17 * 60 && perDay < 3; mins += 30) {
+          const s = new Date(day);
+          s.setHours(0, mins, 0, 0);
+          const a = s.getTime();
+          const b = a + dur;
+          if (a < now) continue;
+          if (busy.some(([x, y]) => a < y && b > x)) continue;
+          out.push({ start: new Date(a).toISOString(), end: new Date(b).toISOString() });
+          perDay++;
+          mins += 60; // spread suggestions over the day
+        }
+      }
+      day.setDate(day.getDate() + 1);
+    }
+    return this.reply(out);
+  }
+
+  async proposeMeeting(conversationId: number, p: { title: string; durationMin: number; slots: TimeSlot[]; channel: Channel; identityId?: number; accountId?: number }): Promise<SendResult> {
+    const id = 'mp' + ++this.seq;
+    const proposal: MeetingProposal = { id, title: p.title, durationMin: p.durationMin, slots: clone(p.slots), status: 'open' };
+    this.proposals.set(id, proposal);
+    const fmt = (s: TimeSlot) => new Date(s.start).toLocaleString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    const text = `${p.title}\n${p.slots.map((s) => '• ' + fmt(s)).join('\n')}`;
+    let res: SendResult;
+    if (p.channel === 'email') {
+      const conv = this.findConversation(conversationId);
+      const lastMail = [...conv.items].reverse().find((i) => i.messageId != null);
+      const to = conv.conv.participantIds.map((pid) => this.person(pid)).map((x) => ({ name: x.displayName, email: x.handles.find((h) => h.kind === 'email')?.value ?? '' })).filter((a) => a.email);
+      res = await this.sendMail({
+        channel: 'email',
+        identityId: p.identityId ?? this.identities[0].id,
+        to,
+        cc: [],
+        bcc: [],
+        subject: lastMail?.subject ? 'Re: ' + normalizeSubject(lastMail.subject) : p.title,
+        text,
+        html: '',
+        inReplyToMessageId: lastMail?.messageId,
+        attachments: [{ uploadToken: 'ics-' + id, filename: 'Terminvorschlag.ics', mimeType: 'text/calendar', size: 1200 + p.slots.length * 180, delivery: 'attach' }],
+      });
+    } else {
+      res = await this.sendChat({ channel: p.channel, accountId: p.accountId, conversationId, to: [], cc: [], bcc: [], subject: '', text, html: '', attachments: [] });
+    }
+    if (res.itemId) this.meetingByItem.set(res.itemId, id);
+    this.emit({ type: 'conversation.updated', conversationId, itemId: res.itemId });
+    return res;
+  }
+
+  async acceptMeetingSlot(conversationId: number, proposalId: string, slotStart: string): Promise<void> {
+    const p = this.proposals.get(proposalId);
+    if (!p) throw new ApiError('Terminvorschlag nicht gefunden', 404, 'not_found');
+    const slot = p.slots.find((s) => s.start === slotStart);
+    if (!slot) throw new ApiError('Zeitfenster nicht gefunden', 404, 'not_found');
+    p.status = 'booked';
+    p.chosen = slotStart;
+    this.events.push({ id: 'ev' + ++this.seq, title: p.title, start: slot.start, end: slot.end });
+    const list = this.extraItems.get(conversationId) ?? [];
+    list.push({
+      id: 'x:' + ++this.seq,
+      conversationId,
+      channel: 'email',
+      accountId: 0,
+      senderPersonId: 0,
+      senderName: '',
+      isOwn: false,
+      sentAt: new Date().toISOString(),
+      body: '',
+      attachments: [],
+      display: 'system',
+      system: { kind: 'eventCreated', title: p.title, start: slot.start },
+    });
+    this.extraItems.set(conversationId, list);
+    this.emit({ type: 'conversation.updated', conversationId });
+    await this.reply(null);
   }
 
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {

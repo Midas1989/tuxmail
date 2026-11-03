@@ -23,6 +23,7 @@ interface Stored {
   grouping: ConversationGrouping;
   viewMode: 'classic' | 'chat';
   chatEnterSends: boolean;
+  chatSignatures: 'collapsed' | 'shown';
 }
 
 const KEY = 'tuxmail.prefs.v2';
@@ -46,6 +47,8 @@ class Prefs {
   viewMode = $state<'classic' | 'chat'>('classic');
   /** Messenger composer: Enter sends (Shift+Enter = newline); off = Ctrl+Enter sends. */
   chatEnterSends = $state(true);
+  /** Signatures in the chat view: collapsed (default, chevron per bubble) or shown. */
+  chatSignatures = $state<'collapsed' | 'shown'>('collapsed');
   systemDark = $state(false);
   private api: Api | null = null;
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -59,6 +62,7 @@ class Prefs {
     this.grouping = s.grouping ?? 'person';
     this.viewMode = s.viewMode ?? 'classic';
     this.chatEnterSends = s.chatEnterSends ?? true;
+    this.chatSignatures = s.chatSignatures ?? 'collapsed';
     this.applyI18n();
     if (typeof matchMedia !== 'undefined') {
       const mq = matchMedia('(prefers-color-scheme: dark)');
@@ -124,6 +128,7 @@ class Prefs {
         grouping: this.grouping,
         viewMode: this.viewMode,
         chatEnterSends: this.chatEnterSends,
+        chatSignatures: this.chatSignatures,
       };
       localStorage.setItem(KEY, JSON.stringify(s));
     } catch {

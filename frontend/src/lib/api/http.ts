@@ -28,6 +28,17 @@
 //   POST /api/items/{itemId}/forward            {conversationId} -> SendResult
 //   PUT  /api/persons/{id}/card                 ContactCard
 //   PUT  /api/identities/{id}                   Identity -> Identity
+//   GET/PUT/DELETE /api/chat-folders[/{id}]     ChatFolder (with unreadCount)
+//   PUT  /api/conversations/{id}/items/{itemId}/star|pin   {starred}|{pinned}
+//   GET  /api/starred?conversationId=           -> StarredItem[]
+//   GET/PUT /api/focus                          FocusSettings;  GET /api/persons/frequent -> number[]
+//   GET/PUT/DELETE /api/conversations/{id}/draft  ChatDraft
+//   GET  /api/scheduled?conversationId=  PATCH/DELETE /api/scheduled/{id}  POST /api/scheduled/{id}/send
+//   GET/PUT/DELETE /api/snippets[/{id}]         Snippet
+//   GET/PUT /api/ai/settings; POST /api/ai/conversations/{id}/suggest|summarize, …/items/{itemId}/translate
+//   GET  /api/calendar/free-slots?from=&to=&durationMin=   -> TimeSlot[]
+//   POST /api/conversations/{id}/meeting-proposals          -> SendResult
+//   POST /api/conversations/{id}/meeting-proposals/{pid}/accept  {slotStart}
 //   POST /api/send                              OutgoingMessage -> SendResult
 //   POST /api/uploads                           raw body, X-Filename header -> {uploadToken}
 //   GET  /api/push/vapid-public-key             -> {key}
@@ -61,10 +72,20 @@ import { ApiError, EventHub } from './api';
 import type {
 Account,
   ApiEvent,
+  Channel,
   Conversation,
   ConversationGrouping,
   ConversationItem,
   ContactCard,
+  AiSettings,
+  AiSummary,
+  ChatDraft,
+  ChatFolder,
+  FocusSettings,
+  ScheduledMessage,
+  Snippet,
+  StarredItem,
+  TimeSlot,
   ConversationPatch,
   Reaction,
   DeviceAuthorization,
@@ -349,6 +370,84 @@ export class HttpTransport implements Api {
     return this.request('GET', `/api/locales/${encodeURIComponent(code)}`);
   }
 
+  listChatFolders(): Promise<ChatFolder[]> {
+    return this.request('GET', '/api/chat-folders');
+  }
+  saveChatFolder(folder: ChatFolder): Promise<ChatFolder> {
+    return this.request('PUT', `/api/chat-folders/${encodeURIComponent(folder.id || 'new')}`, folder);
+  }
+  deleteChatFolder(id: string): Promise<void> {
+    return this.request('DELETE', `/api/chat-folders/${encodeURIComponent(id)}`);
+  }
+  setItemStarred(conversationId: number, itemId: string, starred: boolean): Promise<void> {
+    return this.request('PUT', `/api/conversations/${conversationId}/items/${encodeURIComponent(itemId)}/star`, { starred });
+  }
+  setItemPinned(conversationId: number, itemId: string, pinned: boolean): Promise<void> {
+    return this.request('PUT', `/api/conversations/${conversationId}/items/${encodeURIComponent(itemId)}/pin`, { pinned });
+  }
+  listStarredItems(conversationId?: number): Promise<StarredItem[]> {
+    return this.request('GET', `/api/starred${buildQuery({ conversationId })}`);
+  }
+  getFocusSettings(): Promise<FocusSettings> {
+    return this.request('GET', '/api/focus');
+  }
+  saveFocusSettings(settings: FocusSettings): Promise<FocusSettings> {
+    return this.request('PUT', '/api/focus', settings);
+  }
+  frequentContacts(): Promise<number[]> {
+    return this.request('GET', '/api/persons/frequent');
+  }
+  getDraft(conversationId: number): Promise<ChatDraft | null> {
+    return this.request('GET', `/api/conversations/${conversationId}/draft`);
+  }
+  saveDraft(conversationId: number, draft: ChatDraft | null): Promise<void> {
+    return draft ? this.request('PUT', `/api/conversations/${conversationId}/draft`, draft) : this.request('DELETE', `/api/conversations/${conversationId}/draft`);
+  }
+  listScheduled(conversationId?: number): Promise<ScheduledMessage[]> {
+    return this.request('GET', `/api/scheduled${buildQuery({ conversationId })}`);
+  }
+  updateScheduled(id: string, patch: { text?: string; sendAt?: string }): Promise<ScheduledMessage> {
+    return this.request('PATCH', `/api/scheduled/${encodeURIComponent(id)}`, patch);
+  }
+  cancelScheduled(id: string): Promise<void> {
+    return this.request('DELETE', `/api/scheduled/${encodeURIComponent(id)}`);
+  }
+  sendScheduledNow(id: string): Promise<void> {
+    return this.request('POST', `/api/scheduled/${encodeURIComponent(id)}/send`);
+  }
+  listSnippets(): Promise<Snippet[]> {
+    return this.request('GET', '/api/snippets');
+  }
+  saveSnippet(snippet: Snippet): Promise<Snippet> {
+    return this.request('PUT', `/api/snippets/${encodeURIComponent(snippet.id || 'new')}`, snippet);
+  }
+  deleteSnippet(id: string): Promise<void> {
+    return this.request('DELETE', `/api/snippets/${encodeURIComponent(id)}`);
+  }
+  getAiSettings(): Promise<AiSettings> {
+    return this.request('GET', '/api/ai/settings');
+  }
+  saveAiSettings(settings: AiSettings): Promise<AiSettings> {
+    return this.request('PUT', '/api/ai/settings', settings);
+  }
+  aiSuggestReplies(conversationId: number): Promise<string[]> {
+    return this.request('POST', `/api/ai/conversations/${conversationId}/suggest`);
+  }
+  aiTranslate(conversationId: number, itemId: string, targetLang: string): Promise<{ text: string; sourceLang: string }> {
+    return this.request('POST', `/api/ai/conversations/${conversationId}/items/${encodeURIComponent(itemId)}/translate`, { targetLang });
+  }
+  aiSummarize(conversationId: number): Promise<AiSummary> {
+    return this.request('POST', `/api/ai/conversations/${conversationId}/summarize`);
+  }
+  findFreeSlots(query: { from: string; to: string; durationMin: number }): Promise<TimeSlot[]> {
+    return this.request('GET', `/api/calendar/free-slots${buildQuery(query)}`);
+  }
+  proposeMeeting(conversationId: number, proposal: { title: string; durationMin: number; slots: TimeSlot[]; channel: Channel; identityId?: number; accountId?: number }): Promise<SendResult> {
+    return this.request('POST', `/api/conversations/${conversationId}/meeting-proposals`, proposal);
+  }
+  acceptMeetingSlot(conversationId: number, proposalId: string, slotStart: string): Promise<void> {
+    return this.request('POST', `/api/conversations/${conversationId}/meeting-proposals/${encodeURIComponent(proposalId)}/accept`, { slotStart });
+  }
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     this.connect();

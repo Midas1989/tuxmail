@@ -16,10 +16,20 @@ import { ApiError, EventHub } from './api';
 import type {
 Account,
   ApiEvent,
+  Channel,
   Conversation,
   ConversationGrouping,
   ConversationItem,
   ContactCard,
+  AiSettings,
+  AiSummary,
+  ChatDraft,
+  ChatFolder,
+  FocusSettings,
+  ScheduledMessage,
+  Snippet,
+  StarredItem,
+  TimeSlot,
   ConversationPatch,
   Reaction,
   DeviceAuthorization,
@@ -230,6 +240,84 @@ export class WailsTransport implements Api {
     return this.call('GetLocale', code);
   }
 
+  listChatFolders(): Promise<ChatFolder[]> {
+    return this.call('ListChatFolders');
+  }
+  saveChatFolder(folder: ChatFolder): Promise<ChatFolder> {
+    return this.call('SaveChatFolder', folder);
+  }
+  deleteChatFolder(id: string): Promise<void> {
+    return this.call('DeleteChatFolder', id);
+  }
+  setItemStarred(conversationId: number, itemId: string, starred: boolean): Promise<void> {
+    return this.call('SetItemStarred', conversationId, itemId, starred);
+  }
+  setItemPinned(conversationId: number, itemId: string, pinned: boolean): Promise<void> {
+    return this.call('SetItemPinned', conversationId, itemId, pinned);
+  }
+  listStarredItems(conversationId?: number): Promise<StarredItem[]> {
+    return this.call('ListStarredItems', conversationId ?? 0);
+  }
+  getFocusSettings(): Promise<FocusSettings> {
+    return this.call('GetFocusSettings');
+  }
+  saveFocusSettings(settings: FocusSettings): Promise<FocusSettings> {
+    return this.call('SaveFocusSettings', settings);
+  }
+  frequentContacts(): Promise<number[]> {
+    return this.call('FrequentContacts');
+  }
+  getDraft(conversationId: number): Promise<ChatDraft | null> {
+    return this.call('GetDraft', conversationId);
+  }
+  saveDraft(conversationId: number, draft: ChatDraft | null): Promise<void> {
+    return this.call('SaveDraft', conversationId, draft);
+  }
+  listScheduled(conversationId?: number): Promise<ScheduledMessage[]> {
+    return this.call('ListScheduled', conversationId ?? 0);
+  }
+  updateScheduled(id: string, patch: { text?: string; sendAt?: string }): Promise<ScheduledMessage> {
+    return this.call('UpdateScheduled', id, patch);
+  }
+  cancelScheduled(id: string): Promise<void> {
+    return this.call('CancelScheduled', id);
+  }
+  sendScheduledNow(id: string): Promise<void> {
+    return this.call('SendScheduledNow', id);
+  }
+  listSnippets(): Promise<Snippet[]> {
+    return this.call('ListSnippets');
+  }
+  saveSnippet(snippet: Snippet): Promise<Snippet> {
+    return this.call('SaveSnippet', snippet);
+  }
+  deleteSnippet(id: string): Promise<void> {
+    return this.call('DeleteSnippet', id);
+  }
+  getAiSettings(): Promise<AiSettings> {
+    return this.call('GetAiSettings');
+  }
+  saveAiSettings(settings: AiSettings): Promise<AiSettings> {
+    return this.call('SaveAiSettings', settings);
+  }
+  aiSuggestReplies(conversationId: number): Promise<string[]> {
+    return this.call('AiSuggestReplies', conversationId);
+  }
+  aiTranslate(conversationId: number, itemId: string, targetLang: string): Promise<{ text: string; sourceLang: string }> {
+    return this.call('AiTranslate', conversationId, itemId, targetLang);
+  }
+  aiSummarize(conversationId: number): Promise<AiSummary> {
+    return this.call('AiSummarize', conversationId);
+  }
+  findFreeSlots(query: { from: string; to: string; durationMin: number }): Promise<TimeSlot[]> {
+    return this.call('FindFreeSlots', query);
+  }
+  proposeMeeting(conversationId: number, proposal: { title: string; durationMin: number; slots: TimeSlot[]; channel: Channel; identityId?: number; accountId?: number }): Promise<SendResult> {
+    return this.call('ProposeMeeting', conversationId, proposal);
+  }
+  acceptMeetingSlot(conversationId: number, proposalId: string, slotStart: string): Promise<void> {
+    return this.call('AcceptMeetingSlot', conversationId, proposalId, slotStart);
+  }
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     if (!this.offRuntime && this.win.runtime?.EventsOn) {
