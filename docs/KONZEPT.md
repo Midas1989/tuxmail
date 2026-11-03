@@ -2,7 +2,7 @@
 
 **Produktname:** *TuxMail* – E-Mail, Messenger, Kalender, Kontakte und Cloud-Dateien in einer Anwendung
 **Zielplattformen:** Windows 10/11 (x64, ARM64), Linux (x64, ARM64)
-**Stand:** 03.11.2026 – Version 1.3 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
+**Stand:** 03.11.2026 – Version 1.4 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
 
 ---
 
@@ -618,10 +618,13 @@ Bei einem erkannten Mail-Konto werden automatisch **passende Kalender und Adress
 - Kalender-Einladungen direkt in der Mail: **Zusagen / Vorbehalt / Absagen / Neuen Zeitpunkt vorschlagen** (iTIP/iMIP, RFC 5546/6047).
 
 ### 8.4 Suche
-- Lokale Volltextsuche (FTS5) über Betreff, Text, Adressen, Anhangsnamen; Textextraktion aus PDF/DOCX/ODT optional.
-- Suchsyntax: `from:`, `to:`, `subject:`, `has:attachment`, `before:`, `after:`, `in:`, `is:unread`, `account:`.
-- Server-Suche als Ergänzung für nicht lokal gespeicherte Mails (IMAP `SEARCH`, EAS `Search`, Graph `$search`).
-- Eine Suche findet auch Messenger-Nachrichten, Termine und Kontakte (umschaltbare Filter).
+- Lokale Volltextsuche (FTS5) über **alle Bereiche**: Mails (Betreff, Text, Adressen, Anhangsnamen), **Messenger-Nachrichten** (Text, Bildunterschriften, Dateinamen), **Termine und Aufgaben**, **Kontakte**, **Notizen in Konversationen** und **Cloud-Links**; Textextraktion aus PDF/DOCX/ODT-Anhängen optional.
+- **Einstellbar, WAS durchsucht wird:** Bereiche (Mail, Chats, Kalender, Aufgaben, Kontakte, Dateien) einzeln an-/abwählbar; innerhalb der Mail die Felder (Betreff, Text, Absender/Empfänger, Anhangsnamen, Anhangsinhalte).
+- **Einstellbar, WO gesucht wird:** alle Konten oder ausgewählte Konten/Kanäle (z. B. nur Firmenkonto + Signal), bestimmte Ordner inkl./exkl. Unterordner, Papierkorb/Spam ein- oder ausschließen, Zeitraum.
+- **Lokal und/oder auf dem Server:** lokale Suche (schnell, offline) und Server-Suche für nicht lokal gespeicherte Mails (IMAP `SEARCH`, EAS `Search`, Graph `$search`, Gmail-API) – automatisch, immer oder nie.
+- Die Auswahl erfolgt über **Filter-Chips** direkt im Suchfeld; die Standard-Einstellung wird unter *Einstellungen → Suche* festgelegt. Häufige Kombinationen lassen sich als **Suchprofil** speichern (z. B. „Buchhaltung": nur Firmenkonto, Ordner Rechnungen, inkl. Anhangsinhalte) und als virtueller Ordner anheften.
+- **Indexierung einstellbar:** pro Konto, ob Inhalte lokal indexiert werden (z. B. aus Datenschutzgründen nicht für ein bestimmtes Konto), Anhangsinhalte ja/nein, verschlüsselte (PGP-)Inhalte ja/nein.
+- Suchsyntax: `from:`, `to:`, `subject:`, `has:attachment`, `before:`, `after:`, `in:`, `is:unread`, `account:`, `channel:whatsapp`, `type:event`, `category:rechnung`.
 
 ### 8.5 Workflow-System (Regeln & Automatisierung)
 Statt einer reinen Mail-Regel-Engine erhält TuxMail ein **allgemeines Workflow-System**, das über alle Bereiche hinweg arbeitet: Mail, Messenger, Kalender, Kontakte, Dateien/Cloud und KI. Klassische Mail-Regeln sind darin nur ein Spezialfall.
@@ -642,7 +645,12 @@ Statt einer reinen Mail-Regel-Engine erhält TuxMail ein **allgemeines Workflow-
 - **Ausführungsort:** lokal im Desktop-Client oder im **Server-Modus** dauerhaft im Hintergrund (läuft auch, wenn kein Client offen ist). Wo möglich, werden einfache Mail-Bedingungen zusätzlich als **Sieve**-Skript auf den Server übertragen bzw. als Graph/EWS-Posteingangsregel angelegt, damit sie auch ohne TuxMail greifen.
 - **Sicherheit:** Aktionen mit Außenwirkung (automatisch antworten, weiterleiten, Webhook) zeigen beim Aktivieren eine Bestätigung; Schleifenschutz (max. Auslösungen pro Nachricht/Zeit), Ratenbegrenzung, keine Weiterleitung entschlüsselter PGP-Inhalte ohne ausdrückliche Freigabe.
 - **Technik:** Ereignisse kommen über den bestehenden Event-Bus (4.2); Workflows werden durch eine eigene Engine (`internal/workflow`) mit persistenter Warteschlange (Op-Queue) ausgeführt, damit nach Neustart nichts verloren geht. Bedingungen werden mit einer sicheren Ausdruckssprache (z. B. `expr-lang/expr`) ausgewertet – kein beliebiger Code.
-- Abwesenheitsnotiz (Sieve `vacation`, Graph `automaticRepliesSetting`, EAS `Settings/Oof`) bleibt als eigene, einfache Einstellung erhalten.
+- **Abwesenheitsnotiz** ist ein fester Bestandteil des Workflow-Systems (eingebauter Workflow-Typ mit eigener, einfacher Oberfläche):
+  - Zeitraum (von/bis, optional), gültig für ausgewählte Konten/Identitäten.
+  - Getrennte Texte für **interne** und **externe** Absender; Betreff und Text mit Platzhaltern (z. B. `{{bis_datum}}`, `{{vertretung}}`).
+  - Antwort **höchstens einmal pro Absender** innerhalb von N Tagen; keine Antworten an Newsletter/Verteiler (`List-Id`, `Precedence: bulk`), automatisch erzeugte Mails (`Auto-Submitted`), `noreply`-Adressen oder eigene Adressen; gesendete Antworten tragen `Auto-Submitted: auto-replied`.
+  - Optional: Weiterleitung an eine **Vertretung**, automatische Antwort auch in Messenger-Kanälen, Kalender-Eintrag „Abwesend" und automatische Absage neuer Einladungen im Zeitraum.
+  - **Server-Synchronisation:** Wo möglich, wird die Notiz auf den Server übertragen (Sieve `vacation` RFC 5230, Graph `automaticRepliesSetting`, EAS `Settings/Oof`) – dann greift sie auch bei ausgeschaltetem PC. Ansonsten führt TuxMail sie lokal bzw. im Server-Modus aus.
 
 ### 8.6 Verschlüsselung
 **OpenPGP ist Bestandteil des Mail-MVP (Phase 1)** – nicht erst des Feinschliffs.
@@ -998,6 +1006,43 @@ Beim Import wird die **Ordnerstruktur** wahlweise übernommen oder in einen Ziel
 
 ---
 
+### 15.5 Server-Installation (Linux) mit Ansible
+Für den Server-Modus (Kapitel 4.5) wird ein **Ansible-Playbook** mitgeliefert (`deploy/ansible/`). Unterstützt werden Debian 12/13, Ubuntu 22.04/24.04 sowie RHEL/Rocky/Alma 9.
+
+**Was das Playbook erledigt**
+- Systembenutzer `tuxmail` (ohne Login), Verzeichnisse `/opt/tuxmail` (Programm), `/var/lib/tuxmail` (Daten), `/etc/tuxmail` (Konfiguration), `/var/log/tuxmail`.
+- Installation des TuxMail-Binaries in einer festen Version (Download aus Releases mit Prüfsumme **oder** lokale Datei), Konfigurationsdatei `config.yaml` aus Template.
+- **systemd-Dienst** `tuxmail.service` mit Härtung (`ProtectSystem=strict`, `NoNewPrivileges`, `PrivateTmp`, eingeschränkte Schreibpfade), automatischer Neustart, optional `tuxmail-backup.timer` für tägliche Backups.
+- **nginx als Reverse-Proxy**, wahlweise:
+  - **neu installieren und konfigurieren**, oder
+  - **in eine bestehende nginx-Installation einhängen** (eigene `server`-Datei oder nur ein `location`-Snippet zum Einbinden in einen vorhandenen vHost, z. B. neben Nextcloud), ohne bestehende Konfiguration zu überschreiben; vorher `nginx -t`.
+  - WebSocket-Weiterleitung, große Upload-Limits für Anhänge, Sicherheits-Header (HSTS, CSP), HTTP→HTTPS-Umleitung.
+- **TLS-Zertifikat**, wahlweise:
+  - **Let's Encrypt** über certbot (HTTP-01 via nginx-Webroot) inkl. automatischer Erneuerung, oder
+  - **eigenes Zertifikat** über Pfadangaben (`tls_cert_path`, `tls_key_path`, optional Kette), z. B. Firmen-CA oder Wildcard-Zertifikat, oder
+  - **kein TLS in TuxMail/nginx**, wenn ein vorgelagerter Proxy TLS terminiert.
+- Optional: Matrix-Homeserver + mautrix-Bridges (Bridge-Modus) und Gotenberg (PDF) als Container bzw. Dienste, Firewall-Regeln (ufw/firewalld).
+- **Erstinstallation:** legt den ersten Administrator an (Passwort aus Ansible Vault oder zufällig generiert und ausgegeben).
+- Idempotent und für Updates nutzbar (Version ändern → Playbook erneut ausführen; Datenbank-Migration läuft automatisch, vorher Backup).
+
+**Beispiel**
+```bash
+ansible-playbook -i inventory.ini deploy/ansible/site.yml \
+  -e tuxmail_domain=mail.example.de \
+  -e tuxmail_nginx_mode=new        # new | existing
+  -e tuxmail_tls_mode=letsencrypt  # letsencrypt | custom | none
+```
+
+### 15.6 Benutzerverwaltung (Server-Modus)
+- **Benutzer und Rollen:** `admin` (alles inkl. Benutzerverwaltung und Server-Einstellungen), `user` (eigene Konten, Daten, Workflows), optional `readonly`/Gast für gemeinsame Postfächer. **Gruppen** für die Rechtevergabe an gemeinsamen Postfächern (8.14).
+- **Strikte Datentrennung:** jeder Benutzer hat eine eigene Datenbank und einen eigenen Blob-Speicher unter `/var/lib/tuxmail/users/<id>/`; gemeinsame Postfächer liegen in einem eigenen Bereich mit Rechteprüfung.
+- **Anmeldung:** Benutzername/E-Mail + Passwort (Argon2id-Hash), **Zwei-Faktor** per TOTP (Authenticator-App) und **WebAuthn/Passkeys**, Wiederherstellungscodes; alternativ/zusätzlich **OIDC** (Nextcloud, OpenCloud, Keycloak, Authentik, Entra ID) mit automatischer Benutzeranlage und Gruppen-Zuordnung aus Claims; optional LDAP/Active Directory.
+- **Sitzungen:** sichere Cookies (HttpOnly, Secure, SameSite), Übersicht aktiver Sitzungen/Geräte mit „Abmelden"; Desktop-App als Thin Client per Geräte-Token.
+- **Verwaltung:** Web-Oberfläche für Admins (Benutzer anlegen, sperren, Passwort zurücksetzen, 2FA zurücksetzen, Speicherverbrauch, Quoten, Rollen/Gruppen) **und** Kommandozeile für Skripte/Ansible: `tuxmail user add|list|disable|enable|reset-password|reset-2fa|set-role|delete`.
+- Selbstregistrierung standardmäßig aus; optional per Einladungslink.
+- **Sicherheit:** Login-Ratenbegrenzung und temporäre Sperre, Passwort-Richtlinie, Audit-Log (Anmeldungen, Admin-Aktionen), Benachrichtigung bei neuer Anmeldung.
+- **Geheimnisse der Benutzer** (Mail-Passwörter, Tokens) werden pro Benutzer verschlüsselt; der Schlüssel wird aus dem Benutzerpasswort abgeleitet bzw. bei OIDC über einen Server-Schlüssel (KEK) geschützt.
+
 ## 16. Benutzeroberfläche & UX
 
 ### 16.1 Grundlayout
@@ -1190,10 +1235,10 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | **6 – Cloud-Anhänge** | Nextcloud, OpenCloud, Vaultwarden Send, Link-Verwaltung, Anhang-Ablage-Regeln | Cloud-Workflow | 2 PM |
 | **7 – Messenger** | Plugin-Host, **WhatsApp, Signal, Telegram, Matrix** (Pflicht für 1.0), gemischte Personen-Zeitleiste | Unified Inbox | 5,5 PM |
 | **8 – Bridge-Modus** | `plugin-matrix-bridge`, Bridge-Zuordnung, Kopplungsassistent, docker-compose mit Homeserver + Bridges | Messenger 24/7 | 2 PM |
-| **9 – Server & Web-Client** | `tuxmail serve`, API-Generierung (Connect-RPC), Transport-Abstraktion im Frontend, Benutzerverwaltung, OIDC, PWA/Web-Push, Docker-Image | Zugriff über Browser | 4 PM |
+| **9 – Server & Web-Client** | `tuxmail serve`, API-Generierung (Connect-RPC), Transport-Abstraktion im Frontend, Benutzerverwaltung (Rollen, Gruppen, 2FA, OIDC, CLI), PWA/Web-Push, Docker-Image, **Ansible-Playbook** (nginx neu/bestehend, systemd, Let's Encrypt/eigenes Zertifikat) | Zugriff über Browser | 5 PM |
 | **9b – Workflows & Team** | Workflow-Engine + grafischer Editor + YAML, Vorlagen, Trockenlauf, Protokoll; „Warten auf Antwort"; Versand-Prüfungen; Druck/PDF/A-Archivierung inkl. E-Rechnungserkennung; gemeinsame Postfächer (Zuweisung, Kommentare, Kollisionserkennung) | Automatisierung & Teamarbeit | 5 PM |
 | **10 – Feinschliff & Release 1.0** | Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (lokal + Cloud-Anbieter), S/MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Sicherheitsprüfung des Web-Modus, Dokumentation | Release | 5 PM |
-| | | **Summe 1.0** | **≈ 48 PM** |
+| | | **Summe 1.0** | **≈ 49 PM** |
 | *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat, Mobil-App | Optionale Kanäle | *≈ 3–4 PM* |
 
 - Mit 3 Entwicklern: **ca. 16–18 Monate** bis Version 1.0 (mit 4 Entwicklern ca. 12–14 Monate); ein nutzbarer Mail-Client mit PGP und Konversationsansicht (Phasen 0–2) nach **ca. 5 Monaten**.
