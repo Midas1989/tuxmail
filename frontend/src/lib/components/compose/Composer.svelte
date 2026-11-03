@@ -51,7 +51,7 @@
   import Cloud from '@lucide/svelte/icons/cloud';
   import { app } from '../../state';
   import type { ComposerInit } from '../../state';
-  import type { Address, OutgoingAttachment, PasswordDelivery, PasswordDeliveryMode } from '../../types';
+  import { messengerChannel, type Address, type OutgoingAttachment, type PasswordDelivery, type PasswordDeliveryMode } from '../../types';
   import { formatSize, t } from '../../i18n/index.svelte';
   import Modal from '../common/Modal.svelte';
   import RecipientInput, { isValidEmail } from './RecipientInput.svelte';
@@ -160,7 +160,8 @@
     if (!p) return [];
     const out: MessengerTarget[] = [];
     for (const acc of app.messengerAccounts) {
-      const ch = acc.kind === 'signal' ? 'signal' : 'whatsapp';
+      const ch = messengerChannel(acc.kind);
+      if (!ch) continue;
       if (p.handles.some((h) => h.kind === ch)) out.push({ accountId: acc.id, channel: ch, label: acc.displayName });
     }
     return out;

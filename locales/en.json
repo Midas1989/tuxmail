@@ -30,7 +30,8 @@
     "channel": {
       "email": "Email",
       "signal": "Signal",
-      "whatsapp": "WhatsApp"
+      "whatsapp": "WhatsApp",
+      "telegram": "Telegram"
     },
     "conn": {
       "offline": "Offline",
@@ -149,28 +150,17 @@
     }
   },
   "chat": {
-    "allConversations": "All conversations",
-    "byPerson": "People",
-    "byThread": "Topics",
     "channel": "Channel and sender",
     "composerLabel": "Write a reply",
-    "count": "{count} conversations",
-    "count_one": "1 conversation",
     "empty": "No conversations",
-    "expand": "Expand",
     "forwarded": "Forwarded",
     "forwardedNoText": "Forwarded message",
-    "grouping": "Grouping",
-    "hideQuoted": "Hide quote",
     "listLabel": "Conversations",
-    "mailHint": "Sent as a complete email with subject, signature and references.",
     "noSelection": "Pick a conversation",
     "noSelectionHint": "Email, WhatsApp and Signal in one timeline.",
-    "openOriginal": "Show original email",
     "pinned": "Pinned",
     "placeholder": "Write a message …",
     "placeholderMail": "Write an email reply …",
-    "showQuoted": "Show quoted text",
     "status": {
       "delivered": "Delivered",
       "failed": "Failed",
@@ -179,8 +169,157 @@
       "sent": "Sent"
     },
     "timelineLabel": "Timeline",
-    "with": "with {names}",
-    "you": "You"
+    "you": "You",
+    "archived": "Archived",
+    "newChat": "New chat",
+    "searchPlaceholder": "Search or start a new chat",
+    "filterLabel": "Filter chats",
+    "filter": {
+      "all": "All",
+      "unread": "Unread",
+      "mail": "Mail",
+      "whatsapp": "WhatsApp",
+      "signal": "Signal",
+      "telegram": "Telegram",
+      "groups": "Groups",
+      "favorites": "Favorites"
+    },
+    "chatMenu": "Chat options for {name}",
+    "muted": "Muted",
+    "markedUnread": "Marked as unread",
+    "noResults": "No chats found",
+    "groupedByTopic": "Grouped by topic (Ctrl+K to change)",
+    "action": {
+      "pin": "Pin chat",
+      "unpin": "Unpin chat",
+      "mute": "Mute notifications",
+      "unmute": "Unmute",
+      "archive": "Archive chat",
+      "unarchive": "Unarchive chat",
+      "markRead": "Mark as read",
+      "markUnread": "Mark as unread",
+      "favorite": "Add to favorites",
+      "unfavorite": "Remove from favorites",
+      "delete": "Delete chat"
+    },
+    "toast": {
+      "archived": "Chat archived",
+      "unarchived": "Chat moved out of the archive"
+    },
+    "deleteTitle": "Delete chat with {name}?",
+    "deleteMessage": "All messages of this chat will be deleted.",
+    "deleteMessageMail": "Messenger messages will be deleted and the e-mails moved to the trash of their accounts.",
+    "deleted": "Chat deleted",
+    "mailMovedToTrash": "E-mail moved to trash",
+    "messageDeleted": "Message deleted",
+    "deleteMessageTitle": "Delete message?",
+    "deleteMailConfirm": "The e-mail will be moved to the trash.",
+    "deleteMessageConfirm": "The message will be deleted for you.",
+    "forwardTitle": "Forward to …",
+    "forwardedTo": "Forwarded to {name}",
+    "open": "Open",
+    "taskCreated": "Task created",
+    "eventCreated": "Event created",
+    "copied": "Copied",
+    "copyFailed": "Could not copy",
+    "openInClassic": "Open in classic view",
+    "searchInChat": "Search in chat",
+    "searchHits": "{current} of {total}",
+    "prevHit": "Previous match",
+    "nextHit": "Next match",
+    "moreActions": "More options",
+    "lastSeen": "last seen {when}",
+    "unreadMarker": "{count} unread messages",
+    "unreadMarker_one": "1 unread message",
+    "subject": "Subject: {subject}",
+    "subjectChanged": "Subject changed: {subject}",
+    "newMessages": "{count} new messages – jump to the latest",
+    "scrollToBottom": "Jump to the latest message",
+    "messageMenu": "Message options",
+    "menu": {
+      "react": "React",
+      "reply": "Reply",
+      "forward": "Forward",
+      "copy": "Copy",
+      "task": "Create task",
+      "event": "Create event",
+      "original": "Show original e-mail",
+      "delete": "Delete"
+    },
+    "reactWith": "React with {emoji}",
+    "moreReactions": "More reactions",
+    "reactionCount": "{emoji} {count}",
+    "jumpToReply": "Go to the original message",
+    "openCard": "Open",
+    "cancelReply": "Cancel reply",
+    "channelChip": "Send via {channel}: {account} – change",
+    "media": {
+      "photo": "Photo",
+      "voice": "Voice message",
+      "file": "File",
+      "voiceNote": "Voice message, {duration}",
+      "play": "Play",
+      "pause": "Pause",
+      "openImage": "Open image {name}"
+    },
+    "composer": {
+      "attach": "Attach",
+      "file": "File",
+      "photo": "Photo or video",
+      "fromNextcloud": "From Nextcloud",
+      "fromOpenCloud": "From OpenCloud",
+      "cloudSoon": "The cloud file picker is not connected yet.",
+      "fullMail": "Edit as full e-mail",
+      "voice": "Record voice message",
+      "recording": "Recording …",
+      "cancelVoice": "Discard recording",
+      "sendVoice": "Send voice message"
+    },
+    "signature": {
+      "label": "Signature",
+      "none": "No signature",
+      "noneOption": "No signature",
+      "expand": "Show signature",
+      "switch": "Choose signature",
+      "remove": "Remove signature from this message"
+    },
+    "emoji": {
+      "title": "Emoji",
+      "smileys": "Smileys",
+      "gestures": "Gestures",
+      "hearts": "Hearts & symbols",
+      "nature": "Nature",
+      "food": "Food & drink",
+      "objects": "Objects"
+    },
+    "info": {
+      "title": "Contact info",
+      "groupTitle": "Group info",
+      "toggle": "Show contact info",
+      "channels": "Channels & addresses",
+      "kind": {
+        "email": "E-mail",
+        "phone": "Phone"
+      },
+      "card": "Business card",
+      "cardSource": "From the signature of the e-mail of {date}",
+      "addContact": "Add to contacts",
+      "updateContact": "Update contact",
+      "contactSaved": "Contact saved",
+      "members": "{count} members",
+      "memberList": "Members",
+      "shared": "Shared content",
+      "tab": {
+        "media": "Media",
+        "files": "Files",
+        "links": "Links"
+      },
+      "none": "Nothing shared yet.",
+      "block": "Block"
+    },
+    "original": {
+      "date": "Date"
+    }
   },
   "calendar": {
     "next": "Next week",
@@ -237,7 +376,8 @@
       "signal": "Signal",
       "smtp": "SMTP",
       "vaultwarden": "Vaultwarden",
-      "whatsapp": "WhatsApp"
+      "whatsapp": "WhatsApp",
+      "telegram": "Telegram"
     },
     "region": {
       "custom": "Custom pattern",
@@ -288,7 +428,22 @@
       "starttls": "STARTTLS",
       "tls": "SSL/TLS"
     },
-    "transport": "Connection to core: {kind}"
+    "transport": "Connection to core: {kind}",
+    "chat": {
+      "title": "Chats",
+      "enterSends": "Enter sends the message",
+      "enterSendsHint": "Shift+Enter inserts a new line. When off, Ctrl+Enter sends.",
+      "signatures": "Signature in chat replies",
+      "signaturesHint": "E-mails written in chat mode include a signature. Choose per identity: full signature, a short chat signature or none.",
+      "mode": {
+        "full": "Full signature",
+        "short": "Short signature",
+        "off": "No signature"
+      },
+      "modeFor": "Chat signature for {email}",
+      "shortFor": "Short signature for {email}",
+      "noShort": "No short signature"
+    }
   },
   "search": {
     "allAccounts": "All accounts",

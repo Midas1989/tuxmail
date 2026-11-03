@@ -19,6 +19,9 @@ Account,
   Conversation,
   ConversationGrouping,
   ConversationItem,
+  ContactCard,
+  ConversationPatch,
+  Reaction,
   DeviceAuthorization,
   DeviceTokenResult,
   DiscoveryResult,
@@ -122,6 +125,30 @@ export class WailsTransport implements Api {
   }
   markConversationRead(conversationId: number): Promise<void> {
     return this.call('MarkConversationRead', conversationId);
+  }
+  updateConversation(conversationId: number, patch: ConversationPatch): Promise<Conversation> {
+    return this.call('UpdateConversation', conversationId, patch);
+  }
+  deleteConversation(conversationId: number): Promise<void> {
+    return this.call('DeleteConversation', conversationId);
+  }
+  reactToItem(conversationId: number, itemId: string, emoji: string): Promise<{ reactions: Reaction[]; sentAsRfc9078?: boolean }> {
+    return this.call('ReactToItem', conversationId, itemId, emoji);
+  }
+  deleteItem(conversationId: number, itemId: string): Promise<void> {
+    return this.call('DeleteItem', conversationId, itemId);
+  }
+  forwardItem(itemId: string, targetConversationId: number): Promise<SendResult> {
+    return this.call('ForwardItem', itemId, targetConversationId);
+  }
+  createFromItem(conversationId: number, itemId: string, kind: 'task' | 'event'): Promise<{ id: string }> {
+    return this.call('CreateFromItem', conversationId, itemId, kind);
+  }
+  saveContactCard(personId: number, card: ContactCard): Promise<void> {
+    return this.call('SaveContactCard', personId, card);
+  }
+  updateIdentity(identity: Identity): Promise<Identity> {
+    return this.call('UpdateIdentity', identity);
   }
   send(message: OutgoingMessage): Promise<SendResult> {
     return this.call('Send', message);

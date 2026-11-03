@@ -7,11 +7,12 @@
   import { app, prefs } from '../state';
   import type { Density, Theme } from '../state/prefs.svelte';
   import { t } from '../i18n/index.svelte';
-  import type { Account } from '../types';
+  import { messengerChannel, type Account } from '../types';
   import ChannelIcon from '../components/common/ChannelIcon.svelte';
   import AccountWizard from '../components/settings/AccountWizard.svelte';
   import NotificationSettings from '../components/settings/NotificationSettings.svelte';
   import RegionSettings from '../components/settings/RegionSettings.svelte';
+  import ChatSettings from '../components/settings/ChatSettings.svelte';
   import logoUrl from '$branding/tuxmail-logo.png';
   import ServerConnectWizard from '../components/settings/ServerConnectWizard.svelte';
   import Server from '@lucide/svelte/icons/server';
@@ -21,7 +22,7 @@
   let connectOpen = $state(false);
 
   function server(a: Account): string {
-    if (a.kind === 'whatsapp' || a.kind === 'signal') return a.extra?.address ?? '';
+    if (messengerChannel(a.kind)) return a.extra?.address ?? '';
     const i = a.incoming;
     return i ? `${i.host}:${i.port} · ${t(`settings.tls.${i.tls}`)}` : '';
   }
@@ -62,7 +63,7 @@
             <div class="acc">
               <span class="name">
                 {a.displayName}
-                {#if a.kind === 'whatsapp' || a.kind === 'signal'}<ChannelIcon channel={a.kind} size={13} />{/if}
+                {#if messengerChannel(a.kind)}<ChannelIcon channel={messengerChannel(a.kind)!} size={13} />{/if}
               </span>
               <span class="sub">{a.extra?.address} · {server(a)}</span>
             </div>
@@ -82,6 +83,8 @@
     <NotificationSettings />
 
     <RegionSettings />
+
+    <ChatSettings />
 
     <section class="card" aria-labelledby="set-look">
       <h2 id="set-look">{t('settings.appearance')}</h2>

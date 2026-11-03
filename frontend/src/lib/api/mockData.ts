@@ -49,6 +49,15 @@ export const accounts: Account[] = [
     enabled: true,
     sortOrder: 3,
   },
+  {
+    id: 5,
+    kind: 'telegram',
+    displayName: 'Telegram',
+    color: '#229ed9',
+    extra: { address: '@jonasbecker' },
+    enabled: true,
+    sortOrder: 4,
+  },
 ];
 
 export const signatures: Signature[] = [
@@ -61,12 +70,14 @@ export const signatures: Signature[] = [
     plain: 'Mit freundlichen Grüßen\n\nJonas Becker\nRechtsanwalt\nKanzlei Sommer & Partner\nTel. +49 89 123456-12',
     placement: 'below_reply',
   },
+  { id: 4, name: 'Kurz (Kanzlei)', html: '<p>Jonas Becker · Kanzlei Sommer · +49 89 123456-12</p>', plain: 'Jonas Becker · Kanzlei Sommer · +49 89 123456-12', placement: 'below_reply' },
+  { id: 5, name: 'Kurz (Privat)', html: '<p>Jonas · 0151 2345678</p>', plain: 'Jonas · 0151 2345678', placement: 'below_reply' },
 ];
 
 export const identities: Identity[] = [
-  { id: 1, accountId: 1, name: 'Jonas Becker', email: 'jonas.becker@posteo.de', bccSelf: false, defaultSignatureId: 1, replySignatureId: 1, isDefault: true },
-  { id: 2, accountId: 1, name: 'Jonas Becker', email: 'jonas@becker-familie.de', bccSelf: false, defaultSignatureId: 2, replySignatureId: 2, isDefault: false },
-  { id: 3, accountId: 2, name: 'Jonas Becker', email: 'j.becker@kanzlei-sommer.de', bccSelf: false, defaultSignatureId: 3, replySignatureId: 3, isDefault: true },
+  { id: 1, accountId: 1, name: 'Jonas Becker', email: 'jonas.becker@posteo.de', bccSelf: false, defaultSignatureId: 1, replySignatureId: 1, isDefault: true, chatSignatureMode: 'full', chatSignatureId: 5 },
+  { id: 2, accountId: 1, name: 'Jonas Becker', email: 'jonas@becker-familie.de', bccSelf: false, defaultSignatureId: 2, replySignatureId: 2, isDefault: false, chatSignatureMode: 'full' },
+  { id: 3, accountId: 2, name: 'Jonas Becker', email: 'j.becker@kanzlei-sommer.de', bccSelf: false, defaultSignatureId: 3, replySignatureId: 3, isDefault: true, chatSignatureMode: 'short', chatSignatureId: 4 },
   { id: 4, accountId: 2, name: 'Kanzlei Sommer – Info', email: 'info@kanzlei-sommer.de', bccSelf: true, defaultSignatureId: 3, isDefault: false },
 ];
 
@@ -115,9 +126,9 @@ export const persons: Person[] = [
       { kind: 'signal', value: '+491512345678' },
     ],
   },
-  { id: 2, displayName: 'Anna Müller', isMe: false, handles: [{ kind: 'email', value: 'anna.mueller@mueller-gmbh.de' }, { kind: 'whatsapp', value: '+491701112233' }] },
-  { id: 3, displayName: 'Max Weber', isMe: false, handles: [{ kind: 'email', value: 'max.weber@kanzlei-sommer.de' }, { kind: 'signal', value: '+491604445566' }] },
-  { id: 4, displayName: 'Sabine Becker', isMe: false, handles: [{ kind: 'email', value: 'sabine.becker@t-online.de' }, { kind: 'whatsapp', value: '+491717778899' }] },
+  { id: 2, displayName: 'Anna Müller', isMe: false, lastSeen: 'rel:-20m', handles: [{ kind: 'email', value: 'anna.mueller@mueller-gmbh.de' }, { kind: 'whatsapp', value: '+491701112233' }] },
+  { id: 3, displayName: 'Max Weber', isMe: false, lastSeen: 'rel:-10m', handles: [{ kind: 'email', value: 'max.weber@kanzlei-sommer.de' }, { kind: 'signal', value: '+491604445566' }] },
+  { id: 4, displayName: 'Sabine Becker', isMe: false, lastSeen: 'rel:-45m', handles: [{ kind: 'email', value: 'sabine.becker@t-online.de' }, { kind: 'whatsapp', value: '+491717778899' }] },
   { id: 5, displayName: 'Thomas Klein', isMe: false, handles: [{ kind: 'email', value: 't.klein@tsv-gruenwald.de' }] },
   { id: 6, displayName: 'Lisa Schneider', isMe: false, handles: [{ kind: 'email', value: 'lisa.schneider@schneider-kg.de' }] },
   {
@@ -128,20 +139,24 @@ export const persons: Person[] = [
       { kind: 'email', value: 'paul.richter@mailbox.org' },
       { kind: 'signal', value: '+491529990001' },
       { kind: 'whatsapp', value: '+491529990001' },
+      { kind: 'telegram', value: '@paulrichter' },
     ],
+    lastSeen: 'rel:-3m',
   },
   { id: 8, displayName: 'Kerstin Wagner (Wagner Bau)', isMe: false, handles: [{ kind: 'email', value: 'k.wagner@wagner-bau.de' }] },
   { id: 9, displayName: 'Stadtwerke München', isMe: false, handles: [{ kind: 'email', value: 'rechnung@swm-kundenservice.de' }] },
   { id: 10, displayName: 'heise online', isMe: false, handles: [{ kind: 'email', value: 'newsletter@heise.de' }] },
   { id: 11, displayName: 'Deutsche Bahn', isMe: false, handles: [{ kind: 'email', value: 'buchungsbestaetigung@bahn.de' }] },
   { id: 12, displayName: 'Claudia Sommer', isMe: false, handles: [{ kind: 'email', value: 'c.sommer@kanzlei-sommer.de' }] },
-  { id: 13, displayName: 'Lena Becker', isMe: false, handles: [{ kind: 'email', value: 'lena.becker@gmx.de' }, { kind: 'whatsapp', value: '+491763334455' }] },
+  { id: 13, displayName: 'Lena Becker', isMe: false, lastSeen: 'rel:-2h', handles: [{ kind: 'email', value: 'lena.becker@gmx.de' }, { kind: 'whatsapp', value: '+491763334455' }, { kind: 'telegram', value: '@lenab' }] },
   { id: 14, displayName: 'DHL Paket', isMe: false, handles: [{ kind: 'email', value: 'noreply@dhl.de' }] },
   { id: 15, displayName: 'IT-Service Kanzlei', isMe: false, handles: [{ kind: 'email', value: 'it@kanzlei-sommer.de' }] },
   { id: 16, displayName: 'Büromarkt Böttcher', isMe: false, handles: [{ kind: 'email', value: 'service@bueromarkt-boettcher.de' }] },
   { id: 17, displayName: 'Gewinnspiel-Team', isMe: false, handles: [{ kind: 'email', value: 'win@gluecks-gewinn.biz' }] },
   { id: 18, displayName: 'Fitness First', isMe: false, handles: [{ kind: 'email', value: 'kuendigung@fitness-studio.example' }] },
   { id: 19, displayName: 'Online-Shop', isMe: false, handles: [{ kind: 'email', value: 'bestellung@shop.example' }] },
+  { id: 20, displayName: 'Jana Vogel', isMe: false, lastSeen: 'rel:-1m', handles: [{ kind: 'telegram', value: '@janavogel' }, { kind: 'phone', value: '+491578887766' }] },
+  { id: 21, displayName: 'Felix Braun', isMe: false, lastSeen: 'rel:-1d', handles: [{ kind: 'telegram', value: '@felixb' }] },
 ];
 
 /** [daysAgo, "HH:MM"]. Day-0 times stay before 13:00 (see anchorDate in mock.ts). */
@@ -169,6 +184,8 @@ export interface MailSpec {
   forwardOf?: number;
   /** Signature id appended for own messages. */
   sig?: number;
+  /** Signature of an external sender (appended after "-- "). */
+  senderSig?: string;
   remote?: boolean;
 }
 
@@ -219,8 +236,8 @@ const vpnHtml = `<!doctype html><html><body style="font-family:Calibri,Arial,san
 export const mails: MailSpec[] = [
   // ---- Work: Angebot Q4 (Anna Müller) -------------------------------------
   {
-    id: 1, account: 2, folders: [26], thread: 1, from: 2, to: [ME], subject: 'Angebot Q4', at: [3, '09:12'], seen: true,
-    text: 'Hallo Herr Becker,\n\nanbei wie besprochen unser Angebot für die Rahmenvereinbarung im vierten Quartal. Die Konditionen gelten bis Ende November.\n\nFür Rückfragen stehe ich Ihnen gern zur Verfügung.\n\nViele Grüße\nAnna Müller\nMüller GmbH',
+    id: 1, account: 2, folders: [26], thread: 1, from: 2, to: [ME], subject: 'Angebot Q4', at: [3, '09:12'], seen: true, senderSig: 'Anna Müller\nKey Account Management\nMüller GmbH\nIndustriestraße 5, 80939 München\nTel. +49 89 555123-40\nMobil +49 170 1112233\nwww.mueller-gmbh.de',
+    text: 'Hallo Herr Becker,\n\nanbei wie besprochen unser Angebot für die Rahmenvereinbarung im vierten Quartal. Die Konditionen gelten bis Ende November.\n\nFür Rückfragen stehe ich Ihnen gern zur Verfügung.\n\nViele Grüße\nAnna Müller',
     attachments: [['Angebot_Q4.pdf', 'application/pdf', 248_312]],
   },
   {
@@ -228,14 +245,14 @@ export const mails: MailSpec[] = [
     text: 'Hallo Frau Müller,\n\nvielen Dank – ich prüfe das Angebot und melde mich bis Freitag.',
   },
   {
-    id: 3, account: 2, folders: [20], thread: 1, from: 2, to: [ME], subject: 'Re: Angebot Q4', at: [0, '08:41'], replyTo: 2, flagged: true,
+    id: 3, account: 2, folders: [20], thread: 1, from: 2, to: [ME], subject: 'Re: Angebot Q4', at: [0, '08:41'], replyTo: 2, flagged: true, senderSig: 'Anna Müller\nKey Account Management\nMüller GmbH\nIndustriestraße 5, 80939 München\nTel. +49 89 555123-40\nMobil +49 170 1112233\nwww.mueller-gmbh.de',
     text: 'Hallo Herr Becker,\n\nkurze Ergänzung: In Position 4 hat sich ein Tippfehler eingeschlichen, der Stundensatz beträgt 145 € statt 154 €. Die korrigierte Fassung hängt an.\n\nViele Grüße\nAnna Müller',
     attachments: [['Angebot_Q4_korrigiert.pdf', 'application/pdf', 251_004]],
   },
   // ---- Work: Fristverlängerung (Lisa Schneider, Max Weber) ----------------
   {
-    id: 4, account: 2, folders: [27], thread: 2, from: 6, to: [ME], cc: [3], subject: 'Fristverlängerung Schneider ./. Krause', at: [2, '14:20'], seen: true,
-    text: 'Sehr geehrter Herr Becker,\n\ndas Gericht hat die Frist zur Stellungnahme bis zum 24.11. verlängert. Anbei unser Entwurf für den Schriftsatz – wir würden uns über Ihre Anmerkungen freuen.\n\nMit freundlichen Grüßen\nLisa Schneider\nSchneider KG',
+    id: 4, account: 2, folders: [27], thread: 2, from: 6, to: [ME], cc: [3], subject: 'Fristverlängerung Schneider ./. Krause', at: [2, '14:20'], seen: true, senderSig: 'Lisa Schneider\nGeschäftsführerin\nSchneider KG\nHafenstraße 12, 20457 Hamburg\nTel. +49 40 987654-0\nwww.schneider-kg.de',
+    text: 'Sehr geehrter Herr Becker,\n\ndas Gericht hat die Frist zur Stellungnahme bis zum 24.11. verlängert. Anbei unser Entwurf für den Schriftsatz – wir würden uns über Ihre Anmerkungen freuen.\n\nMit freundlichen Grüßen\nLisa Schneider',
     attachments: [['Schriftsatz_Entwurf.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 84_221]],
   },
   {
@@ -285,8 +302,8 @@ export const mails: MailSpec[] = [
   },
   // ---- Private: Hausbau -----------------------------------------------------
   {
-    id: 20, account: 1, folders: [17], thread: 10, from: 8, to: [ME], subject: 'Termin Bodenplatte', at: [6, '09:30'], seen: true,
-    text: 'Guten Tag Herr Becker,\n\nwir können die Bodenplatte am Dienstag nächster Woche gießen, sofern das Wetter mitspielt. Den aktualisierten Bauzeitenplan finden Sie im Anhang.\n\nMit freundlichen Grüßen\nKerstin Wagner\nWagner Bau GmbH',
+    id: 20, account: 1, folders: [17], thread: 10, from: 8, to: [ME], subject: 'Termin Bodenplatte', at: [6, '09:30'], seen: true, senderSig: 'Kerstin Wagner\nBauleitung\nWagner Bau GmbH\nAm Werkhof 3, 82041 Oberhaching\nTel. +49 89 6131-220\nwww.wagner-bau.de',
+    text: 'Guten Tag Herr Becker,\n\nwir können die Bodenplatte am Dienstag nächster Woche gießen, sofern das Wetter mitspielt. Den aktualisierten Bauzeitenplan finden Sie im Anhang.\n\nMit freundlichen Grüßen\nKerstin Wagner',
     attachments: [['Bauzeitenplan_v3.pdf', 'application/pdf', 1_245_880]],
   },
   {
@@ -400,7 +417,7 @@ export const mails: MailSpec[] = [
 
 export interface ChatSpec {
   id: number;
-  accountId: 3 | 4;
+  accountId: 3 | 4 | 5;
   /** Remote chat kind. */
   kind: 'direct' | 'group';
   title?: string;
@@ -414,7 +431,13 @@ export const chats: ChatSpec[] = [
   { id: 103, accountId: 3, kind: 'direct', memberIds: [4] },
   { id: 104, accountId: 4, kind: 'direct', memberIds: [3] },
   { id: 105, accountId: 4, kind: 'direct', memberIds: [7] },
+  { id: 106, accountId: 5, kind: 'group', title: 'Wandergruppe ⛰️', memberIds: [7, 20, 21, 13] },
+  { id: 107, accountId: 5, kind: 'direct', memberIds: [20] },
+  { id: 108, accountId: 4, kind: 'group', title: 'Kanzlei-Team', memberIds: [3, 12] },
 ];
+
+/** [filename, mime, size, extra] - extra: photo hues or voice duration. */
+export type MediaSpec = [string, string, number] | [string, string, number, { photo?: [number, number]; seconds?: number }];
 
 export interface ChatMessageSpec {
   id: number;
@@ -423,8 +446,11 @@ export interface ChatMessageSpec {
   at: When;
   text: string;
   seen?: boolean;
-  attachments?: [string, string, number][];
-  reactions?: { emoji: string; count: number }[];
+  attachments?: MediaSpec[];
+  reactions?: { emoji: string; count: number; mine?: boolean }[];
+  /** Answers this chat message id. */
+  replyTo?: number;
+  link?: { url: string; title: string; description?: string; siteName?: string };
 }
 
 export const chatMessages: ChatMessageSpec[] = [
@@ -436,8 +462,10 @@ export const chatMessages: ChatMessageSpec[] = [
   { id: 1101, chatId: 102, from: 4, at: [2, '18:30'], text: 'Wer kommt am Sonntag zum Essen? 🍲', seen: true },
   { id: 1102, chatId: 102, from: 13, at: [2, '18:41'], text: 'Ich! Bringe Nachtisch mit.', seen: true },
   { id: 1103, chatId: 102, from: ME, at: [2, '19:05'], text: 'Wir sind auch dabei 👍', seen: true, reactions: [{ emoji: '❤️', count: 2 }] },
-  { id: 1104, chatId: 102, from: 4, at: [0, '09:15'], text: 'Bild vom neuen Gartenhaus', attachments: [['IMG_2041.jpg', 'image/jpeg', 1_802_331]] },
-  { id: 1105, chatId: 102, from: 4, at: [0, '09:16'], text: 'Papa ist ganz stolz 😄' },
+  { id: 1104, chatId: 102, from: 4, at: [0, '09:15'], text: 'Bild vom neuen Gartenhaus', attachments: [['IMG_2041.jpg', 'image/jpeg', 1_802_331, { photo: [28, 140] }]] },
+  { id: 1105, chatId: 102, from: 4, at: [0, '09:16'], text: 'Papa ist ganz stolz 😄', reactions: [{ emoji: '😂', count: 1 }, { emoji: '❤️', count: 2, mine: true }] },
+  { id: 1106, chatId: 102, from: 13, at: [0, '09:31'], text: '', attachments: [['Sprachnachricht.ogg', 'audio/ogg', 48_210, { seconds: 14 }]] },
+  { id: 1107, chatId: 102, from: ME, at: [0, '09:40'], text: 'Sieht toll aus! Am Sonntag schauen wir es uns an 🙂', replyTo: 1104 },
   // Mama direct (WhatsApp)
   { id: 1201, chatId: 103, from: 4, at: [4, '20:02'], text: 'Danke für die Mail mit dem Bauzeitenplan!', seen: true },
   { id: 1202, chatId: 103, from: ME, at: [4, '20:10'], text: 'Gerne! Ihr könnt jederzeit vorbeikommen.', seen: true },
@@ -451,4 +479,29 @@ export const chatMessages: ChatMessageSpec[] = [
   { id: 1402, chatId: 105, from: ME, at: [5, '21:06'], text: 'Gerade gesehen, mega!', seen: true },
   { id: 1403, chatId: 105, from: 7, at: [1, '09:20'], text: 'Kannst du am Samstag einen Anhänger organisieren? Thomas braucht noch Bierbänke.', seen: true },
   { id: 1404, chatId: 105, from: 7, at: [0, '12:05'], text: 'Und: Nächstes Wochenende wieder wandern? ⛰️' },
+  // Wandergruppe (Telegram group)
+  { id: 1501, chatId: 106, from: 7, at: [1, '18:02'], text: 'Wer ist Samstag dabei? 🥾', seen: true },
+  { id: 1502, chatId: 106, from: 20, at: [1, '18:05'], text: 'Ich! Welche Route?', seen: true },
+  {
+    id: 1503, chatId: 106, from: 7, at: [1, '18:07'], seen: true,
+    text: 'Herzogstand – Heimgarten, Gratwanderung: https://www.alpenverein.de/touren/herzogstand-heimgarten',
+    link: { url: 'https://www.alpenverein.de/touren/herzogstand-heimgarten', siteName: 'alpenverein.de', title: 'Gratwanderung Herzogstand – Heimgarten', description: 'Klassische Überschreitung mit Blick auf Walchensee und Kochelsee, ca. 5 Std.' },
+  },
+  { id: 1504, chatId: 106, from: 21, at: [1, '18:20'], text: 'Fotos von letztem Mal 📸', seen: true, attachments: [
+    ['Gipfel.jpg', 'image/jpeg', 2_210_000, { photo: [200, 30] }],
+    ['Walchensee.jpg', 'image/jpeg', 1_980_000, { photo: [190, 160] }],
+    ['Brotzeit.jpg', 'image/jpeg', 1_640_000, { photo: [35, 90] }],
+  ] },
+  { id: 1505, chatId: 106, from: ME, at: [1, '18:31'], text: 'Bin dabei 👍', seen: true, reactions: [{ emoji: '🎉', count: 2 }] },
+  { id: 1506, chatId: 106, from: 13, at: [1, '19:02'], text: 'Ich auch, nehme den Zug um 7:12', seen: true },
+  { id: 1507, chatId: 106, from: 20, at: [0, '08:15'], text: 'Sieht super aus, freu mich!', replyTo: 1503 },
+  { id: 1508, chatId: 106, from: 7, at: [0, '08:17'], text: 'Treffpunkt 7:45 am Parkplatz Kesselberg' },
+  // Jana (Telegram)
+  { id: 1601, chatId: 107, from: 20, at: [2, '20:11'], text: 'Hi Jonas! Danke nochmal für den Tipp mit der Hütte 😊', seen: true },
+  { id: 1602, chatId: 107, from: ME, at: [2, '20:15'], text: 'Gern! War sie gut?', seen: true },
+  { id: 1603, chatId: 107, from: 20, at: [2, '20:16'], text: '', seen: true, attachments: [['Sprachnachricht.ogg', 'audio/ogg', 36_500, { seconds: 9 }]] },
+  { id: 1604, chatId: 107, from: 20, at: [2, '20:17'], text: 'Sonnenuntergang von der Terrasse', seen: true, attachments: [['Huette.jpg', 'image/jpeg', 2_900_000, { photo: [15, 280] }]], reactions: [{ emoji: '😍', count: 1, mine: true }] },
+  // Kanzlei-Team (Signal group)
+  { id: 1701, chatId: 108, from: 12, at: [0, '07:58'], text: 'Kurze Info: Donnerstag 10 Uhr Teammeeting im großen Besprechungsraum.' },
+  { id: 1702, chatId: 108, from: 3, at: [0, '08:01'], text: '👍' },
 ];

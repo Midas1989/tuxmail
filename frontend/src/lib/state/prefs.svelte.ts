@@ -22,6 +22,7 @@ interface Stored {
   region: RegionSettings;
   grouping: ConversationGrouping;
   viewMode: 'classic' | 'chat';
+  chatEnterSends: boolean;
 }
 
 const KEY = 'tuxmail.prefs.v2';
@@ -43,6 +44,8 @@ class Prefs {
   region = $state<RegionSettings>({ ...DEFAULT_REGION });
   grouping = $state<ConversationGrouping>('person');
   viewMode = $state<'classic' | 'chat'>('classic');
+  /** Messenger composer: Enter sends (Shift+Enter = newline); off = Ctrl+Enter sends. */
+  chatEnterSends = $state(true);
   systemDark = $state(false);
   private api: Api | null = null;
   private syncTimer: ReturnType<typeof setTimeout> | null = null;
@@ -55,6 +58,7 @@ class Prefs {
     this.region = { ...DEFAULT_REGION, ...(s.region ?? {}) };
     this.grouping = s.grouping ?? 'person';
     this.viewMode = s.viewMode ?? 'classic';
+    this.chatEnterSends = s.chatEnterSends ?? true;
     this.applyI18n();
     if (typeof matchMedia !== 'undefined') {
       const mq = matchMedia('(prefers-color-scheme: dark)');
@@ -119,6 +123,7 @@ class Prefs {
         region: $state.snapshot(this.region) as RegionSettings,
         grouping: this.grouping,
         viewMode: this.viewMode,
+        chatEnterSends: this.chatEnterSends,
       };
       localStorage.setItem(KEY, JSON.stringify(s));
     } catch {

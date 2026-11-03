@@ -69,6 +69,14 @@ export function installShortcuts(app: AppState): () => void {
         break;
       }
       case 'Escape':
+        if (app.replyingTo) {
+          app.replyingTo = null;
+          break;
+        }
+        if (app.infoOpen && !classic) {
+          app.infoOpen = false;
+          break;
+        }
         if (app.sidebarOpen) app.sidebarOpen = false;
         else if (classic && msgId != null) void app.selectMessage(null);
         else if (!classic && app.selectedConversationId != null) void app.selectConversation(null);

@@ -5,16 +5,21 @@
 
 import type { Api, ConversationScope, MessageScope } from '../api/api';
 import { classicSelectionFromChat, forwardSubject, messageIdFromItemId, pickFolderForMessage, replySubject } from '../conversation';
-import { fmt, t } from '../i18n/index.svelte';
+import { fmt, t, type MessageKey } from '../i18n/index.svelte';
 import {
   FLAG_FLAGGED,
   FLAG_SEEN,
   MAIL_KINDS,
+  messengerChannel,
   type Account,
   type Address,
   type ApiEvent,
   type Attachment,
   type Channel,
+  type ChatFilter,
+  type ContactCard,
+  type ConversationPatch,
+  type OutgoingAttachment,
   type Conversation,
   type ConversationItem,
   type Folder,
@@ -120,6 +125,21 @@ export class AppState {
   /** Bubble to centre on the next scroll request; null = newest item. */
   timelineScrollTarget = $state<string | null>(null);
 
+  // messenger (chat mode)
+  chatFilter = $state<ChatFilter>('all');
+  showArchived = $state(false);
+  archivedCount = $state(0);
+  chatQuery = $state('');
+  infoOpen = $state(false);
+  /** Bubble being answered in the composer (WhatsApp-style reply). */
+  replyingTo = $state<ConversationItem | null>(null);
+  /** First unread bubble when the chat was opened ("Unread messages" marker). */
+  unreadFromId = $state<string | null>(null);
+  /** Mail shown in the "original e-mail" overlay. */
+  originalMessage = $state<MessageDetail | null>(null);
+  /** Bubble chosen for "Forward". */
+  forwarding = $state<ConversationItem | null>(null);
+
   // overlays
   composer = $state<ComposerInit | null>(null);
   paletteOpen = $state(false);
@@ -143,7 +163,7 @@ export class AppState {
   }
 
   get messengerAccounts(): Account[] {
-    return this.accounts.filter((a) => a.kind === 'whatsapp' || a.kind === 'signal');
+    return this.accounts.filter((a) => messengerChannel(a.kind) !== null);
   }
 
   get allFolders(): Folder[] {
@@ -260,6 +280,8 @@ export class AppState {
   }
 
   conversationScope(): ConversationScope {
+    // The messenger view never shows folders: chats aggregate all of them.
+    if (this.viewMode === 'chat') return { kind: 'all' };
     const s = this.sel;
     if (s.kind === 'folder') return { kind: 'folder', folderId: s.folderId };
     if (s.kind === 'account') return { kind: 'account', accountId: s.accountId };
@@ -274,7 +296,11 @@ export class AppState {
     this.selectedConversationId = null;
     this.conversation = null;
     this.items = [];
-    if (sel.kind === 'account') prefs.viewMode = 'chat';
+    if (sel.kind === 'account') {
+      prefs.viewMode = 'chat';
+      const acc = this.account(sel.accountId);
+      this.chatFilter = (acc && messengerChannel(acc.kind)) || 'all';
+    }
     if (this.route !== 'mail') this.navigate('mail');
     await this.reloadList();
   }
@@ -324,9 +350,16 @@ export class AppState {
         grouping: prefs.grouping,
         offset: 0,
         limit: 500,
-        search: this.search || undefined,
+        search: (this.viewMode === 'chat' ? this.chatQuery : this.search) || undefined,
+        filter: this.viewMode === 'chat' ? this.chatFilter : undefined,
+        archived: this.viewMode === 'chat' ? this.showArchived : undefined,
       });
       this.conversations = page.items;
+      if (this.viewMode === 'chat' && !this.showArchived) {
+        void this.api
+          .listConversations({ scope: { kind: 'all' }, grouping: prefs.grouping, offset: 0, limit: 1, archived: true })
+          .then((p) => (this.archivedCount = p.total));
+      }
       if (this.selectedConversationId != null) {
         const c = page.items.find((x) => x.id === this.selectedConversationId);
         if (c) this.conversation = c;
@@ -398,13 +431,16 @@ export class AppState {
       this.items = [];
       return;
     }
+    if (this.replyingTo?.conversationId !== id) this.replyingTo = null;
     this.conversation = this.conversations.find((c) => c.id === id) ?? (await this.api.getConversation(id));
     const items = await this.api.listConversationItems(id);
     if (this.selectedConversationId !== id) return;
     this.items = items;
-    this.timelineScrollTarget = focusItemId ?? null;
+    const firstUnread = items.find((i) => i.unread && !i.isOwn);
+    this.unreadFromId = firstUnread?.id ?? null;
+    this.timelineScrollTarget = focusItemId ?? firstUnread?.id ?? null;
     this.timelineScrollTick++;
-    if (this.conversation && this.conversation.unreadCount > 0) {
+    if (this.conversation && (this.conversation.unreadCount > 0 || this.conversation.markedUnread)) {
       void this.api.markConversationRead(id);
     }
   }
@@ -416,7 +452,9 @@ export class AppState {
     if (this.selectedConversationId !== id) return;
     const grew = items.length > this.items.length;
     this.items = items;
-    if (grew && newItemId) {
+    // Own messages always scroll to the end; incoming ones are handled by the
+    // timeline (it only follows when the user is already at the bottom).
+    if (grew && newItemId && items.find((i) => i.id === newItemId)?.isOwn) {
       this.timelineScrollTarget = null;
       this.timelineScrollTick++;
     }
@@ -654,7 +692,8 @@ export class AppState {
       for (const i of idents) opts.push({ key: `email:${i.id}`, channel: 'email', identityId: i.id, label: i.email });
     }
     for (const acc of this.messengerAccounts) {
-      const ch: Channel = acc.kind === 'signal' ? 'signal' : 'whatsapp';
+      const ch: Channel | null = messengerChannel(acc.kind);
+      if (!ch) continue;
       const reachable = conv.kind === 'chat' ? conv.accountIds.includes(acc.id) : participants.some((p) => p.handles.some((h) => h.kind === ch));
       if (reachable) opts.push({ key: `${ch}:${acc.id}`, channel: ch, accountId: acc.id, label: acc.extra?.address ?? acc.displayName });
     }
@@ -667,20 +706,31 @@ export class AppState {
     return opts;
   }
 
-  async sendChat(text: string, option: ChannelOption): Promise<void> {
+  /**
+   * Send from the messenger composer. Mail: a proper reply (In-Reply-To /
+   * References via inReplyToMessageId, "Re:" subject generated and hidden,
+   * signature as chosen in the composer).
+   */
+  async sendChat(text: string, option: ChannelOption, extra: { replyTo?: ConversationItem | null; signature?: Signature | null; attachments?: OutgoingAttachment[] } = {}): Promise<void> {
     const conv = this.conversation;
-    if (!conv || !text.trim()) return;
+    const attachments = extra.attachments ?? [];
+    if (!conv || (!text.trim() && attachments.length === 0)) return;
+    const sig = extra.signature ?? null;
     if (option.channel === 'email') {
-      const lastMail = [...this.items].reverse().find((i) => i.messageId != null);
-      if (!lastMail?.messageId) {
-        const p = this.person(conv.participantIds[0]);
-        const email = p?.handles.find((h) => h.kind === 'email')?.value;
-        this.openCompose({ mode: 'new', identityId: option.identityId, to: email ? [{ name: p?.displayName, email }] : [], bodyHtml: textToHtml(text) });
+      const target = extra.replyTo?.messageId != null ? extra.replyTo : [...this.items].reverse().find((i) => i.messageId != null);
+      const textWithSig = text + (sig ? `\n\n-- \n${sig.plain}` : '');
+      const html = `<p>${textToHtml(text)}</p>${sig ? `<div data-signature>-- <br>${sig.html}</div>` : ''}`;
+      if (!target?.messageId) {
+        const to = conv.participantIds
+          .map((id) => this.person(id))
+          .map((p) => ({ name: p?.displayName, email: p?.handles.find((h) => h.kind === 'email')?.value ?? '' }))
+          .filter((a) => a.email);
+        const res = await this.api.send({ channel: 'email', identityId: option.identityId, to, cc: [], bcc: [], subject: text.split('\n')[0].slice(0, 60), text: textWithSig, html, attachments });
+        await this.reloadItems(res.itemId);
         return;
       }
-      const original = await this.api.getMessage(lastMail.messageId);
+      const original = await this.api.getMessage(target.messageId);
       const init = this.replyInit(original, conv.isGroup ? 'replyAll' : 'reply');
-      const sig = this.signatureFor(option.identityId!, true);
       const res = await this.api.send({
         channel: 'email',
         identityId: option.identityId,
@@ -688,12 +738,13 @@ export class AppState {
         cc: init.cc ?? [],
         bcc: [],
         subject: init.subject ?? '',
-        text: text + (sig ? `\n\n-- \n${sig.plain}` : ''),
-        html: `<p>${textToHtml(text)}</p>${sig ? `<div data-signature>-- <br>${sig.html}</div>` : ''}`,
+        text: textWithSig,
+        html,
         inReplyToMessageId: original.id,
-        attachments: [],
+        replyToItemId: extra.replyTo?.id,
+        signatureId: sig?.id ?? null,
+        attachments,
       });
-      if (res.itemId) this.focusedItemId = res.itemId;
       await this.reloadItems(res.itemId);
       return;
     }
@@ -707,9 +758,103 @@ export class AppState {
       subject: '',
       text,
       html: '',
-      attachments: [],
+      replyToItemId: extra.replyTo?.id,
+      attachments,
     });
     await this.reloadItems(res.itemId);
+  }
+
+  /** Signature for mails written in chat mode (identity setting: full / short / off). */
+  chatSignatureFor(identityId: number): Signature | undefined {
+    const ident = this.identities.find((i) => i.id === identityId);
+    const mode = ident?.chatSignatureMode ?? 'full';
+    if (mode === 'off') return undefined;
+    if (mode === 'short' && ident?.chatSignatureId != null) {
+      const short = this.signatures.find((s) => s.id === ident.chatSignatureId);
+      if (short) return short;
+    }
+    return this.signatureFor(identityId, true);
+  }
+
+  // ----- messenger actions ------------------------------------------------------
+
+  async setChatFilter(f: ChatFilter): Promise<void> {
+    this.chatFilter = f;
+    await this.loadConversations(true);
+  }
+
+  async setChatQuery(q: string): Promise<void> {
+    this.chatQuery = q;
+    await this.loadConversations(true);
+  }
+
+  async toggleArchivedView(show = !this.showArchived): Promise<void> {
+    this.showArchived = show;
+    await this.loadConversations(true);
+  }
+
+  async updateConversation(id: number, patch: ConversationPatch, toastKey?: MessageKey): Promise<void> {
+    const before = this.conversations.find((c) => c.id === id) ?? (this.conversation?.id === id ? this.conversation : undefined);
+    const updated = await this.api.updateConversation(id, patch);
+    if (this.conversation?.id === id) this.conversation = updated;
+    await this.loadConversations(true);
+    if (toastKey) {
+      const undo: ConversationPatch = {};
+      for (const k of Object.keys(patch) as (keyof ConversationPatch)[]) undo[k] = before ? (before[k] as boolean) : !patch[k];
+      this.toast(t(toastKey), { label: t('common.action.undo'), run: () => void this.updateConversation(id, undo) });
+    }
+  }
+
+  async deleteConversation(id: number): Promise<void> {
+    await this.api.deleteConversation(id);
+    if (this.selectedConversationId === id) await this.selectConversation(null);
+    await this.loadConversations(true);
+    this.toast(t('chat.deleted'));
+  }
+
+  async react(item: ConversationItem, emoji: string): Promise<void> {
+    const res = await this.api.reactToItem(item.conversationId, item.id, emoji);
+    this.items = this.items.map((i) => (i.id === item.id ? { ...i, reactions: res.reactions } : i));
+  }
+
+  async deleteItem(item: ConversationItem): Promise<void> {
+    await this.api.deleteItem(item.conversationId, item.id);
+    this.items = this.items.filter((i) => i.id !== item.id);
+    this.toast(item.channel === 'email' ? t('chat.mailMovedToTrash') : t('chat.messageDeleted'));
+  }
+
+  async forwardTo(item: ConversationItem, targetConversationId: number): Promise<void> {
+    await this.api.forwardItem(item.id, targetConversationId);
+    this.forwarding = null;
+    const target = this.conversations.find((c) => c.id === targetConversationId);
+    this.toast(t('chat.forwardedTo', { name: target?.title ?? '' }), { label: t('chat.open'), run: () => void this.selectConversation(targetConversationId) });
+  }
+
+  async createFromItem(item: ConversationItem, kind: 'task' | 'event'): Promise<void> {
+    await this.api.createFromItem(item.conversationId, item.id, kind);
+    this.toast(kind === 'task' ? t('chat.taskCreated') : t('chat.eventCreated'));
+  }
+
+  async showOriginal(item: ConversationItem): Promise<void> {
+    if (item.messageId == null) return;
+    this.originalMessage = await this.api.getMessage(item.messageId);
+  }
+
+  /** "In klassischer Ansicht öffnen": focus the bubble/mail and switch. */
+  async openInClassic(item?: ConversationItem | null): Promise<void> {
+    if (item) this.focusItem(item.id);
+    await this.setViewMode('classic');
+  }
+
+  async saveContactCard(personId: number, card: ContactCard): Promise<void> {
+    await this.api.saveContactCard(personId, card);
+    this.persons = await this.api.listPersons();
+    this.toast(t('chat.info.contactSaved'));
+  }
+
+  async updateIdentity(identity: Identity): Promise<void> {
+    const saved = await this.api.updateIdentity(identity);
+    this.identities = this.identities.map((i) => (i.id === saved.id ? saved : i));
   }
 
   signatureFor(identityId: number, reply: boolean): Signature | undefined {

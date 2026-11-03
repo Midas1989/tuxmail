@@ -7,7 +7,7 @@
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
-import { chatItemId, mailItemId, normalizeSubject, splitQuoted } from '../conversation';
+import { chatItemId, mailItemId, normalizeSubject, splitMail, splitQuoted } from '../conversation';
 import type {
 Account,
   Address,
@@ -18,6 +18,10 @@ Account,
   ConversationGrouping,
   ConversationItem,
   DeliveryStatus,
+  ContactCard,
+  ConversationPatch,
+  Reaction,
+  LinkPreview,
   DeviceAuthorization,
   DeviceTokenResult,
   DiscoveryResult,
@@ -69,8 +73,34 @@ interface ChatRecord {
   text: string;
   seen: boolean;
   attachments: Attachment[];
-  reactions?: { emoji: string; count: number }[];
+  reactions?: Reaction[];
   status?: DeliveryStatus;
+  replyTo?: number;
+  link?: LinkPreview;
+  forwarded?: boolean;
+}
+
+interface ConvFlags {
+  pinned?: boolean;
+  muted?: boolean;
+  archived?: boolean;
+  favorite?: boolean;
+  markedUnread?: boolean;
+  blocked?: boolean;
+}
+
+/** Placeholder "photo" (SVG landscape) for the demo data. */
+export function photoDataUrl(skyHue: number, groundHue: number): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="hsl(${skyHue} 70% 72%)"/><stop offset="1" stop-color="hsl(${(skyHue + 30) % 360} 80% 88%)"/></linearGradient></defs><rect width="400" height="300" fill="url(#s)"/><circle cx="300" cy="80" r="34" fill="hsl(45 95% 70%)"/><path d="M0 230 L90 120 L160 200 L240 100 L330 190 L400 140 L400 300 L0 300Z" fill="hsl(${groundHue} 35% 42%)"/><path d="M0 260 L120 200 L220 250 L320 210 L400 240 L400 300 L0 300Z" fill="hsl(${groundHue} 40% 30%)"/></svg>`;
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+}
+
+function waveform(seed: number, n = 40): number[] {
+  let x = seed;
+  return Array.from({ length: n }, () => {
+    x = (x * 9301 + 49297) % 233280;
+    return 0.2 + (x / 233280) * 0.8;
+  });
 }
 
 export interface MockOptions {
@@ -108,6 +138,14 @@ function preview(text: string): string {
   return splitQuoted(text).body.replace(/\s+/g, ' ').slice(0, 160);
 }
 
+/** "rel:-20m" / "rel:-2h" / "rel:-1d" -> ISO timestamp relative to now (demo data). */
+function relTime(v: string | undefined, now: Date): string | undefined {
+  const m = v ? /^rel:-(\d+)([mhd])$/.exec(v) : null;
+  if (!m) return v;
+  const ms = Number(m[1]) * { m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as 'm' | 'h' | 'd'];
+  return new Date(now.getTime() - ms).toISOString();
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const AUTO_REPLIES = ['👍', 'Alles klar, danke!', 'Super, bis später 🙂', 'Passt!', 'Ok, ich melde mich.'];
@@ -137,7 +175,7 @@ export class MockTransport implements Api {
     this.accounts = structuredClone(data.accounts);
     this.identities = structuredClone(data.identities);
     this.signatures = structuredClone(data.signatures);
-    this.persons = structuredClone(data.persons);
+    this.persons = structuredClone(data.persons).map((p) => ({ ...p, lastSeen: relTime(p.lastSeen, opts.now ?? new Date()) }));
     this.folders = structuredClone(data.folders);
     this.chats = structuredClone(data.chats);
     this.seed(opts.now ?? new Date());
@@ -172,6 +210,7 @@ export class MockTransport implements Api {
         const sig = this.signatures.find((x) => x.id === s.sig);
         if (sig) text += `\n\n-- \n${sig.plain}`;
       }
+      if (s.senderSig) text += `\n\n-- \n${s.senderSig}`;
       let inReplyTo: string[] = [];
       let references: string[] = [];
       const parentId = s.replyTo ?? s.forwardOf;
@@ -240,9 +279,17 @@ export class MockTransport implements Api {
         sentAt: whenToIso(anchor, c.at),
         text: c.text,
         seen: c.seen ?? c.from === data.ME,
-        attachments: (c.attachments ?? []).map(([filename, mimeType, size], i) => ({ id: c.id * 10 + i, filename, mimeType, size })),
-        reactions: c.reactions,
+        attachments: (c.attachments ?? []).map((spec, i) => {
+          const [filename, mimeType, size, extra] = spec as [string, string, number, { photo?: [number, number]; seconds?: number }?];
+          const a: Attachment = { id: c.id * 10 + i, filename, mimeType, size };
+          if (extra?.photo) Object.assign(a, { previewUrl: photoDataUrl(extra.photo[0], extra.photo[1]), width: 400, height: 300 });
+          if (extra?.seconds) Object.assign(a, { durationSec: extra.seconds, waveform: waveform(c.id) });
+          return a;
+        }),
+        reactions: c.reactions ? structuredClone(c.reactions) : undefined,
         status: c.from === data.ME ? 'read' : undefined,
+        replyTo: c.replyTo,
+        link: c.link,
       });
     }
   }
@@ -291,13 +338,47 @@ export class MockTransport implements Api {
   }
 
   private chatChannel(chat: data.ChatSpec): Channel {
-    return this.accounts.find((a) => a.id === chat.accountId)?.kind === 'signal' ? 'signal' : 'whatsapp';
+    const kind = this.accounts.find((a) => a.id === chat.accountId)?.kind;
+    return kind === 'signal' ? 'signal' : kind === 'telegram' ? 'telegram' : 'whatsapp';
+  }
+
+  private convFlags = new Map<number, ConvFlags>([
+    [102, { pinned: true }],
+    [1002, { pinned: true, favorite: true }],
+    [1004, { favorite: true }],
+    [106, { muted: true }],
+    [1011, { archived: true }],
+    [1016, { archived: true }],
+  ]);
+  private archivedMoves = new Map<number, number[]>();
+  private mailReactions = new Map<string, Reaction[]>();
+  private uploads = new Map<string, string>();
+  private contactCards = new Map<number, ContactCard>();
+  private createdFromItems: { id: string; itemId: string; kind: 'task' | 'event' }[] = [];
+
+  private flags(id: number): ConvFlags {
+    return this.convFlags.get(id) ?? {};
+  }
+
+  private excerpt(text: string, n = 90): string {
+    const t = text.replace(/\s+/g, ' ').trim();
+    return t.length > n ? t.slice(0, n - 1) + '…' : t;
   }
 
   private mailItem(m: MessageDetail, conversationId: number): ConversationItem {
     const meta = this.meta.get(m.id)!;
-    const split = splitQuoted(m.text ?? '');
+    const split = splitMail(m.text ?? '');
+    const own = meta.fromPerson === data.ME;
+    const parent = meta.relation === 'reply' && m.inReplyTo[0] ? [...this.messages.values()].find((x) => x.messageId === m.inReplyTo[0]) : undefined;
+    const isCard = !!m.html;
     return {
+      display: isCard ? 'card' : 'bubble',
+      card: isCard ? { title: m.subject, excerpt: this.excerpt(split.body, 160) } : undefined,
+      signature: !own && split.signature ? split.signature : undefined,
+      replyTo: parent
+        ? { itemId: mailItemId(parent.id), senderName: this.person(this.meta.get(parent.id)!.fromPerson).displayName, excerpt: this.excerpt(splitMail(parent.text ?? '').body) }
+        : undefined,
+      reactions: this.mailReactions.get(mailItemId(m.id)),
       id: mailItemId(m.id),
       conversationId,
       channel: 'email',
@@ -307,7 +388,7 @@ export class MockTransport implements Api {
       isOwn: meta.fromPerson === data.ME,
       sentAt: m.date,
       body: split.body,
-      quoted: split.quoted || undefined,
+      quoted: [split.signature && own ? '-- \n' + split.signature : '', split.quoted].filter(Boolean).join('\n\n') || undefined,
       subject: m.subject,
       relation: meta.relation,
       attachments: m.attachments,
@@ -332,26 +413,50 @@ export class MockTransport implements Api {
       status: c.status,
       reactions: c.reactions,
       unread: !c.seen,
+      linkPreview: c.link,
+      relation: c.forwarded ? 'forward' : undefined,
+      replyTo: (() => {
+        const r = c.replyTo != null ? this.chatMsgs.find((x) => x.id === c.replyTo) : undefined;
+        return r ? { itemId: chatItemId(r.id), senderName: this.person(r.from).displayName, excerpt: this.excerpt(r.text || r.attachments[0]?.filename || '') } : undefined;
+      })(),
     };
   }
 
   /** All conversations for a grouping, each with its items. */
   private buildConversations(grouping: ConversationGrouping): { conv: Conversation; items: ConversationItem[]; mailIds: number[] }[] {
     const out: { conv: Conversation; items: ConversationItem[]; mailIds: number[] }[] = [];
-    const visibleMails = [...this.messages.values()].filter((m) => !this.isHidden(m));
+    // Chats aggregate all folders except spam/trash; drafts are not messages.
+    const visibleMails = [...this.messages.values()].filter((m) => !this.isHidden(m) && !m.flags.includes(DRAFT));
 
-    const finish = (conv: Omit<Conversation, 'lastActivity' | 'unreadCount' | 'snippet' | 'lastSenderName' | 'channels'>, items: ConversationItem[], mailIds: number[]) => {
+    type Base = Omit<
+      Conversation,
+      'lastActivity' | 'unreadCount' | 'snippet' | 'lastSenderName' | 'channels' | 'pinned' | 'muted' | 'archived' | 'favorite' | 'markedUnread' | 'lastIsOwn' | 'lastStatus' | 'lastChannel'
+    >;
+    const finish = (conv: Base, items: ConversationItem[], mailIds: number[]) => {
       if (items.length === 0) return;
       items.sort((a, b) => a.sentAt.localeCompare(b.sentAt));
       const last = items[items.length - 1];
+      const f = this.flags(conv.id);
+      const media = last.attachments[0];
       out.push({
         conv: {
           ...conv,
+          pinned: !!f.pinned,
+          muted: !!f.muted,
+          archived: !!f.archived,
+          favorite: !!f.favorite,
+          markedUnread: !!f.markedUnread,
+          blocked: !!f.blocked,
           channels: [...new Set(items.map((i) => i.channel))],
           lastActivity: last.sentAt,
           unreadCount: items.filter((i) => i.unread).length,
-          snippet: last.body.replace(/\s+/g, ' ').slice(0, 120) || (last.attachments[0]?.filename ?? ''),
+          snippet: last.display === 'card' ? (last.card?.title ?? '') : last.body.replace(/\s+/g, ' ').slice(0, 120),
+          lastMedia: !last.body && media ? (media.mimeType.startsWith('image/') ? 'photo' : media.mimeType.startsWith('audio/') ? 'voice' : 'file') : undefined,
+          lastMediaName: media?.filename,
           lastSenderName: last.isOwn ? undefined : last.senderName.split(' ')[0],
+          lastIsOwn: last.isOwn,
+          lastStatus: last.isOwn ? (last.status ?? 'sent') : undefined,
+          lastChannel: last.channel,
         },
         items,
         mailIds,
@@ -365,9 +470,6 @@ export class MockTransport implements Api {
           id: chat.id,
           kind: 'chat',
           title: chat.title ?? this.person(chat.memberIds[0]).displayName,
-          pinned: !!chat.pinned,
-          muted: false,
-          archived: false,
           participantIds: chat.memberIds,
           accountIds: [chat.accountId],
           isGroup: chat.kind === 'group',
@@ -393,9 +495,6 @@ export class MockTransport implements Api {
             id: t,
             kind: 'email_thread',
             title: normalizeSubject(msgs[0].subject),
-            pinned: false,
-            muted: false,
-            archived: false,
             participantIds: [...people],
             accountIds: [...new Set(msgs.map((m) => m.accountId))],
             isGroup: people.size > 1,
@@ -422,9 +521,6 @@ export class MockTransport implements Api {
             id: cid,
             kind: 'person_view',
             title: this.person(pid).displayName,
-            pinned: direct.some((d) => d.pinned),
-            muted: false,
-            archived: false,
             participantIds: [pid],
             accountIds: [...new Set([...mails.map((m) => m.accountId), ...direct.map((d) => d.accountId)])],
             isGroup: false,
@@ -561,6 +657,28 @@ export class MockTransport implements Api {
   listConversations(q: ConversationQuery): Promise<Page<Conversation>> {
     let all = this.buildConversations(q.grouping);
     const s = q.scope;
+    all = all.filter((c) => !!c.conv.archived === !!q.archived);
+    switch (q.filter) {
+      case 'unread':
+        all = all.filter((c) => c.conv.unreadCount > 0 || c.conv.markedUnread);
+        break;
+      case 'mail':
+        all = all.filter((c) => c.conv.channels.includes('email'));
+        break;
+      case 'whatsapp':
+      case 'signal':
+      case 'telegram': {
+        const ch = q.filter;
+        all = all.filter((c) => c.conv.channels.includes(ch));
+        break;
+      }
+      case 'groups':
+        all = all.filter((c) => c.conv.isGroup);
+        break;
+      case 'favorites':
+        all = all.filter((c) => c.conv.favorite);
+        break;
+    }
     if (s.kind === 'account') all = all.filter((c) => c.conv.accountIds.includes(s.accountId));
     if (s.kind === 'folder') all = all.filter((c) => c.mailIds.some((id) => this.messages.get(id)!.folderIds.includes(s.folderId)));
     if (q.search) {
@@ -610,13 +728,175 @@ export class MockTransport implements Api {
         if (rec) rec.seen = true;
       }
     }
+    const f = this.convFlags.get(conversationId);
+    if (f?.markedUnread) f.markedUnread = false;
     this.emit({ type: 'conversation.updated', conversationId });
     for (const f of touched) this.emit({ type: 'folder.updated', folderId: f, accountId: this.folder(f)?.accountId ?? 0 });
     await this.reply(null);
   }
 
+  private roleFolder(accountId: number, role: string): Folder | undefined {
+    return this.folders.find((f) => f.accountId === accountId && f.role === role);
+  }
+
+  async updateConversation(conversationId: number, patch: ConversationPatch): Promise<Conversation> {
+    const c = this.findConversation(conversationId);
+    const before = this.flags(conversationId);
+    const next = { ...before, ...patch };
+    this.convFlags.set(conversationId, next);
+    // Archiving a chat archives the underlying mails (inbox -> archive), unarchiving restores them.
+    if (patch.archived === true && !before.archived) {
+      const moved: number[] = [];
+      for (const id of c.mailIds) {
+        const m = this.messages.get(id)!;
+        const inbox = m.folderIds.find((fid) => this.folder(fid)?.role === 'inbox');
+        const archive = this.roleFolder(m.accountId, 'archive');
+        if (inbox != null && archive) {
+          m.folderIds = [...m.folderIds.filter((fid) => fid !== inbox), archive.id];
+          moved.push(id);
+        }
+      }
+      this.archivedMoves.set(conversationId, moved);
+    }
+    if (patch.archived === false && before.archived) {
+      for (const id of this.archivedMoves.get(conversationId) ?? []) {
+        const m = this.messages.get(id)!;
+        const archive = this.roleFolder(m.accountId, 'archive');
+        const inbox = this.roleFolder(m.accountId, 'inbox');
+        if (archive && inbox) m.folderIds = [...m.folderIds.filter((fid) => fid !== archive.id), inbox.id];
+      }
+      this.archivedMoves.delete(conversationId);
+    }
+    this.emit({ type: 'conversation.updated', conversationId });
+    for (const a of this.accounts) this.emit({ type: 'folder.updated', folderId: 0, accountId: a.id });
+    return this.reply(this.findConversation(conversationId).conv);
+  }
+
+  private chatsOf(conversationId: number): data.ChatSpec[] {
+    if (conversationId < 1000) return this.chats.filter((c) => c.id === conversationId);
+    return this.chats.filter((c) => c.kind === 'direct' && c.memberIds[0] === conversationId - 1000);
+  }
+
+  async deleteConversation(conversationId: number): Promise<void> {
+    const c = this.findConversation(conversationId);
+    for (const id of c.mailIds) {
+      const m = this.messages.get(id)!;
+      const trash = this.roleFolder(m.accountId, 'trash');
+      if (trash) m.folderIds = [trash.id];
+    }
+    const chatIds = new Set(this.chatsOf(conversationId).map((x) => x.id));
+    this.chatMsgs = this.chatMsgs.filter((r) => !chatIds.has(r.chatId));
+    this.convFlags.delete(conversationId);
+    this.emit({ type: 'conversation.updated', conversationId });
+    for (const a of this.accounts) this.emit({ type: 'folder.updated', folderId: 0, accountId: a.id });
+    await this.reply(null);
+  }
+
+  async reactToItem(conversationId: number, itemId: string, emoji: string): Promise<{ reactions: Reaction[]; sentAsRfc9078?: boolean }> {
+    const toggle = (list: Reaction[] = []): Reaction[] => {
+      const out = structuredClone(list);
+      const mine = out.find((r) => r.mine);
+      if (mine) {
+        mine.count--;
+        mine.mine = false;
+      }
+      if (!mine || mine.emoji !== emoji) {
+        const r = out.find((x) => x.emoji === emoji);
+        if (r) {
+          r.count++;
+          r.mine = true;
+        } else out.push({ emoji, count: 1, mine: true });
+      }
+      return out.filter((r) => r.count > 0);
+    };
+    let reactions: Reaction[];
+    let sentAsRfc9078: boolean | undefined;
+    if (itemId.startsWith('m:')) {
+      reactions = toggle(this.mailReactions.get(itemId));
+      this.mailReactions.set(itemId, reactions);
+      sentAsRfc9078 = true; // demo: pretend the server/recipient supports RFC 9078
+    } else {
+      const rec = this.chatMsgs.find((r) => chatItemId(r.id) === itemId);
+      if (!rec) throw new ApiError('Nachricht nicht gefunden', 404, 'not_found');
+      rec.reactions = toggle(rec.reactions);
+      reactions = rec.reactions;
+    }
+    this.emit({ type: 'conversation.updated', conversationId });
+    return this.reply({ reactions, sentAsRfc9078 });
+  }
+
+  async deleteItem(conversationId: number, itemId: string): Promise<void> {
+    const mid = itemId.startsWith('m:') ? Number(itemId.slice(2)) : null;
+    if (mid != null) {
+      const m = this.messages.get(mid);
+      const trash = m && this.roleFolder(m.accountId, 'trash');
+      if (m && trash) m.folderIds = [trash.id];
+    } else {
+      this.chatMsgs = this.chatMsgs.filter((r) => chatItemId(r.id) !== itemId);
+    }
+    this.emit({ type: 'conversation.updated', conversationId });
+    await this.reply(null);
+  }
+
+  async forwardItem(itemId: string, targetConversationId: number): Promise<SendResult> {
+    let text = '';
+    let attachments: Attachment[] = [];
+    let subject = '';
+    if (itemId.startsWith('m:')) {
+      const m = this.messages.get(Number(itemId.slice(2)));
+      text = splitMail(m?.text ?? '').body;
+      attachments = m?.attachments ?? [];
+      subject = m?.subject ?? '';
+    } else {
+      const r = this.chatMsgs.find((x) => chatItemId(x.id) === itemId);
+      text = r?.text ?? '';
+      attachments = r?.attachments ?? [];
+    }
+    const chat = this.chatsOf(targetConversationId)[0];
+    if (chat) {
+      const rec = this.pushChat(chat.id, data.ME, text, 'sent');
+      rec.attachments = structuredClone(attachments);
+      rec.forwarded = true;
+      this.convIdsForChat(chat).forEach((c) => this.emit({ type: 'conversation.updated', conversationId: c, itemId: chatItemId(rec.id) }));
+      return this.reply({ conversationId: targetConversationId, itemId: chatItemId(rec.id), queued: false });
+    }
+    const target = this.findConversation(targetConversationId);
+    const to = target.conv.participantIds
+      .map((id) => this.person(id))
+      .map((p) => ({ name: p.displayName, email: p.handles.find((h) => h.kind === 'email')?.value ?? '' }))
+      .filter((a) => a.email);
+    return this.sendMail({ channel: 'email', identityId: this.identities[0].id, to, cc: [], bcc: [], subject: 'Fwd: ' + normalizeSubject(subject || text.slice(0, 40)), text, html: '', attachments: [] });
+  }
+
+  async createFromItem(_conversationId: number, itemId: string, kind: 'task' | 'event'): Promise<{ id: string }> {
+    const id = `${kind}-${this.createdFromItems.length + 1}`;
+    this.createdFromItems.push({ id, itemId, kind });
+    return this.reply({ id });
+  }
+
+  async saveContactCard(personId: number, card: ContactCard): Promise<void> {
+    this.contactCards.set(personId, structuredClone(card));
+    const p = this.person(personId);
+    for (const ph of card.phones) {
+      const v = ph.replace(/[^\d+]/g, '');
+      if (!p.handles.some((h) => h.value === v)) p.handles.push({ kind: 'phone', value: v });
+    }
+    await this.reply(null);
+  }
+
+  async updateIdentity(identity: Identity): Promise<Identity> {
+    this.identities = this.identities.map((i) => (i.id === identity.id ? structuredClone(identity) : i));
+    return this.reply(identity);
+  }
+
   async uploadAttachment(file: Blob, filename: string): Promise<{ uploadToken: string }> {
-    return this.reply({ uploadToken: `mock-upload-${Date.now()}-${encodeURIComponent(filename)}-${file.size}` });
+    const token = `mock-upload-${Date.now()}-${encodeURIComponent(filename)}-${file.size}`;
+    try {
+      if (typeof URL !== 'undefined' && URL.createObjectURL) this.uploads.set(token, URL.createObjectURL(file));
+    } catch {
+      /* no object URLs (tests) */
+    }
+    return this.reply({ uploadToken: token });
   }
 
   async send(msg: OutgoingMessage): Promise<SendResult> {
@@ -701,7 +981,7 @@ export class MockTransport implements Api {
   private findOrCreateDirectChat(accountId: number, personId: number): data.ChatSpec {
     let chat = this.chats.find((c) => c.accountId === accountId && c.kind === 'direct' && c.memberIds[0] === personId);
     if (!chat) {
-      chat = { id: Math.max(...this.chats.map((c) => c.id)) + 1, accountId: accountId as 3 | 4, kind: 'direct', memberIds: [personId] };
+      chat = { id: Math.max(...this.chats.map((c) => c.id)) + 1, accountId: accountId as 3 | 4 | 5, kind: 'direct', memberIds: [personId] };
       this.chats.push(chat);
     }
     return chat;
@@ -718,7 +998,7 @@ export class MockTransport implements Api {
   }
 
   private sendChat(msg: OutgoingMessage): Promise<SendResult> {
-    const accountId = msg.accountId ?? (msg.channel === 'signal' ? 4 : 3);
+    const accountId = msg.accountId ?? (msg.channel === 'signal' ? 4 : msg.channel === 'telegram' ? 5 : 3);
     let chat: data.ChatSpec | undefined;
     if (msg.conversationId != null && msg.conversationId < 1000) {
       chat = this.chats.find((c) => c.id === msg.conversationId && c.accountId === accountId);
@@ -729,6 +1009,15 @@ export class MockTransport implements Api {
       chat = this.findOrCreateDirectChat(accountId, pid);
     }
     const rec = this.pushChat(chat.id, data.ME, msg.text, 'pending');
+    rec.attachments = msg.attachments.map((a, i) => {
+      const url = this.uploads.get(a.uploadToken);
+      const att: Attachment = { id: rec.id * 10 + i, filename: a.filename, mimeType: a.mimeType, size: a.size, durationSec: a.durationSec };
+      if (url && a.mimeType.startsWith('image/')) att.previewUrl = url;
+      if (url && a.mimeType.startsWith('audio/')) att.url = url;
+      if (a.durationSec) att.waveform = waveform(rec.id);
+      return att;
+    });
+    if (msg.replyToItemId?.startsWith('c:')) rec.replyTo = Number(msg.replyToItemId.slice(2));
     const convs = this.convIdsForChat(chat);
     const itemId = chatItemId(rec.id);
     const notify = () => convs.forEach((c) => this.emit({ type: 'conversation.updated', conversationId: c, itemId }));
@@ -744,7 +1033,7 @@ export class MockTransport implements Api {
         notify();
       }, ms);
     }
-    if (this.opts.autoReply !== false && chat.kind === 'direct') {
+    if (this.opts.autoReply !== false && chat.kind === 'direct' && !this.flags(msg.conversationId ?? chat.id).muted) {
       const target = chat;
       setTimeout(() => {
         const r = this.pushChat(target.id, target.memberIds[0], AUTO_REPLIES[Math.floor(Math.random() * AUTO_REPLIES.length)]);
@@ -789,7 +1078,7 @@ export class MockTransport implements Api {
     privacy: 'full',
     quietHours: { enabled: true, start: '22:00', end: '07:00' },
     accounts: {},
-    channels: { email: true, whatsapp: true, signal: true },
+    channels: { email: true, whatsapp: true, signal: true, telegram: true },
   };
   private pushSubscriptions: PushSubscriptionInput[] = [];
 
