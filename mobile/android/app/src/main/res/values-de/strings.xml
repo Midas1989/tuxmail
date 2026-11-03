@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<resources>
+    <string name="channel_mail">Mail</string>
+    <string name="channel_mail_desc">Neue E-Mails</string>
+    <string name="channel_chats">Chats</string>
+    <string name="channel_chats_desc">Neue Nachrichten aus Signal, WhatsApp, Telegram und dem Chat-Modus</string>
+    <string name="channel_events">Termine</string>
+    <string name="channel_events_desc">Terminerinnerungen und Einladungen</string>
+    <string name="channel_reminders">Erinnerungen</string>
+    <string name="channel_reminders_desc">Warten auf Antwort, Zuweisungen, Workflows und Systemmeldungen</string>
+
+    <string name="notification_reply">Antworten</string>
+    <string name="notification_reply_hint">Antwort …</string>
+    <string name="notification_mark_read">Als gelesen markieren</string>
+    <string name="notification_self">Du</string>
+    <string name="notification_reply_failed">Nicht gesendet: %1$s</string>
+    <string name="notification_public_title">Neue Nachricht</string>
+    <plurals name="notification_summary">
+        <item quantity="one">%d neue Benachrichtigung</item>
+        <item quantity="other">%d neue Benachrichtigungen</item>
+    </plurals>
+</resources>

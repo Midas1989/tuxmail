@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Brand colours (assets/branding/README.md) -->
+<resources>
+    <color name="tuxmail_navy">#1C2B45</color>
+    <color name="tuxmail_orange">#F59E0B</color>
+    <color name="tuxmail_bg">#F3F6FA</color>
+    <color name="ic_launcher_background">#F3F6FA</color>
+    <color name="splash_background">#F3F6FA</color>
+    <color name="window_background">#F3F6FA</color>
+    <color name="colorPrimary">#1C2B45</color>
+    <color name="colorPrimaryDark">#1C2B45</color>
+    <color name="colorAccent">#F59E0B</color>
+</resources>

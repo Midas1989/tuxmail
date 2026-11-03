@@ -944,5 +944,73 @@
       "withPassword": "Sign in with password",
       "workflows": "Rules & workflows"
     }
+  },
+  "native": {
+    "connect": {
+      "browserHint": "Recommended: confirm on the server's web page – including two-factor authentication or single sign-on.",
+      "checking": "Checking server …",
+      "changeServer": "Change server",
+      "continue": "Continue",
+      "expired": "Your session on {server} has ended (expired or signed out on another device). Please sign in again.",
+      "lead": "Enter the address of your TuxMail server. The app stays connected to it; mail, chats and calendars are synchronised by the server.",
+      "linkPrefilled": "Server address taken from the link – please check it.",
+      "openPage": "Open sign-in page",
+      "placeholder": "mail.example.org",
+      "profiles": "Saved servers",
+      "removeProfile": "Remove {server}",
+      "serverFound": "TuxMail {version} found at {server}",
+      "signInBrowser": "Sign in with the browser",
+      "title": "Connect to server",
+      "totpHint": "This account uses two-factor authentication. Enter the 6-digit code from your authenticator app.",
+      "useProfile": "Connect to {server}"
+    },
+    "error": {
+      "access_denied": "The sign-in was declined.",
+      "aborted": "Cancelled.",
+      "expired_token": "The sign-in request has expired. Please start again.",
+      "invalid_code": "The code is not correct.",
+      "invalid_credentials": "Username or password is wrong.",
+      "invalid_url": "Please enter a valid https address.",
+      "mfa_required": "Two-factor code required.",
+      "not_tuxmail": "No TuxMail server answers at this address.",
+      "server_error": "The server reported an error: {message}",
+      "throttled": "Too many attempts. Please wait a moment and try again.",
+      "unhealthy": "The server is reachable but reports a problem.",
+      "unreachable": "The server could not be reached. Check the address and your internet connection.",
+      "user_disabled": "This account is disabled."
+    },
+    "lock": {
+      "failed": "Unlocking failed. Please try again.",
+      "prompt": "Unlock TuxMail",
+      "promptSubtitle": "Confirm with fingerprint, face or your screen lock",
+      "title": "TuxMail is locked",
+      "unlock": "Unlock"
+    },
+    "settings": {
+      "appLock": "App lock",
+      "appLockHint": "Ask for fingerprint, face or the screen lock when TuxMail is opened.",
+      "appLockUnavailable": "No fingerprint, face or screen lock is set up on this device.",
+      "lockAfter": "Lock after",
+      "lockAfterMinutes": "{count} minutes in the background",
+      "lockAfterMinutes_one": "1 minute in the background",
+      "lockImmediately": "Immediately",
+      "push": "Push notifications",
+      "pushActive": "Notifications are active.",
+      "pushDenied": "Notifications are blocked for TuxMail in the Android settings.",
+      "pushDistributor": "UnifiedPush distributor",
+      "pushEnable": "Enable notifications",
+      "pushFailed": "Registering for notifications failed: {message}",
+      "pushNoDistributor": "No UnifiedPush distributor installed (for example ntfy). Without one, TuxMail can only show new messages while it is open.",
+      "pushNotConfigured": "This build contains no Firebase configuration – notifications are not available.",
+      "pushProviderFcm": "Delivery via Firebase Cloud Messaging (Google)",
+      "pushProviderUnifiedPush": "Delivery via UnifiedPush – no Google services required",
+      "pushServerUnsupported": "Your TuxMail server does not support this push service yet.",
+      "server": "Server",
+      "signOut": "Sign out from this server",
+      "signedInAs": "Signed in to {server} as {user}",
+      "switchServer": "Switch or add server",
+      "title": "App settings",
+      "version": "App version {version}"
+    }
   }
 }

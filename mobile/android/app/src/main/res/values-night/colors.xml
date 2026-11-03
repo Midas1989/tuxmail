@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!-- Dark mode: matches the dark theme background of frontend/src/app.css -->
+<resources>
+    <color name="splash_background">#161920</color>
+    <color name="window_background">#161920</color>
+</resources>

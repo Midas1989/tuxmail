@@ -1,0 +1,22 @@
+/* SPDX-License-Identifier: AGPL-3.0-or-later */
+/* Copyright (C) 2026 Midas Wollinger and TuxMail contributors */
+/*
+ * Native app only (html.tm-native, injected by capacitor.ts): the WebView is
+ * edge-to-edge (Android 15+), Capacitor's SystemBars plugin provides the
+ * safe-area insets as env() and --safe-area-inset-* variables.
+ */
+html.tm-native #app {
+  box-sizing: border-box;
+  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+/* An open chat hides the bottom bar; keep the composer above the gesture bar. */
+html.tm-native #app:has(.app.chat-open) {
+  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+}
+/* No text selection callouts / tap highlights on UI chrome. */
+html.tm-native {
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}

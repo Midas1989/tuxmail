@@ -1,0 +1,19 @@
+TuxMail vereint E-Mail, Messenger und Kalender in einer quelloffenen App. Die Android-App ist ein Thin Client für deinen eigenen TuxMail-Server: Der Server synchronisiert alle Konten rund um die Uhr, die App zeigt sie an und sendet über ihn.
+
+<b>Funktionen</b>
+<ul>
+<li>Gemeinsamer Posteingang für alle Mailkonten, klassisch oder als Chat-Ansicht</li>
+<li>Signal, WhatsApp und Telegram über die Matrix-Bridges des Servers</li>
+<li>Kalender, Kontakte und Dateien deines Servers</li>
+<li>Anmeldung per Gerätebestätigung im Browser (inkl. Zwei-Faktor und Single-Sign-On) oder mit Passwort und TOTP</li>
+<li>Push-Benachrichtigungen über UnifiedPush (z. B. ntfy) - ohne Google-Dienste</li>
+<li>Direkt aus der Benachrichtigung antworten oder als gelesen markieren</li>
+<li>Texte, Bilder und Dateien aus anderen Apps in eine neue Nachricht teilen</li>
+<li>Optionale App-Sperre mit Fingerabdruck, Gesicht oder Displaysperre</li>
+<li>Heller und dunkler Modus, Deutsch und Englisch</li>
+</ul>
+
+<b>Voraussetzung</b>
+Ein TuxMail-Server (selbst betrieben, z. B. per Docker). Die App enthält keine Tracker und keine Analysedienste.
+
+TuxMail ist freie Software unter der GNU AGPL v3 oder neuer.

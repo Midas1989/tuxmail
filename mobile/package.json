@@ -1,0 +1,33 @@
+{
+  "name": "tuxmail-mobile",
+  "private": true,
+  "version": "0.1.0",
+  "license": "AGPL-3.0-or-later",
+  "description": "TuxMail Android app (Capacitor thin client for any TuxMail server, KONZEPT 15.9 stage A)",
+  "scripts": {
+    "build:web": "npm --prefix ../frontend run build",
+    "sync": "cap sync android",
+    "build": "bash scripts/build.sh",
+    "icons": "python3 scripts/generate-android-icons.py",
+    "open": "cap open android"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.6.0",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/browser": "8.0.5",
+    "@capacitor/core": "8.6.0",
+    "@capacitor/filesystem": "8.1.5",
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/keyboard": "8.0.6",
+    "@capacitor/preferences": "8.0.1",
+    "@capacitor/share": "8.0.3",
+    "@capacitor/splash-screen": "8.0.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.6.0",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
