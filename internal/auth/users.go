@@ -1,0 +1,412 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"database/sql"
+	"errors"
+	"fmt"
+	"net/mail"
+	"os"
+	"regexp"
+	"strings"
+	"time"
+	"unicode/utf8"
+)
+
+// User is a server account.
+type User struct {
+	ID          int64     `json:"id"`
+	Username    string    `json:"username"`
+	Email       string    `json:"email"`
+	DisplayName string    `json:"displayName"`
+	Role        Role      `json:"role"`
+	Disabled    bool      `json:"disabled"`
+	HasPassword bool      `json:"hasPassword"`
+	TOTPEnabled bool      `json:"totpEnabled"`
+	OIDC        bool      `json:"oidc"`
+	CreatedAt   time.Time `json:"createdAt"`
+	LastLoginAt time.Time `json:"lastLoginAt,omitzero"`
+
+	passwordHash string
+	totpLastStep int64
+}
+
+// IsAdmin reports whether the user has the admin role.
+func (u *User) IsAdmin() bool { return u.Role == RoleAdmin }
+
+// NewUser holds the fields for CreateUser.
+type NewUser struct {
+	Username    string
+	Email       string
+	DisplayName string
+	Role        Role
+	Password    string // empty = no local password (OIDC-only or set later)
+
+	oidcIssuer, oidcSubject string
+}
+
+var usernameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$`)
+
+// ValidateUsername checks the allowed username syntax.
+func ValidateUsername(name string) error {
+	if !usernameRE.MatchString(name) {
+		return fmt.Errorf("%w: username must be 1-64 characters of letters, digits, '.', '_', '-', '@'", ErrInvalidInput)
+	}
+	return nil
+}
+
+func normalizeEmail(email string) (string, error) {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return "", nil
+	}
+	a, err := mail.ParseAddress(email)
+	if err != nil || a.Address != email {
+		return "", fmt.Errorf("%w: invalid email address %q", ErrInvalidInput, email)
+	}
+	return email, nil
+}
+
+// CheckPasswordPolicy validates a new password against the configured policy.
+func (s *Service) CheckPasswordPolicy(password string) error {
+	n := utf8.RuneCountInString(password)
+	if n < s.cfg.Auth.PasswordMinLength {
+		return fmt.Errorf("%w: at least %d characters required", ErrWeakPassword, s.cfg.Auth.PasswordMinLength)
+	}
+	if len(password) > 1024 {
+		return fmt.Errorf("%w: at most 1024 bytes allowed", ErrWeakPassword)
+	}
+	if strings.TrimSpace(password) == "" || allSame(password) {
+		return fmt.Errorf("%w: password is too simple", ErrWeakPassword)
+	}
+	return nil
+}
+
+func allSame(s string) bool {
+	r, _ := utf8.DecodeRuneInString(s)
+	return strings.Trim(s, string(r)) == ""
+}
+
+const userCols = `id, username, email, display_name, role, disabled, password_hash, totp_enabled, totp_last_step,
+	oidc_subject IS NOT NULL, created_at, last_login_at`
+
+func scanUser(sc interface{ Scan(...any) error }) (*User, error) {
+	var u User
+	var created int64
+	var last sql.NullInt64
+	if err := sc.Scan(&u.ID, &u.Username, &u.Email, &u.DisplayName, &u.Role, &u.Disabled, &u.passwordHash,
+		&u.TOTPEnabled, &u.totpLastStep, &u.OIDC, &created, &last); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	u.HasPassword = u.passwordHash != ""
+	u.CreatedAt = time.Unix(created, 0).UTC()
+	u.LastLoginAt = nullTime(last)
+	return &u, nil
+}
+
+// CreateUser creates a user, its wrapped data key and its data directory.
+func (s *Service) CreateUser(ctx context.Context, nu NewUser) (*User, error) {
+	nu.Username = strings.TrimSpace(nu.Username)
+	if err := ValidateUsername(nu.Username); err != nil {
+		return nil, err
+	}
+	email, err := normalizeEmail(nu.Email)
+	if err != nil {
+		return nil, err
+	}
+	if nu.Role == "" {
+		nu.Role = RoleUser
+	}
+	if !nu.Role.Valid() {
+		return nil, fmt.Errorf("%w: unknown role %q", ErrInvalidInput, nu.Role)
+	}
+	var hash string
+	if nu.Password != "" {
+		if err := s.CheckPasswordPolicy(nu.Password); err != nil {
+			return nil, err
+		}
+		if hash, err = HashPassword(nu.Password, s.PasswordParams); err != nil {
+			return nil, err
+		}
+	}
+	dek := make([]byte, 32)
+	if _, err := rand.Read(dek); err != nil {
+		return nil, err
+	}
+	defer clear(dek)
+
+	now := s.now().Unix()
+	var id int64
+	err = s.withTx(ctx, func(tx *sql.Tx) error {
+		var iss, sub any
+		if nu.oidcSubject != "" {
+			iss, sub = nu.oidcIssuer, nu.oidcSubject
+		}
+		res, err := tx.ExecContext(ctx, `INSERT INTO users(username, email, display_name, role, password_hash,
+			dek_wrapped, oidc_issuer, oidc_subject, created_at, updated_at, password_changed_at)
+			VALUES (?,?,?,?,?,X'',?,?,?,?,?)`,
+			nu.Username, email, strings.TrimSpace(nu.DisplayName), nu.Role, hash, iss, sub, now, now, now)
+		if err != nil {
+			if isUniqueErr(err) {
+				return fmt.Errorf("%w: username or email already in use", ErrExists)
+			}
+			return err
+		}
+		if id, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		// The wrapped key is bound to the user id, which is known only now.
+		wrapped, err := s.seal(dek, fmt.Sprintf("dek:%d", id))
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE users SET dek_wrapped = ? WHERE id = ?`, wrapped, id)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(s.UserDir(id), 0o700); err != nil {
+		return nil, fmt.Errorf("auth: create user dir: %w", err)
+	}
+	s.Audit(ctx, "user.create", nu.Username, true, "role="+string(nu.Role))
+	return s.GetUser(ctx, id)
+}
+
+// GetUser returns a user by id.
+func (s *Service) GetUser(ctx context.Context, id int64) (*User, error) {
+	return scanUser(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE id = ?`, id))
+}
+
+// GetUserByName returns a user by username or, if login contains '@' and no
+// username matches, by email (both case-insensitive).
+func (s *Service) GetUserByName(ctx context.Context, login string) (*User, error) {
+	login = strings.TrimSpace(login)
+	u, err := scanUser(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE username = ?`, login))
+	if errors.Is(err, ErrNotFound) && strings.Contains(login, "@") {
+		u, err = scanUser(s.db.QueryRowContext(ctx, `SELECT `+userCols+` FROM users WHERE email = ?`, login))
+	}
+	return u, err
+}
+
+// ListUsers returns all users ordered by username.
+func (s *Service) ListUsers(ctx context.Context) ([]*User, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+userCols+` FROM users ORDER BY username`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []*User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// CountUsers returns the number of users.
+func (s *Service) CountUsers(ctx context.Context) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n)
+	return n, err
+}
+
+// UserUpdate holds optional profile changes; nil fields are left unchanged.
+type UserUpdate struct {
+	Email       *string `json:"email"`
+	DisplayName *string `json:"displayName"`
+}
+
+// UpdateUser changes profile fields.
+func (s *Service) UpdateUser(ctx context.Context, id int64, up UserUpdate) (*User, error) {
+	u, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	email, name := u.Email, u.DisplayName
+	if up.Email != nil {
+		if email, err = normalizeEmail(*up.Email); err != nil {
+			return nil, err
+		}
+	}
+	if up.DisplayName != nil {
+		name = strings.TrimSpace(*up.DisplayName)
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE users SET email = ?, display_name = ?, updated_at = ? WHERE id = ?`,
+		email, name, s.now().Unix(), id)
+	if isUniqueErr(err) {
+		return nil, fmt.Errorf("%w: email already in use", ErrExists)
+	}
+	if err != nil {
+		return nil, err
+	}
+	s.Audit(ctx, "user.update", u.Username, true, "")
+	return s.GetUser(ctx, id)
+}
+
+// ensureNotLastAdmin fails if removing admin rights from user id would leave
+// no enabled administrator.
+func (s *Service) ensureNotLastAdmin(ctx context.Context, tx *sql.Tx, id int64) error {
+	var n int
+	err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE role = 'admin' AND disabled = 0 AND id <> ?`, id).Scan(&n)
+	if err != nil {
+		return err
+	}
+	var isAdmin bool
+	if err := tx.QueryRowContext(ctx, `SELECT role = 'admin' AND disabled = 0 FROM users WHERE id = ?`, id).Scan(&isAdmin); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if isAdmin && n == 0 {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+// SetRole changes a user's role.
+func (s *Service) SetRole(ctx context.Context, id int64, role Role) error {
+	if !role.Valid() {
+		return fmt.Errorf("%w: unknown role %q", ErrInvalidInput, role)
+	}
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		if role != RoleAdmin {
+			if err := s.ensureNotLastAdmin(ctx, tx, id); err != nil {
+				return err
+			}
+		}
+		return execOne(ctx, tx, `UPDATE users SET role = ?, updated_at = ? WHERE id = ?`, role, s.now().Unix(), id)
+	})
+	s.auditUser(ctx, "user.set_role", id, err, "role="+string(role))
+	return err
+}
+
+// SetDisabled disables or enables a user. Disabling revokes all sessions.
+func (s *Service) SetDisabled(ctx context.Context, id int64, disabled bool) error {
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		if disabled {
+			if err := s.ensureNotLastAdmin(ctx, tx, id); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, id); err != nil {
+				return err
+			}
+		}
+		return execOne(ctx, tx, `UPDATE users SET disabled = ?, updated_at = ? WHERE id = ?`, disabled, s.now().Unix(), id)
+	})
+	action := "user.enable"
+	if disabled {
+		action = "user.disable"
+	}
+	s.auditUser(ctx, action, id, err, "")
+	return err
+}
+
+// DeleteUser removes a user, all of its server-side records and, if
+// removeData is set, its data directory data_dir/users/<id>.
+func (s *Service) DeleteUser(ctx context.Context, id int64, removeData bool) error {
+	u, err := s.GetUser(ctx, id)
+	if err != nil {
+		return err
+	}
+	err = s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := s.ensureNotLastAdmin(ctx, tx, id); err != nil {
+			return err
+		}
+		return execOne(ctx, tx, `DELETE FROM users WHERE id = ?`, id)
+	})
+	if err == nil {
+		s.dropVault(id)
+		if removeData {
+			err = os.RemoveAll(s.UserDir(id))
+		}
+	}
+	s.Audit(ctx, "user.delete", u.Username, err == nil, fmt.Sprintf("remove_data=%v", removeData))
+	return err
+}
+
+// SetPassword sets a new password after checking the policy and revokes all
+// sessions of the user except keepSessionID (0 = revoke all).
+func (s *Service) SetPassword(ctx context.Context, id int64, password string, keepSessionID int64) error {
+	if err := s.CheckPasswordPolicy(password); err != nil {
+		return err
+	}
+	hash, err := HashPassword(password, s.PasswordParams)
+	if err != nil {
+		return err
+	}
+	now := s.now().Unix()
+	err = s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := execOne(ctx, tx, `UPDATE users SET password_hash = ?, password_changed_at = ?, updated_at = ? WHERE id = ?`,
+			hash, now, now, id); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ? AND id <> ?`, id, keepSessionID)
+		return err
+	})
+	s.auditUser(ctx, "user.set_password", id, err, "")
+	return err
+}
+
+// ResetPassword sets a random password and returns it.
+func (s *Service) ResetPassword(ctx context.Context, id int64) (string, error) {
+	n := max(s.cfg.Auth.PasswordMinLength, 20)
+	pw := GeneratePassword(n)
+	if err := s.SetPassword(ctx, id, pw, 0); err != nil {
+		return "", err
+	}
+	return pw, nil
+}
+
+// ChangePassword verifies the current password and sets a new one; the
+// calling session (keepSessionID) stays valid.
+func (s *Service) ChangePassword(ctx context.Context, id int64, current, next string, keepSessionID int64) error {
+	u, err := s.GetUser(ctx, id)
+	if err != nil {
+		return err
+	}
+	if u.passwordHash != "" {
+		ok, _, err := VerifyPassword(current, u.passwordHash, s.PasswordParams)
+		if err != nil || !ok {
+			s.Audit(ctx, "user.change_password", u.Username, false, "wrong current password")
+			return ErrInvalidCredentials
+		}
+	}
+	return s.SetPassword(ctx, id, next, keepSessionID)
+}
+
+func (s *Service) auditUser(ctx context.Context, action string, id int64, err error, details string) {
+	target := fmt.Sprint(id)
+	if u, e := s.GetUser(ctx, id); e == nil {
+		target = u.Username
+	}
+	if err != nil {
+		details = strings.TrimSpace(details + " error=" + err.Error())
+	}
+	s.Audit(ctx, action, target, err == nil, details)
+}
+
+func execOne(ctx context.Context, tx *sql.Tx, q string, args ...any) error {
+	res, err := tx.ExecContext(ctx, q, args...)
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
