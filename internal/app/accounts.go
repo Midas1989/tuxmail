@@ -242,6 +242,7 @@ func (a *App) CreateAccount(ctx context.Context, in NewAccountInput) (Account, e
 	}
 	a.invalidateViews()
 	a.hub.Publish(Event{Type: EventAccountUpdated, AccountID: id})
+	a.kickTimers() // e.g. first EAS calendar/contacts sync right away
 	return a.st.GetAccount(ctx, id)
 }
 

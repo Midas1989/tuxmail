@@ -79,6 +79,7 @@ type Options struct {
 // (api.ts) on top of the store and the core services. It is safe for
 // concurrent use.
 type App struct {
+	kick    chan struct{} // wakes the timer loop early (e.g. after adding an account)
 	opts    Options
 	st      *store.Store
 	blobs   *blob.Store
@@ -130,7 +131,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{Timeout: 60 * time.Second}
 	}
-	a := &App{opts: opts, st: opts.Store, bus: opts.Bus, hub: NewHub(), log: opts.Logger, idxDirty: true,
+	a := &App{kick: make(chan struct{}, 1), opts: opts, st: opts.Store, bus: opts.Bus, hub: NewHub(), log: opts.Logger, idxDirty: true,
 		remote: map[string]*remoteSession{}}
 	if a.bus == nil {
 		a.bus, a.ownsBus = events.New(), true
@@ -278,7 +279,16 @@ func (a *App) timers(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-a.kick:
 		}
+	}
+}
+
+// kickTimers runs the timer loop's work now instead of at the next tick.
+func (a *App) kickTimers() {
+	select {
+	case a.kick <- struct{}{}:
+	default:
 	}
 }
 
