@@ -62,6 +62,29 @@ import * as data from './mockData';
 import { runSearch, type SearchDoc } from '../search/engine';
 import { DEFAULT_REGION } from '../format';
 import { EMPTY_RULES, isVip, matchesFolder } from '../chatfeatures';
+import { MockOrganizer } from './mockOrganize';
+import { DEFAULT_SCHEMA } from '../workflow/schema';
+import type {
+  ItemRef,
+  Project,
+  ProjectInput,
+  ProjectStatus,
+  ProjectTemplate,
+  ProjectTimelineEntry,
+  SearchFolder,
+  SearchFolderInput,
+  Tag,
+  TagCount,
+  TagInput,
+  Workflow,
+  WorkflowCompletion,
+  WorkflowDryRunResult,
+  WorkflowRun,
+  WorkflowSchema,
+  WorkflowTemplate,
+  WorkflowValidation,
+} from '../types';
+import type { ConversationScope } from './api';
 
 const SEEN: Flag = '\\Seen';
 const ANSWERED: Flag = '\\Answered';
@@ -201,7 +224,34 @@ export class MockTransport implements Api {
     this.folders = clone(data.folders);
     this.chats = clone(data.chats);
     this.seed(opts.now ?? new Date());
+    this.org = new MockOrganizer({
+      messages: () => this.messages,
+      chatMsgs: () => this.chatMsgs,
+      chatTitle: (id) => {
+        const c = this.chats.find((x) => x.id === id)!;
+        return c.title ?? this.person(c.memberIds[0]).displayName;
+      },
+      chatChannel: (id) => this.chatChannel(this.chats.find((x) => x.id === id)!) as 'whatsapp' | 'signal' | 'telegram',
+      chatConversation: (id) => {
+        const c = this.chats.find((x) => x.id === id)!;
+        return c.kind === 'direct' ? 1000 + c.memberIds[0] : c.id;
+      },
+      threadOf: (id) => this.meta.get(id)?.thread ?? 0,
+      folders: () => this.folders,
+      accounts: () => this.accounts,
+      persons: () => this.persons,
+      docs: () => this.searchDocs(),
+      isHidden: (m) => this.isHidden(m),
+      notify: (kind, id) => {
+        if (kind === 'tags') this.emit({ type: 'tags.changed' });
+        else if (kind === 'project') this.emit({ type: 'project.updated', projectId: id ?? 0 });
+        else this.emit({ type: 'searchfolders.changed' });
+      },
+      now: () => new Date(),
+    });
   }
+
+  private org: MockOrganizer;
 
   // -------------------------------------------------------------------------
   // Seeding
@@ -343,7 +393,8 @@ export class MockTransport implements Api {
 
   private summary(m: MessageDetail): MessageSummary {
     const { inReplyTo: _a, references: _b, html: _c, text: _d, attachments: _e, hasRemoteContent: _f, bcc: _g, replyTo: _h, ...rest } = m;
-    return rest;
+    const ref: ItemRef = { kind: 'message', id: m.id };
+    return { ...rest, tagIds: this.org?.tagIds(ref) ?? [], projectIds: this.org?.projectIdsFor(ref) ?? [] };
   }
 
   private personByEmail(email: string): Person | undefined {
@@ -416,6 +467,8 @@ export class MockTransport implements Api {
       attachments: m.attachments,
       messageId: m.id,
       unread: !m.flags.includes(SEEN),
+      folderIds: m.folderIds,
+      tagIds: this.org?.tagIds({ kind: 'message', id: m.id }) ?? [],
     };
   }
 
@@ -437,6 +490,7 @@ export class MockTransport implements Api {
       unread: !c.seen,
       linkPreview: c.link,
       relation: c.forwarded ? 'forward' : undefined,
+      tagIds: this.org?.tagIds({ kind: 'chat_message', id: c.id }) ?? [],
       meeting: this.meetingByItem.get(chatItemId(c.id)) ? this.proposals.get(this.meetingByItem.get(chatItemId(c.id))!) : undefined,
       replyTo: (() => {
         const r = c.replyTo != null ? this.chatMsgs.find((x) => x.id === c.replyTo) : undefined;
@@ -566,7 +620,17 @@ export class MockTransport implements Api {
       }
       this.chats.filter((c) => c.kind === 'group').forEach(chatConv);
     }
+    // Conversation-level tags: tags of its items plus tags set on the chats themselves.
+    for (const o of out) o.conv.tagIds = [...new Set(o.items.flatMap((i) => this.allTags(i)))].sort((a, b) => a - b);
     return out;
+  }
+
+  /** Item tags plus the tags of the chat a messenger message belongs to. */
+  private allTags(i: ConversationItem): number[] {
+    if (!this.org) return [];
+    if (i.channel === 'email' || !i.id.startsWith('c:')) return i.tagIds ?? [];
+    const rec = this.chatMsgs.find((c) => c.id === Number(i.id.slice(2)));
+    return rec ? this.org.chatItemTags(rec.id, rec.chatId) : (i.tagIds ?? []);
   }
 
   private findConversation(id: number, _includeSnoozed = true) {
@@ -657,6 +721,11 @@ export class MockTransport implements Api {
     const s = q.scope;
     if (s.kind === 'folder') {
       list = list.filter((m) => m.folderIds.includes(s.folderId));
+    } else if (s.kind === 'tag') {
+      list = list.filter((m) => !this.isHidden(m) && this.org.hasTag(this.org.tagIds({ kind: 'message', id: m.id }), s.tagId));
+    } else if (s.kind === 'searchFolder') {
+      const ids = this.org.searchFolderMatches(s.searchFolderId);
+      list = list.filter((m) => ids.has(mailItemId(m.id)));
     } else {
       const roleOf = (m: MessageDetail) => m.folderIds.map((id) => this.folder(id)?.role ?? '');
       switch (s.role) {
@@ -686,7 +755,8 @@ export class MockTransport implements Api {
   getMessage(id: number): Promise<MessageDetail> {
     const m = this.messages.get(id);
     if (!m) return Promise.reject(new ApiError('Nachricht nicht gefunden', 404, 'not_found'));
-    return this.reply(m);
+    const ref: ItemRef = { kind: 'message', id: m.id };
+    return this.reply({ ...m, tagIds: this.org.tagIds(ref), projectIds: this.org.projectIdsFor(ref) });
   }
 
   listConversations(q: ConversationQuery): Promise<Page<Conversation>> {
@@ -694,9 +764,16 @@ export class MockTransport implements Api {
     let all = this.buildConversations(q.grouping);
     const s = q.scope;
     if (!q.includeSnoozed) all = all.filter((c) => !c.conv.snoozedUntil);
-    if (q.folderId) {
+    if (q.folderId?.startsWith('sf:')) {
+      const ids = this.org.searchFolderMatches(Number(q.folderId.slice(3)));
+      all = all.filter((c) => c.items.some((i) => ids.has(i.id)));
+    } else if (q.folderId) {
       const folder = this.chatFolders.find((f) => f.id === q.folderId);
       if (folder) all = all.filter((c) => matchesFolder(c.conv, folder.rules));
+    }
+    if (q.tagId != null) {
+      const tid = q.tagId;
+      all = all.filter((c) => this.org.hasTag(c.conv.tagIds, tid));
     }
     if (q.focus) {
       const freq = this.frequentIds();
@@ -725,7 +802,7 @@ export class MockTransport implements Api {
         break;
     }
     if (s.kind === 'account') all = all.filter((c) => c.conv.accountIds.includes(s.accountId));
-    if (s.kind === 'folder') all = all.filter((c) => c.mailIds.some((id) => this.messages.get(id)!.folderIds.includes(s.folderId)));
+    if (s.kind !== 'all' && s.kind !== 'account') all = all.filter((c) => c.items.some((i) => this.inScope(i, s)));
     if (q.search) {
       const needle = q.search.toLowerCase();
       all = all.filter((c) => (c.conv.title + ' ' + c.items.map((i) => i.body + ' ' + (i.subject ?? '')).join(' ')).toLowerCase().includes(needle));
@@ -735,12 +812,38 @@ export class MockTransport implements Api {
     return this.reply({ items: convs.slice(q.offset, q.offset + q.limit), total: convs.length, offset: q.offset });
   }
 
+  /** Hybrid view: does a conversation item lie in a scope (folder, unified folder, tag, search folder)? */
+  private inScope(i: ConversationItem, s: ConversationScope): boolean {
+    switch (s.kind) {
+      case 'all':
+        return true;
+      case 'account':
+        return i.accountId === s.accountId;
+      case 'folder':
+        return !!i.folderIds?.includes(s.folderId);
+      case 'unified': {
+        if (i.messageId == null) return false;
+        const m = this.messages.get(i.messageId);
+        if (!m) return false;
+        if (s.role === 'flagged') return m.flags.includes(FLAGGED);
+        if (s.role === 'unread') return !m.flags.includes(SEEN);
+        return m.folderIds.some((id) => this.folder(id)?.role === 'inbox');
+      }
+      case 'tag':
+        return this.org.hasTag(this.allTags(i), s.tagId);
+      case 'searchFolder':
+        return this.org.searchFolderMatches(s.searchFolderId).has(i.id);
+    }
+  }
+
   async getConversation(id: number): Promise<Conversation> {
     return this.reply(this.findConversation(id).conv);
   }
 
   async listConversationItems(conversationId: number, query: ItemsQuery = {}): Promise<ConversationItem[]> {
     let items = this.findConversation(conversationId).items;
+    const scope = query.scope;
+    if (scope) items = items.map((i) => ({ ...i, inScope: this.inScope(i, scope) }));
     if (query.before) {
       const idx = items.findIndex((i) => i.id === query.before);
       if (idx >= 0) items = items.slice(0, idx);
@@ -1293,6 +1396,8 @@ export class MockTransport implements Api {
         messageId: m.id,
         conversationId: meta.thread,
         itemId: mailItemId(m.id),
+        tags: this.org ? this.org.tagPaths(this.org.tagIds({ kind: 'message', id: m.id })) : [],
+        projects: this.org ? this.org.projectLabels({ kind: 'message', id: m.id }) : [],
       });
       for (const a of m.attachments) {
         docs.push({
@@ -1337,6 +1442,8 @@ export class MockTransport implements Api {
         senderEmail: '',
         conversationId: chat.id,
         itemId: chatItemId(c.id),
+        tags: this.org ? this.org.tagPaths(this.org.chatItemTags(c.id, c.chatId)) : [],
+        projects: this.org ? this.org.projectLabels({ kind: 'chat_message', id: c.id }) : [],
       });
     }
     for (const p of this.persons) {
@@ -1493,6 +1600,9 @@ export class MockTransport implements Api {
     const out = [...this.chatFolders]
       .sort((a, b) => a.order - b.order)
       .map((f) => ({ ...f, unreadCount: all.filter((c) => matchesFolder(c, f.rules) && !c.muted && c.unreadCount > 0).length }));
+    for (const sf of this.org.chatFolderSearchFolders()) {
+      out.push({ id: 'sf:' + sf.id, name: sf.name, emoji: '🔍', rules: { ...EMPTY_RULES }, order: 100 + sf.id, unreadCount: sf.unread, searchFolderId: sf.id });
+    }
     return this.reply(out);
   }
   async saveChatFolder(folder: ChatFolder): Promise<ChatFolder> {
@@ -1815,6 +1925,114 @@ export class MockTransport implements Api {
     this.extraItems.set(conversationId, list);
     this.emit({ type: 'conversation.updated', conversationId });
     await this.reply(null);
+  }
+
+  // -------------------------------------------------------------------------
+  // Tags, projects, search folders, workflows (see mockOrganize.ts)
+  // -------------------------------------------------------------------------
+
+  private run<T>(f: () => T): Promise<T> {
+    try {
+      const v = f();
+      return this.reply(v === undefined ? v : clone(v));
+    } catch (err) {
+      return Promise.reject(err);
+    }
+  }
+
+  listTags(): Promise<TagCount[]> {
+    return this.run(() => this.org.listTags());
+  }
+  saveTag(tag: TagInput): Promise<Tag> {
+    return this.run(() => this.org.saveTag(clone(tag)));
+  }
+  deleteTag(id: number): Promise<void> {
+    return this.run(() => this.org.deleteTag(id));
+  }
+  mergeTags(sourceIds: number[], targetId: number): Promise<void> {
+    return this.run(() => this.org.mergeTags(clone(sourceIds), targetId));
+  }
+  setItemTags(items: ItemRef[], add: number[], remove: number[]): Promise<void> {
+    return this.run(() => {
+      this.org.setItemTags(clone(items), clone(add), clone(remove));
+      for (const it of items) if (it.kind === 'message') this.emit({ type: 'message.updated', messageId: it.id });
+      this.emit({ type: 'conversation.updated', conversationId: 0 });
+    });
+  }
+
+  listProjects(query?: { status?: ProjectStatus[] }): Promise<Project[]> {
+    return this.run(() => this.org.listProjects(query?.status));
+  }
+  getProject(id: number): Promise<Project> {
+    return this.run(() => this.org.getProject(id));
+  }
+  saveProject(project: ProjectInput): Promise<Project> {
+    return this.run(() => this.org.saveProject(clone(project)));
+  }
+  deleteProject(id: number): Promise<void> {
+    return this.run(() => this.org.deleteProject(id));
+  }
+  listProjectTemplates(): Promise<ProjectTemplate[]> {
+    return this.run(() => this.org.projectTemplates());
+  }
+  addToProject(projectId: number, items: ItemRef[]): Promise<void> {
+    return this.run(() => void this.org.addToProject(projectId, clone(items)));
+  }
+  removeFromProject(projectId: number, items: ItemRef[]): Promise<void> {
+    return this.run(() => this.org.removeFromProject(projectId, clone(items)));
+  }
+  projectTimeline(projectId: number): Promise<ProjectTimelineEntry[]> {
+    return this.run(() => this.org.timeline(projectId));
+  }
+  applyProjectRules(projectId: number): Promise<{ added: number }> {
+    return this.run(() => ({ added: this.org.applyProjectRules(projectId) }));
+  }
+  setTaskDone(taskId: number, done: boolean): Promise<void> {
+    return this.run(() => this.org.setTaskDone(taskId, done));
+  }
+
+  listSearchFolders(): Promise<SearchFolder[]> {
+    return this.run(() => this.org.listSearchFolders());
+  }
+  saveSearchFolder(folder: SearchFolderInput): Promise<SearchFolder> {
+    return this.run(() => this.org.saveSearchFolder(clone(folder)));
+  }
+  deleteSearchFolder(id: number): Promise<void> {
+    return this.run(() => this.org.deleteSearchFolder(id));
+  }
+
+  describeWorkflows(): Promise<WorkflowSchema> {
+    return this.run(() => DEFAULT_SCHEMA);
+  }
+  listWorkflows(query?: { projectId?: number }): Promise<Workflow[]> {
+    return this.run(() => this.org.listWorkflows(query?.projectId));
+  }
+  getWorkflow(id: string): Promise<Workflow> {
+    return this.run(() => this.org.getWorkflow(id));
+  }
+  saveWorkflow(workflow: Workflow): Promise<Workflow> {
+    return this.run(() => this.org.saveWorkflow(clone(workflow)));
+  }
+  deleteWorkflow(id: string): Promise<void> {
+    return this.run(() => this.org.deleteWorkflow(id));
+  }
+  setWorkflowEnabled(id: string, enabled: boolean): Promise<Workflow> {
+    return this.run(() => this.org.setWorkflowEnabled(id, enabled));
+  }
+  listWorkflowTemplates(): Promise<WorkflowTemplate[]> {
+    return this.run(() => this.org.templates());
+  }
+  dryRunWorkflow(workflow: Workflow, options?: { limit?: number }): Promise<WorkflowDryRunResult> {
+    return this.run(() => this.org.dryRun(clone(workflow), options?.limit));
+  }
+  listWorkflowRuns(id: string, options?: { limit?: number }): Promise<WorkflowRun[]> {
+    return this.run(() => this.org.listRuns(id, options?.limit));
+  }
+  validateWorkflow(src: string, mode: 'rule' | 'yaml'): Promise<WorkflowValidation> {
+    return this.run(() => this.org.validate(src, mode));
+  }
+  completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
+    return this.run(() => this.org.complete(src, offset, mode));
   }
 
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {

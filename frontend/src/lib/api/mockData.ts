@@ -87,6 +87,7 @@ const folderSpecs: F[] = [
   { id: 11, accountId: 1, name: 'Gesendet', role: 'sent' },
   { id: 12, accountId: 1, name: 'Entwürfe', role: 'drafts' },
   { id: 13, accountId: 1, name: 'Archiv', role: 'archive' },
+  { id: 29, accountId: 1, name: '2026', role: '', parentId: 13 },
   { id: 16, accountId: 1, name: 'Projekte', role: '' },
   { id: 17, accountId: 1, name: 'Hausbau', role: '', parentId: 16 },
   { id: 18, accountId: 1, name: 'Verein', role: '', parentId: 16 },
@@ -311,7 +312,7 @@ export const mails: MailSpec[] = [
     text: 'Hallo Frau Wagner,\n\ndas passt uns gut. Brauchen Sie an dem Tag Zugang zum Grundstück über die Nachbarseite?',
   },
   {
-    id: 22, account: 1, folders: [17], thread: 10, from: 8, to: [ME], subject: 'Re: Termin Bodenplatte', at: [4, '08:05'], seen: true, replyTo: 21,
+    id: 22, account: 1, folders: [29], thread: 10, from: 8, to: [ME], subject: 'Re: Termin Bodenplatte', at: [4, '08:05'], seen: true, replyTo: 21,
     text: 'Ja, das wäre hilfreich – der Betonmischer kommt gegen 7 Uhr. Vielen Dank!\n\nKerstin Wagner',
   },
   {

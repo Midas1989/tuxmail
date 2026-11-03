@@ -17,6 +17,14 @@
   import MessageList from '../components/mail/MessageList.svelte';
   import ReadingPane from '../components/mail/ReadingPane.svelte';
   import ChatWorkspace from '../components/chat/ChatWorkspace.svelte';
+  import HybridList from '../components/mail/HybridList.svelte';
+  import Conversation from '../components/chat/Conversation.svelte';
+  import OriginalMailDialog from '../components/chat/OriginalMailDialog.svelte';
+  import ForwardDialog from '../components/chat/ForwardDialog.svelte';
+  import ChatDialogs from '../components/chat/ChatDialogs.svelte';
+  import MessageSquareText from '@lucide/svelte/icons/message-square-text';
+  import Pin from '@lucide/svelte/icons/pin';
+  import type { ViewMode } from '../state/app.svelte';
 
   let searchText = $state(app.search);
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -35,7 +43,30 @@
     void app.setSearch('');
   }
 
-  const hasSelection = $derived(app.selectedMessageId != null);
+  const hybrid = $derived(prefs.viewMode === 'hybrid');
+  const hasSelection = $derived(hybrid ? app.selectedConversationId != null : app.selectedMessageId != null);
+  const MODES: { id: ViewMode; icon: typeof Rows3 }[] = [
+    { id: 'classic', icon: Rows3 },
+    { id: 'hybrid', icon: MessageSquareText },
+    { id: 'chat', icon: MessagesSquare },
+  ];
+  const isDefault = $derived(app.folderDefaultView === prefs.viewMode);
+
+  const scopeTitle = $derived.by(() => {
+    const s = app.sel;
+    if (s.kind === 'unified') return s.role === 'inbox' ? t('mail.folder.unifiedInbox') : s.role === 'flagged' ? t('mail.folder.flagged') : t('mail.folder.unread');
+    if (s.kind === 'folder') return app.folderPath(s.folderId);
+    if (s.kind === 'tag') return app.tag(s.tagId)?.path ?? '';
+    if (s.kind === 'searchFolder') return app.searchFolder(s.searchFolderId)?.name ?? '';
+    return '';
+  });
+  const scopeSub = $derived.by(() => {
+    const s = app.sel;
+    if (s.kind === 'folder') return app.account(s.accountId)?.displayName ?? '';
+    if (s.kind === 'tag') return t('organize.tags.label');
+    if (s.kind === 'searchFolder') return t('organize.searchFolder.label');
+    return t('mail.sidebar.allAccounts');
+  });
 
   function toggleTheme() {
     prefs.theme = prefs.effectiveTheme === 'dark' ? 'light' : 'dark';
@@ -84,13 +115,20 @@
         <span class="conn" role="status"><WifiOff size={15} /> {t(`common.conn.${app.connection}`)}</span>
       {/if}
       <div class="seg view-toggle" role="radiogroup" aria-label={t('mail.view.label')} title="Ctrl+Shift+V">
-        <button role="radio" aria-checked={true} onclick={() => app.setViewMode('classic')}>
-          <Rows3 size={15} aria-hidden="true" /><span class="hide-xs">{t('mail.view.classic')}</span>
-        </button>
-        <button role="radio" aria-checked={false} onclick={() => app.setViewMode('chat')}>
-          <MessagesSquare size={15} aria-hidden="true" /><span class="hide-xs">{t('mail.view.chat')}</span>
-        </button>
+        {#each MODES as m (m.id)}
+          {@const Icon = m.icon}
+          <button role="radio" aria-checked={prefs.viewMode === m.id} onclick={() => app.setViewMode(m.id)} title={t(`mail.view.${m.id}Hint`)}>
+            <Icon size={15} aria-hidden="true" /><span class="hide-md">{t(`mail.view.${m.id}`)}</span>
+          </button>
+        {/each}
       </div>
+      <button
+        class="icon-btn hide-xs"
+        aria-pressed={isDefault}
+        aria-label={isDefault ? t('mail.view.unsetDefault') : t('mail.view.setDefault', { view: t(`mail.view.${prefs.viewMode}`) })}
+        title={isDefault ? t('mail.view.unsetDefault') : t('mail.view.setDefault', { view: t(`mail.view.${prefs.viewMode}`) })}
+        onclick={() => app.setFolderDefaultView(!isDefault)}><Pin size={15} /></button
+      >
       <button class="icon-btn hide-xs" aria-label={t('common.palette.title')} title={t('common.palette.title') + ' (Ctrl+K)'} onclick={() => (app.paletteOpen = true)}><Command size={17} /></button>
       <button class="icon-btn" aria-label={t('settings.theme')} title={t('settings.theme')} onclick={toggleTheme}>
         {#if prefs.effectiveTheme === 'dark'}<Sun size={17} />{:else}<Moon size={17} />{/if}
@@ -98,11 +136,25 @@
     </header>
 
     <div class="panes" class:has-selection={hasSelection} data-mode={prefs.viewMode}>
-      <div class="pane-list"><MessageList /></div>
-      <div class="pane-detail"><ReadingPane /></div>
+      {#if hybrid}
+        <div class="pane-list"><HybridList title={scopeTitle} subtitle={scopeSub} /></div>
+        <div class="pane-detail"><Conversation hybrid /></div>
+      {:else}
+        <div class="pane-list"><MessageList /></div>
+        <div class="pane-detail"><ReadingPane /></div>
+      {/if}
     </div>
   </div>
 </div>
+{#if hybrid}
+  {#if app.originalMessage}
+    <OriginalMailDialog message={app.originalMessage} />
+  {/if}
+  <ChatDialogs />
+  {#if app.forwarding}
+    <ForwardDialog item={app.forwarding} />
+  {/if}
+{/if}
 {/if}
 
 
@@ -196,8 +248,8 @@
     grid-template-columns: minmax(320px, 400px) 1fr;
     grid-template-rows: minmax(0, 1fr);
   }
-  .panes[data-mode='chat'] {
-    grid-template-columns: minmax(300px, 360px) 1fr;
+  .panes[data-mode='hybrid'] {
+    grid-template-columns: minmax(280px, 340px) 1fr;
   }
   .pane-list,
   .pane-detail {
@@ -239,7 +291,7 @@
   }
   @media (max-width: 899px) {
     .panes,
-    .panes[data-mode='chat'] {
+    .panes[data-mode='hybrid'] {
       grid-template-columns: 1fr;
     }
     .pane-list {
@@ -247,6 +299,11 @@
     }
     .panes.has-selection .pane-list,
     .panes:not(.has-selection) .pane-detail {
+      display: none;
+    }
+  }
+  @media (max-width: 1279px) {
+    .hide-md {
       display: none;
     }
   }

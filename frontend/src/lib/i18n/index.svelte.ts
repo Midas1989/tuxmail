@@ -75,6 +75,10 @@ export const i18n = {
     state.dicts[code] = flatten(merged);
     state.metas[code] = meta ?? (merged.meta as LocaleMeta) ?? { code, name: code, nativeName: code, direction: 'ltr' };
   },
+  /** Does the reference language define this key? (dynamic keys such as diagnostic codes) */
+  has(key: string): boolean {
+    return key in (state.dicts[REFERENCE_LOCALE] ?? {});
+  },
   /** Resolve "system" or a stored code against navigator.languages. */
   resolve(pref: string, requested: readonly string[] = typeof navigator !== 'undefined' ? (navigator.languages ?? [navigator.language]) : []): string {
     const codes = Object.keys(state.dicts);

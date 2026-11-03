@@ -14,6 +14,24 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type {
+  ItemRef,
+  Project,
+  ProjectInput,
+  ProjectStatus,
+  ProjectTemplate,
+  ProjectTimelineEntry,
+  SearchFolder,
+  SearchFolderInput,
+  Tag,
+  TagCount,
+  TagInput,
+  Workflow,
+  WorkflowCompletion,
+  WorkflowDryRunResult,
+  WorkflowRun,
+  WorkflowSchema,
+  WorkflowTemplate,
+  WorkflowValidation,
 Account,
   ApiEvent,
   Channel,
@@ -317,6 +335,93 @@ export class WailsTransport implements Api {
   }
   acceptMeetingSlot(conversationId: number, proposalId: string, slotStart: string): Promise<void> {
     return this.call('AcceptMeetingSlot', conversationId, proposalId, slotStart);
+  }
+  listTags(): Promise<TagCount[]> {
+    return this.call('ListTags');
+  }
+  saveTag(tag: TagInput): Promise<Tag> {
+    return this.call('SaveTag', tag);
+  }
+  deleteTag(id: number): Promise<void> {
+    return this.call('DeleteTag', id);
+  }
+  mergeTags(sourceIds: number[], targetId: number): Promise<void> {
+    return this.call('MergeTags', sourceIds, targetId);
+  }
+  setItemTags(items: ItemRef[], add: number[], remove: number[]): Promise<void> {
+    return this.call('SetItemTags', items, add, remove);
+  }
+  listProjects(query: { status?: ProjectStatus[] } = {}): Promise<Project[]> {
+    return this.call('ListProjects', query);
+  }
+  getProject(id: number): Promise<Project> {
+    return this.call('GetProject', id);
+  }
+  saveProject(project: ProjectInput): Promise<Project> {
+    return this.call('SaveProject', project);
+  }
+  deleteProject(id: number): Promise<void> {
+    return this.call('DeleteProject', id);
+  }
+  listProjectTemplates(): Promise<ProjectTemplate[]> {
+    return this.call('ListProjectTemplates');
+  }
+  addToProject(projectId: number, items: ItemRef[]): Promise<void> {
+    return this.call('AddToProject', projectId, items);
+  }
+  removeFromProject(projectId: number, items: ItemRef[]): Promise<void> {
+    return this.call('RemoveFromProject', projectId, items);
+  }
+  projectTimeline(projectId: number): Promise<ProjectTimelineEntry[]> {
+    return this.call('ProjectTimeline', projectId);
+  }
+  applyProjectRules(projectId: number): Promise<{ added: number }> {
+    return this.call('ApplyProjectRules', projectId);
+  }
+  setTaskDone(taskId: number, done: boolean): Promise<void> {
+    return this.call('SetTaskDone', taskId, done);
+  }
+  listSearchFolders(): Promise<SearchFolder[]> {
+    return this.call('ListSearchFolders');
+  }
+  saveSearchFolder(folder: SearchFolderInput): Promise<SearchFolder> {
+    return this.call('SaveSearchFolder', folder);
+  }
+  deleteSearchFolder(id: number): Promise<void> {
+    return this.call('DeleteSearchFolder', id);
+  }
+  describeWorkflows(): Promise<WorkflowSchema> {
+    return this.call('DescribeWorkflows');
+  }
+  listWorkflows(query: { projectId?: number } = {}): Promise<Workflow[]> {
+    return this.call('ListWorkflows', query);
+  }
+  getWorkflow(id: string): Promise<Workflow> {
+    return this.call('GetWorkflow', id);
+  }
+  saveWorkflow(workflow: Workflow): Promise<Workflow> {
+    return this.call('SaveWorkflow', workflow);
+  }
+  deleteWorkflow(id: string): Promise<void> {
+    return this.call('DeleteWorkflow', id);
+  }
+  setWorkflowEnabled(id: string, enabled: boolean): Promise<Workflow> {
+    return this.call('SetWorkflowEnabled', id, enabled);
+  }
+  listWorkflowTemplates(): Promise<WorkflowTemplate[]> {
+    return this.call('ListWorkflowTemplates');
+  }
+  dryRunWorkflow(workflow: Workflow, options: { limit?: number } = {}): Promise<WorkflowDryRunResult> {
+    return this.call('DryRunWorkflow', workflow, options);
+  }
+  listWorkflowRuns(id: string, options: { limit?: number } = {}): Promise<WorkflowRun[]> {
+    return this.call('ListWorkflowRuns', id, options);
+  }
+  validateWorkflow(src: string, mode: 'rule' | 'yaml'): Promise<WorkflowValidation> {
+    return this.call('ValidateWorkflow', src, mode);
+  }
+  completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
+    return this.call('CompleteWorkflow', src, offset, mode);
   }
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);

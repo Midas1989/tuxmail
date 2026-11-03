@@ -27,6 +27,8 @@
   import CalendarClock from '@lucide/svelte/icons/calendar-clock';
   import Languages from '@lucide/svelte/icons/languages';
   import { prefs } from '../../state';
+  import FolderIcon from '@lucide/svelte/icons/folder';
+  import TagChips from '../common/TagChips.svelte';
 
   interface Props {
     item: ConversationItem;
@@ -47,8 +49,21 @@
     translation?: { text: string; sourceLang: string; showOriginal: boolean } | null;
     ontoggletranslation?: (item: ConversationItem) => void;
     onslot?: (item: ConversationItem, start: string) => void;
+    /** Hybrid view: inside / outside the selected folder. */
+    scope?: 'in' | 'out' | null;
+    /** Hybrid view: folder chip ("Gesendet", "Archiv/2026"). */
+    folderLabel?: string;
+    /** Hybrid view: the bubble can be dragged onto a folder in the tree. */
+    draggableMail?: boolean;
   }
-  let { item, groupStart, groupEnd, channelChanged, showReplyQuote, isGroupChat, focused, query, activeHit, onmenu, onreact, onjump, onoriginal, onimage, onfocusitem, translation = null, ontoggletranslation, onslot }: Props = $props();
+  let { item, groupStart, groupEnd, channelChanged, showReplyQuote, isGroupChat, focused, query, activeHit, onmenu, onreact, onjump, onoriginal, onimage, onfocusitem, translation = null, ontoggletranslation, onslot, scope = null, folderLabel = '', draggableMail = false }: Props = $props();
+
+  function ondragstart(e: DragEvent) {
+    if (!draggableMail || item.messageId == null || !e.dataTransfer) return;
+    e.dataTransfer.setData('application/x-tuxmail-message', String(item.messageId));
+    e.dataTransfer.setData('text/plain', item.subject ?? item.body.slice(0, 60));
+    e.dataTransfer.effectAllowed = 'move';
+  }
   let sigOpen = $state(false);
   const sigShown = $derived(prefs.chatSignatures === 'shown' || sigOpen);
 
@@ -77,7 +92,7 @@
   }
 </script>
 
-<div class="row" class:own={item.isOwn} class:start={groupStart} class:end={groupEnd} class:big={bigEmoji}>
+<div class="row" class:own={item.isOwn} class:start={groupStart} class:end={groupEnd} class:big={bigEmoji} class:scope-in={scope === 'in'} class:scope-out={scope === 'out'}>
   {#if !item.isOwn && isGroupChat}
     <div class="av">
       {#if groupEnd}<Avatar name={item.senderName} seed={item.senderPersonId} size={30} />{/if}
@@ -98,7 +113,12 @@
     onclick={() => onfocusitem(item.id)}
     {onkeydown}
     use:longpress={(x, y) => onmenu(item, x, y)}
+    draggable={draggableMail ? 'true' : undefined}
+    {ondragstart}
   >
+    {#if folderLabel}
+      <div class="folder-chip" title={scope === 'in' ? t('mail.hybrid.inThisFolder') : t('mail.hybrid.otherFolder')}><FolderIcon size={11} aria-hidden="true" /> {folderLabel}</div>
+    {/if}
     {#if isGroupChat && groupStart && !item.isOwn}
       <div class="sender" style:--h={senderHue}>{item.senderName}</div>
     {/if}
@@ -196,6 +216,9 @@
       {/if}
     {/if}
 
+    {#if item.tagIds?.length}
+      <div class="tags"><TagChips ids={item.tagIds} size="xs" /></div>
+    {/if}
     <span class="meta">
       {#if item.pinned}<Pin size={11} aria-label={t('chat.pin.pinned')} />{/if}
       {#if item.starred}<Star size={11} class="starred-ic" aria-label={t('chat.starred.starred')} />{/if}
@@ -271,6 +294,47 @@
   .own .bubble {
     background: var(--tm-bubble-own);
     color: var(--tm-bubble-own-fg);
+  }
+  .scope-out .bubble {
+    opacity: 0.55;
+    filter: saturate(0.6);
+  }
+  .scope-out .bubble:hover,
+  .scope-out .bubble.focused {
+    opacity: 0.9;
+  }
+  .scope-in .bubble {
+    box-shadow:
+      0 1px 1px rgb(16 24 40 / 0.08),
+      inset 3px 0 0 var(--tm-brand);
+    background: color-mix(in srgb, var(--tm-brand) 9%, var(--tm-bubble-other));
+  }
+  .own.scope-in .bubble {
+    background: color-mix(in srgb, var(--tm-brand) 12%, var(--tm-bubble-own));
+  }
+  .folder-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 0 0 3px;
+    padding: 0 6px;
+    border-radius: 99px;
+    font-size: 10.5px;
+    font-weight: 600;
+    line-height: 17px;
+    background: color-mix(in srgb, currentColor 9%, transparent);
+    opacity: 0.85;
+  }
+  .scope-in .folder-chip {
+    background: color-mix(in srgb, var(--tm-brand) 22%, transparent);
+    color: color-mix(in srgb, var(--tm-brand) 60%, var(--tm-fg));
+    opacity: 1;
+  }
+  .bubble[draggable='true'] {
+    cursor: grab;
+  }
+  .tags {
+    margin-top: 4px;
   }
   .bubble.focused {
     box-shadow:

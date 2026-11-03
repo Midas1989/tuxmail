@@ -23,6 +23,8 @@ export const FIELDS: FieldDef[] = [
   { name: 'filename', category: 'text' },
   { name: 'account', category: 'place' },
   { name: 'in', category: 'place' },
+  { name: 'tag', category: 'type' },
+  { name: 'project', category: 'place' },
   { name: 'channel', category: 'type' },
   { name: 'type', category: 'type' },
   { name: 'category', category: 'type' },
@@ -58,12 +60,17 @@ export interface Suggestion {
   avatar?: { name: string; seed: string };
   /** Complete clause: a space is appended and the clause becomes a chip. */
   complete: boolean;
+  /** Tag colour swatch. */
+  color?: string;
 }
 
 export interface SuggestData {
   accounts: { id: number; name: string; address?: string }[];
   folders: { id: number; name: string; account: string }[];
   people: { name: string; email: string }[];
+  /** Tag paths and colours. */
+  tags?: { path: string; color: string }[];
+  projects?: { key: string; name: string }[];
 }
 
 const OPERATORS: { op: string; desc: string }[] = [
@@ -139,6 +146,10 @@ export function suggestionsFor(ctx: CompletionContext, data: SuggestData, limit 
         }
       } else if (f === 'account') {
         for (const a of data.accounts) if (matches(a.name, ctx.prefix)) out.push({ id: 'v:a' + a.id, kind: 'value', label: a.name, detail: a.address, insert: quoteValue(a.name), category: cat, complete: true });
+      } else if (f === 'tag') {
+        for (const tg of data.tags ?? []) if (matches(tg.path, ctx.prefix)) out.push({ id: 'v:t' + tg.path, kind: 'value', label: tg.path, insert: quoteValue(tg.path), category: cat, complete: true, color: tg.color });
+      } else if (f === 'project') {
+        for (const pr of data.projects ?? []) if (matches(pr.key, ctx.prefix) || matches(pr.name, ctx.prefix)) out.push({ id: 'v:p' + pr.key, kind: 'value', label: pr.key, detail: pr.name, insert: quoteValue(pr.key), category: cat, complete: true });
       } else if (f === 'in' || f === 'folder') {
         const seen = new Set<string>();
         for (const fo of data.folders) {

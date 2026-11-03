@@ -7,22 +7,24 @@
   import Cloud from '@lucide/svelte/icons/cloud';
   import Settings from '@lucide/svelte/icons/settings';
   import Search from '@lucide/svelte/icons/search';
+  import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import { app, prefs } from '../state';
   import { t } from '../i18n/index.svelte';
 
-  type Item = { id: 'mail' | 'chats' | 'search' | 'calendar' | 'contacts' | 'files'; icon: typeof Mail; label: string; badge?: number };
+  type Item = { id: 'mail' | 'chats' | 'search' | 'projects' | 'calendar' | 'contacts' | 'files'; icon: typeof Mail; label: string; badge?: number };
 
   const items: Item[] = $derived([
     { id: 'mail', icon: Mail, label: t('nav.mail'), badge: app.unifiedUnread },
     { id: 'chats', icon: MessagesSquare, label: t('nav.chats') },
     { id: 'search', icon: Search, label: t('nav.search') },
+    { id: 'projects', icon: FolderKanban, label: t('nav.projects') },
     { id: 'calendar', icon: Calendar, label: t('nav.calendar') },
     { id: 'contacts', icon: Contact, label: t('nav.contacts') },
     { id: 'files', icon: Cloud, label: t('nav.files') },
   ]);
 
   function isActive(id: Item['id']): boolean {
-    if (id === 'mail') return app.route === 'mail' && prefs.viewMode === 'classic';
+    if (id === 'mail') return app.route === 'mail' && prefs.viewMode !== 'chat';
     if (id === 'chats') return app.route === 'mail' && prefs.viewMode === 'chat';
     return app.route === id;
   }
@@ -30,7 +32,8 @@
   async function go(id: Item['id']) {
     if (id === 'mail' || id === 'chats') {
       app.navigate('mail');
-      await app.setViewMode(id === 'mail' ? 'classic' : 'chat');
+      if (id === 'chats') await app.setViewMode('chat');
+      else if (prefs.viewMode === 'chat') await app.setViewMode('classic');
     } else {
       app.navigate(id);
     }

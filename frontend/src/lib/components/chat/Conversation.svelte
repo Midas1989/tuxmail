@@ -31,6 +31,11 @@
   import Send from '@lucide/svelte/icons/send';
   import Pencil from '@lucide/svelte/icons/pencil';
   import AlarmClock from '@lucide/svelte/icons/alarm-clock';
+  import Tags from '@lucide/svelte/icons/tags';
+  import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+  import FolderOpen from '@lucide/svelte/icons/folder-open';
+  import { prefs } from '../../state';
+  import TagChips from '../common/TagChips.svelte';
   import { i18n } from '../../i18n/index.svelte';
   import type { AiSummary } from '../../types';
   import { ApiError } from '../../api/api';
@@ -44,6 +49,12 @@
   import EmojiPicker, { QUICK_REACTIONS } from './EmojiPicker.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
   import ConfirmDialog from '../common/ConfirmDialog.svelte';
+
+  interface Props {
+    /** Hybrid view: whole thread, bubbles of the selected folder highlighted. */
+    hybrid?: boolean;
+  }
+  let { hybrid = false }: Props = $props();
 
   let scroller = $state<HTMLDivElement>();
   let atBottom = $state(true);
@@ -65,7 +76,24 @@
 
   const conv = $derived(app.conversation);
   const isGroupChat = $derived(!!conv && conv.isGroup);
-  const timeline = $derived(buildTimeline(app.items, { dayKey: (iso) => fmt().dayKey(iso), unreadFromId: app.unreadFromId }));
+  const inScopeCount = $derived(hybrid ? app.items.filter((i) => i.inScope).length : 0);
+  const shownItems = $derived(hybrid && prefs.hybridOnlyFolder ? app.items.filter((i) => i.inScope) : app.items);
+  // Hybrid: the subject is shown once in the header, not as timeline lines.
+  const timeline = $derived(buildTimeline(shownItems, { dayKey: (iso) => fmt().dayKey(iso), unreadFromId: app.unreadFromId }).filter((e) => !hybrid || e.type !== 'subject'));
+  const convTags = $derived(conv?.tagIds?.length ? conv.tagIds : [...new Set(app.items.flatMap((i) => i.tagIds ?? []))]);
+
+  /** Folder chip of a mail bubble: the folder of the item's account, e.g. "Archiv/2026". */
+  function folderLabel(item: ConversationItem): string {
+    if (!item.folderIds?.length) return '';
+    const s = app.sel;
+    const id = s.kind === 'folder' && item.folderIds.includes(s.folderId) ? s.folderId : item.folderIds[0];
+    return app.folderPath(id);
+  }
+
+  function toggleOnlyFolder() {
+    prefs.hybridOnlyFolder = !prefs.hybridOnlyFolder;
+    prefs.save(false);
+  }
 
   let pinIndex = $state(0);
   let summary = $state<AiSummary | null>(null);
@@ -176,6 +204,11 @@
       pinIndex = 0;
       return;
     }
+    // First load of a conversation: the explicit scroll request decides.
+    if (lastLen === 0) {
+      lastLen = len;
+      return;
+    }
     if (len > lastLen) {
       const added = app.items.slice(lastLen).filter((i) => !i.isOwn).length;
       if (atBottom) requestAnimationFrame(() => scrollToBottom(true));
@@ -226,6 +259,8 @@
       { id: 'star', label: item.starred ? t('chat.menu.unstar') : t('chat.menu.star'), icon: Star, run: () => app.toggleStar(item) },
       { id: 'pin', label: item.pinned ? t('chat.menu.unpin') : t('chat.menu.pin'), icon: item.pinned ? PinOff : Pin, run: () => app.togglePin(item) },
       { id: 'translate', label: t('chat.menu.translate'), icon: Languages, run: () => translate(item) },
+      { id: 'tags', label: t('organize.tags.menu'), icon: Tags, run: () => app.openTagPicker([app.itemRef(item)], item.tagIds ?? []) },
+      { id: 'project', label: t('organize.project.menu'), icon: FolderKanban, run: () => app.openProjectPicker([app.itemRef(item)]) },
       { id: 'task', label: t('chat.menu.task'), icon: ListTodo, run: () => app.createFromItem(item, 'task') },
       { id: 'event', label: t('chat.menu.event'), icon: CalendarPlus, run: () => app.createFromItem(item, 'event') },
     ];
@@ -271,18 +306,24 @@
   {#if conv}
     <header class="head">
       <button class="icon-btn back" aria-label={t('common.action.back')} onclick={() => app.selectConversation(null)}><ArrowLeft size={19} /></button>
-      <button class="who" onclick={() => (app.infoOpen = !app.infoOpen)} aria-label={t('chat.info.toggle')} aria-expanded={app.infoOpen}>
+      <button class="who" onclick={() => !hybrid && (app.infoOpen = !app.infoOpen)} aria-label={hybrid ? conv.title : t('chat.info.toggle')} aria-expanded={hybrid ? undefined : app.infoOpen}>
         <ChatAvatar name={conv.title} seed={conv.kind === 'chat' && conv.isGroup ? conv.title : (app.person(conv.participantIds[0])?.handles[0]?.value ?? conv.title)} size={40} group={conv.isGroup && conv.kind === 'chat'} url={conv.avatarUrl} />
         <span class="names">
           <span class="title">{conv.title}</span>
-          <span class="sub">{subtitle}</span>
+          <span class="sub">{#if hybrid}{t('mail.hybrid.inFolder', { count: inScopeCount, total: app.items.length }) + ' · '}{/if}{subtitle}</span>
         </span>
+        {#if convTags.length}<TagChips ids={convTags} size="xs" max={2} />{/if}
       </button>
+      {#if hybrid}
+        <button class="only" aria-pressed={prefs.hybridOnlyFolder} onclick={toggleOnlyFolder} title={t('mail.hybrid.onlyFolder')}>
+          <FolderOpen size={14} aria-hidden="true" /><span class="only-l">{t('mail.hybrid.onlyFolderShort')}</span>
+        </button>
+      {/if}
       {#if longChat}
         <button class="icon-btn" class:busy={summarizing} aria-label={t('chat.ai.summarize')} title={t('chat.ai.summarize')} onclick={summarize}><Sparkles size={18} /></button>
       {/if}
       <button class="icon-btn" aria-label={t('chat.searchInChat')} title={t('chat.searchInChat')} aria-pressed={searchOpen} onclick={() => (searchOpen ? (searchOpen = false) : openSearch())}><Search size={18} /></button>
-      <button class="icon-btn" aria-label={t('chat.info.toggle')} title={t('chat.info.toggle')} aria-pressed={app.infoOpen} onclick={() => (app.infoOpen = !app.infoOpen)}><Info size={18} /></button>
+      {#if !hybrid}<button class="icon-btn" aria-label={t('chat.info.toggle')} title={t('chat.info.toggle')} aria-pressed={app.infoOpen} onclick={() => (app.infoOpen = !app.infoOpen)}><Info size={18} /></button>{/if}
       <button class="icon-btn" aria-label={t('chat.moreActions')} title={t('chat.moreActions')} aria-haspopup="menu" onclick={(e) => (headerMenu = { x: e.clientX - 220, y: e.clientY + 12 })}><EllipsisVertical size={18} /></button>
     </header>
 
@@ -371,6 +412,9 @@
                 if (tr) translations = { ...translations, [item.id]: { ...tr, showOriginal: !tr.showOriginal } };
               }}
               onslot={(item, start) => app.acceptMeetingSlot(item, start)}
+              scope={hybrid ? (entry.item.inScope ? 'in' : 'out') : null}
+              folderLabel={hybrid ? folderLabel(entry.item) : ''}
+              draggableMail={hybrid && entry.item.messageId != null}
             />
           {/if}
         {/each}
@@ -499,6 +543,32 @@
   }
   .back {
     display: none;
+  }
+  .only {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--tm-line);
+    border-radius: 99px;
+    background: var(--tm-surface);
+    color: var(--tm-muted);
+    font: inherit;
+    font-size: 12.5px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .only[aria-pressed='true'] {
+    background: var(--tm-accent-soft);
+    border-color: var(--tm-accent);
+    color: var(--tm-accent-text);
+    font-weight: 600;
+  }
+  @media (max-width: 1100px) {
+    .only-l {
+      display: none;
+    }
   }
   .who {
     flex: 1;

@@ -34,20 +34,54 @@ import {
   type MessageSummary,
   type Person,
   type Signature,
+  type ItemRef,
+  type Project,
+  type SearchFolder,
+  type SearchFolderInput,
+  type TagCount,
+  type Tag,
 } from '../types';
 import { prefs } from './prefs.svelte';
 import { ApiError } from '../api/api';
 import { isFocusActive } from '../chatfeatures';
+import type { SuggestData } from '../search/suggest';
+import type { WorkflowContext } from '../workflow/schema';
 
-export type Route = 'mail' | 'search' | 'calendar' | 'contacts' | 'files' | 'settings';
-export const ROUTES: Route[] = ['mail', 'search', 'calendar', 'contacts', 'files', 'settings'];
-export type ViewMode = 'classic' | 'chat';
+export type Route = 'mail' | 'search' | 'projects' | 'calendar' | 'contacts' | 'files' | 'settings';
+export const ROUTES: Route[] = ['mail', 'search', 'projects', 'calendar', 'contacts', 'files', 'settings'];
+export type ViewMode = 'classic' | 'hybrid' | 'chat';
+export const VIEW_MODES: ViewMode[] = ['classic', 'hybrid', 'chat'];
 export type UnifiedRole = 'inbox' | 'flagged' | 'unread';
 
 export type SidebarSel =
   | { kind: 'unified'; role: UnifiedRole }
   | { kind: 'folder'; accountId: number; folderId: number }
-  | { kind: 'account'; accountId: number };
+  | { kind: 'account'; accountId: number }
+  | { kind: 'tag'; tagId: number }
+  | { kind: 'searchFolder'; searchFolderId: number };
+
+/** Stable key of a sidebar selection (per-folder view defaults). */
+export function selKey(s: SidebarSel): string {
+  switch (s.kind) {
+    case 'unified':
+      return 'u:' + s.role;
+    case 'folder':
+      return 'f:' + s.folderId;
+    case 'account':
+      return 'a:' + s.accountId;
+    case 'tag':
+      return 't:' + s.tagId;
+    case 'searchFolder':
+      return 's:' + s.searchFolderId;
+  }
+}
+
+/** Dialogs for tags, projects and search folders (rendered by OrganizeDialogs). */
+export type OrganizeDialog =
+  | { kind: 'tags'; items: ItemRef[]; current: number[] }
+  | { kind: 'project'; items: ItemRef[] }
+  | { kind: 'searchFolder'; folder?: SearchFolder; query?: string; projectId?: number }
+  | { kind: 'newProject' };
 
 export type ComposeMode = 'new' | 'reply' | 'replyAll' | 'forward';
 
@@ -171,6 +205,19 @@ export class AppState {
   now = $state(Date.now());
 
   // overlays
+  // Tags, projects, search folders
+  tags = $state<TagCount[]>([]);
+  projects = $state<Project[]>([]);
+  searchFolders = $state<SearchFolder[]>([]);
+  selectedProjectId = $state<number | null>(null);
+  organizeDialog = $state<OrganizeDialog | null>(null);
+  /** Messenger view: tag filter pill. */
+  chatTagId = $state<number | null>(null);
+  /** Classic list: checked mails for bulk actions. */
+  checked = $state<number[]>([]);
+  /** Settings section to scroll to after navigating (e.g. "set-workflows"). */
+  settingsAnchor = $state<string | null>(null);
+
   composer = $state<ComposerInit | null>(null);
   paletteOpen = $state(false);
   sidebarOpen = $state(false);
@@ -202,6 +249,59 @@ export class AppState {
 
   get unifiedUnread(): number {
     return this.allFolders.filter((f) => f.role === 'inbox').reduce((n, f) => n + f.unread, 0);
+  }
+
+  tag(id: number): Tag | undefined {
+    return this.tags.find((t) => t.tag.id === id)?.tag;
+  }
+
+  /** Tags of an item, ordered by path. */
+  tagsOf(ids: number[] | undefined): Tag[] {
+    if (!ids?.length) return [];
+    return this.tags.filter((t) => ids.includes(t.tag.id)).map((t) => t.tag);
+  }
+
+  project(id: number): Project | undefined {
+    return this.projects.find((p) => p.id === id);
+  }
+
+  searchFolder(id: number): SearchFolder | undefined {
+    return this.searchFolders.find((s) => s.id === id);
+  }
+
+  /** "Gesendet", "Archiv/2026": localized role name plus sub path. */
+  folderPath(id: number): string {
+    const f = this.folder(id);
+    if (!f) return '';
+    const own = f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name;
+    return f.parentId != null ? `${this.folderPath(f.parentId)}/${own}` : own;
+  }
+
+  /** Names the workflow editors resolve values against. */
+  get workflowContext(): WorkflowContext {
+    const all = this.allFolders;
+    const path = (f: Folder): string => {
+      const p = all.find((x) => x.id === f.parentId);
+      return p ? path(p) + '/' + f.name : f.name;
+    };
+    return {
+      accounts: this.accounts.map((a) => ({ id: a.id, name: a.displayName })),
+      folders: ['inbox', ...new Set(all.filter((f) => f.role !== 'junk' && f.role !== 'trash').map(path))],
+      tags: this.tags.map((x) => x.tag.path),
+      projects: this.projects.map((p) => p.name),
+      templates: ['Danke', 'Eingangsbestätigung', 'Abwesend'],
+    };
+  }
+
+  /** Autocomplete data for expert query inputs (search, search folders, project rules). */
+  get suggestData(): SuggestData {
+    return {
+      accounts: this.accounts.map((a) => ({ id: a.id, name: a.displayName, address: a.extra?.address })),
+      folders: this.allFolders.map((f) => ({ id: f.id, name: f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name, account: this.account(f.accountId)?.displayName ?? '' })),
+      people: this.persons.filter((p) => !p.isMe).flatMap((p) => p.handles.filter((h) => h.kind === 'email').map((h) => ({ name: p.displayName, email: h.value }))),
+      tags: this.tags.map((x) => ({ path: x.tag.path, color: x.tag.color })),
+      projects: this.projects.map((p) => ({ key: p.key, name: p.name })),
+    };
   }
 
   person(id: number): Person | undefined {
@@ -239,7 +339,7 @@ export class AppState {
       this.identities = identities;
       this.signatures = signatures;
       this.persons = persons;
-      await Promise.all(this.mailAccounts.map((a) => this.reloadFolders(a.id)));
+      await Promise.all([...this.mailAccounts.map((a) => this.reloadFolders(a.id)), this.loadTags(), this.loadProjects(), this.loadSearchFolders()]);
       this.unsubscribe = this.api.subscribe((e) => this.onEvent(e));
       await this.reloadList();
       this.ready = true;
@@ -263,11 +363,26 @@ export class AppState {
 
   private reloadListDebounced = debounce(() => void this.reloadList({ keepSelection: true }), 150);
   private reloadItemsDebounced = debounce((focus?: string) => void this.reloadItems(focus), 80);
+  private reloadSearchFoldersDebounced = debounce(() => void this.loadSearchFolders(), 400);
 
   private onEvent(e: ApiEvent): void {
     switch (e.type) {
       case 'connection':
         this.connection = e.state;
+        break;
+      case 'tags.changed':
+        void this.loadTags();
+        void this.loadSearchFolders();
+        this.reloadListDebounced();
+        if (this.selectedConversationId != null) this.reloadItemsDebounced();
+        if (this.selectedMessageId != null) void this.refreshMessage();
+        break;
+      case 'project.updated':
+        void this.loadProjects();
+        break;
+      case 'searchfolders.changed':
+        void this.loadSearchFolders();
+        void this.loadChatFolders();
         break;
       case 'folder.updated':
         this.pendingFolderAccounts.push(e.accountId);
@@ -285,10 +400,11 @@ export class AppState {
       case 'message.updated':
       case 'message.removed':
         this.reloadListDebounced();
+        this.reloadSearchFoldersDebounced();
         if (this.selectedMessageId === e.messageId && e.type === 'message.updated') void this.refreshMessage();
         break;
       case 'conversation.updated':
-        if (this.viewMode === 'chat') this.reloadListDebounced();
+        if (this.viewMode !== 'classic') this.reloadListDebounced();
         if (this.selectedConversationId === e.conversationId) this.reloadItemsDebounced(e.itemId);
         break;
     }
@@ -307,6 +423,8 @@ export class AppState {
     const s = this.sel;
     if (s.kind === 'folder') return { kind: 'folder', folderId: s.folderId };
     if (s.kind === 'unified') return { kind: 'unified', role: s.role };
+    if (s.kind === 'tag') return { kind: 'tag', tagId: s.tagId };
+    if (s.kind === 'searchFolder') return { kind: 'searchFolder', searchFolderId: s.searchFolderId };
     return { kind: 'unified', role: 'inbox' };
   }
 
@@ -316,7 +434,9 @@ export class AppState {
     const s = this.sel;
     if (s.kind === 'folder') return { kind: 'folder', folderId: s.folderId };
     if (s.kind === 'account') return { kind: 'account', accountId: s.accountId };
-    return { kind: 'all' };
+    if (s.kind === 'tag') return { kind: 'tag', tagId: s.tagId };
+    if (s.kind === 'searchFolder') return { kind: 'searchFolder', searchFolderId: s.searchFolderId };
+    return { kind: 'unified', role: s.role };
   }
 
   async select(sel: SidebarSel): Promise<void> {
@@ -327,6 +447,10 @@ export class AppState {
     this.selectedConversationId = null;
     this.conversation = null;
     this.items = [];
+    this.checked = [];
+    const preferred = prefs.folderViewModes[selKey(sel)];
+    if (preferred && sel.kind !== 'account') prefs.viewMode = preferred;
+    else if (prefs.viewMode === 'chat' && sel.kind !== 'account') prefs.viewMode = 'classic';
     if (sel.kind === 'account') {
       prefs.viewMode = 'chat';
       const acc = this.account(sel.accountId);
@@ -344,6 +468,7 @@ export class AppState {
   async reloadList(opts: { keepSelection?: boolean } = {}): Promise<void> {
     if (this.viewMode === 'classic') await this.loadMessages(opts.keepSelection);
     else await this.loadConversations(opts.keepSelection);
+    this.checked = this.checked.filter((id) => this.messages.some((m) => m.id === id));
   }
 
   async loadMessages(keepSelection = false): Promise<void> {
@@ -376,9 +501,11 @@ export class AppState {
   async loadConversations(keepSelection = false): Promise<void> {
     this.conversationsLoading = true;
     try {
+      const chat = this.viewMode === 'chat';
       const page = await this.api.listConversations({
         scope: this.conversationScope(),
-        grouping: prefs.grouping,
+        grouping: chat ? prefs.grouping : 'thread',
+        tagId: chat && this.chatTagId != null ? this.chatTagId : undefined,
         offset: 0,
         limit: 500,
         search: (this.viewMode === 'chat' ? this.chatQuery : this.search) || undefined,
@@ -468,12 +595,14 @@ export class AppState {
     }
     if (this.replyingTo?.conversationId !== id) this.replyingTo = null;
     this.conversation = this.conversations.find((c) => c.id === id) ?? (await this.api.getConversation(id));
-    const items = await this.api.listConversationItems(id);
+    const items = await this.api.listConversationItems(id, this.itemsQuery());
     if (this.selectedConversationId !== id) return;
     this.items = items;
     const firstUnread = items.find((i) => i.unread && !i.isOwn);
     this.unreadFromId = firstUnread?.id ?? null;
-    this.timelineScrollTarget = focusItemId ?? firstUnread?.id ?? null;
+    // Hybrid: jump to the first bubble of the selected folder (an unread one if any).
+    const firstInScope = this.viewMode === 'hybrid' ? (items.find((i) => i.inScope && i.unread) ?? items.find((i) => i.inScope)) : undefined;
+    this.timelineScrollTarget = focusItemId ?? firstInScope?.id ?? firstUnread?.id ?? null;
     this.timelineScrollTick++;
     if (this.conversation && (this.conversation.unreadCount > 0 || this.conversation.markedUnread)) {
       void this.api.markConversationRead(id);
@@ -483,7 +612,7 @@ export class AppState {
   async reloadItems(newItemId?: string): Promise<void> {
     const id = this.selectedConversationId;
     if (id == null) return;
-    const items = await this.api.listConversationItems(id);
+    const items = await this.api.listConversationItems(id, this.itemsQuery());
     if (this.selectedConversationId !== id) return;
     const grew = items.length > this.items.length;
     this.items = items;
@@ -502,35 +631,59 @@ export class AppState {
     this.focusedItemId = itemId;
   }
 
+  private itemsQuery(): { scope?: ConversationScope } | undefined {
+    return this.viewMode === 'hybrid' ? { scope: this.conversationScope() } : undefined;
+  }
+
   // -------------------------------------------------------------------------
   // Classic <-> chat (KONZEPT 6.6): the selection survives the switch.
   // -------------------------------------------------------------------------
 
   async setViewMode(mode: ViewMode): Promise<void> {
     if (mode === this.viewMode) return;
-    if (mode === 'chat') await this.toChat();
-    else await this.toClassic();
+    // The selection survives every switch: classic mail <-> bubble.
+    const msgId = this.viewMode === 'classic' ? this.selectedMessageId : (messageIdFromItemId(this.focusedItemId) ?? classicSelectionFromChat(this.items, this.focusedItemId));
+    if (mode === 'classic') await this.toClassic(msgId);
+    else await this.toConversations(mode, msgId);
     prefs.save();
   }
 
+  /** Ctrl+Shift+V: classic -> hybrid -> chat -> classic. */
   toggleViewMode(): Promise<void> {
-    return this.setViewMode(this.viewMode === 'classic' ? 'chat' : 'classic');
+    return this.setViewMode(VIEW_MODES[(VIEW_MODES.indexOf(this.viewMode) + 1) % VIEW_MODES.length]);
   }
 
-  private async toChat(): Promise<void> {
-    const msgId = this.selectedMessageId;
-    prefs.viewMode = 'chat';
+  /** Remember the current view as default for the selected folder (or forget it). */
+  setFolderDefaultView(on: boolean): void {
+    const k = selKey(this.sel);
+    if (on) prefs.folderViewModes = { ...prefs.folderViewModes, [k]: this.viewMode };
+    else {
+      const next = { ...prefs.folderViewModes };
+      delete next[k];
+      prefs.folderViewModes = next;
+    }
+    prefs.save();
+  }
+
+  get folderDefaultView(): ViewMode | undefined {
+    return prefs.folderViewModes[selKey(this.sel)];
+  }
+
+  private async toConversations(mode: 'hybrid' | 'chat', msgId: number | null): Promise<void> {
+    prefs.viewMode = mode;
+    if (mode === 'hybrid' && this.sel.kind === 'account') this.sel = { kind: 'unified', role: 'inbox' };
     if (msgId == null) {
+      this.selectedConversationId = null;
+      this.items = [];
       await this.loadConversations();
       return;
     }
-    const ref = await this.api.conversationForMessage(msgId, prefs.grouping);
+    const ref = await this.api.conversationForMessage(msgId, mode === 'hybrid' ? 'thread' : prefs.grouping);
     await this.loadConversations(true);
     await this.selectConversation(ref.conversationId, ref.itemId);
   }
 
-  private async toClassic(): Promise<void> {
-    const msgId = classicSelectionFromChat(this.items, this.focusedItemId);
+  private async toClassic(msgId: number | null): Promise<void> {
     prefs.viewMode = 'classic';
     if (msgId == null) {
       if (this.sel.kind === 'account') this.sel = { kind: 'unified', role: 'inbox' };
@@ -555,7 +708,8 @@ export class AppState {
   private scopeContains(m: MessageSummary): boolean {
     const s = this.sel;
     if (s.kind === 'folder') return m.folderIds.includes(s.folderId);
-    if (s.kind === 'account') return false;
+    if (s.kind === 'account' || s.kind === 'searchFolder') return false;
+    if (s.kind === 'tag') return !!m.tagIds?.includes(s.tagId);
     if (s.role === 'flagged') return m.flags.includes(FLAG_FLAGGED);
     if (s.role === 'unread') return true;
     return m.folderIds.some((id) => this.folder(id)?.role === 'inbox');
@@ -1016,6 +1170,131 @@ export class AppState {
   async createFromItem(item: ConversationItem, kind: 'task' | 'event'): Promise<void> {
     await this.api.createFromItem(item.conversationId, item.id, kind);
     this.toast(kind === 'task' ? t('chat.taskCreated') : t('chat.eventCreated'));
+  }
+
+  // -------------------------------------------------------------------------
+  // Tags, projects, search folders
+  // -------------------------------------------------------------------------
+
+  async loadTags(): Promise<void> {
+    this.tags = await this.api.listTags();
+  }
+
+  async loadProjects(): Promise<void> {
+    this.projects = await this.api.listProjects();
+  }
+
+  async loadSearchFolders(): Promise<void> {
+    this.searchFolders = await this.api.listSearchFolders();
+  }
+
+  /** Item refs for a conversation item (mail or messenger message). */
+  itemRef(item: ConversationItem): ItemRef {
+    if (item.messageId != null) return { kind: 'message', id: item.messageId };
+    return { kind: 'chat_message', id: Number(item.id.replace(/^\w:/, '')) };
+  }
+
+  openTagPicker(items: ItemRef[], current: number[] = []): void {
+    if (!items.length) return;
+    this.organizeDialog = { kind: 'tags', items, current };
+  }
+
+  /** "t": tag the selection (checked mails, the open mail or the focused bubble). */
+  tagSelection(): void {
+    if (this.viewMode === 'classic') {
+      const ids = this.checked.length ? this.checked : this.selectedMessageId != null ? [this.selectedMessageId] : [];
+      const current = ids.length === 1 ? (this.messages.find((m) => m.id === ids[0])?.tagIds ?? this.message?.tagIds ?? []) : [];
+      this.openTagPicker(ids.map((id) => ({ kind: 'message' as const, id })), current);
+    } else {
+      const item = this.items.find((i) => i.id === this.focusedItemId) ?? this.items[this.items.length - 1];
+      if (item) this.openTagPicker([this.itemRef(item)], item.tagIds ?? []);
+    }
+  }
+
+  async applyTags(items: ItemRef[], add: number[], remove: number[]): Promise<void> {
+    if (!add.length && !remove.length) return;
+    await this.api.setItemTags(items, add, remove);
+    const names = this.tagsOf(add).map((x) => x.path).join(', ');
+    this.toast(add.length ? t('organize.tags.applied', { count: items.length, tags: names }) : t('organize.tags.removed', { count: items.length }), {
+      label: t('common.action.undo'),
+      run: () => void this.api.setItemTags(items, remove, add),
+    });
+  }
+
+  async createTag(path: string, color: string): Promise<Tag> {
+    const tag = await this.api.saveTag({ path, color });
+    await this.loadTags();
+    return tag;
+  }
+
+  openProjectPicker(items: ItemRef[]): void {
+    if (items.length) this.organizeDialog = { kind: 'project', items };
+  }
+
+  async addToProject(projectId: number, items: ItemRef[]): Promise<void> {
+    await this.api.addToProject(projectId, items);
+    await this.loadProjects();
+    const p = this.project(projectId);
+    this.toast(t('organize.project.added', { count: items.length, project: p?.name ?? '' }), {
+      label: t('organize.project.open'),
+      run: () => this.openProject(projectId),
+    });
+  }
+
+  openProject(id: number | null): void {
+    this.selectedProjectId = id;
+    this.navigate('projects');
+  }
+
+  async saveSearchFolder(input: SearchFolderInput): Promise<SearchFolder> {
+    const saved = await this.api.saveSearchFolder(input);
+    await this.loadSearchFolders();
+    void this.loadChatFolders();
+    this.toast(t('organize.searchFolder.saved', { name: saved.name }));
+    return saved;
+  }
+
+  async deleteSearchFolder(id: number): Promise<void> {
+    await this.api.deleteSearchFolder(id);
+    if (this.sel.kind === 'searchFolder' && this.sel.searchFolderId === id) await this.select({ kind: 'unified', role: 'inbox' });
+    await this.loadSearchFolders();
+    void this.loadChatFolders();
+  }
+
+  async setChatTag(id: number | null): Promise<void> {
+    this.chatTagId = id;
+    await this.loadConversations(true);
+  }
+
+  toggleChecked(id: number, on = !this.checked.includes(id)): void {
+    this.checked = on ? [...new Set([...this.checked, id])] : this.checked.filter((x) => x !== id);
+  }
+
+  async bulk(action: 'archive' | 'trash' | 'read' | 'unread' | 'flag'): Promise<void> {
+    const ids = [...this.checked];
+    if (!ids.length) return;
+    if (action === 'read' || action === 'unread') await this.api.setFlags(ids, action === 'read' ? [FLAG_SEEN] : [], action === 'unread' ? [FLAG_SEEN] : []);
+    else if (action === 'flag') await this.api.setFlags(ids, [FLAG_FLAGGED], []);
+    else {
+      for (const id of ids) {
+        const m = this.messages.find((x) => x.id === id);
+        const f = m && (this.folders[m.accountId] ?? []).find((x) => x.role === action);
+        if (f) await this.api.move([id], f.id);
+      }
+      this.toast(t(action === 'archive' ? 'organize.bulk.archived' : 'organize.bulk.trashed', { count: ids.length }));
+    }
+    this.checked = [];
+  }
+
+  /** Hybrid view: drag a bubble onto a folder in the tree. */
+  async moveItemToFolder(messageId: number, folderId: number): Promise<void> {
+    const target = this.folder(folderId);
+    const detail = await this.api.getMessage(messageId);
+    const previous = detail.folderIds.find((f) => this.folder(f)?.accountId === target?.accountId);
+    if (previous === folderId) return;
+    await this.api.move([messageId], folderId);
+    await this.reloadItems();
+    this.toast(t('mail.toast.moved', { folder: this.folderPath(folderId) }), previous != null ? { label: t('common.action.undo'), run: () => void this.api.move([messageId], previous).then(() => this.reloadItems()) } : undefined);
   }
 
   async showOriginal(item: ConversationItem): Promise<void> {

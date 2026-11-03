@@ -19,6 +19,18 @@
   import ServerConnectWizard from '../components/settings/ServerConnectWizard.svelte';
   import Server from '@lucide/svelte/icons/server';
   import ScreenShell from './ScreenShell.svelte';
+  import TagSettings from '../components/settings/TagSettings.svelte';
+  import WorkflowList from '../components/workflow/WorkflowList.svelte';
+
+  // Deep links from the tree / palette ("Manage tags", "Workflows").
+  $effect(() => {
+    const id = app.settingsAnchor;
+    if (!id) return;
+    requestAnimationFrame(() => {
+      document.getElementById(id)?.scrollIntoView({ block: 'start' });
+      app.settingsAnchor = null;
+    });
+  });
 
   let wizardOpen = $state(false);
   let connectOpen = $state(false);
@@ -46,6 +58,7 @@
     ['R / Shift+R / F', t('settings.shortcut.reply')],
     ['E / Entf', t('settings.shortcut.archiveDelete')],
     ['S', t('settings.shortcut.flag')],
+    ['T', t('settings.shortcut.tag')],
     ['/', t('settings.shortcut.search')],
     ['Ctrl+Enter', t('settings.shortcut.send')],
   ]);
@@ -92,6 +105,14 @@
 
     <AiSettingsCard />
 
+    <TagSettings />
+
+    <section class="card wide-card" id="set-workflows" aria-labelledby="set-workflows-h">
+      <h2 id="set-workflows-h">{t('settings.workflows.title')}</h2>
+      <p class="about">{t('settings.workflows.intro')}</p>
+      <WorkflowList />
+    </section>
+
     <section class="card" aria-labelledby="set-look">
       <h2 id="set-look">{t('settings.appearance')}</h2>
       <div class="field">
@@ -115,6 +136,7 @@
         <span class="label" id="lbl-view">{t('settings.defaultView')}</span>
         <div class="seg" role="radiogroup" aria-labelledby="lbl-view">
           <button role="radio" aria-checked={prefs.viewMode === 'classic'} onclick={() => app.setViewMode('classic')}>{t('mail.view.classic')}</button>
+          <button role="radio" aria-checked={prefs.viewMode === 'hybrid'} onclick={() => app.setViewMode('hybrid')}>{t('mail.view.hybrid')}</button>
           <button role="radio" aria-checked={prefs.viewMode === 'chat'} onclick={() => app.setViewMode('chat')}>{t('mail.view.chat')}</button>
         </div>
       </div>
@@ -158,6 +180,9 @@
     background: var(--tm-surface);
     border: 1px solid var(--tm-line);
     border-radius: var(--tm-radius-lg);
+  }
+  .wide-card {
+    grid-column: 1 / -1;
   }
   .card-head {
     display: flex;

@@ -177,6 +177,10 @@ export interface MessageSummary {
   flags: Flag[];
   hasAttachments: boolean;
   size: number;
+  /** Tags assigned to the mail. */
+  tagIds?: number[];
+  /** Projects the mail is linked to. */
+  projectIds?: number[];
 }
 
 export interface MessageDetail extends MessageSummary {
@@ -225,6 +229,8 @@ export interface Conversation {
   avatarUrl?: string;
   /** Last item had no text but media: the UI shows a localized label. */
   lastMedia?: 'photo' | 'voice' | 'file';
+  /** Tags of the conversation (its chats and items). */
+  tagIds?: number[];
   lastMediaName?: string;
   /** Up to three pinned messages (banner at the top of the chat). */
   pinnedItemIds?: string[];
@@ -283,6 +289,12 @@ export interface ConversationItem {
   meeting?: MeetingProposal;
   /** Encrypted (PGP/S-MIME) items are never sent to cloud AI providers. */
   encrypted?: boolean;
+  /** Mail items: folders the mail lives in (hybrid view folder chips). */
+  folderIds?: number[];
+  /** Tags assigned to the item. */
+  tagIds?: number[];
+  /** Set when listConversationItems was called with a scope: the item lies in that scope (hybrid view highlight). */
+  inScope?: boolean;
 }
 
 export interface Reaction {
@@ -427,7 +439,12 @@ export type ApiEvent =
   | { type: 'conversation.updated'; conversationId: number; itemId?: string }
   | { type: 'folder.updated'; folderId: number; accountId: number }
   | { type: 'account.updated'; accountId: number }
-  | { type: 'connection'; state: 'online' | 'offline' | 'reconnecting' };
+  | { type: 'connection'; state: 'online' | 'offline' | 'reconnecting' }
+  /** Tags were created, renamed, merged, deleted or (un)assigned. */
+  | { type: 'tags.changed' }
+  | { type: 'project.updated'; projectId: number }
+  | { type: 'searchfolders.changed' }
+  | { type: 'workflow.run'; workflowId: string; run: WorkflowRunSummary };
 
 export type ApiEventType = ApiEvent['type'];
 
@@ -683,6 +700,8 @@ export interface ChatFolder {
   order: number;
   /** Filled by the core in listChatFolders. */
   unreadCount?: number;
+  /** Virtual folder backed by a search folder ("Als Chat-Ordner verwenden"); not editable as a chat folder. */
+  searchFolderId?: number;
 }
 
 export interface StarredItem {
@@ -758,4 +777,363 @@ export interface MeetingProposal {
   slots: TimeSlot[];
   status: 'open' | 'booked';
   chosen?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Items (generic references used by tags, projects and workflows)
+// ---------------------------------------------------------------------------
+
+/** Kind of an item that can be tagged / linked to a project (mirrors store.ItemKind). */
+export type ItemKind = 'message' | 'conversation' | 'chat' | 'chat_message' | 'event' | 'task' | 'contact' | 'person' | 'file' | 'search_folder' | 'project';
+
+export interface ItemRef {
+  kind: ItemKind;
+  id: number;
+}
+
+// ---------------------------------------------------------------------------
+// Tags (hierarchical, coloured; synced as IMAP keywords / Gmail labels / Outlook categories)
+// ---------------------------------------------------------------------------
+
+export interface Tag {
+  id: number;
+  parentId?: number;
+  /** Leaf name, e.g. "Müller". */
+  name: string;
+  /** Full path with "/" separators, e.g. "Kunde/Müller". */
+  path: string;
+  /** CSS colour (#rrggbb). */
+  color: string;
+  /** Icon name from the tag icon set (optional). */
+  icon?: string;
+  sortOrder: number;
+}
+
+export interface TagCount {
+  tag: Tag;
+  /** Items tagged with exactly this tag. */
+  direct: number;
+  /** Distinct items tagged with this tag or a descendant. */
+  total: number;
+  /** Directly tagged unread mails. */
+  unread: number;
+}
+
+export interface TagInput {
+  id?: number;
+  /** Full path; missing parents are created. */
+  path: string;
+  color: string;
+  icon?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+export type ProjectStatus = 'planned' | 'active' | 'paused' | 'done' | 'archived';
+
+export type CustomFieldType = 'text' | 'number' | 'date' | 'url' | 'select';
+
+export interface CustomField {
+  key: string;
+  label: string;
+  type: CustomFieldType;
+  value: string;
+  options?: string[];
+}
+
+export interface ProjectBudget {
+  amount: number;
+  currency: string;
+  spent?: number;
+}
+
+export interface Project {
+  id: number;
+  /** Short key, e.g. "HB-26" (also usable in search: project:HB-26). */
+  key: string;
+  name: string;
+  status: ProjectStatus;
+  color: string;
+  description: string;
+  customer?: string;
+  /** Person of the customer contact, if known. */
+  customerPersonId?: number;
+  startDate?: string;
+  dueDate?: string;
+  budget?: ProjectBudget;
+  customFields: CustomField[];
+  memberPersonIds: number[];
+  /** Linked cloud folder (Nextcloud/WebDAV path). */
+  cloudFolder?: { provider: string; path: string; url?: string };
+  notes: string;
+  tagIds: number[];
+  /** Auto-assignment: items matching the expert query are linked automatically. */
+  rules: { enabled: boolean; query: string };
+  /** 0..1, computed from done tasks. */
+  progress: number;
+  counts: { mail: number; chat: number; event: number; task: number; file: number };
+  templateId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ProjectInput = Omit<Project, 'id' | 'progress' | 'counts' | 'createdAt' | 'updatedAt'> & { id?: number };
+
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  /** Custom fields pre-filled for new projects. */
+  fields: CustomField[];
+  /** Workflow templates bound to a project created from this template. */
+  workflowTemplateIds: string[];
+  /** Default auto-assign query; "{key}" is replaced by the project key. */
+  ruleQuery?: string;
+}
+
+export type TimelineKind = 'mail' | 'chat' | 'event' | 'task' | 'file' | 'note';
+
+export interface ProjectTimelineEntry {
+  item: ItemRef;
+  kind: TimelineKind;
+  date: string;
+  title: string;
+  snippet?: string;
+  /** Sender / organizer / owner. */
+  personId?: number;
+  actorName?: string;
+  channel?: Channel;
+  /** Mail/chat: where to open it. */
+  conversationId?: number;
+  messageId?: number;
+  itemId?: string;
+  /** Tasks. */
+  done?: boolean;
+  due?: string;
+  /** Events. */
+  end?: string;
+  location?: string;
+  /** Files. */
+  path?: string;
+  size?: number;
+  /** How it got into the project. */
+  source: 'manual' | 'rule' | 'workflow';
+}
+
+// ---------------------------------------------------------------------------
+// Search folders (saved searches shown as virtual folders)
+// ---------------------------------------------------------------------------
+
+export interface SearchFolder {
+  id: number;
+  name: string;
+  /** Expert query (KONZEPT 8.4.1). */
+  query: string;
+  /** Shown inside an account or project in the tree; global when both are unset. */
+  accountId?: number;
+  projectId?: number;
+  /** Also offered as a chat folder tab in the messenger view. */
+  useAsChatFolder: boolean;
+  icon?: string;
+  color?: string;
+  /** Computed by the core. */
+  total: number;
+  unread: number;
+}
+
+export type SearchFolderInput = Omit<SearchFolder, 'id' | 'total' | 'unread'> & { id?: number };
+
+// ---------------------------------------------------------------------------
+// Workflows (KONZEPT 8.5): trigger -> condition -> actions
+// ---------------------------------------------------------------------------
+
+export type WorkflowEditorMode = 'visual' | 'rule' | 'yaml';
+
+export interface WorkflowTrigger {
+  /** Event type, e.g. "mail.received". */
+  event: string;
+  accounts?: number[];
+  folders?: string[];
+  channels?: string[];
+  schedule?: string;
+  name?: string;
+}
+
+/** Structured condition (mirrors workflow.Rule): exactly one of all / any / not / field+op(+value). */
+export interface WorkflowRule {
+  all?: WorkflowRule[];
+  any?: WorkflowRule[];
+  not?: WorkflowRule;
+  field?: string;
+  op?: string;
+  value?: string | number | boolean | string[];
+}
+
+/** Either an expr-lang expression or a structured rule. */
+export type WorkflowCondition = { expr: string; rule?: undefined } | { rule: WorkflowRule; expr?: undefined };
+
+export interface WorkflowAction {
+  type: string;
+  /** Type-specific parameters (inlined next to "type" in YAML). */
+  params: Record<string, unknown>;
+  /** Optional per-action condition (expression). */
+  if?: string;
+  continueOnError?: boolean;
+}
+
+export interface WorkflowRunSummary {
+  id: string;
+  startedAt: string;
+  status: 'ok' | 'failed' | 'skipped' | 'running';
+  message?: string;
+}
+
+export interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  enabled: boolean;
+  trigger: WorkflowTrigger;
+  condition?: WorkflowCondition;
+  actions: WorkflowAction[];
+  options?: Record<string, unknown>;
+  /** Bound to a project (shown in the project's Workflows tab). */
+  projectId?: number;
+  /** Template the workflow was created from. */
+  templateId?: string;
+  /** Computed by the core: at least one action has an external effect (sends mail, calls a webhook ...). */
+  externalEffects?: boolean;
+  lastRun?: WorkflowRunSummary;
+  updatedAt?: string;
+}
+
+export interface WorkflowRunStep {
+  action: string;
+  status: 'ok' | 'failed' | 'skipped';
+  summary: string;
+  durationMs: number;
+}
+
+export interface WorkflowRun extends WorkflowRunSummary {
+  workflowId: string;
+  finishedAt?: string;
+  trigger: string;
+  item?: { kind: ItemKind; id: number; title: string };
+  steps: WorkflowRunStep[];
+}
+
+export interface WorkflowPlannedAction {
+  type: string;
+  /** English fallback (core Plan.Summary); the UI renders type + params localized. */
+  summary: string;
+  external: boolean;
+  /** Resolved parameters (templates filled). */
+  params?: Record<string, string>;
+}
+
+export interface WorkflowDryRunSample {
+  item: { kind: ItemKind; id: number; title: string; date: string; from?: string };
+  matched: boolean;
+  planned: WorkflowPlannedAction[];
+}
+
+export interface WorkflowDryRunResult {
+  samples: WorkflowDryRunSample[];
+  matched: number;
+  checked: number;
+}
+
+/** A problem in workflow source text; positions are 1-based, end exclusive. */
+export interface WorkflowDiagnostic {
+  line: number;
+  col: number;
+  endLine: number;
+  endCol: number;
+  severity: 'error' | 'warning' | 'info';
+  /** Stable code, e.g. "unknown_action", "missing_param", "syntax" (the UI localizes by code). */
+  code: string;
+  /** The offending name/value, used in localized messages. */
+  detail?: string;
+  /** English fallback text. */
+  message: string;
+}
+
+export interface WorkflowValidation {
+  diagnostics: WorkflowDiagnostic[];
+  /** Parsed workflow when the source has no errors. */
+  workflow?: Workflow;
+}
+
+export type WorkflowCompletionKind = 'keyword' | 'trigger' | 'scope' | 'field' | 'operator' | 'action' | 'param' | 'value' | 'variable';
+
+export interface WorkflowCompletionItem {
+  label: string;
+  insert: string;
+  kind: WorkflowCompletionKind;
+  detail?: string;
+}
+
+export interface WorkflowCompletion {
+  /** Replace src[from, to) (0-based UTF-16 offsets) with the chosen item's insert text. */
+  from: number;
+  to: number;
+  items: WorkflowCompletionItem[];
+}
+
+export type WorkflowParamKind = 'string' | 'text' | 'list' | 'folder' | 'tag' | 'project' | 'channel' | 'number' | 'bool' | 'duration' | 'url' | 'path' | 'template';
+
+export interface WorkflowParamSpec {
+  name: string;
+  kind: WorkflowParamKind;
+  required?: boolean;
+  /** Positional argument in the one-line rule syntax (e.g. `move "Archiv"`), in declaration order. */
+  positional?: boolean;
+  options?: string[];
+}
+
+export interface WorkflowActionSpec {
+  type: string;
+  /** Group for the action picker. */
+  group: 'mail' | 'organize' | 'notify' | 'calendar' | 'files' | 'advanced';
+  external: boolean;
+  /** Allowed trigger events; empty = all. */
+  triggers: string[];
+  params: WorkflowParamSpec[];
+}
+
+export interface WorkflowTriggerSpec {
+  event: string;
+  group: 'mail' | 'chat' | 'calendar' | 'contact' | 'file' | 'time' | 'other';
+  /** Trigger filters that apply. */
+  filters: ('accounts' | 'folders' | 'channels' | 'schedule' | 'name')[];
+}
+
+export type WorkflowFieldKind = 'string' | 'list' | 'number' | 'bool';
+
+export interface WorkflowFieldSpec {
+  name: string;
+  kind: WorkflowFieldKind;
+  /** Short alias in the rule syntax, e.g. "from" for mail.from. */
+  alias?: string;
+}
+
+/** Everything the editors need (Api.describeWorkflows). */
+export interface WorkflowSchema {
+  triggers: WorkflowTriggerSpec[];
+  fields: WorkflowFieldSpec[];
+  /** Operators per field kind. */
+  operators: Record<WorkflowFieldKind, string[]>;
+  actions: WorkflowActionSpec[];
+  /** Template variables usable in texts: {{betreff}} ... */
+  variables: string[];
+}
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description: string;
+  workflow: Workflow;
 }

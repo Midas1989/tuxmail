@@ -38,6 +38,10 @@ export interface SearchDoc {
   conversationId?: number;
   itemId?: string;
   personId?: number;
+  /** Tag paths ("Kunde/Müller"). */
+  tags?: string[];
+  /** Linked projects (key and name). */
+  projects?: string[];
 }
 
 type TermNode = Extract<QueryNode, { t: 'term' }>;
@@ -210,6 +214,8 @@ function fieldTexts(doc: SearchDoc, field?: string): string[] {
     case 'category':
     case 'label':
       return doc.categories;
+    case 'project':
+      return doc.projects ?? [];
     default:
       return [];
   }
@@ -219,6 +225,9 @@ function matchTerm(term: TermNode, doc: SearchDoc, now: Date): boolean {
   const f = term.field;
   const v = lc(term.value);
   switch (f) {
+    case 'tag':
+      // hierarchical: tag:Kunde also matches Kunde/Müller
+      return (doc.tags ?? []).some((t) => lc(t) === v || lc(t).startsWith(v + '/'));
     case 'is':
       return v === 'unread' || v === 'ungelesen'
         ? doc.unread
