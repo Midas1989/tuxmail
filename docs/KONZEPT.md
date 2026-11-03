@@ -532,6 +532,14 @@ Mail wird extern verschoben (anderer Client, Webmail, Serverregel):
 - **Signaturen auch im Chat:** Mail-Antworten aus der Messenger-Ansicht erhalten **standardmäßig die Signatur** der Identität (Antwortsignatur bzw. Standardsignatur). Pro Identität wählbar: volle Signatur, **Kurzsignatur für Chat** (z. B. Name + Telefon) oder keine. Unter der Eingabezeile zeigt eine dezente Zeile die aktive Signatur; sie lässt sich für die einzelne Nachricht wechseln oder entfernen.
 - **Eingehende Signaturen** werden in der Blase ausgeblendet, aber ausgewertet: Der Info-Bereich zeigt die letzte Signatur des Kontakts als **Visitenkarte** (Name, Position, Firma, Telefon, Adresse, Website) mit „Zu Kontakt hinzufügen/aktualisieren".
 - **Mobil (PWA):** Chatliste → Unterhaltung im Vollbild mit Zurück-Pfeil, wie in Messenger-Apps.
+- **Signatur-Darstellung:** Einstellung „Signaturen in der Chat-Ansicht": *eingeklappt* (Standard – die Blase zeigt nur die aktuelle Nachricht, ein kleiner Pfeil klappt die Signatur auf) oder *anzeigen*. Gesendet wird die Signatur trotzdem.
+- **Eigene Chat-Ordner** (wie bei Telegram): selbst definierte Listen wie „Arbeit", „Familie", „Kunden" als Reiter über der Chatliste – nach Personen, Chats, Kanälen, Konten, Gruppen oder „nur ungelesen"; mit Ungelesen-Zähler. Unabhängig von Mail-Ordnern.
+- **Markierte & angeheftete Nachrichten:** einzelne Nachrichten mit Stern markieren (Übersicht global und pro Chat); bis zu drei Nachrichten pro Chat oben anheften.
+- **Chat schlummern & Fokusmodus:** Chat bis später ausblenden (1 Std., heute Abend, morgen früh, Montag, frei wählbar), danach erscheint er wieder oben. Fokusmodus zeigt nur wichtige Personen; alle anderen sammeln sich in „Wartet (n)"; optional zeitgesteuert.
+- **Entwürfe & geplantes Senden:** angefangene Nachricht bleibt pro Chat erhalten („Entwurf: …" in der Liste); „Später senden" mit Vorgaben und Datum/Uhrzeit; geplante Nachrichten erscheinen gedimmt im Verlauf und sind änderbar.
+- **Schnellantworten mit „/":** Textbausteine (z. B. `/danke`, `/termin`, `/iban`) mit Platzhaltern; `@Name` in Gruppen-Mails fügt die Person zu CC hinzu.
+- **KI im Chat:** drei Antwortvorschläge als Chips, Nachrichten inline übersetzen, lange Verläufe zusammenfassen – über die KI-Assistenz (8.10) mit denselben Datenschutzregeln.
+- **Termin vorschlagen:** freie Zeiten aus dem Kalender als auswählbare Vorschläge senden (bei Mail mit `.ics`); die Auswahl des Empfängers legt den Termin automatisch an.
 
 - **Blasen-Darstellung:** Eigene Mails rechts, fremde links, gruppiert nach Absender und Zeit.
 - **Zitat-Entfernung:** Zitierter Verlauf (`>`-Zeilen, „Am … schrieb …", Outlook-Header-Blöcke, `<blockquote>`) und Signaturen werden erkannt und eingeklappt – die Blase zeigt nur den **neuen** Text. Ein Klick zeigt die Originalmail vollständig.
