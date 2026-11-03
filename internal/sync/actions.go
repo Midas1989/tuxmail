@@ -284,18 +284,33 @@ func (a *Actions) MarkRead(ctx context.Context, messageIDs []int64, read bool) e
 
 // Delete moves messages to the trash folder of their account, or deletes
 // them permanently if they already are in the trash, the account has no
-// trash folder or Config.PermanentDelete is set.
+// trash folder or Config.PermanentDelete is set. The account's trash mode
+// (store.FolderSettings) may instead mark them \Deleted (removed by
+// Expunge) or delete them immediately.
 func (a *Actions) Delete(ctx context.Context, messageIDs []int64) error {
 	m := a.m
 	if m.cfg.PermanentDelete {
 		return a.DeletePermanently(ctx, messageIDs)
 	}
-	var permanent []int64
+	var permanent, mark []int64
 	toTrash := map[int64][]int64{}
+	modes := map[int64]string{}
 	for _, mid := range messageIDs {
 		msg, err := m.st.GetMessage(ctx, mid)
 		if err != nil {
 			return err
+		}
+		switch a.trashMode(ctx, modes, msg.AccountID) {
+		case store.TrashDelete:
+			permanent = append(permanent, mid)
+			continue
+		case store.TrashMark:
+			if msg.Flags&store.FlagDeleted != 0 {
+				permanent = append(permanent, mid)
+			} else {
+				mark = append(mark, mid)
+			}
+			continue
 		}
 		trash, err := m.st.FolderByRole(ctx, msg.AccountID, domain.RoleTrash)
 		if errors.Is(err, store.ErrNotFound) {
@@ -321,6 +336,11 @@ func (a *Actions) Delete(ctx context.Context, messageIDs []int64) error {
 	}
 	for trash, ids := range toTrash {
 		if err := a.MoveFrom(ctx, ids, 0, trash); err != nil {
+			return err
+		}
+	}
+	if len(mark) > 0 {
+		if err := a.SetFlags(ctx, mark, []domain.Flag{domain.FlagDeleted}, nil); err != nil {
 			return err
 		}
 	}
@@ -376,19 +396,27 @@ func (a *Actions) DeletePermanently(ctx context.Context, messageIDs []int64) err
 	return nil
 }
 
-// Archive moves messages to the archive folder of their account.
+// Archive moves messages to the archive folder of their account (or its
+// yearly / monthly subfolder, created on demand, depending on the account's
+// archive mode).
 func (a *Actions) Archive(ctx context.Context, messageIDs []int64) error {
 	byFolder := map[int64][]int64{}
+	modes := map[int64]string{}
 	for _, mid := range messageIDs {
 		msg, err := a.m.st.GetMessage(ctx, mid)
 		if err != nil {
 			return err
 		}
-		f, err := a.m.st.FolderByRole(ctx, msg.AccountID, domain.RoleArchive)
-		if err != nil {
-			return fmt.Errorf("sync: account %d has no archive folder: %w", msg.AccountID, err)
+		mode, ok := modes[msg.AccountID]
+		if !ok {
+			fs, _ := a.m.st.FolderSettings(ctx, msg.AccountID)
+			mode, modes[msg.AccountID] = fs.ArchiveMode, fs.ArchiveMode
 		}
-		byFolder[f.ID] = append(byFolder[f.ID], mid)
+		f, err := a.archiveFolder(ctx, msg, mode)
+		if err != nil {
+			return err
+		}
+		byFolder[f] = append(byFolder[f], mid)
 	}
 	for f, ids := range byFolder {
 		if err := a.MoveFrom(ctx, ids, 0, f); err != nil {

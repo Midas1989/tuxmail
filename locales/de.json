@@ -95,11 +95,18 @@
         "inbox": "Posteingang",
         "junk": "Spam",
         "sent": "Gesendet",
-        "trash": "Papierkorb"
+        "trash": "Papierkorb",
+        "templates": "Vorlagen"
       },
       "unifiedInbox": "Posteingang",
       "unread": "Ungelesen",
-      "unreadCount": "{count} ungelesen"
+      "unreadCount": "{count} ungelesen",
+      "useAs": "Als {role} verwenden",
+      "menu": "Ordneraktionen",
+      "expunge": "Gelöschte Nachrichten entfernen",
+      "expunged": "{count} Nachrichten entfernt",
+      "roleSet": "„{folder}“ wird jetzt als {role} verwendet",
+      "configure": "Ordnereinstellungen…"
     },
     "list": {
       "answered": "Beantwortet",
@@ -650,6 +657,61 @@
     "workflows": {
       "title": "Workflows",
       "intro": "Automatisierungen: Auslöser → Bedingung → Aktionen. Visuell, als einzeilige Regel oder als YAML bearbeiten; vor dem Aktivieren mit einem Trockenlauf testen."
+    },
+    "folders": {
+      "title": "Ordner",
+      "intro": "Spezialordner werden automatisch vom Server erkannt. Für jede Rolle kannst du einen anderen Ordner wählen.",
+      "account": "Konto",
+      "role": "Rolle",
+      "folder": "Ordner",
+      "source": "Erkannt",
+      "none": "– keiner –",
+      "badge": {
+        "server": "vom Server erkannt",
+        "name": "anhand des Namens",
+        "user": "manuell",
+        "none": "fehlt",
+        "unresolved": "Ordner fehlt auf dem Server"
+      },
+      "unresolvedHint": "Der gewählte Ordner „{folder}“ existiert auf dem Server nicht mehr. Bis er wieder auftaucht, gilt die automatische Wahl.",
+      "detect": "Automatisch erkennen",
+      "create": "Ordner anlegen",
+      "createNamed": "„{name}“ anlegen",
+      "defaultName": {
+        "sent": "Gesendet",
+        "drafts": "Entwürfe",
+        "trash": "Papierkorb",
+        "junk": "Spam",
+        "archive": "Archiv",
+        "templates": "Vorlagen"
+      },
+      "behaviour": "Verhalten",
+      "saveSent": "Kopie gesendeter Nachrichten speichern",
+      "saveSentMode": {
+        "auto": "Automatisch",
+        "on": "Ein",
+        "off": "Aus"
+      },
+      "saveSentProvider": "Dieser Server speichert gesendete Nachrichten selbst.",
+      "saveSentLocal": "TuxMail legt eine Kopie im Ordner Gesendet ab.",
+      "trash": "Beim Löschen",
+      "trashMode": {
+        "move": "In den Papierkorb verschieben",
+        "mark": "Als gelöscht markieren (später entfernen)",
+        "delete": "Sofort löschen"
+      },
+      "archive": "Beim Archivieren",
+      "archiveMode": {
+        "single": "Archivordner",
+        "yearly": "Unterordner pro Jahr ({example})",
+        "monthly": "Unterordner pro Monat ({example})"
+      },
+      "identities": "Absenderadressen",
+      "identitySent": "Ordner für Gesendete",
+      "identityDrafts": "Ordner für Entwürfe",
+      "accountDefault": "Wie im Konto",
+      "saved": "Ordnereinstellungen gespeichert",
+      "noAccounts": "Noch keine E-Mail-Konten."
     }
   },
   "search": {

@@ -85,6 +85,14 @@
 //   POST /api/workflows/validate                {src, mode} -> WorkflowValidation
 //   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
+//   --- Folder config ---
+//   GET  /api/accounts/{id}/folder-config       -> FolderConfig
+//   PUT  /api/accounts/{id}/folder-config/roles/{role}  {folderId} (0 = automatic) -> FolderConfig
+//   POST /api/accounts/{id}/folder-config/reset -> FolderConfig
+//   POST /api/accounts/{id}/folder-config/create  {role, name} -> FolderConfig
+//   PUT  /api/accounts/{id}/folder-config/behaviour  FolderBehaviour -> FolderConfig
+//   PUT  /api/identities/{id}/folders           {sentFolderId, draftsFolderId} -> FolderConfig
+//   POST /api/folders/{id}/expunge              -> {expunged}
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
 // snake_case as in internal/server/api_device.go (see native/server.ts):
@@ -98,6 +106,7 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type { ConversationScope } from './api';
+import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 import type {
   ItemRef,
   Project,
@@ -673,6 +682,30 @@ export class HttpTransport implements Api {
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
     return this.request('POST', '/api/workflows/complete', { src, offset, mode });
   }
+  // --- Folder config ---
+  getFolderConfig(accountId: number): Promise<FolderConfig> {
+    return this.request('GET', `/api/accounts/${accountId}/folder-config`);
+  }
+  setFolderRole(accountId: number, role: AssignableRole, folderId: number): Promise<FolderConfig> {
+    return this.request('PUT', `/api/accounts/${accountId}/folder-config/roles/${role}`, { folderId });
+  }
+  resetFolderRoles(accountId: number): Promise<FolderConfig> {
+    return this.request('POST', `/api/accounts/${accountId}/folder-config/reset`);
+  }
+  createRoleFolder(accountId: number, role: AssignableRole, name: string): Promise<FolderConfig> {
+    return this.request('POST', `/api/accounts/${accountId}/folder-config/create`, { role, name });
+  }
+  saveFolderBehaviour(accountId: number, behaviour: FolderBehaviour): Promise<FolderConfig> {
+    return this.request('PUT', `/api/accounts/${accountId}/folder-config/behaviour`, behaviour);
+  }
+  setIdentityFolders(identityId: number, sentFolderId: number, draftsFolderId: number): Promise<FolderConfig> {
+    return this.request('PUT', `/api/identities/${identityId}/folders`, { sentFolderId, draftsFolderId });
+  }
+  async expungeFolder(folderId: number): Promise<number> {
+    const r = await this.request<{ expunged: number }>('POST', `/api/folders/${folderId}/expunge`);
+    return r.expunged;
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     this.connect();

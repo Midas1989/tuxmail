@@ -423,6 +423,15 @@ func Routes(opts Options) []Route {
 			send(w)(a.CompleteWorkflow(r.Context(), in.Src, in.Offset, in.Mode))
 		})},
 
+		// Folder config (routes_folderconfig.go)
+		{"GET /api/accounts/{id}/folder-config", getFolderConfig},
+		{"PUT /api/accounts/{id}/folder-config/roles/{role}", putFolderRole},
+		{"POST /api/accounts/{id}/folder-config/reset", resetFolderRoles},
+		{"POST /api/accounts/{id}/folder-config/create", createRoleFolder},
+		{"PUT /api/accounts/{id}/folder-config/behaviour", putFolderBehaviour},
+		{"PUT /api/identities/{id}/folders", putIdentityFolders},
+		{"POST /api/folders/{id}/expunge", expungeFolder},
+
 		// Portable vault (desktop; in server mode always unlocked)
 		{"GET /api/vault/status", func(w w, r r, a A) { send(w)(a.VaultStatus(r.Context())) }},
 		{"POST /api/vault/unlock", jsonHandler(func(w w, r r, a A, in struct{ Password string }) {

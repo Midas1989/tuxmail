@@ -86,6 +86,8 @@ import type {
   WorkflowValidation,
 } from '../types';
 import type { ConversationScope } from './api';
+import type { AssignableRole, FolderBehaviour, FolderConfig, FolderRole } from '../types';
+import { applyOverrides, roleEntries, type ServerRole } from '../folderconfig';
 
 const SEEN: Flag = '\\Seen';
 const ANSWERED: Flag = '\\Answered';
@@ -2041,6 +2043,117 @@ export class MockTransport implements Api {
   }
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
     return this.run(() => this.org.complete(src, offset, mode));
+  }
+
+  // --- Folder config ---
+  private folderCfg = new Map<
+    number,
+    { server: Partial<Record<FolderRole, ServerRole>>; overrides: Partial<Record<AssignableRole, number>>; behaviour: FolderBehaviour }
+  >();
+  private identityFolders = new Map<number, { sent?: number; drafts?: number }>();
+
+  private folderState(accountId: number) {
+    let st = this.folderCfg.get(accountId);
+    if (!st) {
+      const acc = this.accounts.find((a) => a.id === accountId);
+      if (!acc) throw new ApiError('Konto nicht gefunden', 404, 'not_found');
+      const server: Partial<Record<FolderRole, ServerRole>> = {};
+      for (const f of this.folders.filter((x) => x.accountId === accountId && x.role)) {
+        server[f.role!] = { folderId: f.id, source: f.roleSource ?? 'server' };
+      }
+      const saves = acc.kind === 'eas' || acc.kind === 'graph' || acc.kind === 'gmail';
+      st = { server, overrides: {}, behaviour: { saveSent: !saves, saveSentAuto: true, providerSavesSent: saves, trashMode: 'move', archiveMode: 'single' } };
+      this.folderCfg.set(accountId, st);
+    }
+    return st;
+  }
+
+  private folderConfig(accountId: number): FolderConfig {
+    const st = this.folderState(accountId);
+    const own = this.folders.filter((f) => f.accountId === accountId);
+    return {
+      accountId,
+      roles: roleEntries(own, st.server, st.overrides),
+      behaviour: { ...st.behaviour },
+      identities: this.identities
+        .filter((i) => i.accountId === accountId)
+        .map((i) => ({ identityId: i.id, name: i.name, email: i.email, sentFolderId: this.identityFolders.get(i.id)?.sent, draftsFolderId: this.identityFolders.get(i.id)?.drafts })),
+      canCreate: true,
+    };
+  }
+
+  private applyFolderRoles(accountId: number): FolderConfig {
+    const st = this.folderState(accountId);
+    const own = applyOverrides(
+      this.folders.filter((f) => f.accountId === accountId),
+      st.server,
+      st.overrides,
+    );
+    const byId = new Map(own.map((f) => [f.id, f]));
+    this.folders = this.folders.map((f) => byId.get(f.id) ?? f);
+    this.emit({ type: 'account.updated', accountId });
+    return this.folderConfig(accountId);
+  }
+
+  getFolderConfig(accountId: number): Promise<FolderConfig> {
+    return this.run(() => this.folderConfig(accountId));
+  }
+  setFolderRole(accountId: number, role: AssignableRole, folderId: number): Promise<FolderConfig> {
+    return this.run(() => {
+      const st = this.folderState(accountId);
+      if (folderId) {
+        const f = this.folders.find((x) => x.id === folderId && x.accountId === accountId);
+        if (!f || f.role === 'inbox') throw new ApiError('Ordner kann diese Rolle nicht erhalten', 400, 'invalid_input');
+        for (const [r, id] of Object.entries(st.overrides)) if (id === folderId) delete st.overrides[r as AssignableRole];
+        st.overrides[role] = folderId;
+      } else {
+        delete st.overrides[role];
+      }
+      return this.applyFolderRoles(accountId);
+    });
+  }
+  resetFolderRoles(accountId: number): Promise<FolderConfig> {
+    return this.run(() => {
+      this.folderState(accountId).overrides = {};
+      return this.applyFolderRoles(accountId);
+    });
+  }
+  createRoleFolder(accountId: number, role: AssignableRole, name: string): Promise<FolderConfig> {
+    return this.run(() => {
+      const st = this.folderState(accountId);
+      const id = this.nextId++;
+      this.folders.push({ id, accountId, name, remoteId: name, subscribed: true, unread: 0, total: 0 });
+      st.overrides[role] = id;
+      return this.applyFolderRoles(accountId);
+    });
+  }
+  saveFolderBehaviour(accountId: number, behaviour: FolderBehaviour): Promise<FolderConfig> {
+    return this.run(() => {
+      const st = this.folderState(accountId);
+      const saveSent = behaviour.saveSentAuto ? !st.behaviour.providerSavesSent : behaviour.saveSent;
+      st.behaviour = { ...behaviour, saveSent, providerSavesSent: st.behaviour.providerSavesSent };
+      return this.folderConfig(accountId);
+    });
+  }
+  setIdentityFolders(identityId: number, sentFolderId: number, draftsFolderId: number): Promise<FolderConfig> {
+    return this.run(() => {
+      const ident = this.identities.find((i) => i.id === identityId);
+      if (!ident) throw new ApiError('Identität nicht gefunden', 404, 'not_found');
+      this.identityFolders.set(identityId, { sent: sentFolderId || undefined, drafts: draftsFolderId || undefined });
+      return this.folderConfig(ident.accountId);
+    });
+  }
+  expungeFolder(folderId: number): Promise<number> {
+    return this.run(() => {
+      let n = 0;
+      for (const [id, m] of this.messages) {
+        if (m.folderIds.includes(folderId) && m.flags.includes('\\Deleted')) {
+          this.messages.delete(id);
+          n++;
+        }
+      }
+      return n;
+    });
   }
 
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {

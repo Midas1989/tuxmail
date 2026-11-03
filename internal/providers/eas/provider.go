@@ -175,6 +175,19 @@ func folderRole(f Folder) domain.FolderRole {
 	return domain.RoleNone
 }
 
+// folderRoleSource reports whether folderRole used the EAS folder type
+// (server) or the name fallback.
+func folderRoleSource(f Folder) domain.RoleSource {
+	switch f.Type {
+	case FolderInbox, FolderDrafts, FolderDeleted, FolderSent:
+		return domain.RoleSourceServer
+	}
+	if folderRole(f) != domain.RoleNone {
+		return domain.RoleSourceName
+	}
+	return ""
+}
+
 // mailFolders converts the hierarchy to domain folders with path remote ids.
 func mailFolders(all []Folder) []domain.Folder {
 	byID := map[string]Folder{}
@@ -195,7 +208,7 @@ func mailFolders(all []Folder) []domain.Folder {
 			continue
 		}
 		out = append(out, domain.Folder{RemoteID: path(f, 0), Name: f.Name, Delimiter: delimiter,
-			Role: folderRole(f), Subscribed: true})
+			Role: folderRole(f), RoleSource: folderRoleSource(f), Subscribed: true})
 	}
 	return out
 }

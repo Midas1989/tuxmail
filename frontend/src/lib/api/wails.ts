@@ -75,6 +75,7 @@ Account,
   Signature,
   UserPreferences,
 } from '../types';
+import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 
 type BoundFn = (...args: unknown[]) => Promise<unknown>;
 
@@ -436,6 +437,29 @@ export class WailsTransport implements Api {
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
     return this.call('CompleteWorkflow', src, offset, mode);
   }
+  // --- Folder config ---
+  getFolderConfig(accountId: number): Promise<FolderConfig> {
+    return this.call('GetFolderConfig', accountId);
+  }
+  setFolderRole(accountId: number, role: AssignableRole, folderId: number): Promise<FolderConfig> {
+    return this.call('SetFolderRole', accountId, role, folderId);
+  }
+  resetFolderRoles(accountId: number): Promise<FolderConfig> {
+    return this.call('ResetFolderRoles', accountId);
+  }
+  createRoleFolder(accountId: number, role: AssignableRole, name: string): Promise<FolderConfig> {
+    return this.call('CreateRoleFolder', accountId, role, name);
+  }
+  saveFolderBehaviour(accountId: number, behaviour: FolderBehaviour): Promise<FolderConfig> {
+    return this.call('SaveFolderBehaviour', accountId, behaviour);
+  }
+  setIdentityFolders(identityId: number, sentFolderId: number, draftsFolderId: number): Promise<FolderConfig> {
+    return this.call('SetIdentityFolders', identityId, sentFolderId, draftsFolderId);
+  }
+  expungeFolder(folderId: number): Promise<number> {
+    return this.call('ExpungeFolder', folderId);
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     if (!this.offRuntime && this.win.runtime?.EventsOn) {

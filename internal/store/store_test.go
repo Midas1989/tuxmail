@@ -249,7 +249,7 @@ func TestFolders(t *testing.T) {
 	s := openTest(t)
 	acc := newAccount(t, s)
 	f := domain.Folder{AccountID: acc, RemoteID: "INBOX", Name: "Inbox", Delimiter: "/", Role: domain.RoleInbox,
-		Subscribed: true, Unread: 3, Total: 10}
+		RoleSource: domain.RoleSourceServer, Subscribed: true, Unread: 3, Total: 10}
 	id := must[int64](t)(s.UpsertFolder(ctx, f))
 	f.ID = id
 	if got := must[domain.Folder](t)(s.GetFolder(ctx, id)); got != f {

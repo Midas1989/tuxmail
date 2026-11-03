@@ -82,7 +82,9 @@ export interface Signature {
   placement: 'below_reply' | 'above_quote';
 }
 
-export type FolderRole = '' | 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive';
+export type FolderRole = '' | 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'templates';
+/** How a folder's role was determined (see FolderConfig). */
+export type RoleSource = 'server' | 'name' | 'user';
 
 export interface Folder {
   id: number;
@@ -92,6 +94,7 @@ export interface Folder {
   name: string;
   delimiter?: string;
   role?: FolderRole;
+  roleSource?: RoleSource;
   subscribed: boolean;
   unread: number;
   total: number;
@@ -1166,4 +1169,53 @@ export interface WorkflowTemplate {
   name: string;
   description: string;
   workflow: Workflow;
+}
+
+// --- Folder config ---
+// Settings → account → "Ordner" (internal/app/folderconfig.go).
+
+/** Roles the user can assign (the inbox is fixed). */
+export type AssignableRole = 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'templates';
+export type TrashMode = 'move' | 'mark' | 'delete';
+export type ArchiveMode = 'single' | 'yearly' | 'monthly';
+
+export interface FolderRoleEntry {
+  role: AssignableRole;
+  /** Folder that has the role now (absent = none). */
+  folderId?: number;
+  source?: RoleSource;
+  /** What automatic detection chose. */
+  serverFolderId?: number;
+  serverSource?: RoleSource;
+  overridden: boolean;
+  /** The overridden folder vanished on the server (kept until it returns). */
+  unresolved?: boolean;
+  overrideRemoteId?: string;
+}
+
+export interface FolderBehaviour {
+  saveSent: boolean;
+  /** Follow the provider default (providerSavesSent). */
+  saveSentAuto: boolean;
+  /** EAS / Graph / Gmail file sent mail themselves. */
+  providerSavesSent: boolean;
+  trashMode: TrashMode;
+  archiveMode: ArchiveMode;
+}
+
+export interface IdentityFolderConfig {
+  identityId: number;
+  name: string;
+  email: string;
+  sentFolderId?: number;
+  draftsFolderId?: number;
+}
+
+export interface FolderConfig {
+  accountId: number;
+  roles: FolderRoleEntry[];
+  behaviour: FolderBehaviour;
+  identities: IdentityFolderConfig[];
+  /** Missing role folders can be created on the server. */
+  canCreate: boolean;
 }

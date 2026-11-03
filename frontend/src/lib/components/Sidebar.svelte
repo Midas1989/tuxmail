@@ -21,6 +21,11 @@
   import { messengerChannel, type Account, type Folder, type FolderRole } from '../types';
   import { t } from '../i18n/index.svelte';
   import ChannelIcon from './common/ChannelIcon.svelte';
+  import LayoutTemplate from '@lucide/svelte/icons/layout-template';
+  import Eraser from '@lucide/svelte/icons/eraser';
+  import Settings2 from '@lucide/svelte/icons/settings-2';
+  import ContextMenu, { type MenuItem } from './common/ContextMenu.svelte';
+  import { folderSettingsTarget, menuRolesFor } from '../folderconfig';
 
   let collapsed = $state<Record<string, boolean>>({});
 
@@ -31,7 +36,51 @@
     archive: Archive,
     trash: Trash,
     junk: Ban,
+    templates: LayoutTemplate,
   };
+
+  // Folder context menu: "Use as Sent/Drafts/Trash/Junk/Archive/Templates".
+  let folderMenu = $state<{ x: number; y: number; folder: Folder } | null>(null);
+  function folderMenuItems(f: Folder): MenuItem[] {
+    const items: MenuItem[] = menuRolesFor(f).map((role) => ({
+      id: 'role-' + role,
+      label: t('mail.folder.useAs', { role: t(`mail.folder.role.${role}`) }),
+      icon: roleIcon[role],
+      run: async () => {
+        try {
+          await app.api.setFolderRole(f.accountId, role, f.id);
+          await app.reloadFolders(f.accountId);
+          app.toast(t('mail.folder.roleSet', { folder: f.name, role: t(`mail.folder.role.${role}`) }));
+        } catch (err) {
+          app.toast(String((err as Error).message ?? err), undefined, 'error');
+        }
+      },
+    }));
+    items.push({
+      id: 'expunge',
+      label: t('mail.folder.expunge'),
+      icon: Eraser,
+      run: async () => {
+        try {
+          const n = await app.api.expungeFolder(f.id);
+          app.toast(t('mail.folder.expunged', { count: n }));
+        } catch (err) {
+          app.toast(String((err as Error).message ?? err), undefined, 'error');
+        }
+      },
+    });
+    items.push({
+      id: 'configure',
+      label: t('mail.folder.configure'),
+      icon: Settings2,
+      run: () => {
+        folderSettingsTarget.accountId = f.accountId;
+        app.settingsAnchor = 'set-folders';
+        app.navigate('settings');
+      },
+    });
+    return items;
+  }
 
   interface Node {
     folder: Folder;
@@ -230,6 +279,14 @@
                   class:drop={dropTarget === f.id}
                   style:--depth={node.depth}
                   onclick={() => app.select(s)}
+                  oncontextmenu={(e) => (e.preventDefault(), (folderMenu = { x: e.clientX, y: e.clientY, folder: f }))}
+                  onkeydown={(e) => {
+                    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+                      e.preventDefault();
+                      const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                      folderMenu = { x: r.left + 24, y: r.bottom, folder: f };
+                    }
+                  }}
                   ondragover={(e) => onDragOver(e, f.id)}
                   ondragleave={() => (dropTarget = dropTarget === f.id ? null : dropTarget)}
                   ondrop={(e) => onDrop(e, f.id)}
@@ -356,6 +413,10 @@
     {/if}
   </ul>
 </aside>
+
+{#if folderMenu}
+  <ContextMenu x={folderMenu.x} y={folderMenu.y} items={folderMenuItems(folderMenu.folder)} label={t('mail.folder.menu')} onclose={() => (folderMenu = null)} width={250} />
+{/if}
 
 <style>
   .sidebar {

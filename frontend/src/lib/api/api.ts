@@ -6,6 +6,7 @@
 // Method names map 1:1 to Go methods on the bound application service and to
 // the REST routes documented in http.ts.
 
+import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 import type {
   Account,
   ApiEvent,
@@ -306,6 +307,20 @@ export interface Api {
   validateWorkflow(src: string, mode: 'rule' | 'yaml'): Promise<WorkflowValidation>;
   /** Context-aware completion at a 0-based offset. */
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion>;
+
+  // --- Folder config ---
+  getFolderConfig(accountId: number): Promise<FolderConfig>;
+  /** folderId 0 removes the override (automatic detection applies). */
+  setFolderRole(accountId: number, role: AssignableRole, folderId: number): Promise<FolderConfig>;
+  /** Remove all overrides ("detect automatically"). */
+  resetFolderRoles(accountId: number): Promise<FolderConfig>;
+  /** Create a missing role folder on the server and assign the role. */
+  createRoleFolder(accountId: number, role: AssignableRole, name: string): Promise<FolderConfig>;
+  saveFolderBehaviour(accountId: number, behaviour: FolderBehaviour): Promise<FolderConfig>;
+  /** 0 = the account's Sent / Drafts folder. */
+  setIdentityFolders(identityId: number, sentFolderId: number, draftsFolderId: number): Promise<FolderConfig>;
+  /** Permanently remove messages marked as deleted; returns their number. */
+  expungeFolder(folderId: number): Promise<number>;
 
   // Live events
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe;

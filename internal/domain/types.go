@@ -102,17 +102,31 @@ const (
 	RoleTrash   FolderRole = "trash"
 	RoleJunk    FolderRole = "junk"
 	RoleArchive FolderRole = "archive"
+	// RoleTemplates has no RFC 6154 attribute; it is detected by name or
+	// assigned by the user.
+	RoleTemplates FolderRole = "templates"
+)
+
+// RoleSource says how the role of a folder was determined.
+type RoleSource string
+
+const (
+	RoleSourceServer RoleSource = "server" // SPECIAL-USE attribute / provider folder type
+	RoleSourceName   RoleSource = "name"   // name heuristic ("Gesendet", "Sent Items" ...)
+	RoleSourceUser   RoleSource = "user"   // manual override (store folder_role_overrides)
 )
 
 // Folder is a mailbox/folder on a mail account.
 type Folder struct {
-	ID         int64      `json:"id"`
-	AccountID  int64      `json:"accountId"`
-	ParentID   int64      `json:"parentId,omitempty"`
-	RemoteID   string     `json:"remoteId"` // IMAP path, EAS ServerId, Graph id ...
-	Name       string     `json:"name"`
-	Delimiter  string     `json:"delimiter,omitempty"`
-	Role       FolderRole `json:"role,omitempty"`
+	ID        int64      `json:"id"`
+	AccountID int64      `json:"accountId"`
+	ParentID  int64      `json:"parentId,omitempty"`
+	RemoteID  string     `json:"remoteId"` // IMAP path, EAS ServerId, Graph id ...
+	Name      string     `json:"name"`
+	Delimiter string     `json:"delimiter,omitempty"`
+	Role      FolderRole `json:"role,omitempty"`
+	// RoleSource tells where Role came from ("" with a role = server).
+	RoleSource RoleSource `json:"roleSource,omitempty"`
 	Subscribed bool       `json:"subscribed"`
 	Unread     int        `json:"unread"`
 	Total      int        `json:"total"`

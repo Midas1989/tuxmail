@@ -648,6 +648,11 @@ func (s *Service) submit(ctx context.Context, account domain.Account, msg *compo
 	return err
 }
 
+// ProviderSavesSent reports whether no copy of sent mail is appended to
+// the Sent folder because the provider files it itself (Gmail SMTP,
+// Exchange/Graph/EAS) or the user turned saving off (Extra["sent_autosave"]).
+func ProviderSavesSent(a domain.Account) bool { return providerSavesSent(a) }
+
 // providerSavesSent reports whether the provider stores submitted mail in
 // Sent itself (Gmail SMTP, Exchange/Graph/EAS).
 func providerSavesSent(a domain.Account) bool {

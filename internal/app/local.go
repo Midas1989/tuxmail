@@ -255,11 +255,11 @@ func (w *workflowMail) Archive(ctx context.Context, ref workflow.ItemRef) error 
 	if err != nil {
 		return err
 	}
-	f, err := w.a.st.FolderByRole(ctx, m.AccountID, domain.RoleArchive)
-	if err != nil {
+	ok, err := w.a.archiveMessages(ctx, m.AccountID, []int64{m.ID}) // folderconfig.go: archive mode
+	if !ok {
 		return workflow.Permanent(fmt.Errorf("account has no archive folder"))
 	}
-	return w.a.sync.Move(ctx, []int64{m.ID}, f.ID)
+	return err
 }
 
 var errNoSender = workflow.Permanent(errors.New("sending is not configured in this build (internal/send not wired)"))

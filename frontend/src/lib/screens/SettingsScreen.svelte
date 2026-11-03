@@ -21,6 +21,7 @@
   import ScreenShell from './ScreenShell.svelte';
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
+  import FolderSettings from '../components/settings/FolderSettings.svelte';
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
   $effect(() => {
@@ -88,6 +89,8 @@
         {/each}
       </ul>
     </section>
+
+    <FolderSettings />
 
     <section class="card" aria-labelledby="set-server">
       <h2 id="set-server">{t('onboarding.connect.cardTitle')}</h2>

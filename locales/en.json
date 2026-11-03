@@ -96,11 +96,18 @@
         "inbox": "Inbox",
         "junk": "Junk",
         "sent": "Sent",
-        "trash": "Trash"
+        "trash": "Trash",
+        "templates": "Templates"
       },
       "unifiedInbox": "Inbox",
       "unread": "Unread",
-      "unreadCount": "{count} unread"
+      "unreadCount": "{count} unread",
+      "useAs": "Use as {role}",
+      "menu": "Folder actions",
+      "expunge": "Remove deleted messages",
+      "expunged": "{count} messages removed",
+      "roleSet": "“{folder}” is now used as {role}",
+      "configure": "Folder settings…"
     },
     "list": {
       "answered": "Answered",
@@ -651,6 +658,61 @@
     "workflows": {
       "title": "Workflows",
       "intro": "Automations: trigger → condition → actions. Edit visually, as a one-line rule or as YAML; test with a dry run before enabling."
+    },
+    "folders": {
+      "title": "Folders",
+      "intro": "Special folders are detected from the server automatically. You can choose a different folder for every role.",
+      "account": "Account",
+      "role": "Role",
+      "folder": "Folder",
+      "source": "Detected",
+      "none": "— none —",
+      "badge": {
+        "server": "detected by server",
+        "name": "by name",
+        "user": "manual",
+        "none": "missing",
+        "unresolved": "folder missing on server"
+      },
+      "unresolvedHint": "The chosen folder “{folder}” no longer exists on the server. The automatic choice is used until it returns.",
+      "detect": "Detect automatically",
+      "create": "Create folder",
+      "createNamed": "Create “{name}”",
+      "defaultName": {
+        "sent": "Sent",
+        "drafts": "Drafts",
+        "trash": "Trash",
+        "junk": "Junk",
+        "archive": "Archive",
+        "templates": "Templates"
+      },
+      "behaviour": "Behaviour",
+      "saveSent": "Save a copy of sent messages",
+      "saveSentMode": {
+        "auto": "Automatic",
+        "on": "On",
+        "off": "Off"
+      },
+      "saveSentProvider": "This server saves sent messages itself.",
+      "saveSentLocal": "TuxMail stores a copy in the Sent folder.",
+      "trash": "When deleting",
+      "trashMode": {
+        "move": "Move to trash",
+        "mark": "Mark as deleted (remove later)",
+        "delete": "Delete immediately"
+      },
+      "archive": "When archiving",
+      "archiveMode": {
+        "single": "Archive folder",
+        "yearly": "Subfolder per year ({example})",
+        "monthly": "Subfolder per month ({example})"
+      },
+      "identities": "Sender addresses",
+      "identitySent": "Sent folder",
+      "identityDrafts": "Drafts folder",
+      "accountDefault": "Account default",
+      "saved": "Folder settings saved",
+      "noAccounts": "No mail accounts yet."
     }
   },
   "search": {
