@@ -280,6 +280,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/provisioning/profile", s.user(s.handleProvisioningProfile))
 	mux.HandleFunc("GET /api/provisioning/secrets", s.device(s.handleProvisioningSecrets))
 
+	s.mountOAuth(mux) // oauth.go: Graph change notifications
+
 	// Frontend API (frontend/src/lib/api/http.ts) on the per-user App.
 	// The Web Push routes above are served by this package directly.
 	mux.HandleFunc("POST /api/conversations/{id}/reply", s.appHandler(s.handleConversationReply))

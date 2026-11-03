@@ -86,6 +86,17 @@ import type {
   WorkflowValidation,
 } from '../types';
 import type { ConversationScope } from './api';
+// --- OAuth/Cloud accounts ---
+import { MockCloud, mockOAuthProvider } from './mockCloud';
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
+} from '../types';
 
 const SEEN: Flag = '\\Seen';
 const ANSWERED: Flag = '\\Answered';
@@ -671,6 +682,12 @@ export class MockTransport implements Api {
     };
     const k = known[domain];
     if (!domain) return this.reply({ source: 'none', kind: 'imap', displayName: email });
+    const oauthProvider = mockOAuthProvider(domain); // OAuth/Cloud accounts
+    if (oauthProvider === 'microsoft') {
+      return this.reply({ source: 'autoconfig', kind: 'imap', displayName: 'Microsoft 365', oauthAvailable: true, oauthProvider,
+        incoming: { host: 'outlook.office365.com', port: 993, tls: 'tls', auth: 'oauth2', username: email },
+        outgoing: { host: 'smtp.office365.com', port: 587, tls: 'starttls', auth: 'oauth2', username: email } });
+    }
     const [inHost, outHost, inPort, outPort, outTls] = k ?? [`imap.${domain}`, `smtp.${domain}`, 993, 587, 'starttls'];
     return this.reply({
       source: k ? 'autoconfig' : 'guess',
@@ -679,6 +696,7 @@ export class MockTransport implements Api {
       incoming: { host: inHost, port: inPort, tls: 'tls', auth: 'password', username: email },
       outgoing: { host: outHost, port: outPort, tls: outTls, auth: 'password', username: email },
       oauthAvailable: domain === 'gmail.com',
+      oauthProvider,
     });
   }
 
@@ -2058,5 +2076,42 @@ export class MockTransport implements Api {
         this.incomingTimer = null;
       }
     };
+  }
+
+  // --- OAuth/Cloud accounts --- (mockCloud.ts)
+  private cloudMock?: MockCloud;
+  get cloud(): MockCloud {
+    this.cloudMock ??= new MockCloud({ accounts: () => this.accounts, identities: () => this.identities, createAccount: (i) => this.createAccount(i) });
+    return this.cloudMock;
+  }
+  listOAuthProviders(): Promise<OAuthProviderInfo[]> {
+    return this.reply(this.cloud.providers());
+  }
+  saveOAuthClient(input: OAuthClientInput): Promise<void> {
+    return this.run(() => this.cloud.saveClient(input));
+  }
+  deleteOAuthClient(provider: string): Promise<void> {
+    return this.run(() => this.cloud.deleteClient(provider));
+  }
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus> {
+    return this.run(() => this.cloud.start(input));
+  }
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus> {
+    return this.run(() => this.cloud.flow(id));
+  }
+  cancelOAuth(id: string): Promise<void> {
+    return this.run(() => this.cloud.cancel(id));
+  }
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account> {
+    return this.cloud.addShared(input);
+  }
+  listIdentityDelegations(): Promise<IdentityDelegation[]> {
+    return this.reply(this.cloud.listDelegations());
+  }
+  setIdentityDelegation(d: { identityId: number; mode: string; mailbox?: string }): Promise<void> {
+    return this.run(() => this.cloud.setDelegation(d));
+  }
+  syncCloudPim(accountId: number): Promise<CloudPimResult> {
+    return this.run(() => this.cloud.syncPim(accountId));
   }
 }

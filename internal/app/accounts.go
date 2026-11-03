@@ -119,6 +119,7 @@ func (autoconfigDiscoverer) Discover(ctx context.Context, email, _ string) (Disc
 		res.Outgoing = &out
 	}
 	res.OAuthAvailable = c.OAuthProvider != ""
+	res.OAuthProvider = c.OAuthProvider
 	return res, nil
 }
 

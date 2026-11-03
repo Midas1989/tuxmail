@@ -1487,5 +1487,84 @@
       "title": "App-Einstellungen",
       "version": "App-Version {version}"
     }
+  },
+  "cloud": {
+    "signIn": {
+      "with": "Mit {provider} anmelden",
+      "lead": "{provider} verlangt eine Anmeldung über den Browser. TuxMail sieht Ihr Passwort nie.",
+      "method": "Zugriffsart",
+      "kind": {
+        "graph": "Microsoft Graph (empfohlen)",
+        "imap": "IMAP/SMTP mit OAuth2",
+        "eas": "Exchange ActiveSync",
+        "ews": "Exchange Web Services",
+        "gmail": "Gmail-API (empfohlen)"
+      },
+      "waiting": "Warte auf die Anmeldung im Browser …",
+      "openLink": "Browser hat sich nicht geöffnet? Anmeldeseite öffnen",
+      "deviceCode": "Öffnen Sie {url} auf einem beliebigen Gerät und geben Sie diesen Code ein:",
+      "useDevice": "Auf einem anderen Gerät anmelden (Code)",
+      "cancel": "Anmeldung abbrechen",
+      "notConfigured": "Die Anmeldung mit {provider} ist noch nicht eingerichtet. Tragen Sie unter Einstellungen → Anmeldedienste eine Client-ID ein oder fragen Sie Ihren Administrator.",
+      "openSettings": "Anmeldedienste öffnen",
+      "consent": "Ihre Organisation verlangt, dass ein Administrator TuxMail zuerst freigibt.",
+      "denied": "Die Anmeldung wurde abgebrochen oder der Zugriff verweigert.",
+      "expired": "Die Anmeldung ist abgelaufen. Bitte erneut versuchen.",
+      "failed": "Anmeldung fehlgeschlagen: {error}",
+      "done": "Angemeldet als {email}.",
+      "passwordInstead": "Stattdessen Passwort bzw. App-Passwort verwenden"
+    },
+    "services": {
+      "title": "Anmeldedienste",
+      "intro": "Client-IDs für die Anmeldung mit Microsoft und Google. Power-User und Administratoren können eine eigene Registrierung eintragen (siehe docs/MICROSOFT-GOOGLE.md).",
+      "configured": "Eingerichtet",
+      "notConfigured": "Nicht eingerichtet",
+      "source": {
+        "env": "aus der Umgebung",
+        "admin": "vom Administrator vorgegeben",
+        "user": "eigene Client-ID",
+        "builtin": "TuxMail-Registrierung"
+      },
+      "clientId": "Client-ID",
+      "clientSecret": "Client-Secret (nur Google-Desktop-Clients)",
+      "secretStored": "Ein Client-Secret ist gespeichert.",
+      "tenant": "Mandant (common, organizations oder Mandanten-ID)",
+      "save": "Eigene Client-ID speichern",
+      "remove": "Eigene Client-ID entfernen",
+      "saved": "Gespeichert.",
+      "adminOnly": "Eigene Client-IDs wurden vom Administrator deaktiviert.",
+      "redirect": "Zu registrierende Umleitungs-URI: {uri}",
+      "edit": "Eigene Client-ID …"
+    },
+    "shared": {
+      "title": "Geteilte Postfächer",
+      "intro": "Postfächer, auf die Sie in Microsoft 365 oder Exchange Zugriff haben, einbinden (geteilte Postfächer, Stellvertretung).",
+      "add": "Geteiltes Postfach hinzufügen",
+      "account": "Über Konto",
+      "address": "Adresse des Postfachs",
+      "name": "Anzeigename (optional)",
+      "sendMode": "Senden",
+      "none": "Nur lesen (keine Absender-Identität)",
+      "noAccounts": "Fügen Sie zuerst ein Microsoft-365- (Graph) oder Exchange-Konto (EWS) hinzu.",
+      "added": "Postfach {address} hinzugefügt."
+    },
+    "sendMode": {
+      "send_as": "Senden als",
+      "send_on_behalf": "Senden im Auftrag von",
+      "own": "Eigene Adresse",
+      "hint": {
+        "send_as": "Empfänger sehen nur das geteilte Postfach als Absender.",
+        "send_on_behalf": "Empfänger sehen „Sie im Auftrag des geteilten Postfachs“."
+      }
+    },
+    "identities": {
+      "title": "Identitäten und Stellvertretung",
+      "intro": "Wie jede Absenderadresse sendet: als eigene Adresse, als geteiltes Postfach (Senden als) oder in dessen Auftrag.",
+      "mode": "Sendeart von {email}"
+    },
+    "pim": {
+      "sync": "Kalender und Kontakte synchronisieren",
+      "done": "{events} Termine, {contacts} Kontakte und {tasks} Aufgaben übernommen."
+    }
   }
 }

@@ -3,6 +3,7 @@ module github.com/Midas1989/Mailclient
 go 1.24.0
 
 require (
+	github.com/Azure/go-ntlmssp v0.1.1
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/coreos/go-oidc/v3 v3.17.0

@@ -1488,5 +1488,84 @@
       "title": "App settings",
       "version": "App version {version}"
     }
+  },
+  "cloud": {
+    "signIn": {
+      "with": "Sign in with {provider}",
+      "lead": "{provider} expects a sign-in through the browser. TuxMail never sees your password.",
+      "method": "Access method",
+      "kind": {
+        "graph": "Microsoft Graph (recommended)",
+        "imap": "IMAP/SMTP with OAuth2",
+        "eas": "Exchange ActiveSync",
+        "ews": "Exchange Web Services",
+        "gmail": "Gmail API (recommended)"
+      },
+      "waiting": "Waiting for the sign-in in your browser …",
+      "openLink": "Browser did not open? Open the sign-in page",
+      "deviceCode": "Open {url} on any device and enter this code:",
+      "useDevice": "Sign in on another device (code)",
+      "cancel": "Cancel sign-in",
+      "notConfigured": "Sign-in with {provider} is not set up yet. Enter a client ID under Settings → Sign-in services, or ask your administrator.",
+      "openSettings": "Open sign-in services",
+      "consent": "Your organization requires an administrator to approve TuxMail first.",
+      "denied": "The sign-in was canceled or access was denied.",
+      "expired": "The sign-in expired. Please try again.",
+      "failed": "Sign-in failed: {error}",
+      "done": "Signed in as {email}.",
+      "passwordInstead": "Use password or app password instead"
+    },
+    "services": {
+      "title": "Sign-in services",
+      "intro": "Client IDs for signing in with Microsoft and Google. Power users and administrators can enter their own registration (see docs/MICROSOFT-GOOGLE.md).",
+      "configured": "Configured",
+      "notConfigured": "Not configured",
+      "source": {
+        "env": "from the environment",
+        "admin": "set by the administrator",
+        "user": "own client ID",
+        "builtin": "TuxMail registration"
+      },
+      "clientId": "Client ID",
+      "clientSecret": "Client secret (Google desktop clients only)",
+      "secretStored": "A client secret is stored.",
+      "tenant": "Tenant (common, organizations or tenant ID)",
+      "save": "Save own client ID",
+      "remove": "Remove own client ID",
+      "saved": "Saved.",
+      "adminOnly": "Own client IDs were disabled by the administrator.",
+      "redirect": "Redirect URI to register: {uri}",
+      "edit": "Own client ID …"
+    },
+    "shared": {
+      "title": "Shared mailboxes",
+      "intro": "Open mailboxes you have access to in Microsoft 365 or Exchange (shared mailboxes, delegation).",
+      "add": "Add shared mailbox",
+      "account": "Through account",
+      "address": "Address of the mailbox",
+      "name": "Display name (optional)",
+      "sendMode": "Sending",
+      "none": "Read only (no sender identity)",
+      "noAccounts": "Add a Microsoft 365 (Graph) or Exchange (EWS) account first.",
+      "added": "Mailbox {address} added."
+    },
+    "sendMode": {
+      "send_as": "Send as",
+      "send_on_behalf": "Send on behalf of",
+      "own": "Own address",
+      "hint": {
+        "send_as": "Recipients only see the shared mailbox as sender.",
+        "send_on_behalf": "Recipients see “you on behalf of the shared mailbox”."
+      }
+    },
+    "identities": {
+      "title": "Identities and delegation",
+      "intro": "How each sender address sends: as own address, as the shared mailbox (Send as) or on its behalf.",
+      "mode": "Send mode of {email}"
+    },
+    "pim": {
+      "sync": "Sync calendar and contacts",
+      "done": "{events} events, {contacts} contacts and {tasks} tasks imported."
+    }
   }
 }

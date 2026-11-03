@@ -85,6 +85,16 @@
 //   POST /api/workflows/validate                {src, mode} -> WorkflowValidation
 //   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
+//   --- OAuth/Cloud accounts ---
+//   GET  /api/oauth/providers                   -> OAuthProviderInfo[]
+//   PUT/DELETE /api/oauth/clients/{provider}    OAuthClientInput (own client ID)
+//   POST /api/oauth/start                       OAuthStartInput -> OAuthFlowStatus
+//   GET  /api/oauth/flows/{flowId}/status       -> OAuthFlowStatus;  DELETE /api/oauth/flows/{flowId}
+//   GET  /api/oauth/{provider}/callback         browser redirect target (HTML page)
+//   POST /api/accounts/{id}/shared-mailboxes    SharedMailboxInput -> Account
+//   POST /api/accounts/{id}/pim-sync            -> CloudPimResult
+//   GET  /api/identities/delegations            -> IdentityDelegation[]
+//   PUT  /api/identities/{id}/delegation        {mode, mailbox}
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
 // snake_case as in internal/server/api_device.go (see native/server.ts):
@@ -98,6 +108,16 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type { ConversationScope } from './api';
+// --- OAuth/Cloud accounts ---
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
+} from '../types';
 import type {
   ItemRef,
   Project,
@@ -680,6 +700,38 @@ export class HttpTransport implements Api {
       off();
       if (this.hub.size === 0) this.disconnect();
     };
+  }
+
+  // --- OAuth/Cloud accounts ---
+  listOAuthProviders(): Promise<OAuthProviderInfo[]> {
+    return this.request('GET', '/api/oauth/providers');
+  }
+  saveOAuthClient(input: OAuthClientInput): Promise<void> {
+    return this.request('PUT', `/api/oauth/clients/${encodeURIComponent(input.provider)}`, input);
+  }
+  deleteOAuthClient(provider: string): Promise<void> {
+    return this.request('DELETE', `/api/oauth/clients/${encodeURIComponent(provider)}`);
+  }
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus> {
+    return this.request('POST', '/api/oauth/start', input);
+  }
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus> {
+    return this.request('GET', `/api/oauth/flows/${encodeURIComponent(id)}/status`);
+  }
+  cancelOAuth(id: string): Promise<void> {
+    return this.request('DELETE', `/api/oauth/flows/${encodeURIComponent(id)}`);
+  }
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account> {
+    return this.request('POST', `/api/accounts/${input.accountId}/shared-mailboxes`, input);
+  }
+  listIdentityDelegations(): Promise<IdentityDelegation[]> {
+    return this.request('GET', '/api/identities/delegations');
+  }
+  setIdentityDelegation(d: { identityId: number; mode: string; mailbox?: string }): Promise<void> {
+    return this.request('PUT', `/api/identities/${d.identityId}/delegation`, d);
+  }
+  syncCloudPim(accountId: number): Promise<CloudPimResult> {
+    return this.request('POST', `/api/accounts/${accountId}/pim-sync`);
   }
 
   private wsUrl(): string {

@@ -24,6 +24,7 @@
   import type { AccountKind, AuthMethod, DiscoveryResult, ServerConfig } from '../../types';
   import Modal from '../common/Modal.svelte';
   import logoUrl from '$branding/tuxmail-logo.png';
+  import OAuthSignIn from './OAuthSignIn.svelte';
 
   interface Props {
     onclose: () => void;
@@ -42,6 +43,7 @@
   let incoming = $state<ServerConfig>({ host: '', port: 993, tls: 'tls', auth: 'password', username: '' });
   let outgoing = $state<ServerConfig>({ host: '', port: 465, tls: 'tls', auth: 'password', username: '' });
   let allowInsecure = $state(false);
+  let usePassword = $state(false); // OAuth/Cloud accounts: skip the sign-in step
 
   const needsOutgoing = $derived(protocol === 'imap' || protocol === 'pop3');
   const insecure = $derived(incoming.tls === 'none' || (needsOutgoing && outgoing.tls === 'none'));
@@ -144,6 +146,19 @@
         </button>
       </div>
     </form>
+  {:else if step === 'discovered' && discovery && discovery.oauthProvider && !usePassword}
+    <!-- OAuth/Cloud accounts -->
+    <OAuthSignIn
+      provider={discovery.oauthProvider}
+      {email}
+      {name}
+      ondone={() => (step = 'done')}
+      onpassword={() => (usePassword = true)}
+      onsettings={() => {
+        app.settingsAnchor = 'set-signin';
+        onclose();
+      }}
+    />
   {:else if step === 'discovered' && discovery}
     <div class="found">
       <p class="ok"><CircleCheck size={18} /> {t(`onboarding.account.source.${discovery.source}`)}</p>

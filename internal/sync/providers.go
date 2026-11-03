@@ -93,6 +93,9 @@ func NewRegistry() *Registry { return &Registry{m: map[domain.AccountKind]Provid
 func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(domain.KindIMAP, IMAPFactory)
+	for k, f := range builtinFactories { // cloud_register.go
+		r.Register(k, f)
+	}
 	return r
 }
 

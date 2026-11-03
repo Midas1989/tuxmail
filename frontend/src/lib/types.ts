@@ -1163,3 +1163,95 @@ export interface WorkflowTemplate {
   description: string;
   workflow: Workflow;
 }
+
+// --- OAuth/Cloud accounts ---
+// Microsoft 365 / Google sign-in, own client IDs, shared mailboxes and
+// identity delegation (internal/app/oauth_app.go, KONZEPT 7.3–7.5).
+
+export type OAuthProviderId = 'microsoft' | 'google';
+
+/** Declaration merging: discovery names the sign-in service. */
+export interface DiscoveryResult {
+  oauthProvider?: OAuthProviderId;
+}
+
+export interface OAuthClientInput {
+  provider: OAuthProviderId;
+  clientId: string;
+  /** Write only (Google desktop clients, confidential web clients). */
+  clientSecret?: string;
+  hasSecret?: boolean;
+  /** Microsoft authority: common | organizations | consumers | tenant id. */
+  tenant?: string;
+}
+
+export interface OAuthProviderInfo {
+  id: OAuthProviderId;
+  displayName: string;
+  configured: boolean;
+  /** Where the active client comes from. */
+  source?: 'env' | 'admin' | 'user' | 'builtin' | '';
+  clientId?: string;
+  tenant?: string;
+  userClient?: OAuthClientInput;
+  allowUserClients: boolean;
+  deviceFlow: boolean;
+  /** Access methods: graph | imap | eas | ews (Microsoft), gmail | imap (Google). */
+  kinds: AccountKind[];
+  /** Web redirect URI to register (server mode). */
+  redirectUri?: string;
+}
+
+export interface OAuthStartInput {
+  provider: OAuthProviderId;
+  email: string;
+  kind: AccountKind;
+  displayName?: string;
+  name?: string;
+  tenant?: string;
+  /** loopback (desktop default) | redirect (server default) | device. */
+  mode?: 'loopback' | 'redirect' | 'device';
+  /** Re-authenticate this account instead of creating one. */
+  accountId?: number;
+}
+
+export interface OAuthFlowStatus {
+  id: string;
+  provider: OAuthProviderId;
+  mode: 'loopback' | 'redirect' | 'device';
+  status: 'pending' | 'done' | 'error' | 'canceled';
+  authUrl?: string;
+  userCode?: string;
+  verificationUri?: string;
+  expiresAt?: string;
+  accountId?: number;
+  email?: string;
+  error?: string;
+  /** oauth_not_configured | oauth_consent_required | oauth_denied | oauth_reauth_required ... */
+  errorCode?: string;
+}
+
+export type SendMode = 'send_as' | 'send_on_behalf';
+
+export interface SharedMailboxInput {
+  accountId: number;
+  address: string;
+  sendMode?: SendMode | '';
+  displayName?: string;
+}
+
+export interface IdentityDelegation {
+  identityId: number;
+  mode: SendMode;
+  mailbox: string;
+  ownerAccountId?: number;
+}
+
+export interface CloudPimResult {
+  calendars: number;
+  events: number;
+  addressBooks: number;
+  contacts: number;
+  tasks: number;
+  deleted: number;
+}

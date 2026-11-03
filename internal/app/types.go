@@ -331,6 +331,8 @@ type DiscoveryResult struct {
 	Incoming       *ServerConfig `json:"incoming,omitempty"`
 	Outgoing       *ServerConfig `json:"outgoing,omitempty"`
 	OAuthAvailable bool          `json:"oauthAvailable,omitempty"`
+	// OAuthProvider names the sign-in service ("microsoft", "google").
+	OAuthProvider string `json:"oauthProvider,omitempty"`
 }
 
 // NewAccountInput creates an account.

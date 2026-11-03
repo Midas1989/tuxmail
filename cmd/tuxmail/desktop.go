@@ -78,6 +78,8 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 					wruntime.EventsEmit(wctx, "tuxmail:event", ev)
 				}
 			}()
+			// OAuth sign-in (loopback flow) opens the system browser through Wails.
+			a.SetOAuthOpener(func(_ context.Context, u string) error { wruntime.BrowserOpenURL(wctx, u); return nil })
 			if st, _ := a.VaultStatus(wctx); st.Locked {
 				wruntime.EventsEmit(wctx, "tuxmail:event", app.Event{Type: app.EventVaultLocked})
 			}

@@ -57,6 +57,7 @@ type Options struct {
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
+	OAuth      *OAuthOptions   // OAuth clients/redirect (default: environment), oauth_app.go
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -104,6 +105,8 @@ type App struct {
 
 	remoteMu sync.Mutex
 	remote   map[string]*remoteSession // provisioning sessions by server URL
+
+	oauth *oauthState // oauth_app.go
 }
 
 // New creates the application layer.
@@ -142,6 +145,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if a.opts.Secrets == nil {
 		a.opts.Secrets = newMemorySecrets()
 	}
+	a.oauth = newOAuthState(a)
 	a.render = opts.Renderer
 	if a.render == nil {
 		a.render = NewMIMERenderer()
@@ -174,6 +178,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		if ms, ok := a.opts.Sender.(*MailSender); ok {
 			cfg.Sender = syncSender{act: func() *send.Actions { return ms.Actions }}
 		}
+		a.configureOAuthSync(&cfg)
 		if opts.Sync.Configure != nil {
 			opts.Sync.Configure(&cfg)
 		}

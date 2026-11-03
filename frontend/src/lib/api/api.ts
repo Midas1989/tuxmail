@@ -70,6 +70,16 @@ import type {
   WorkflowTemplate,
   WorkflowValidation,
 } from '../types';
+// --- OAuth/Cloud accounts ---
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
+} from '../types';
 
 export type TransportKind = 'wails' | 'http' | 'mock';
 
@@ -309,6 +319,25 @@ export interface Api {
 
   // Live events
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe;
+
+  // --- OAuth/Cloud accounts --- (KONZEPT 7.3–7.5; error codes oauth_not_configured, oauth_consent_required ...)
+  /** Sign-in services (Microsoft, Google) and their client configuration. */
+  listOAuthProviders(): Promise<OAuthProviderInfo[]>;
+  /** Own client ID ("Anmeldedienste"); may be forbidden by the server admin. */
+  saveOAuthClient(input: OAuthClientInput): Promise<void>;
+  deleteOAuthClient(provider: string): Promise<void>;
+  /** Start a sign-in: the desktop opens the browser (loopback), the web client opens status.authUrl. */
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus>;
+  /** Poll until status !== 'pending'; on 'done' the account exists (accountId). */
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus>;
+  cancelOAuth(id: string): Promise<void>;
+  /** Microsoft: add a shared/delegated mailbox of a Graph/EWS account. */
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account>;
+  listIdentityDelegations(): Promise<IdentityDelegation[]>;
+  /** Change Send-As / Send-on-Behalf of an identity (mode '' removes it). */
+  setIdentityDelegation(delegation: { identityId: number; mode: string; mailbox?: string }): Promise<void>;
+  /** Import calendars, contacts and tasks of a Graph/Gmail/EWS account. */
+  syncCloudPim(accountId: number): Promise<CloudPimResult>;
 }
 
 export class ApiError extends Error {
