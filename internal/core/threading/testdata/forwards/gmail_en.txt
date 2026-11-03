@@ -1,0 +1,18 @@
+FYI, see Jane's numbers below. Can we discuss on Thursday?
+
+Bob
+
+---------- Forwarded message ---------
+From: Jane Doe <Jane.Doe@example.com>
+Date: Mon, Jan 15, 2024 at 10:30 AM
+Subject: Re: Q1 budget review
+To: Bob Smith <bob@example.org>
+Cc: <finance@example.org>
+
+
+Hi Bob,
+
+attached are the final numbers for Q1.
+
+Best,
+Jane

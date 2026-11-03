@@ -1,0 +1,40 @@
+{
+  "description": "Replies arrive before the root (e.g. sync of INBOX before Sent). Two siblings reference a missing root and must already be grouped; the root joins when it arrives. A forward of the root (message/rfc822) and a reply with In-Reply-To garbage join too.",
+  "messages": [
+    {
+      "header": {
+        "messageId": "<reply-a@mail.example.de>",
+        "inReplyTo": ["<root@mail.example.de> (Max Mustermanns Nachricht vom \"Mo, 15 Jan 2024\")"],
+        "references": ["<root@mail.example.de>"],
+        "subject": "Re: Grillfest am Samstag",
+        "date": "2024-01-15T18:00:00Z"
+      }
+    },
+    {
+      "header": {
+        "messageId": "<reply-b@mail.example.de>",
+        "references": ["<root@MAIL.EXAMPLE.DE>"],
+        "subject": "AW: Grillfest am Samstag",
+        "date": "2024-01-15T19:00:00Z"
+      }
+    },
+    {
+      "header": {
+        "messageId": "<fwd-1@example.com>",
+        "subject": "WG: Grillfest am Samstag",
+        "date": "2024-01-16T08:00:00Z"
+      },
+      "attachedMessageIds": ["<root@mail.example.de>"]
+    },
+    {
+      "header": {
+        "messageId": "<root@mail.example.de>",
+        "subject": "Grillfest am Samstag",
+        "date": "2024-01-15T17:00:00Z"
+      }
+    }
+  ],
+  "expect": [
+    ["reply-a@mail.example.de", "reply-b@mail.example.de", "fwd-1@example.com", "root@mail.example.de"]
+  ]
+}

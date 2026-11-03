@@ -1,0 +1,42 @@
+{
+  "description": "Invitation, update and cancellation share an iCalendar UID but no headers. Two Gmail messages share X-GM-THRID within one account; a message with the same thread ID in another account stays separate. Two unrelated 'Hallo' mails stay separate.",
+  "messages": [
+    {
+      "header": {"messageId": "<invite-1@calendar.example.com>", "subject": "Einladung: Jour fixe @ Mo 22. Jan. 2024 10:00", "date": "2024-01-15T09:00:00Z"},
+      "calendarUids": ["040000008200E00074C5B7101A82E0080000000012345678"]
+    },
+    {
+      "header": {"messageId": "<invite-2@calendar.example.com>", "subject": "Aktualisierte Einladung: Jour fixe", "date": "2024-01-16T09:00:00Z"},
+      "calendarUids": ["040000008200E00074C5B7101A82E0080000000012345678"]
+    },
+    {
+      "header": {"messageId": "<accept-1@example.org>", "subject": "Angenommen: Jour fixe", "date": "2024-01-16T10:00:00Z"},
+      "calendarUids": [" 040000008200E00074C5B7101A82E0080000000012345678 "]
+    },
+    {
+      "header": {"messageId": "<gm-1@mail.gmail.com>", "subject": "Urlaubsplanung", "date": "2024-01-10T09:00:00Z", "serverThreadId": "1788123456789012345"},
+      "namespace": "account-1"
+    },
+    {
+      "header": {"messageId": "<gm-2@mail.gmail.com>", "subject": "Urlaubsplanung 2024", "date": "2024-01-11T09:00:00Z", "serverThreadId": "1788123456789012345"},
+      "namespace": "account-1"
+    },
+    {
+      "header": {"messageId": "<gm-other-account@mail.gmail.com>", "subject": "Something else", "date": "2024-01-11T09:00:00Z", "serverThreadId": "1788123456789012345"},
+      "namespace": "account-2"
+    },
+    {
+      "header": {"messageId": "<hallo-1@example.net>", "subject": "Hallo", "date": "2024-01-12T09:00:00Z"}
+    },
+    {
+      "header": {"messageId": "<hallo-2@example.net>", "subject": "Re: Hallo", "date": "2024-01-13T09:00:00Z"}
+    }
+  ],
+  "expect": [
+    ["invite-1@calendar.example.com", "invite-2@calendar.example.com", "accept-1@example.org"],
+    ["gm-1@mail.gmail.com", "gm-2@mail.gmail.com"],
+    ["gm-other-account@mail.gmail.com"],
+    ["hallo-1@example.net"],
+    ["hallo-2@example.net"]
+  ]
+}
