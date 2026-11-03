@@ -1,0 +1,1 @@
+First version of the Android app: connect to a TuxMail server, device sign-in, UnifiedPush notifications with quick reply, share target and app lock.

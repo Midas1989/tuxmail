@@ -162,6 +162,10 @@ export interface HttpTransportOptions {
   /** Initial reconnect delay in ms (doubles up to maxReconnectDelay). */
   reconnectDelay?: number;
   maxReconnectDelay?: number;
+  /** Device token (native app): sent as `Authorization: Bearer`, replaces cookies + CSRF. */
+  authToken?: () => string | undefined;
+  /** Called on HTTP 401 (expired/revoked device token). */
+  onUnauthorized?: () => void;
 }
 
 function readCsrfToken(): string | undefined {
@@ -192,6 +196,8 @@ export class HttpTransport implements Api {
   private delay: number;
   private readonly initialDelay: number;
   private readonly maxDelay: number;
+  private readonly authToken: () => string | undefined;
+  private readonly onUnauthorized: (() => void) | undefined;
 
   constructor(opts: HttpTransportOptions = {}) {
     this.base = (opts.baseUrl ?? '').replace(/\/$/, '');
@@ -199,11 +205,15 @@ export class HttpTransport implements Api {
     this.wsImpl = opts.webSocketImpl ?? (typeof WebSocket !== 'undefined' ? WebSocket : undefined);
     this.initialDelay = this.delay = opts.reconnectDelay ?? 1000;
     this.maxDelay = opts.maxReconnectDelay ?? 30000;
+    this.authToken = opts.authToken ?? (() => undefined);
+    this.onUnauthorized = opts.onUnauthorized;
   }
 
   private async request<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
     const h: Record<string, string> = { Accept: 'application/json', ...headers };
-    const csrf = readCsrfToken();
+    const bearer = this.authToken();
+    const csrf = bearer ? undefined : readCsrfToken();
+    if (bearer) h.Authorization = `Bearer ${bearer}`;
     if (csrf) h['X-TuxMail-CSRF'] = csrf;
     let payload: BodyInit | undefined;
     if (body instanceof Blob) {
@@ -214,11 +224,12 @@ export class HttpTransport implements Api {
     }
     let res: Response;
     try {
-      res = await this.fetchImpl(this.base + path, { method, headers: h, body: payload, credentials: 'same-origin' });
+      res = await this.fetchImpl(this.base + path, { method, headers: h, body: payload, credentials: bearer ? 'omit' : 'same-origin' });
     } catch (err) {
       throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
     }
     if (!res.ok) {
+      if (res.status === 401 && bearer) this.onUnauthorized?.();
       let msg = res.statusText;
       let code = 'http_' + res.status;
       try {
@@ -598,7 +609,10 @@ export class HttpTransport implements Api {
     if (this.socket || !this.wsImpl) return;
     let ws: WebSocket;
     try {
-      ws = new this.wsImpl(this.wsUrl());
+      // Browsers cannot set headers on WebSockets: the device token travels as
+      // subprotocol (server echoes "tuxmail.v1"), never in the URL/logs.
+      const bearer = this.authToken();
+      ws = bearer ? new this.wsImpl(this.wsUrl(), ['tuxmail.v1', `tuxmail.bearer.${bearer}`]) : new this.wsImpl(this.wsUrl());
     } catch {
       this.scheduleReconnect();
       return;

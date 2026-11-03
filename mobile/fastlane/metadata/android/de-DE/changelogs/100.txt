@@ -1,0 +1,1 @@
+Erste Version der Android-App: Verbindung zu einem TuxMail-Server, Geräteanmeldung, UnifiedPush-Benachrichtigungen mit Schnellantwort, Teilen-Ziel und App-Sperre.

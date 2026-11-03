@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<resources>
+    <string name="app_name">TuxMail</string>
+    <string name="title_activity_main">TuxMail</string>
+    <string name="package_name">org.tuxmail.app</string>
+    <string name="custom_url_scheme">tuxmail</string>
+    <string name="share_label">TuxMail</string>
+
+    <string name="channel_mail">Mail</string>
+    <string name="channel_mail_desc">New emails</string>
+    <string name="channel_chats">Chats</string>
+    <string name="channel_chats_desc">New messages from Signal, WhatsApp, Telegram and chat mode</string>
+    <string name="channel_events">Events</string>
+    <string name="channel_events_desc">Event reminders and invitations</string>
+    <string name="channel_reminders">Reminders</string>
+    <string name="channel_reminders_desc">Waiting for reply, assignments, workflows and system messages</string>
+
+    <string name="notification_reply">Reply</string>
+    <string name="notification_reply_hint">Reply …</string>
+    <string name="notification_mark_read">Mark as read</string>
+    <string name="notification_self">You</string>
+    <string name="notification_reply_failed">Not sent: %1$s</string>
+    <string name="notification_public_title">New message</string>
+    <plurals name="notification_summary">
+        <item quantity="one">%d new notification</item>
+        <item quantity="other">%d new notifications</item>
+    </plurals>
+</resources>

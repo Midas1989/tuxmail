@@ -5,10 +5,10 @@
 // native OS notifications from the Go core instead.
 
 import type { Api } from './api/api';
-import { isWails, urlBase64ToUint8Array } from './platform';
+import { isNativeShell, isWails, urlBase64ToUint8Array } from './platform';
 
 export function pwaSupported(): boolean {
-  return typeof navigator !== 'undefined' && 'serviceWorker' in navigator && !isWails();
+  return typeof navigator !== 'undefined' && 'serviceWorker' in navigator && !isWails() && !isNativeShell();
 }
 
 export function pushSupported(): boolean {
