@@ -28,6 +28,15 @@ func eventsHandler(opts Options) AppHandler {
 		}
 		srv := websocket.Server{
 			Handshake: func(cfg *websocket.Config, req *http.Request) error {
+				// Subprotocols: "tuxmail.v1" (+ "tuxmail.bearer.<token>",
+				// consumed by authentication). Answer with exactly one.
+				offered := cfg.Protocol
+				cfg.Protocol = nil
+				for _, p := range offered {
+					if p == "tuxmail.v1" {
+						cfg.Protocol = []string{p}
+					}
+				}
 				origin := req.Header.Get("Origin")
 				if origin == "" {
 					return nil // native clients (Bearer token); no ambient credentials

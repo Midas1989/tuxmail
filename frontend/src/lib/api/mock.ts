@@ -47,6 +47,7 @@ Account,
   Page,
   Person,
   ProvisioningImport,
+  VaultStatus,
   ProvisioningProfile,
   PushSubscriptionInput,
   SearchHistoryEntry,
@@ -1324,6 +1325,13 @@ export class MockTransport implements Api {
     };
   }
 
+  vaultStatus(): Promise<VaultStatus> {
+    return this.reply({ kind: 'keyring', portable: false, locked: false, initialized: true });
+  }
+  async unlockVault(password: string): Promise<void> {
+    if (!password) throw new ApiError('Passwort fehlt', 400, 'invalid_input');
+    await this.reply(null);
+  }
   async importProvisioning(input: ProvisioningImport): Promise<void> {
     await sleep(this.latency * 6);
     if (input.accountIds.length === 0 && input.identityIds.length === 0) throw new ApiError('Nichts zum Importieren ausgewählt', 400, 'empty');

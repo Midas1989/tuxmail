@@ -67,7 +67,7 @@ func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
 	if err != nil {
 		return bodyParts{visible: m.Snippet}
 	}
-	r, err := a.render.Render(ctx, raw)
+	r, err := a.render.Render(WithMessageID(ctx, m.ID), raw)
 	if err != nil {
 		return bodyParts{visible: m.Snippet}
 	}

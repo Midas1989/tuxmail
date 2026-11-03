@@ -41,13 +41,17 @@
 //   POST /api/conversations/{id}/meeting-proposals/{pid}/accept  {slotStart}
 //   POST /api/send                              OutgoingMessage -> SendResult
 //   POST /api/uploads                           raw body, X-Filename header -> {uploadToken}
-//   GET  /api/push/vapid-public-key             -> {key}
+//   GET  /api/push/vapid-public-key             -> {publicKey}
 //   POST /api/push/subscribe                    PushSubscriptionInput
-//   POST /api/push/unsubscribe                  {endpoint}
+//   DELETE /api/push/subscribe                  {endpoint}
 //   POST /api/push/test
 //   GET  /api/notifications/settings            -> NotificationSettings
 //   PUT  /api/notifications/settings            NotificationSettings -> NotificationSettings
 //   POST /api/provisioning/import               ProvisioningImport
+//   GET  /api/vault/status                      -> VaultStatus
+//   POST /api/vault/unlock                      {password}
+//   POST /api/conversations/{id}/reply          {text, replyToItemId} -> SendResult
+//   GET  /api/messages/{id}/attachments/{index}  attachment content (GET /api/messages/{id}/cid/{cid}: inline part)
 //   POST /api/search                            SearchQuery -> SearchResult
 //   GET  /api/search/profiles                   -> SearchProfile[]
 //   PUT  /api/search/profiles/{id}              SearchProfile -> SearchProfile
@@ -82,10 +86,12 @@
 //   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
 //
-// Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`):
-//   POST {serverUrl}/api/device/authorize       {client} -> DeviceAuthorization
-//   POST {serverUrl}/api/device/token           {deviceCode} -> DeviceTokenResult
-//   POST {serverUrl}/api/auth/login             ServerLoginInput -> DeviceTokenResult
+// Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
+// snake_case as in internal/server/api_device.go (see native/server.ts):
+//   POST {serverUrl}/api/device/authorize       {client_name} -> grant
+//   POST {serverUrl}/api/device/token           {device_code} -> token | {error: authorization_pending ...}
+//   POST {serverUrl}/api/device/login           {username, password, totp_code, device_name} -> token
+//   GET  {serverUrl}/api/provisioning/profile   (Bearer) -> profile
 // In the desktop build these run inside the Go core (WailsTransport), which
 // keeps the tokens in the secret store; the HTTP variant exists for completeness.
 
@@ -144,6 +150,8 @@ Account,
   Page,
   Person,
   ProvisioningImport,
+  ProvisioningProfile,
+  VaultStatus,
   PushSubscriptionInput,
   SearchHistoryEntry,
   SearchProfile,
@@ -170,10 +178,11 @@ export interface HttpTransportOptions {
 
 function readCsrfToken(): string | undefined {
   if (typeof document === 'undefined') return undefined;
+  // The cookie is current (rotated on login); the meta tag injected by the server is the fallback.
+  const m = document.cookie.match(/(?:^|;\s*)(?:__Host-)?tuxmail_csrf=([^;]+)/);
+  if (m) return decodeURIComponent(m[1]);
   const meta = document.querySelector<HTMLMetaElement>('meta[name="tuxmail-csrf"]');
-  if (meta?.content) return meta.content;
-  const m = document.cookie.match(/(?:^|;\s*)tuxmail_csrf=([^;]+)/);
-  return m ? decodeURIComponent(m[1]) : undefined;
+  return meta?.content || undefined;
 }
 
 export function buildQuery(params: Record<string, string | number | undefined>): string {
@@ -214,7 +223,7 @@ export class HttpTransport implements Api {
     const bearer = this.authToken();
     const csrf = bearer ? undefined : readCsrfToken();
     if (bearer) h.Authorization = `Bearer ${bearer}`;
-    if (csrf) h['X-TuxMail-CSRF'] = csrf;
+    if (csrf) h['X-CSRF-Token'] = csrf;
     let payload: BodyInit | undefined;
     if (body instanceof Blob) {
       payload = body;
@@ -233,9 +242,16 @@ export class HttpTransport implements Api {
       let msg = res.statusText;
       let code = 'http_' + res.status;
       try {
-        const j = (await res.json()) as { error?: string; code?: string };
-        if (j.error) msg = j.error;
-        if (j.code) code = j.code;
+        // Server convention: {error: code, message}.
+        const j = (await res.json()) as { error?: string; code?: string; message?: string };
+        if (j.code) {
+          code = j.code;
+          if (j.error) msg = j.error;
+        } else if (j.error) {
+          code = j.error;
+          msg = j.error;
+        }
+        if (j.message) msg = j.message;
       } catch {
         /* body not JSON */
       }
@@ -281,8 +297,20 @@ export class HttpTransport implements Api {
     });
     return this.request('GET', `/api/messages${qs}`);
   }
-  getMessage(id: number): Promise<MessageDetail> {
-    return this.request('GET', `/api/messages/${id}`);
+  async getMessage(id: number): Promise<MessageDetail> {
+    const d = await this.request<MessageDetail>('GET', `/api/messages/${id}`);
+    d.attachments?.forEach((a) => this.absolutize(a));
+    if (this.base && d.html) d.html = d.html.replace(/(src|href)="\/api\//g, `$1="${this.base}/api/`);
+    return d;
+  }
+  /** Inside the native app (baseUrl set) server-relative URLs must be absolute. */
+  private abs(u: string | undefined): string | undefined {
+    return u && this.base && u.startsWith('/') ? this.base + u : u;
+  }
+  private absolutize<T extends { url?: string; previewUrl?: string }>(a: T): T {
+    a.url = this.abs(a.url);
+    a.previewUrl = this.abs(a.previewUrl);
+    return a;
   }
   listConversations(q: ConversationQuery): Promise<Page<Conversation>> {
     const qs = buildQuery({
@@ -303,8 +331,10 @@ export class HttpTransport implements Api {
   getConversation(id: number): Promise<Conversation> {
     return this.request('GET', `/api/conversations/${id}`);
   }
-  listConversationItems(conversationId: number, query: ItemsQuery = {}): Promise<ConversationItem[]> {
-    return this.request('GET', `/api/conversations/${conversationId}/items${buildQuery({ before: query.before, limit: query.limit, ...(query.scope ? scopeParams(query.scope) : {}) })}`);
+  async listConversationItems(conversationId: number, query: ItemsQuery = {}): Promise<ConversationItem[]> {
+    const items = await this.request<ConversationItem[]>('GET', `/api/conversations/${conversationId}/items${buildQuery({ before: query.before, limit: query.limit, ...(query.scope ? scopeParams(query.scope) : {}) })}`);
+    if (this.base) items.forEach((i) => i.attachments?.forEach((a) => this.absolutize(a)));
+    return items;
   }
   conversationForMessage(messageId: number, grouping: ConversationGrouping): Promise<ConversationRef> {
     return this.request('GET', `/api/messages/${messageId}/conversation${buildQuery({ grouping })}`);
@@ -350,13 +380,13 @@ export class HttpTransport implements Api {
   }
 
   async getPushVapidKey(): Promise<string> {
-    return (await this.request<{ key: string }>('GET', '/api/push/vapid-public-key')).key;
+    return (await this.request<{ publicKey: string }>('GET', '/api/push/vapid-public-key')).publicKey;
   }
   subscribePush(subscription: PushSubscriptionInput): Promise<void> {
     return this.request('POST', '/api/push/subscribe', subscription);
   }
   unsubscribePush(endpoint: string): Promise<void> {
-    return this.request('POST', '/api/push/unsubscribe', { endpoint });
+    return this.request('DELETE', '/api/push/subscribe', { endpoint });
   }
   getNotificationSettings(): Promise<NotificationSettings> {
     return this.request('GET', '/api/notifications/settings');
@@ -371,25 +401,78 @@ export class HttpTransport implements Api {
   private remote(serverUrl: string, path: string): string {
     return serverUrl.replace(/\/+$/, '') + path;
   }
-  private async remotePost<T>(url: string, body: unknown): Promise<T> {
+  private async remoteCall(url: string, body?: unknown, token?: string): Promise<{ status: number; data: Record<string, unknown> }> {
     let res: Response;
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (token) headers.Authorization = `Bearer ${token}`;
     try {
-      res = await this.fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) });
+      res = await this.fetchImpl(url, { method: body === undefined ? 'GET' : 'POST', headers, body: body === undefined ? undefined : JSON.stringify(body), credentials: 'omit' });
     } catch (err) {
       throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
     }
-    const data = (await res.json().catch(() => ({}))) as T & { error?: string; status?: string };
-    if (!res.ok && !data.status) throw new ApiError(data.error ?? res.statusText, res.status, 'http_' + res.status);
-    return data;
+    return { status: res.status, data: ((await res.json().catch(() => ({}))) ?? {}) as Record<string, unknown> };
   }
-  deviceAuthorize(serverUrl: string): Promise<DeviceAuthorization> {
-    return this.remotePost(this.remote(serverUrl, '/api/device/authorize'), { client: 'tuxmail-web' });
+  /** Loads the provisioning profile with a fresh device token (web variant; the desktop keeps tokens in the core). */
+  private async profileResult(serverUrl: string, token: string): Promise<DeviceTokenResult> {
+    const { status, data } = await this.remoteCall(this.remote(serverUrl, '/api/provisioning/profile'), undefined, token);
+    if (status !== 200) return { status: 'denied', error: String(data.message ?? data.error ?? status) };
+    const user = (data.user ?? {}) as Record<string, string>;
+    const server = (data.server ?? {}) as Record<string, string>;
+    const templates = (data.templates ?? []) as { id: number; name: string }[];
+    return {
+      status: 'approved',
+      profile: {
+        server: { url: serverUrl, name: new URL(serverUrl).host, version: server.version ?? '' },
+        user: { name: user.displayName || user.username || '', email: user.email ?? '' },
+        accounts: (data.accounts ?? []) as ProvisioningProfile['accounts'],
+        identities: (data.identities ?? []) as ProvisioningProfile['identities'],
+        signatures: (data.signatures ?? []) as ProvisioningProfile['signatures'],
+        workflows: templates.map((t) => ({ id: String(t.id), name: t.name })),
+      },
+    };
   }
-  deviceToken(serverUrl: string, deviceCode: string): Promise<DeviceTokenResult> {
-    return this.remotePost(this.remote(serverUrl, '/api/device/token'), { deviceCode });
+  async deviceAuthorize(serverUrl: string): Promise<DeviceAuthorization> {
+    const { status, data } = await this.remoteCall(this.remote(serverUrl, '/api/device/authorize'), { client_name: 'TuxMail Web' });
+    if (status !== 200) throw new ApiError(String(data.error_description || data.error || status), status, String(data.error ?? 'http_' + status));
+    return {
+      deviceCode: String(data.device_code),
+      userCode: String(data.user_code),
+      verificationUri: String(data.verification_uri),
+      verificationUriComplete: String(data.verification_uri_complete || data.verification_uri),
+      expiresIn: Number(data.expires_in ?? 600),
+      interval: Number(data.interval ?? 5),
+    };
   }
-  serverLogin(serverUrl: string, credentials: ServerLoginInput): Promise<DeviceTokenResult> {
-    return this.remotePost(this.remote(serverUrl, '/api/auth/login'), credentials);
+  async deviceToken(serverUrl: string, deviceCode: string): Promise<DeviceTokenResult> {
+    const { status, data } = await this.remoteCall(this.remote(serverUrl, '/api/device/token'), { device_code: deviceCode });
+    if (status === 200 && typeof data.access_token === 'string') return this.profileResult(serverUrl, data.access_token);
+    switch (data.error) {
+      case 'authorization_pending':
+        return { status: 'pending' };
+      case 'slow_down':
+        return { status: 'slow_down' };
+      case 'access_denied':
+        return { status: 'denied' };
+      default:
+        return { status: 'expired', error: String(data.error ?? status) };
+    }
+  }
+  async serverLogin(serverUrl: string, credentials: ServerLoginInput): Promise<DeviceTokenResult> {
+    const { status, data } = await this.remoteCall(this.remote(serverUrl, '/api/device/login'), {
+      username: credentials.username,
+      password: credentials.password,
+      totp_code: credentials.totp || undefined,
+      device_name: 'TuxMail Web',
+    });
+    if (status === 200 && typeof data.access_token === 'string') return this.profileResult(serverUrl, data.access_token);
+    return { status: 'denied', error: String(data.error_description || data.message || data.error || status) };
+  }
+  vaultStatus(): Promise<VaultStatus> {
+    return this.request('GET', '/api/vault/status');
+  }
+  unlockVault(password: string): Promise<void> {
+    return this.request('POST', '/api/vault/unlock', { password });
   }
   importProvisioning(input: ProvisioningImport): Promise<void> {
     return this.request('POST', '/api/provisioning/import', input);

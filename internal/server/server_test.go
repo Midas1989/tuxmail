@@ -538,8 +538,10 @@ func TestStaticSPA(t *testing.T) {
 		"assets/app.js": {Data: []byte("console.log(1)")},
 	}
 	e2 := newEnv(t, Options{Static: fsys})
+	e2.user("spa", auth.RoleUser)
+	br := e2.browser()
 	get := func(p string) (int, string, http.Header) {
-		resp, err := http.Get(e2.ts.URL + p)
+		resp, err := br.c.Get(e2.ts.URL + p)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -547,10 +549,21 @@ func TestStaticSPA(t *testing.T) {
 		b, _ := io.ReadAll(resp.Body)
 		return resp.StatusCode, string(b), resp.Header
 	}
-	if code, body, _ := get("/"); code != 200 || body != "<html>APP</html>" {
+	// Without a session the SPA redirects to the login page.
+	if code, _, h := get("/settings/accounts"); code != http.StatusSeeOther || !strings.HasPrefix(h.Get("Location"), "/login?next=") {
+		t.Fatal("login redirect", code, h)
+	}
+	if code, body, _ := get("/login"); code != 200 || !strings.Contains(body, "/login.js") {
+		t.Fatal("login page", code)
+	}
+	br.login("spa")
+	isApp := func(body string) bool {
+		return strings.Contains(body, "APP") && strings.Contains(body, `<meta name="tuxmail-api" content="http">`)
+	}
+	if code, body, _ := get("/"); code != 200 || !isApp(body) {
 		t.Fatal(code, body)
 	}
-	if code, body, _ := get("/settings/accounts"); code != 200 || body != "<html>APP</html>" {
+	if code, body, _ := get("/settings/accounts"); code != 200 || !isApp(body) {
 		t.Fatal("SPA fallback", code, body)
 	}
 	if code, body, h := get("/assets/app.js"); code != 200 || body != "console.log(1)" || !strings.Contains(h.Get("Cache-Control"), "immutable") {
@@ -559,7 +572,7 @@ func TestStaticSPA(t *testing.T) {
 	if code, _, _ := get("/assets/missing.js"); code != 404 {
 		t.Fatal(code)
 	}
-	if code, _, _ := get("/../../etc/passwd"); code != 200 {
+	if code, _, _ := get("/../../etc/passwd"); code != 200 && code != http.StatusSeeOther && code != http.StatusMovedPermanently {
 		t.Fatal(code)
 	}
 }

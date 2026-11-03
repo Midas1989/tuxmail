@@ -3,6 +3,7 @@
 package server
 
 import (
+	"bufio"
 	"context"
 	"crypto/subtle"
 	"errors"
@@ -139,6 +140,14 @@ func (w *statusWriter) Write(b []byte) (int, error) {
 }
 
 func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+// Hijack supports WebSocket upgrades (/api/events).
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if w.status == 0 {
+		w.status = http.StatusSwitchingProtocols
+	}
+	return http.NewResponseController(w.ResponseWriter).Hijack()
+}
 
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -292,7 +301,34 @@ func bearerToken(r *http.Request) string {
 	if len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
 		return strings.TrimSpace(h[7:])
 	}
+	// Browsers cannot set headers on WebSockets: native clients pass the
+	// device token as subprotocol "tuxmail.bearer.<token>" next to
+	// "tuxmail.v1" (the server answers with "tuxmail.v1").
+	if r.URL.Path == "/api/events" {
+		for _, v := range r.Header.Values("Sec-WebSocket-Protocol") {
+			for _, p := range strings.Split(v, ",") {
+				if t, ok := strings.CutPrefix(strings.TrimSpace(p), "tuxmail.bearer."); ok && t != "" {
+					return t
+				}
+			}
+		}
+	}
 	return ""
+}
+
+// wsOriginAllowed checks the Origin of a WebSocket handshake: the public
+// origin or the direct host; with a device token (no ambient credentials)
+// also the WebView origins of the native apps.
+func (s *Server) wsOriginAllowed(r *http.Request, origin string) bool {
+	if bearerToken(r) != "" {
+		switch strings.ToLower(origin) {
+		case "https://localhost", "http://localhost", "capacitor://localhost":
+			return true
+		}
+	}
+	rr := r.Clone(r.Context())
+	rr.Header.Set("Origin", origin)
+	return s.originAllowed(rr, s.cfg.PublicOrigin())
 }
 
 // authenticate resolves the session cookie or bearer token.

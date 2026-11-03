@@ -20,8 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Midas1989/Mailclient/internal/app"
 	"github.com/Midas1989/Mailclient/internal/auth"
 	"github.com/Midas1989/Mailclient/internal/config"
+	"github.com/Midas1989/Mailclient/internal/server/api"
 	"github.com/Midas1989/Mailclient/internal/server/push"
 )
 
@@ -39,6 +41,12 @@ type Options struct {
 	MailData MailDataSource
 	// PushClient is used for Web Push delivery (tests inject a TLS client).
 	PushClient *http.Client
+	// Locales are the built-in language files served by /api/locales
+	// (data_dir/locales may add or override files).
+	Locales fs.FS
+	// AppOptions adjusts the per-user application layer options (sync,
+	// sender, renderer ...) before the App of a user is created.
+	AppOptions func(userID int64, o *app.Options)
 }
 
 // Server is the HTTP server of the server mode.
@@ -50,6 +58,11 @@ type Server struct {
 	static   fs.FS
 	trusted  []netip.Prefix
 	mailData MailDataSource
+
+	locales    fs.FS
+	appOptions func(userID int64, o *app.Options)
+	apps       *appPool
+	mux        *http.ServeMux
 
 	push      *push.Sender
 	pushStore *push.Store
@@ -69,8 +82,9 @@ func New(cfg *config.Config, svc *auth.Service, opts Options) (*Server, error) {
 	}
 	s := &Server{
 		cfg: cfg, auth: svc, log: opts.Logger, version: opts.Version, static: opts.Static,
-		trusted: trusted, mailData: opts.MailData,
+		trusted: trusted, mailData: opts.MailData, locales: opts.Locales, appOptions: opts.AppOptions,
 	}
+	s.apps = newAppPool(s)
 	if s.log == nil {
 		s.log = slog.Default()
 	}
@@ -162,6 +176,7 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 	sctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	err := hs.Shutdown(sctx)
+	s.apps.closeAll()
 	if sock, ok := s.cfg.UnixSocket(); ok {
 		os.Remove(sock)
 	}
@@ -180,6 +195,7 @@ func (s *Server) housekeeping(ctx context.Context) {
 		}
 		s.ipLimiter.prune()
 		s.userLimiter.prune()
+		s.apps.prune()
 		select {
 		case <-ctx.Done():
 			return
@@ -264,11 +280,26 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/provisioning/profile", s.user(s.handleProvisioningProfile))
 	mux.HandleFunc("GET /api/provisioning/secrets", s.device(s.handleProvisioningSecrets))
 
+	// Frontend API (frontend/src/lib/api/http.ts) on the per-user App.
+	// The Web Push routes above are served by this package directly.
+	mux.HandleFunc("POST /api/conversations/{id}/reply", s.appHandler(s.handleConversationReply))
+	api.Mount(mux, s.appHandler, api.Options{Logger: s.log, AllowOrigin: s.wsOriginAllowed, Skip: map[string]bool{
+		"GET /api/push/vapid-public-key": true, "POST /api/push/subscribe": true, "DELETE /api/push/subscribe": true,
+		"POST /api/push/test": true,
+	}})
+
+	// Web pages served next to the SPA.
+	mux.HandleFunc("GET /login", s.handleLoginPage)
+	mux.HandleFunc("GET /login.js", s.handleLoginScript)
+	mux.HandleFunc("GET /device", s.handleDevicePage)
+	mux.HandleFunc("GET /device.js", s.handleDeviceScript)
+
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not_found", "unknown API endpoint")
 	})
 	mux.Handle("/", s.staticHandler())
 
+	s.mux = mux
 	var h http.Handler = mux
 	h = s.csrf(h)
 	h = s.securityHeaders(h)

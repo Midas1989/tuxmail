@@ -56,11 +56,12 @@ type SendRequest struct {
 
 // SendAttachment is an uploaded attachment.
 type SendAttachment struct {
-	Filename string
-	MIMEType string
-	Size     int64
-	Delivery string
-	Open     func() (io.ReadCloser, error)
+	UploadToken string
+	Filename    string
+	MIMEType    string
+	Size        int64
+	Delivery    string
+	Open        func() (io.ReadCloser, error)
 }
 
 // Sender sends mails and messenger messages (internal/send, step B).

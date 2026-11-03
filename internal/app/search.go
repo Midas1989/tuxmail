@@ -201,8 +201,17 @@ func (a *App) Search(ctx context.Context, q SearchQuery) (SearchResult, error) {
 		case "domain":
 			out.Facets.Domain = buckets
 		case "channel":
+			for i := range buckets {
+				if buckets[i].Key == "mail" {
+					buckets[i].Key, buckets[i].Label = "email", "email"
+				}
+			}
 			out.Facets.Channel = buckets
 		case "has_attachment":
+			for i := range buckets { // the UI expects yes/no
+				buckets[i].Key = map[string]string{"1": "yes", "0": "no"}[buckets[i].Key]
+				buckets[i].Label = buckets[i].Key
+			}
 			out.Facets.Attachment = buckets
 		case "month":
 			out.Histogram = buckets

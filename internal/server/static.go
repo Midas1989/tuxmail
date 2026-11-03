@@ -59,7 +59,13 @@ func (s *Server) staticHandler() http.Handler {
 			serveIndex(w, r, []byte(placeholderIndex))
 			return
 		}
-		serveIndex(w, r, idx)
+		// The web client needs a session: browsers without one log in first.
+		if !s.loggedIn(r) {
+			loginRedirect(w, r)
+			return
+		}
+		tok, _ := r.Context().Value(ctxCSRF).(string)
+		serveIndex(w, r, injectMeta(idx, tok))
 	})
 }
 

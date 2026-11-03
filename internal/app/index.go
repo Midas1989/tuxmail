@@ -186,6 +186,14 @@ func (a *App) personForAddress(ctx context.Context, addr store.MessageAddress) (
 }
 
 func (a *App) indexCounterpart(ctx context.Context, messageID int64, addrs []store.MessageAddress, me meSet) error {
+	// Link every address to a person so that participants are known.
+	for i := range addrs {
+		pid, err := a.personForAddress(ctx, addrs[i])
+		if err != nil {
+			return err
+		}
+		addrs[i].PersonID = pid
+	}
 	var from *store.MessageAddress
 	var recipients []store.MessageAddress
 	for i := range addrs {
@@ -197,14 +205,6 @@ func (a *App) indexCounterpart(ctx context.Context, messageID int64, addrs []sto
 		case store.RoleTo, store.RoleCc:
 			recipients = append(recipients, addrs[i])
 		}
-	}
-	// Link every address to a person so that participants are known.
-	for i := range addrs {
-		pid, err := a.personForAddress(ctx, addrs[i])
-		if err != nil {
-			return err
-		}
-		addrs[i].PersonID = pid
 	}
 	outgoing := from != nil && me.isMe(*from)
 	var counterpart int64

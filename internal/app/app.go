@@ -21,6 +21,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/project"
+	"github.com/Midas1989/Mailclient/internal/send"
 	"github.com/Midas1989/Mailclient/internal/store"
 	"github.com/Midas1989/Mailclient/internal/store/blob"
 	tsync "github.com/Midas1989/Mailclient/internal/sync"
@@ -47,9 +48,11 @@ type Options struct {
 
 	// Sync enables the sync engine (internal/sync); it is ignored when
 	// Syncer is set. Without both, actions only change the local store.
-	Sync       *SyncOptions
-	Syncer     Syncer          // default: sync manager (Sync) or local-only fallback
-	Sender     Sender          // default: sending fails with send_not_configured
+	Sync   *SyncOptions
+	Syncer Syncer // default: sync manager (Sync) or local-only fallback
+	// Send enables sending through internal/send; ignored when Sender is set.
+	Send       *SendOptions
+	Sender     Sender          // default: MailSender (Send) or sending fails with send_not_configured
 	Renderer   MessageRenderer // default: basic go-message renderer (text only)
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
@@ -141,7 +144,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	}
 	a.render = opts.Renderer
 	if a.render == nil {
-		a.render = BasicRenderer{}
+		a.render = NewMIMERenderer()
 	}
 	if a.opts.AI == nil {
 		hc := opts.HTTPClient
@@ -158,9 +161,19 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	a.proj = project.New(a.st, a.bus, project.Options{Now: opts.Now, Logger: opts.Logger})
 	a.sync = opts.Syncer
 	var mail workflow.MailActions = &workflowMail{a: a}
+	if a.opts.Sender == nil && opts.Send != nil {
+		ms, err := newMailSender(a, opts.Send)
+		if err != nil {
+			return nil, err
+		}
+		a.opts.Sender = ms
+	}
 	if a.sync == nil && opts.Sync != nil && a.blobs != nil {
 		cfg := tsync.Config{Store: a.st, Blobs: a.blobs, Bus: a.bus, Secrets: a.opts.Secrets, Projects: a.proj, Tags: a.proj,
-			Logger: opts.Logger, Now: opts.Now}
+			Logger: opts.Logger, Now: opts.Now, Extractor: ParseExtractor{}}
+		if ms, ok := a.opts.Sender.(*MailSender); ok {
+			cfg.Sender = syncSender{act: func() *send.Actions { return ms.Actions }}
+		}
 		if opts.Sync.Configure != nil {
 			opts.Sync.Configure(&cfg)
 		}
@@ -233,6 +246,9 @@ func (a *App) Close() error {
 // Events returns the UI event hub.
 func (a *App) Events() *Hub { return a.hub }
 
+// Blobs returns the blob store (raw mails, attachments, uploads).
+func (a *App) Blobs() *blob.Store { return a.blobs }
+
 // Bus returns the core event bus.
 func (a *App) Bus() *events.Bus { return a.bus }
 
@@ -266,6 +282,7 @@ func (a *App) tick(ctx context.Context) {
 		}
 	}
 	a.sendDueScheduled(ctx)
+	a.runSendOps(ctx)
 	if hashes, err := a.st.PurgeUploads(ctx, a.now().Add(-24*time.Hour)); err == nil && a.blobs != nil {
 		for _, h := range hashes {
 			_ = a.blobs.Delete(h)

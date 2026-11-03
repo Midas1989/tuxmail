@@ -403,6 +403,30 @@ export interface SendResult {
   sharePasswords?: { filename: string; password: string }[];
   /** Set when the message was scheduled (sendAt). */
   scheduledId?: string;
+  /** Send checks (KONZEPT 8.13) blocked the message; nothing was sent. */
+  blocked?: boolean;
+  /** Send-check results (blocking findings or warnings). */
+  findings?: SendFinding[];
+}
+
+export interface SendFinding {
+  check: string;
+  severity: 'info' | 'warn' | 'block';
+  /** i18n key, e.g. "sendcheck.missing_subject". */
+  key: string;
+  /** English fallback text. */
+  message: string;
+  params?: Record<string, string>;
+}
+
+/** Secret store of the desktop client: OS keyring (installed), master-password vault (portable) or the server. */
+export interface VaultStatus {
+  kind: 'keyring' | 'vault' | 'server';
+  portable: boolean;
+  /** Portable mode: the vault must be unlocked with the master password (Api.unlockVault). */
+  locked: boolean;
+  /** False until a master password was set (first unlock creates the vault). */
+  initialized: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -444,7 +468,9 @@ export type ApiEvent =
   | { type: 'tags.changed' }
   | { type: 'project.updated'; projectId: number }
   | { type: 'searchfolders.changed' }
-  | { type: 'workflow.run'; workflowId: string; run: WorkflowRunSummary };
+  | { type: 'workflow.run'; workflowId: string; run: WorkflowRunSummary }
+  /** Desktop portable mode: the secret vault needs the master password (Api.unlockVault). */
+  | { type: 'vault.locked' };
 
 export type ApiEventType = ApiEvent['type'];
 

@@ -14,11 +14,13 @@ import (
 	"github.com/Midas1989/Mailclient/internal/auth"
 	"github.com/Midas1989/Mailclient/internal/config"
 	"github.com/Midas1989/Mailclient/internal/server"
+	"github.com/Midas1989/Mailclient/locales"
+	"github.com/Midas1989/Mailclient/web"
 )
 
-// webFS is the embedded web frontend. It stays nil until frontend/dist is
-// embedded (a placeholder page is served meanwhile).
-var webFS fs.FS
+// webFS is the embedded web frontend (package web; nil when the binary was
+// built without `go generate ./web`, then a placeholder page is served).
+var webFS fs.FS = web.FS()
 
 func newLogger(c config.Log, fallback io.Writer) (*slog.Logger, io.Closer, error) {
 	var lvl slog.Level
@@ -70,7 +72,7 @@ func (c *cli) serve(ctx context.Context, args []string) error {
 	if n, err := svc.CountUsers(ctx); err == nil && n == 0 {
 		log.Warn("no users exist yet; create an administrator with: tuxmail user add --admin --username NAME")
 	}
-	srv, err := server.New(cfg, svc, server.Options{Static: webFS, Logger: log, Version: version})
+	srv, err := server.New(cfg, svc, server.Options{Static: webFS, Logger: log, Version: version, Locales: locales.FS})
 	if err != nil {
 		return err
 	}

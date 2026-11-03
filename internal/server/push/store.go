@@ -16,15 +16,18 @@ import (
 
 // Subscription is a stored PushSubscription of one browser/device.
 type Subscription struct {
-	ID         int64     `json:"id"`
-	UserID     int64     `json:"userId"`
-	SessionID  int64     `json:"sessionId,omitempty"`
-	Endpoint   string    `json:"endpoint"`
-	P256dh     string    `json:"-"`
-	Auth       string    `json:"-"`
-	DeviceName string    `json:"deviceName"`
-	UserAgent  string    `json:"userAgent"`
-	CreatedAt  time.Time `json:"createdAt"`
+	ID         int64  `json:"id"`
+	UserID     int64  `json:"userId"`
+	SessionID  int64  `json:"sessionId,omitempty"`
+	Endpoint   string `json:"endpoint"`
+	P256dh     string `json:"-"`
+	Auth       string `json:"-"`
+	DeviceName string `json:"deviceName"`
+	UserAgent  string `json:"userAgent"`
+	// Kind is webpush (browsers, PWA) or unifiedpush (Android, RFC 8030
+	// endpoint of a distributor); fcm is not supported yet.
+	Kind      string    `json:"type"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 // QuietHours suppress notifications between Start and End (local "HH:MM",
@@ -166,11 +169,16 @@ func (s *Store) Save(ctx context.Context, sub Subscription) (int64, error) {
 	if sub.SessionID != 0 {
 		sess = sub.SessionID
 	}
+	kind := sub.Kind
+	if kind == "" {
+		kind = KindWebPush
+	}
 	_, err := s.DB.ExecContext(ctx, `INSERT INTO push_subscriptions(user_id, session_id, endpoint, p256dh, auth, device_name,
-		user_agent, created_at) VALUES (?,?,?,?,?,?,?,?)
+		user_agent, created_at, kind) VALUES (?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, session_id = excluded.session_id,
-		p256dh = excluded.p256dh, auth = excluded.auth, device_name = excluded.device_name, user_agent = excluded.user_agent`,
-		sub.UserID, sess, sub.Endpoint, sub.P256dh, sub.Auth, trunc(sub.DeviceName, 100), trunc(sub.UserAgent, 300), s.now())
+		p256dh = excluded.p256dh, auth = excluded.auth, device_name = excluded.device_name, user_agent = excluded.user_agent,
+		kind = excluded.kind`,
+		sub.UserID, sess, sub.Endpoint, sub.P256dh, sub.Auth, trunc(sub.DeviceName, 100), trunc(sub.UserAgent, 300), s.now(), kind)
 	if err != nil {
 		return 0, err
 	}
@@ -186,10 +194,17 @@ func trunc(s string, n int) string {
 	return s
 }
 
+// Subscription kinds.
+const (
+	KindWebPush     = "webpush"
+	KindUnifiedPush = "unifiedpush"
+	KindFCM         = "fcm"
+)
+
 // List returns all subscriptions of a user.
 func (s *Store) List(ctx context.Context, userID int64) ([]Subscription, error) {
 	rows, err := s.DB.QueryContext(ctx, `SELECT id, user_id, COALESCE(session_id, 0), endpoint, p256dh, auth, device_name,
-		user_agent, created_at FROM push_subscriptions WHERE user_id = ? ORDER BY id`, userID)
+		user_agent, created_at, kind FROM push_subscriptions WHERE user_id = ? ORDER BY id`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +213,7 @@ func (s *Store) List(ctx context.Context, userID int64) ([]Subscription, error) 
 	for rows.Next() {
 		var x Subscription
 		var c int64
-		if err := rows.Scan(&x.ID, &x.UserID, &x.SessionID, &x.Endpoint, &x.P256dh, &x.Auth, &x.DeviceName, &x.UserAgent, &c); err != nil {
+		if err := rows.Scan(&x.ID, &x.UserID, &x.SessionID, &x.Endpoint, &x.P256dh, &x.Auth, &x.DeviceName, &x.UserAgent, &c, &x.Kind); err != nil {
 			return nil, err
 		}
 		x.CreatedAt = time.Unix(c, 0).UTC()

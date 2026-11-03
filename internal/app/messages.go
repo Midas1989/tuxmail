@@ -272,7 +272,7 @@ func (a *App) GetMessage(ctx context.Context, id int64) (MessageDetail, error) {
 	}
 	raw, err := a.rawMessage(m)
 	if err == nil {
-		r, rerr := a.render.Render(ctx, raw)
+		r, rerr := a.render.Render(WithMessageID(ctx, id), raw)
 		if rerr == nil {
 			d.Text, d.HTML, d.HasRemoteContent = r.Text, r.HTML, r.HasRemoteContent
 			if r.InReplyTo != nil {
@@ -342,7 +342,7 @@ func (a *App) MessageCID(ctx context.Context, messageID int64, cid string) (Atta
 	if err != nil {
 		return AttachmentContent{}, err
 	}
-	r, err := a.render.Render(ctx, raw)
+	r, err := a.render.Render(WithMessageID(ctx, messageID), raw)
 	if err != nil {
 		return AttachmentContent{}, err
 	}

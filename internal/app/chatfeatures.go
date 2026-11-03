@@ -251,7 +251,7 @@ func (a *App) sendNow(ctx context.Context, msg OutgoingMessage) (SendResult, err
 			return SendResult{}, invalid("unknown upload token")
 		}
 		hash := u.BlobHash
-		req.Attachments = append(req.Attachments, SendAttachment{Filename: at.Filename, MIMEType: at.MIMEType, Size: u.Size, Delivery: at.Delivery,
+		req.Attachments = append(req.Attachments, SendAttachment{UploadToken: at.UploadToken, Filename: at.Filename, MIMEType: at.MIMEType, Size: u.Size, Delivery: at.Delivery,
 			Open: func() (io.ReadCloser, error) { return a.blobs.Open(hash) }})
 	}
 	res, err := sender.Send(ctx, req)

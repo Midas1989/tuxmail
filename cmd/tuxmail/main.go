@@ -2,6 +2,8 @@
 
 // Command tuxmail is the TuxMail desktop application and server.
 //
+//	tuxmail              (desktop builds: opens the window)
+//	tuxmail desktop      [--data-dir DIR] [--portable]
 //	tuxmail version
 //	tuxmail serve        --config /etc/tuxmail/config.yaml
 //	tuxmail check-config --config /etc/tuxmail/config.yaml
@@ -16,6 +18,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 )
 
@@ -41,8 +44,13 @@ type cli struct {
 
 func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	c := &cli{stdin: stdin, stdout: stdout, stderr: stderr}
+	// Desktop builds open the window when started without a command (also
+	// with only desktop flags, e.g. "tuxmail --portable").
+	if desktopBuild && (len(args) == 0 || (strings.HasPrefix(args[0], "-") && !isHelpOrVersion(args[0]))) {
+		args = append([]string{"desktop"}, args...)
+	}
 	if len(args) == 0 {
-		fmt.Fprintln(stdout, "TuxMail", version, "- noch in Entwicklung (Phase 0)")
+		fmt.Fprintln(stdout, "TuxMail", version)
 		c.usage()
 		return 0
 	}
@@ -52,6 +60,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		fmt.Fprintln(stdout, "TuxMail", version)
 	case "serve":
 		err = c.serve(ctx, args[1:])
+	case "desktop":
+		err = c.desktop(ctx, args[1:])
+	case "demo":
+		err = c.demoCmd(ctx, args[1:])
 	case "check-config":
 		err = c.checkConfig(args[1:])
 	case "user":
@@ -77,10 +89,20 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	}
 }
 
+func isHelpOrVersion(a string) bool {
+	switch a {
+	case "-h", "-help", "--help", "-v", "--version":
+		return true
+	}
+	return false
+}
+
 func (c *cli) usage() {
 	fmt.Fprint(c.stderr, `Usage:
+  tuxmail desktop      [--data-dir DIR] [--portable]   (desktop builds; default without arguments)
   tuxmail version
   tuxmail serve        [--config FILE]
+  tuxmail demo seed    --user NAME [--config FILE] | --data-dir DIR
   tuxmail check-config [--config FILE]
   tuxmail user add            --username NAME [--email ADDR] [--display-name NAME] [--admin | --role ROLE]
                               [--password-stdin] [--if-not-exists] [--json]

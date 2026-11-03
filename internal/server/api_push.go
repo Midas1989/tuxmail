@@ -5,11 +5,36 @@ package server
 import (
 	"net/http"
 
+	"github.com/Midas1989/Mailclient/internal/app"
+
 	"github.com/Midas1989/Mailclient/internal/server/push"
 )
 
 func (s *Server) handleVAPIDKey(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"publicKey": s.push.Keys.PublicKey})
+}
+
+// handleConversationReply answers a conversation from a notification action
+// (Android): {text, replyToItemId}.
+func (s *Server) handleConversationReply(w http.ResponseWriter, r *http.Request, a *app.App) {
+	id, ok := pathID(w, r, "id")
+	if !ok {
+		return
+	}
+	var req struct {
+		Text          string `json:"text"`
+		ReplyToItemID string `json:"replyToItemId"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := a.ReplyToConversation(r.Context(), id, req.Text, req.ReplyToItemID)
+	if err != nil {
+		e := app.AsError(err)
+		writeError(w, e.Status, e.Code, e.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // subscribeReq mirrors PushSubscription.toJSON() plus a device name.
@@ -20,6 +45,8 @@ type subscribeReq struct {
 		Auth   string `json:"auth"`
 	} `json:"keys"`
 	DeviceName string `json:"deviceName"`
+	Type       string `json:"type"`
+	Token      string `json:"token"`
 }
 
 func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request, a *authInfo) {
@@ -27,9 +54,18 @@ func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request, a *
 	if !readJSON(w, r, &req) {
 		return
 	}
+	switch req.Type {
+	case "", push.KindWebPush, push.KindUnifiedPush:
+	case push.KindFCM:
+		writeError(w, http.StatusNotImplemented, "not_configured", "Firebase Cloud Messaging is not configured on this server")
+		return
+	default:
+		writeError(w, http.StatusBadRequest, "invalid_subscription", "unknown push type")
+		return
+	}
 	sub := push.Subscription{
 		UserID: a.User.ID, SessionID: a.Session.ID, Endpoint: req.Endpoint,
-		P256dh: req.Keys.P256dh, Auth: req.Keys.Auth, DeviceName: req.DeviceName, UserAgent: r.UserAgent(),
+		P256dh: req.Keys.P256dh, Auth: req.Keys.Auth, DeviceName: req.DeviceName, UserAgent: r.UserAgent(), Kind: req.Type,
 	}
 	if err := push.ValidateSubscription(sub); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid_subscription", err.Error())

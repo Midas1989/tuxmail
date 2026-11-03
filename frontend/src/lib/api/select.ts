@@ -13,6 +13,8 @@ export interface TransportEnv {
   search?: string;
   /** Native app (Capacitor) with a configured server profile. */
   native?: boolean;
+  /** `<meta name="tuxmail-api">` injected by `tuxmail serve` ("http"). */
+  meta?: string;
 }
 
 /**
@@ -27,7 +29,7 @@ export function selectTransportKind(env: TransportEnv): TransportKind {
   if (api === 'mock') return 'mock';
   if (env.go && typeof env.go === 'object') return 'wails';
   if (env.native) return 'http';
-  if (api === 'http') return 'http';
+  if (api === 'http' || env.meta === 'http') return 'http';
   return 'mock';
 }
 
@@ -44,6 +46,7 @@ export function createApi(kind: TransportKind, win?: WailsWindow): Api {
 
 export function createApiFromWindow(): Api {
   const w = (typeof window !== 'undefined' ? window : {}) as WailsWindow & { location?: Location };
-  const kind = selectTransportKind({ go: w.go, search: w.location?.search, native: isNativeShell() && hasNativeSession() });
+  const meta = typeof document !== 'undefined' ? document.querySelector<HTMLMetaElement>('meta[name="tuxmail-api"]')?.content : undefined;
+  const kind = selectTransportKind({ go: w.go, search: w.location?.search, native: isNativeShell() && hasNativeSession(), meta });
   return createApi(kind, w);
 }

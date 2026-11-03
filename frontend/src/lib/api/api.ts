@@ -37,6 +37,7 @@ import type {
   SearchQuery,
   SearchResult,
   UserPreferences,
+  VaultStatus,
   ProvisioningImport,
   PushSubscriptionInput,
   ServerLoginInput,
@@ -192,6 +193,11 @@ export interface Api {
   deviceToken(serverUrl: string, deviceCode: string): Promise<DeviceTokenResult>;
   serverLogin(serverUrl: string, credentials: ServerLoginInput): Promise<DeviceTokenResult>;
   importProvisioning(input: ProvisioningImport): Promise<void>;
+
+  // Portable mode (KONZEPT 15.2): secrets live in a master-password vault
+  vaultStatus(): Promise<VaultStatus>;
+  /** Unlock (or on first use create) the vault; error code "invalid_password". */
+  unlockVault(password: string): Promise<void>;
 
   // Search (KONZEPT 8.4)
   search(query: SearchQuery): Promise<SearchResult>;

@@ -64,7 +64,7 @@ func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
 	}
 	opts := app.Options{Store: st, DataDir: dir, Mode: app.ModeServer, Version: p.s.version, Secrets: secrets,
 		Logger: p.s.log.With("user", userID), Locales: p.s.locales, LocaleDir: filepath.Join(p.s.cfg.DataDir, "locales"),
-		Push: &pushBackend{s: p.s, userID: userID}, Sync: &app.SyncOptions{}}
+		Push: &pushBackend{s: p.s, userID: userID}, Sync: &app.SyncOptions{}, Send: &app.SendOptions{}}
 	if p.s.appOptions != nil {
 		p.s.appOptions(userID, &opts)
 	}
@@ -135,7 +135,9 @@ func (s *Server) appHandler(h api.AppHandler) http.HandlerFunc {
 }
 
 // App returns the application layer of a user (for other server components).
-func (s *Server) App(ctx context.Context, userID int64) (*app.App, error) { return s.apps.get(ctx, userID) }
+func (s *Server) App(ctx context.Context, userID int64) (*app.App, error) {
+	return s.apps.get(ctx, userID)
+}
 
 // pushBackend implements app.PushBackend for one user on the server's Web
 // Push store and sender.
@@ -148,7 +150,7 @@ func (b *pushBackend) VAPIDPublicKey() string { return b.s.push.Keys.PublicKey }
 
 func (b *pushBackend) Subscribe(ctx context.Context, in app.PushSubscriptionInput) error {
 	sub := push.Subscription{UserID: b.userID, Endpoint: in.Endpoint, P256dh: in.Keys.P256dh, Auth: in.Keys.Auth,
-		DeviceName: in.DeviceName, UserAgent: in.UserAgent}
+		DeviceName: in.DeviceName, UserAgent: in.UserAgent, Kind: push.KindWebPush}
 	if err := push.ValidateSubscription(sub); err != nil {
 		return app.Errorf(http.StatusBadRequest, "invalid_subscription", "%v", err)
 	}
@@ -190,7 +192,7 @@ func (b *pushBackend) SaveSettings(ctx context.Context, in app.NotificationSetti
 	if err != nil {
 		return app.NotificationSettings{}, err
 	}
-	p := push.Prefs{Enabled: cur.Enabled || cur == (push.Prefs{}), ShowContent: in.Privacy != "generic", Accounts: in.Accounts,
+	p := push.Prefs{Enabled: true, ShowContent: in.Privacy != "generic", Accounts: in.Accounts,
 		Channels: map[string]bool{}}
 	if p.Accounts == nil {
 		p.Accounts = map[string]bool{}

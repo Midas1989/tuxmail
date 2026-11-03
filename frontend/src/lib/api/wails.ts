@@ -4,12 +4,11 @@
 // `window.go.<package>.<Struct>.<Method>(...args): Promise<T>` and runtime
 // events as `window.runtime.EventsOn(name, cb) => unsubscribe`.
 //
-// TODO(wails): once the Go application service exists, generate typed
-//   bindings (`wails generate module`) and replace the dynamic `call()` with
-//   imports from `wailsjs/go/app/Api`. The method names below are the
-//   contract: the bound Go struct must expose exactly these methods.
-// TODO(wails): confirm package/struct name (`app.Api` assumed here).
-// TODO(wails): the core emits every ApiEvent on the runtime event "tuxmail:event".
+// The bound Go struct is internal/app.Api (package app, struct Api); its
+// method names are exactly the ones called below. Errors arrive as JSON
+// {"code","message"}. The core emits every ApiEvent on the runtime event
+// "tuxmail:event". Server-relative URLs (/api/messages/{id}/attachments/…)
+// are served by the desktop asset handler.
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
@@ -65,6 +64,7 @@ Account,
   Page,
   Person,
   ProvisioningImport,
+  VaultStatus,
   PushSubscriptionInput,
   SearchHistoryEntry,
   SearchProfile,
@@ -107,8 +107,15 @@ export class WailsTransport implements Api {
     try {
       return (await fn(...args)) as T;
     } catch (err) {
-      // Wails rejects with the Go error string.
-      throw new ApiError(typeof err === 'string' ? err : String(err), 0, 'backend');
+      // Wails rejects with the Go error string; the core encodes it as {"code","message"}.
+      const text = typeof err === 'string' ? err : String(err);
+      try {
+        const j = JSON.parse(text) as { code?: string; message?: string };
+        if (j && typeof j.code === 'string') throw new ApiError(j.message ?? j.code, 0, j.code);
+      } catch (e) {
+        if (e instanceof ApiError) throw e;
+      }
+      throw new ApiError(text, 0, 'backend');
     }
   }
 
@@ -226,6 +233,12 @@ export class WailsTransport implements Api {
   }
   importProvisioning(input: ProvisioningImport): Promise<void> {
     return this.call('ImportProvisioning', input);
+  }
+  vaultStatus(): Promise<VaultStatus> {
+    return this.call('VaultStatus');
+  }
+  unlockVault(password: string): Promise<void> {
+    return this.call('UnlockVault', password);
   }
   search(query: SearchQuery): Promise<SearchResult> {
     return this.call('Search', query);

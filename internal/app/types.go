@@ -308,6 +308,19 @@ type SendResult struct {
 	Queued         bool            `json:"queued"`
 	SharePasswords []SharePassword `json:"sharePasswords,omitempty"`
 	ScheduledID    string          `json:"scheduledId,omitempty"`
+	// Blocked is set when send checks (KONZEPT 8.13) blocked the message;
+	// Findings lists the check results (also warnings of sent messages).
+	Blocked  bool          `json:"blocked,omitempty"`
+	Findings []SendFinding `json:"findings,omitempty"`
+}
+
+// SendFinding is a send-check result.
+type SendFinding struct {
+	Check    string            `json:"check"`
+	Severity string            `json:"severity"` // info | warn | block
+	Key      string            `json:"key"`      // i18n key, e.g. sendcheck.missing_subject
+	Message  string            `json:"message"`  // English fallback
+	Params   map[string]string `json:"params,omitempty"`
 }
 
 // DiscoveryResult is the result of account autodiscovery.
