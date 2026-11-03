@@ -20,6 +20,8 @@
   const kind = $derived(
     a.cloudLink ? 'cloud' : a.mimeType.startsWith('image/') ? 'image' : a.mimeType === 'text/calendar' ? 'calendar' : a.mimeType.includes('pdf') || a.mimeType.includes('word') ? 'doc' : 'file',
   );
+  // Core-served attachments are downloaded with ?download=1 (Content-Disposition: attachment).
+  const href = $derived(a.cloudLink ? (/^https?:\/\//i.test(a.cloudLink.url) ? a.cloudLink.url : undefined) : a.url ? a.url + (a.url.includes('?') ? '&' : '?') + 'download=1' : undefined);
   const ext = $derived((a.filename.split('.').pop() ?? '').toUpperCase().slice(0, 4));
 </script>
 
@@ -48,9 +50,19 @@
       {/if}
     </span>
   </span>
-  <button class="icon-btn dl" aria-label={t('mail.attachment.download', { name: a.filename })} title={t('mail.attachment.download', { name: a.filename })}>
-    <Download size={16} />
-  </button>
+  {#if href}
+    <a
+      class="icon-btn dl"
+      {href}
+      download={a.cloudLink ? undefined : a.filename}
+      target={a.cloudLink ? '_blank' : undefined}
+      rel="noopener noreferrer"
+      aria-label={t('mail.attachment.download', { name: a.filename })}
+      title={t('mail.attachment.download', { name: a.filename })}
+    >
+      <Download size={16} />
+    </a>
+  {/if}
 </div>
 
 <style>

@@ -182,6 +182,12 @@ export class WailsTransport implements Api {
   saveContactCard(personId: number, card: ContactCard): Promise<void> {
     return this.call('SaveContactCard', personId, card);
   }
+  saveSignature(signature: Signature): Promise<Signature> {
+    return this.call('SaveSignature', signature);
+  }
+  deleteSignature(id: number): Promise<void> {
+    return this.call('DeleteSignature', id);
+  }
   updateIdentity(identity: Identity): Promise<Identity> {
     return this.call('UpdateIdentity', identity);
   }

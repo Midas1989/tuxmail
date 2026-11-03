@@ -115,6 +115,16 @@
   const authMethods: AuthMethod[] = ['password', 'oauth2', 'client_cert'];
 </script>
 
+{#snippet insecureWarning()}
+  {#if insecure}
+    <label class="warn">
+      <TriangleAlert size={16} />
+      <span>{t('onboarding.account.insecureWarning')}</span>
+      <input type="checkbox" bind:checked={allowInsecure} aria-label={t('onboarding.account.insecureConfirm')} />
+    </label>
+  {/if}
+{/snippet}
+
 <Modal title={t('onboarding.account.title')} {onclose} width="600px">
   <ol class="steps" aria-label={t('onboarding.account.progress')}>
     {#each steps as s, i (i)}
@@ -158,6 +168,7 @@
         <dd>{incoming.username}</dd>
       </dl>
       {#if discovery.oauthAvailable}<p class="hint">{t('onboarding.account.oauthHint')}</p>{/if}
+      {@render insecureWarning()}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
         <button class="btn btn-ghost" onclick={() => (step = 'manual')}>{t('onboarding.account.editManually')}</button>
@@ -220,13 +231,7 @@
           </div>
         </fieldset>
       {/if}
-      {#if insecure}
-        <label class="warn">
-          <TriangleAlert size={16} />
-          <span>{t('onboarding.account.insecureWarning')}</span>
-          <input type="checkbox" bind:checked={allowInsecure} aria-label={t('onboarding.account.insecureConfirm')} />
-        </label>
-      {/if}
+      {@render insecureWarning()}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
         <button type="button" class="btn btn-ghost" onclick={() => (step = 'credentials')}>{t('common.action.back')}</button>

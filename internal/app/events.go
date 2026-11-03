@@ -125,12 +125,34 @@ func (a *App) NotifyMessageAdded(ctx context.Context, messageID int64) {
 	}
 	folders, _ := a.st.FoldersFor(ctx, []int64{messageID})
 	conv := m.ConversationID
-	if conv == 0 {
+	if conv == 0 && a.mgr == nil { // with sync, the threading engine assigns it
 		conv, _ = a.ensureThread(ctx, m)
 	}
 	a.hub.Publish(Event{Type: EventMessageAdded, MessageID: messageID, ConversationID: conv, FolderIDs: nonNilIDs(folders[messageID])})
 	for _, f := range folders[messageID] {
 		a.publishFolder(ctx, f)
+	}
+	a.publishPersonViews(ctx, messageID, conv)
+}
+
+// publishPersonViews announces a new mail to the open person-view
+// conversations (chat view grouped by person, KONZEPT 6.4 #5) of its
+// senders and recipients: their ids differ from the thread's id.
+func (a *App) publishPersonViews(ctx context.Context, messageID, threadID int64) {
+	// Counterparts (and new persons) are linked by the index.
+	if err := a.ensureIndexed(ctx); err != nil {
+		return
+	}
+	person, _, err := a.st.MessageCounterpart(ctx, messageID)
+	if err != nil || person == 0 {
+		return
+	}
+	views, err := a.st.PersonConversations(ctx)
+	if err != nil {
+		return
+	}
+	if c, ok := views[person]; ok && c != threadID {
+		a.hub.Publish(Event{Type: EventConversationUpdated, ConversationID: c, ItemID: mailItemID(messageID)})
 	}
 }
 

@@ -650,6 +650,22 @@
     "workflows": {
       "title": "Workflows",
       "intro": "Automatisierungen: Auslöser → Bedingung → Aktionen. Visuell, als einzeilige Regel oder als YAML bearbeiten; vor dem Aktivieren mit einem Trockenlauf testen."
+    },
+    "signatures": {
+      "title": "Signaturen",
+      "add": "Neue Signatur",
+      "newName": "Signatur",
+      "hint": "Wird an neue Mails und Antworten angehängt; Antworten aus dem Chat folgen der Chat-Signatur-Einstellung der Identität.",
+      "name": "Name",
+      "text": "Signaturtext",
+      "delete": "Signatur {name} löschen",
+      "identity": "Identität",
+      "default": "Neue Mails",
+      "reply": "Antworten",
+      "defaultFor": "Signatur für neue Mails von {email}",
+      "replyFor": "Signatur für Antworten von {email}",
+      "none": "Keine",
+      "sameAsDefault": "Wie neue Mails"
     }
   },
   "search": {
@@ -837,7 +853,12 @@
     "titleNew": "Neue E-Mail",
     "titleReply": "Antworten",
     "to": "An",
-    "underline": "Unterstrichen"
+    "underline": "Unterstrichen",
+    "checks": {
+      "title": "Bitte vor dem Senden prüfen",
+      "edit": "Zurück zur Nachricht",
+      "sendAnyway": "Trotzdem senden"
+    }
   },
   "workflow": {
     "placeholder": "Hier werden Regeln eingerichtet.",
@@ -1487,5 +1508,20 @@
       "title": "App-Einstellungen",
       "version": "App-Version {version}"
     }
+  },
+  "vault": {
+    "createTitle": "Master-Passwort festlegen",
+    "unlockTitle": "TuxMail entsperren",
+    "createLead": "Im portablen Modus werden deine Kontopasswörter verschlüsselt neben dem Programm gespeichert. Wähle ein Master-Passwort, das sie schützt.",
+    "unlockLead": "Gib dein Master-Passwort ein, um die gespeicherten Kontopasswörter zu entsperren.",
+    "password": "Master-Passwort",
+    "confirm": "Master-Passwort wiederholen",
+    "createHint": "Ein vergessenes Master-Passwort lässt sich nicht wiederherstellen.",
+    "create": "Tresor anlegen",
+    "unlock": "Entsperren",
+    "errShort": "Das Master-Passwort braucht mindestens {count} Zeichen.",
+    "errMismatch": "Die Passwörter stimmen nicht überein.",
+    "errEmpty": "Bitte das Master-Passwort eingeben.",
+    "errWrong": "Falsches Master-Passwort."
   }
 }

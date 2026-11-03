@@ -33,7 +33,8 @@
   import type { ChannelOption } from '../../state';
   import { textToHtml } from '../../state/app.svelte';
   import { t } from '../../i18n/index.svelte';
-  import type { OutgoingAttachment, Signature } from '../../types';
+  import type { OutgoingAttachment, SendFinding, Signature } from '../../types';
+  import SendChecks from '../compose/SendChecks.svelte';
   import ChannelIcon from '../common/ChannelIcon.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
   import EmojiPicker from './EmojiPicker.svelte';
@@ -197,9 +198,15 @@
     return out;
   }
 
+  /** A send blocked by send checks, waiting for the user's decision. */
+  let blocked = $state<{ findings: SendFinding[]; retry: (checks: string[]) => Promise<void> } | null>(null);
+
   async function send(sendAt?: string) {
     if (!option || empty || sending) return;
     sending = true;
+    // A pending autosave would bring the sent text back as draft.
+    if (draftTimer) clearTimeout(draftTimer);
+    draftTimer = null;
     const body = text;
     const replyTo = app.replyingTo;
     try {
@@ -212,7 +219,32 @@
       mentionCc = [];
       suggestions = [];
       if (app.selectedConversationId != null) void app.api.saveDraft(app.selectedConversationId, null);
-      await app.sendChat(body, option, { replyTo, signature, attachments, cc, sendAt });
+      const opt = option;
+      const extra = { replyTo, signature, attachments, cc, sendAt };
+      const res = await app.sendChat(body, opt, extra);
+      if (res?.blocked) {
+        // Send checks (KONZEPT 8.13): keep the text and ask before sending.
+        text = body;
+        app.replyingTo = replyTo;
+        queueMicrotask(autosize);
+        blocked = {
+          findings: res.findings ?? [],
+          retry: async (checks) => {
+            blocked = null;
+            text = '';
+            app.replyingTo = null;
+            queueMicrotask(autosize);
+            try {
+              await app.sendChat(body, opt, { ...extra, confirmChecks: checks });
+              sigChoice = undefined;
+            } catch (err) {
+              text = body;
+              app.toast(t('compose.sendFailed', { error: err instanceof Error ? err.message : String(err) }), undefined, 'error');
+            }
+          },
+        };
+        return;
+      }
       sigChoice = undefined;
     } catch (err) {
       text = body;
@@ -368,6 +400,10 @@
 </script>
 
 <div class="composer" role="group" aria-label={t('chat.composerLabel')}>
+  {#if blocked}
+    {@const b = blocked}
+    <SendChecks compact findings={b.findings} oncancel={() => (blocked = null)} onconfirm={(c) => void b.retry(c)} />
+  {/if}
   {#if app.replyingTo}
     {@const r = app.replyingTo}
     <div class="reply-bar">

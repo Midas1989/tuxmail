@@ -651,6 +651,22 @@
     "workflows": {
       "title": "Workflows",
       "intro": "Automations: trigger → condition → actions. Edit visually, as a one-line rule or as YAML; test with a dry run before enabling."
+    },
+    "signatures": {
+      "title": "Signatures",
+      "add": "New signature",
+      "newName": "Signature",
+      "hint": "Appended to new mails and replies; chat replies use the chat signature setting of the identity.",
+      "name": "Name",
+      "text": "Signature text",
+      "delete": "Delete signature {name}",
+      "identity": "Identity",
+      "default": "New mails",
+      "reply": "Replies",
+      "defaultFor": "Signature for new mails from {email}",
+      "replyFor": "Signature for replies from {email}",
+      "none": "None",
+      "sameAsDefault": "Same as new mails"
     }
   },
   "search": {
@@ -838,7 +854,12 @@
     "titleNew": "New email",
     "titleReply": "Reply",
     "to": "To",
-    "underline": "Underline"
+    "underline": "Underline",
+    "checks": {
+      "title": "Please check before sending",
+      "edit": "Back to the message",
+      "sendAnyway": "Send anyway"
+    }
   },
   "workflow": {
     "placeholder": "Rules will be configured here.",
@@ -1488,5 +1509,20 @@
       "title": "App settings",
       "version": "App version {version}"
     }
+  },
+  "vault": {
+    "createTitle": "Set a master password",
+    "unlockTitle": "Unlock TuxMail",
+    "createLead": "In portable mode your account passwords are stored encrypted next to the program. Choose a master password to protect them.",
+    "unlockLead": "Enter your master password to unlock the stored account passwords.",
+    "password": "Master password",
+    "confirm": "Repeat master password",
+    "createHint": "There is no way to recover a forgotten master password.",
+    "create": "Create vault",
+    "unlock": "Unlock",
+    "errShort": "The master password needs at least {count} characters.",
+    "errMismatch": "The passwords do not match.",
+    "errEmpty": "Please enter the master password.",
+    "errWrong": "Wrong master password."
   }
 }

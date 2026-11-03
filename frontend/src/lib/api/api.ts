@@ -170,6 +170,9 @@ export interface Api {
   createFromItem(conversationId: number, itemId: string, kind: 'task' | 'event'): Promise<{ id: string }>;
   /** Create/update the contact of a person from a parsed signature. */
   saveContactCard(personId: number, card: ContactCard): Promise<void>;
+  /** Create (id 0) or update a signature. */
+  saveSignature(signature: Signature): Promise<Signature>;
+  deleteSignature(id: number): Promise<void>;
   /** Update chat-mode signature settings of an identity. */
   updateIdentity(identity: Identity): Promise<Identity>;
 

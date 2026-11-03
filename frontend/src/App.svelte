@@ -18,6 +18,7 @@
   import ProjectsScreen from './lib/screens/ProjectsScreen.svelte';
   import OrganizeDialogs from './lib/components/organize/OrganizeDialogs.svelte';
   import IosInstallHint from './lib/components/IosInstallHint.svelte';
+  import VaultUnlock from './lib/components/settings/VaultUnlock.svelte';
   import { registerServiceWorker } from './lib/pwa';
 
   // Theme + density tokens on <html>.
@@ -76,6 +77,9 @@
   </main>
 </div>
 
+{#if app.vault?.locked}
+  <VaultUnlock />
+{/if}
 {#if app.paletteOpen}
   <CommandPalette />
 {/if}
