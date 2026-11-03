@@ -69,7 +69,7 @@ func TestOpenPragmasAndMigrations(t *testing.T) {
 	}
 	v := must[int](t)(s.SchemaVersion(ctx))
 	ms := must[[]migration](t)(loadMigrations(migrationFS))
-	if v != len(ms) || v < 1 {
+	if v != ms[len(ms)-1].version || v < 1 {
 		t.Fatalf("schema version %d, migrations %d", v, len(ms))
 	}
 	s.Close()
@@ -95,7 +95,7 @@ func TestMigrationsAtomicAndValidated(t *testing.T) {
 	ctx := context.Background()
 	s := openTest(t)
 	base := must[[]migration](t)(loadMigrations(migrationFS))
-	bad := append(base, migration{version: len(base) + 1, name: "bad.sql",
+	bad := append(base, migration{version: base[len(base)-1].version + 1, name: "bad.sql",
 		sql: `CREATE TABLE half_done(x INTEGER); SELECT * FROM does_not_exist;`})
 	if err := s.applyMigrations(ctx, bad); err == nil {
 		t.Fatal("expected failing migration")
@@ -105,16 +105,24 @@ func TestMigrationsAtomicAndValidated(t *testing.T) {
 	if n != 0 {
 		t.Fatal("failed migration was not rolled back")
 	}
-	if v := must[int](t)(s.SchemaVersion(ctx)); v != len(base) {
+	if v := must[int](t)(s.SchemaVersion(ctx)); v != base[len(base)-1].version {
 		t.Fatalf("version = %d", v)
 	}
 
-	_, err := loadMigrations(fstest.MapFS{
+	// Gaps are allowed (parallel branches), duplicates are not.
+	gapped, err := loadMigrations(fstest.MapFS{
 		"migrations/0001_a.sql": {Data: []byte("SELECT 1")},
 		"migrations/0003_c.sql": {Data: []byte("SELECT 1")},
 	})
+	if err != nil || len(gapped) != 2 || gapped[1].version != 3 {
+		t.Fatalf("gap: %v %+v", err, gapped)
+	}
+	_, err = loadMigrations(fstest.MapFS{
+		"migrations/0001_a.sql": {Data: []byte("SELECT 1")},
+		"migrations/0001_b.sql": {Data: []byte("SELECT 1")},
+	})
 	if err == nil {
-		t.Fatal("expected gap error")
+		t.Fatal("expected duplicate error")
 	}
 	_, err = loadMigrations(fstest.MapFS{"migrations/init.sql": {Data: []byte("SELECT 1")}})
 	if err == nil {

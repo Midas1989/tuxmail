@@ -29,7 +29,9 @@ type migration struct {
 }
 
 // loadMigrations reads the embedded migrations. File names must look like
-// "0001_description.sql"; versions must be unique and start at 1 without gaps.
+// "0001_description.sql"; versions must be unique. Gaps are allowed so that
+// migrations developed on parallel branches can be merged in any order; each
+// version is applied exactly once regardless of the order it arrives in.
 func loadMigrations(fsys fs.FS) ([]migration, error) {
 	entries, err := fs.ReadDir(fsys, "migrations")
 	if err != nil {
@@ -56,9 +58,9 @@ func loadMigrations(fsys fs.FS) ([]migration, error) {
 		ms = append(ms, migration{version: v, name: name, sql: string(body)})
 	}
 	sort.Slice(ms, func(i, j int) bool { return ms[i].version < ms[j].version })
-	for i, m := range ms {
-		if m.version != i+1 {
-			return nil, fmt.Errorf("store: migrations not contiguous at %q (want version %d)", m.name, i+1)
+	for i := 1; i < len(ms); i++ {
+		if ms[i].version == ms[i-1].version {
+			return nil, fmt.Errorf("store: duplicate migration version %d (%q, %q)", ms[i].version, ms[i-1].name, ms[i].name)
 		}
 	}
 	return ms, nil
@@ -81,19 +83,22 @@ func (s *Store) applyMigrations(ctx context.Context, ms []migration) error {
 	}
 	for _, m := range ms {
 		err := s.withTx(ctx, func(tx *sql.Tx) error {
-			// Re-read the version inside the write transaction so that two
-			// processes opening the same database cannot apply a migration twice.
-			cur, err := schemaVersion(ctx, tx)
-			if err != nil {
+			// Check inside the write transaction so that two processes opening
+			// the same database cannot apply a migration twice. Versions are
+			// checked individually (not against the maximum) so that a lower
+			// version merged later is still applied.
+			var applied bool
+			if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM schema_version WHERE version = ?)`,
+				m.version).Scan(&applied); err != nil {
 				return err
 			}
-			if cur >= m.version {
+			if applied {
 				return nil
 			}
 			if _, err := tx.ExecContext(ctx, m.sql); err != nil {
 				return err
 			}
-			_, err = tx.ExecContext(ctx, `INSERT INTO schema_version(version, applied_at) VALUES (?, ?)`,
+			_, err := tx.ExecContext(ctx, `INSERT INTO schema_version(version, applied_at) VALUES (?, ?)`,
 				m.version, time.Now().Unix())
 			return err
 		})
@@ -101,12 +106,29 @@ func (s *Store) applyMigrations(ctx context.Context, ms []migration) error {
 			return fmt.Errorf("store: migration %s: %w", m.name, err)
 		}
 	}
-	cur, err := schemaVersion(ctx, s.db)
+	// Any applied version this program does not know means a newer program
+	// wrote the database.
+	known := make(map[int]bool, len(ms))
+	maxKnown := 0
+	for _, m := range ms {
+		known[m.version] = true
+		maxKnown = max(maxKnown, m.version)
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT version FROM schema_version ORDER BY version`)
 	if err != nil {
 		return err
 	}
-	if cur > len(ms) {
-		return fmt.Errorf("%w (database version %d, supported %d)", ErrSchemaTooNew, cur, len(ms))
+	applied, err := collect(rows, func(sc scanner) (int, error) {
+		var v int
+		return v, sc.Scan(&v)
+	})
+	if err != nil {
+		return err
+	}
+	for _, v := range applied {
+		if !known[v] {
+			return fmt.Errorf("%w (database has version %d, supported up to %d)", ErrSchemaTooNew, v, maxKnown)
+		}
 	}
 	return nil
 }
