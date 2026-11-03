@@ -291,16 +291,16 @@ CFG="--config /etc/tuxmail/config.yaml"
 echo 'Passwort' | $TM user add $CFG --username anna --email anna@example.de --password-stdin
 echo 'Passwort' | $TM user add $CFG --username chef --email chef@example.de --admin --password-stdin --if-not-exists
 $TM user list $CFG                       # mit --json maschinenlesbar
-$TM user disable $CFG --username anna
-$TM user enable $CFG --username anna
-$TM user reset-password $CFG --username anna --password-stdin
-$TM user reset-2fa $CFG --username anna
-$TM user set-role $CFG --username anna --role admin
-$TM user delete $CFG --username anna
+$TM user disable $CFG anna
+$TM user enable $CFG anna
+echo 'NeuesPasswort' | $TM user reset-password $CFG anna --password-stdin   # ohne --password-stdin wird ein Passwort erzeugt und ausgegeben
+$TM user reset-2fa $CFG anna
+$TM user set-role $CFG anna admin           # admin | user | readonly
+$TM user delete $CFG anna --yes            # --keep-data behält die Benutzerdaten
 ```
 
 Exit-Codes: `0` ok, `1` Fehler, `2` falscher Aufruf. Die genauen Optionen zeigt
-`tuxmail user --help` (Befehlsumfang laut KONZEPT 15.6). Alles davon ist auch in der
+`tuxmail user --help`. Alles davon ist auch in der
 Weboberfläche für Administratoren möglich. Bei OIDC werden Benutzer bei der ersten Anmeldung
 angelegt; Admin-Rechte über `tuxmail_oidc_admin_group`.
 
