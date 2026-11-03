@@ -1,0 +1,71 @@
+Received: from mx.example.com
+Authentication-Results: mx.example.net;
+ spf=pass (sender IP is 40.107.1.1) smtp.mailfrom=contoso.com;
+ dkim=pass (signature was verified) header.d=contoso.com;
+ dmarc=pass action=none header.from=contoso.com;compauth=pass reason=100
+Authentication-Results: forged.example; dkim=fail
+From: =?iso-8859-1?Q?J=FCrgen_M=FCller?= <juergen.mueller@contoso.com>
+To: "Anna Schmidt" <anna@example.net>, bob@example.org
+CC: =?utf-8?B?w5Z6Z8O8cg==?= <oezguer@example.org>
+Subject: =?iso-8859-1?Q?AW:_Angebot_f=FCr_das_Projekt_=84Gr=FCn=93?=
+Thread-Topic: Angebot
+Thread-Index: AQHZ1abcdefghijklmnopqrstuvwxyz==
+Date: Mon, 15 Jan 2024 10:30:00 +0000
+Message-ID: <AM0PR01MB1234567890ABCDEF@AM0PR01MB1234.eurprd01.PROD.OUTLOOK.COM>
+In-Reply-To: <original-1@example.net>
+References: <root@example.net> <original-1@example.net>
+Content-Language: de-DE
+X-MS-Has-Attach: yes
+Content-Type: multipart/related;
+	boundary="_004_AM0PR01MB_";
+	type="multipart/alternative"
+MIME-Version: 1.0
+
+--_004_AM0PR01MB_
+Content-Type: multipart/alternative;
+	boundary="_000_AM0PR01MB_"
+
+--_000_AM0PR01MB_
+Content-Type: text/plain; charset="iso-8859-1"
+Content-Transfer-Encoding: quoted-printable
+
+Hallo Anna,
+
+anbei das Angebot f=FCr =84Gr=FCn=93. Kosten: 100 =80.
+
+Viele Gr=FC=DFe
+J=FCrgen
+
+________________________________
+Von: Anna Schmidt <anna@example.net>
+Gesendet: Freitag, 12. Januar 2024 09:00
+An: J=FCrgen M=FCller <juergen.mueller@contoso.com>
+Betreff: Angebot
+
+Hallo J=FCrgen, kannst du ein Angebot schicken?
+
+--_000_AM0PR01MB_
+Content-Type: text/html; charset="iso-8859-1"
+Content-Transfer-Encoding: quoted-printable
+
+<html><head><meta http-equiv=3D"Content-Type" content=3D"text/html; charset=3Diso-8859-1"></head>
+<body><div>Hallo Anna,</div><div>anbei das Angebot f=FCr =84Gr=FCn=93. Kosten: 100 =80.</div>
+<div><img src=3D"cid:image001.png@01DA47A1.12345670" width=3D"100"></div>
+<div>Viele Gr=FC=DFe<br>J=FCrgen</div>
+<div id=3D"appendonsend"></div><hr><div id=3D"divRplyFwdMsg"><b>Von:</b> Anna Schmidt<br><b>Betreff:</b> Angebot</div>
+<div>Hallo J=FCrgen, kannst du ein Angebot schicken?</div></body></html>
+
+--_000_AM0PR01MB_--
+
+--_004_AM0PR01MB_
+Content-Type: image/png; name="image001.png"
+Content-Description: image001.png
+Content-Disposition: inline; filename="image001.png"; size=68;
+	creation-date="Mon, 15 Jan 2024 10:29:00 GMT"
+Content-ID: <image001.png@01DA47A1.12345670>
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGA
+WjR9awAAAABJRU5ErkJggg==
+
+--_004_AM0PR01MB_--

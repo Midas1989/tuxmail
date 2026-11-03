@@ -1,0 +1,35 @@
+From: Anna <anna@example.net>
+To: Dieter <dieter@posteo.de>
+Subject: Fwd: Rechnung
+Date: Thu, 18 Jan 2024 12:00:00 +0100
+Message-ID: <fwd-1@example.net>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="FWD"
+
+--FWD
+Content-Type: text/plain; charset=utf-8
+
+Siehe Anhang.
+--FWD
+Content-Type: message/rfc822
+Content-Disposition: attachment
+
+From: Shop <billing@shop.example>
+To: Anna <anna@example.net>
+Subject: Rechnung 4711
+Date: Wed, 17 Jan 2024 10:00:00 +0100
+Message-ID: <INVOICE-4711@Shop.Example>
+Content-Type: multipart/mixed; boundary="INNER"
+
+--INNER
+Content-Type: text/plain; charset=utf-8
+
+Ihre Rechnung.
+--INNER
+Content-Type: application/pdf; name="rechnung.pdf"
+Content-Disposition: attachment; filename="rechnung.pdf"
+Content-Transfer-Encoding: base64
+
+JVBERi0xLjQK
+--INNER--
+--FWD--

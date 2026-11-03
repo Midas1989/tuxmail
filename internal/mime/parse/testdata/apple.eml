@@ -1,0 +1,47 @@
+From: Carla <carla@icloud.com>
+Content-Type: multipart/alternative;
+	boundary="Apple-Mail=_A1B2C3"
+Mime-Version: 1.0 (Mac OS X Mail 16.0 \(3731.700.6\))
+Subject: Fotos vom Wochenende
+Date: Sun, 14 Jan 2024 20:15:42 +0100
+Message-Id: <5F2E1A3B-1111-2222-3333-444455556666@icloud.com>
+To: Anna <anna@example.net>
+X-Mailer: Apple Mail (2.3731.700.6)
+
+--Apple-Mail=_A1B2C3
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/plain;
+	charset=utf-8
+
+Hier sind die Fotos!
+
+Liebe Gr=C3=BC=C3=9Fe
+Carla
+--Apple-Mail=_A1B2C3
+Content-Type: multipart/mixed;
+	boundary="Apple-Mail=_D4E5F6"
+
+--Apple-Mail=_D4E5F6
+Content-Transfer-Encoding: 7bit
+Content-Type: text/html;
+	charset=us-ascii
+
+<html><body><div>Hier sind die Fotos!</div></body></html>
+--Apple-Mail=_D4E5F6
+Content-Disposition: inline;
+	filename*=utf-8''Strand%20Sch%C3%B6n.jpg
+Content-Type: image/jpeg;
+	x-unix-mode=0644;
+	name="=?utf-8?Q?Strand_Sch=C3=B6n=2Ejpg?="
+Content-Transfer-Encoding: base64
+
+/9j/4AAQSkZJRgABAQAAAQABAAD/
+--Apple-Mail=_D4E5F6
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/html;
+	charset=utf-8
+
+<html><body><div><br></div><div>Liebe Gr=C3=BC=C3=9Fe<br>Carla</div></body></html>
+--Apple-Mail=_D4E5F6--
+
+--Apple-Mail=_A1B2C3--
