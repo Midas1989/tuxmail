@@ -23,4 +23,4 @@ Du darfst TuxMail nutzen, verändern und weitergeben. Wer eine veränderte Versi
 
 TuxMail is free software licensed under the **GNU Affero General Public License v3.0 or later** (`SPDX-License-Identifier: AGPL-3.0-or-later`).
 
-Copyright (C) 2026 TuxMail contributors
+Copyright (C) 2026 Midas Wollinger and TuxMail contributors
