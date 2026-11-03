@@ -2,25 +2,32 @@
 <script lang="ts">
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import { i18n, t } from '../i18n/index.svelte';
+  import { fmt, t } from '../i18n/index.svelte';
+  import { prefs } from '../state';
   import ScreenShell from './ScreenShell.svelte';
 
   // Placeholder: static week grid. Real data comes from CalendarService (KONZEPT 9).
   let offset = $state(0);
   const days = $derived.by(() => {
     const now = new Date();
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7) + offset * 7);
+    const first = fmt().weekStart();
+    const start = new Date(now);
+    start.setDate(now.getDate() - ((now.getDay() - first + 7) % 7) + offset * 7);
     return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(monday);
-      d.setDate(monday.getDate() + i);
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
       return d;
     });
   });
-  const loc = $derived(i18n.locale === 'de' ? 'de-DE' : 'en-GB');
+  const secondary = $derived(prefs.region.secondaryTimeZone);
+  function hourLabel(day: Date, h: number, tz?: string): string {
+    const d = new Date(day);
+    d.setHours(h, 0, 0, 0);
+    return fmt().time(d, tz);
+  }
   const hours = Array.from({ length: 11 }, (_, i) => 8 + i);
   const today = new Date().toDateString();
-  // Demo events tied to the mock mails (teammeeting Thursday 10:00).
+  // Demo events tied to the mock mails; `day` = weekday with Monday = 0.
   const events = [
     { day: 3, start: 10, len: 1, title: 'Teammeeting', color: '#9333ea' },
     { day: 1, start: 8, len: 1.5, title: 'Bodenplatte – Wagner Bau', color: '#2563eb' },
@@ -28,26 +35,26 @@
   ];
 </script>
 
-<ScreenShell title={t('nav.calendar')} subtitle={t('placeholder.calendar')}>
+<ScreenShell title={t('nav.calendar')} subtitle={t('calendar.placeholder')}>
   {#snippet actions()}
     <button class="icon-btn" aria-label={t('calendar.prev')} onclick={() => offset--}><ChevronLeft size={18} /></button>
-    <button class="btn" onclick={() => (offset = 0)}>{t('date.today')}</button>
+    <button class="btn" onclick={() => (offset = 0)}>{t('common.date.today')}</button>
     <button class="icon-btn" aria-label={t('calendar.next')} onclick={() => offset++}><ChevronRight size={18} /></button>
   {/snippet}
   <div class="week" role="grid" aria-label={t('nav.calendar')}>
     <div class="corner"></div>
     {#each days as d (d.toISOString())}
       <div class="dh" class:today={d.toDateString() === today} role="columnheader">
-        <span class="wd">{d.toLocaleDateString(loc, { weekday: 'short' })}</span>
+        <span class="wd">{fmt().pattern(d, 'ddd')}</span>
         <span class="dn">{d.getDate()}</span>
       </div>
     {/each}
     {#each hours as h (h)}
-      <div class="hr">{String(h).padStart(2, '0')}:00</div>
-      {#each days as d, di (d.toISOString() + h)}
+      <div class="hr">{hourLabel(days[0], h)}{#if secondary}<small>{hourLabel(days[0], h, secondary)}</small>{/if}</div>
+      {#each days as d (d.toISOString() + h)}
         <div class="cell" role="gridcell">
           {#if offset === 0}
-            {#each events.filter((e) => e.day === di && Math.floor(e.start) === h) as e (e.title)}
+            {#each events.filter((e) => e.day === (d.getDay() + 6) % 7 && Math.floor(e.start) === h) as e (e.title)}
               <div class="ev" style:--c={e.color} style:height="calc({e.len} * 100% - 4px)">{e.title}</div>
             {/each}
           {/if}
@@ -95,6 +102,11 @@
   .dh.today .dn {
     background: var(--tm-accent);
     color: var(--tm-accent-fg);
+  }
+  .hr small {
+    display: block;
+    color: var(--tm-faint);
+    opacity: 0.8;
   }
   .hr {
     font-size: 11px;

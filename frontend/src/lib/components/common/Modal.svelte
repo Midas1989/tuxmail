@@ -75,7 +75,7 @@
     {#if !bare}
       <header>
         <h2 id={titleId}>{title}</h2>
-        <button class="icon-btn" onclick={onclose} aria-label={t('action.close')}><X size={18} /></button>
+        <button class="icon-btn" onclick={onclose} aria-label={t('common.action.close')}><X size={18} /></button>
       </header>
     {/if}
     <div class="content" class:bare>

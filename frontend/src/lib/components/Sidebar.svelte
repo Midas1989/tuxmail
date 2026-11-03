@@ -58,7 +58,7 @@
 
   function folderLabel(f: Folder): string {
     const role = f.role as FolderRole;
-    return role ? t(`folder.role.${role}` as `folder.role.inbox`) : f.name;
+    return role ? t(`mail.folder.role.${role}` as `mail.folder.role.inbox`) : f.name;
   }
 
   function accountAddress(a: Account): string {
@@ -106,20 +106,20 @@
   }
 </script>
 
-<aside class="sidebar" aria-label={t('sidebar.label')}>
+<aside class="sidebar" aria-label={t('mail.sidebar.label')}>
   <div class="head">
     <button class="btn btn-primary compose" onclick={() => app.openCompose()}>
       <SquarePen size={16} aria-hidden="true" />
-      {t('action.compose')}
+      {t('common.action.compose')}
     </button>
   </div>
 
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-  <ul class="tree" role="tree" aria-label={t('sidebar.folders')} bind:this={tree} onkeydown={onTreeKey}>
+  <ul class="tree" role="tree" aria-label={t('mail.sidebar.folders')} bind:this={tree} onkeydown={onTreeKey}>
     <li role="none" class="section">
-      <span class="section-title">{t('sidebar.allAccounts')}</span>
+      <span class="section-title">{t('mail.sidebar.allAccounts')}</span>
     </li>
-    {#each [{ role: 'inbox', icon: Inbox, label: t('folder.unifiedInbox'), count: app.unifiedUnread }, { role: 'unread', icon: MailOpen, label: t('folder.unread'), count: unifiedUnreadOnly }, { role: 'flagged', icon: Star, label: t('folder.flagged'), count: 0 }] as u (u.role)}
+    {#each [{ role: 'inbox', icon: Inbox, label: t('mail.folder.unifiedInbox'), count: app.unifiedUnread }, { role: 'unread', icon: MailOpen, label: t('mail.folder.unread'), count: unifiedUnreadOnly }, { role: 'flagged', icon: Star, label: t('mail.folder.flagged'), count: 0 }] as u (u.role)}
       {@const s = { kind: 'unified', role: u.role } as SidebarSel}
       {@const Icon = u.icon}
       <li role="none">
@@ -201,7 +201,7 @@
 
     {#if app.messengerAccounts.length}
       <li role="none" class="section">
-        <span class="section-title">{t('sidebar.messengers')}</span>
+        <span class="section-title">{t('mail.sidebar.messengers')}</span>
       </li>
       {#each app.messengerAccounts as acc (acc.id)}
         {@const s = { kind: 'account', accountId: acc.id } as SidebarSel}
@@ -239,6 +239,7 @@
     font-size: 14px;
   }
   .tree {
+    position: relative;
     list-style: none;
     margin: 0;
     padding: 4px 8px 16px;

@@ -31,7 +31,7 @@
     if (s.kind === 'account') return app.account(s.accountId)?.displayName ?? '';
     if (s.kind === 'folder') {
       const f = app.folder(s.folderId);
-      return f ? (f.role ? t(`folder.role.${f.role}` as 'folder.role.inbox') : f.name) : '';
+      return f ? (f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name) : '';
     }
     return t('chat.allConversations');
   });
@@ -76,7 +76,7 @@
               {c.snippet}
             </span>
             {#if c.pinned}<Pin size={13} class="pin" aria-label={t('chat.pinned')} />{/if}
-            {#if c.unreadCount > 0}<span class="badge" aria-label={t('folder.unreadCount', { count: c.unreadCount })}>{c.unreadCount}</span>{/if}
+            {#if c.unreadCount > 0}<span class="badge" aria-label={t('mail.folder.unreadCount', { count: c.unreadCount })}>{c.unreadCount}</span>{/if}
           </div>
         </div>
       </div>
@@ -118,6 +118,7 @@
     color: var(--tm-muted);
   }
   .items {
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow-y: auto;

@@ -6,14 +6,14 @@
   import { app } from '../../state';
   import { buildTimeline } from '../../conversation';
   import type { ConversationItem } from '../../types';
-  import { formatDay, t } from '../../i18n/index.svelte';
+  import { fmt, formatDay, t } from '../../i18n/index.svelte';
   import Avatar from '../common/Avatar.svelte';
   import ChannelIcon from '../common/ChannelIcon.svelte';
   import Bubble from './Bubble.svelte';
   import ChatComposer from './ChatComposer.svelte';
 
   let scroller = $state<HTMLDivElement>();
-  const timeline = $derived(buildTimeline(app.items));
+  const timeline = $derived(buildTimeline(app.items, (iso) => fmt().dayKey(iso)));
   const conv = $derived(app.conversation);
   const multiParty = $derived(!!conv && (conv.isGroup || conv.participantIds.length > 1));
 
@@ -70,7 +70,7 @@
 <section class="timeline" aria-label={t('chat.timelineLabel')}>
   {#if conv}
     <header class="head">
-      <button class="icon-btn back" aria-label={t('action.back')} onclick={() => app.selectConversation(null)}><ArrowLeft size={18} /></button>
+      <button class="icon-btn back" aria-label={t('common.action.back')} onclick={() => app.selectConversation(null)}><ArrowLeft size={18} /></button>
       <Avatar name={conv.title} seed={conv.kind === 'chat' && conv.isGroup ? conv.title : (app.person(conv.participantIds[0])?.handles[0]?.value ?? conv.title)} size={38} group={conv.isGroup && conv.kind === 'chat'} />
       <div class="who">
         <div class="title">
@@ -79,8 +79,8 @@
         </div>
         <div class="sub">{participantsLine}</div>
       </div>
-      <button class="btn btn-ghost" onclick={() => app.setViewMode('classic')} title={t('view.classic') + ' (Ctrl+Shift+V)'}>
-        <Rows3 size={16} /> <span class="hide-sm">{t('view.classic')}</span>
+      <button class="btn btn-ghost" onclick={() => app.setViewMode('classic')} title={t('mail.view.classic') + ' (Ctrl+Shift+V)'}>
+        <Rows3 size={16} /> <span class="hide-sm">{t('mail.view.classic')}</span>
       </button>
     </header>
 
@@ -161,6 +161,7 @@
     text-overflow: ellipsis;
   }
   .scroll {
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow-y: auto;

@@ -5,7 +5,7 @@
 
 import type { Api, ConversationScope, MessageScope } from '../api/api';
 import { classicSelectionFromChat, forwardSubject, messageIdFromItemId, pickFolderForMessage, replySubject } from '../conversation';
-import { t } from '../i18n/index.svelte';
+import { fmt, t } from '../i18n/index.svelte';
 import {
   FLAG_FLAGGED,
   FLAG_SEEN,
@@ -27,8 +27,8 @@ import {
 } from '../types';
 import { prefs } from './prefs.svelte';
 
-export type Route = 'mail' | 'calendar' | 'contacts' | 'files' | 'settings';
-export const ROUTES: Route[] = ['mail', 'calendar', 'contacts', 'files', 'settings'];
+export type Route = 'mail' | 'search' | 'calendar' | 'contacts' | 'files' | 'settings';
+export const ROUTES: Route[] = ['mail', 'search', 'calendar', 'contacts', 'files', 'settings'];
 export type ViewMode = 'classic' | 'chat';
 export type UnifiedRole = 'inbox' | 'flagged' | 'unread';
 
@@ -177,6 +177,7 @@ export class AppState {
 
   async init(): Promise<void> {
     try {
+      await prefs.connect(this.api);
       const [accounts, identities, signatures, persons] = await Promise.all([
         this.api.listAccounts(),
         this.api.listIdentities(),
@@ -487,6 +488,33 @@ export class AppState {
     return m.folderIds.some((id) => this.folder(id)?.role === 'inbox');
   }
 
+  /** Open a mail in the classic view (search results, notifications). */
+  async revealMessage(messageId: number): Promise<void> {
+    this.navigate('mail');
+    prefs.viewMode = 'classic';
+    const detail = await this.api.getMessage(messageId);
+    if (!this.scopeContains(detail)) {
+      const folders = this.folders[detail.accountId] ?? [];
+      const fid = pickFolderForMessage(detail.folderIds, folders, null);
+      this.sel = fid != null ? { kind: 'folder', accountId: detail.accountId, folderId: fid } : { kind: 'unified', role: 'inbox' };
+    }
+    this.search = '';
+    await this.loadMessages(true);
+    this.selectedMessageId = messageId;
+    this.message = detail;
+    this.listScrollTick++;
+  }
+
+  /** Open a conversation bubble in the chat view. */
+  async revealItem(conversationId: number, itemId?: string): Promise<void> {
+    this.navigate('mail');
+    prefs.viewMode = 'chat';
+    if (this.sel.kind === 'folder') this.sel = { kind: 'unified', role: 'inbox' };
+    this.search = '';
+    await this.loadConversations(true);
+    await this.selectConversation(conversationId, itemId);
+  }
+
   async setGrouping(g: 'thread' | 'person'): Promise<void> {
     if (prefs.grouping === g) return;
     // Keep the focused mail visible across the regrouping.
@@ -543,7 +571,7 @@ export class AppState {
       const next = this.messages[idx + 1] ?? this.messages[idx - 1];
       void this.selectMessage(next && next.id !== id ? next.id : null);
     }
-    this.toast(t('toast.moved', { folder: target?.name ?? '' }), previous != null ? { label: t('action.undo'), run: () => void this.api.move([id], previous) } : undefined);
+    this.toast(t('mail.toast.moved', { folder: target?.name ?? '' }), previous != null ? { label: t('common.action.undo'), run: () => void this.api.move([id], previous) } : undefined);
   }
 
   async moveToRole(id: number, role: FolderRole): Promise<void> {
@@ -579,7 +607,7 @@ export class AppState {
   replyInit(m: MessageDetail, mode: Exclude<ComposeMode, 'new'>, bodyHtml = ''): ComposerInit {
     const ident = this.identityFor(m);
     const own = new Set(this.identities.map((i) => i.email.toLowerCase()));
-    const quoteHeader = t('compose.quoteHeader', { date: new Date(m.date).toLocaleString(), name: m.from[0]?.name || m.from[0]?.email || '' });
+    const quoteHeader = t('compose.quoteHeader', { date: fmt().dateTime(m.date), name: m.from[0]?.name || m.from[0]?.email || '' });
     const original = m.text ?? '';
     if (mode === 'forward') {
       return {

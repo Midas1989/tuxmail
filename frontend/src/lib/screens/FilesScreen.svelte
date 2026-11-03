@@ -14,7 +14,7 @@
   ] as const;
 </script>
 
-<ScreenShell title={t('nav.files')} subtitle={t('placeholder.files')}>
+<ScreenShell title={t('nav.files')} subtitle={t('files.placeholder')}>
   <div class="grid">
     {#each providers as p (p.id)}
       {@const Icon = p.icon}
@@ -22,7 +22,7 @@
         <span class="ic"><Icon size={22} /></span>
         <h2>{p.name}</h2>
         <p>{t(p.desc)}</p>
-        <button class="btn" disabled title={t('placeholder.soon')}>{t('files.connect')}</button>
+        <button class="btn" disabled title={t('common.soon')}>{t('files.connect')}</button>
       </article>
     {/each}
   </div>

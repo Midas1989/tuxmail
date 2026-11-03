@@ -56,11 +56,11 @@
         await disablePush(app.api);
       } else {
         const r = await enablePush(app.api);
-        if (r === 'denied') app.toast(t('notify.denied'), undefined, 'error');
-        if (r === 'no-sw') app.toast(t('notify.noServiceWorker'), undefined, 'error');
+        if (r === 'denied') app.toast(t('notifications.denied'), undefined, 'error');
+        if (r === 'no-sw') app.toast(t('notifications.noServiceWorker'), undefined, 'error');
       }
     } catch (err) {
-      app.toast(t('notify.failed', { error: err instanceof Error ? err.message : String(err) }), undefined, 'error');
+      app.toast(t('notifications.failed', { error: err instanceof Error ? err.message : String(err) }), undefined, 'error');
     } finally {
       busy = false;
       await refreshPushState();
@@ -71,9 +71,9 @@
     try {
       if (!isWails() && typeof Notification !== 'undefined' && Notification.permission === 'default') await Notification.requestPermission();
       await app.api.sendTestNotification();
-      app.toast(t('notify.testSent'));
+      app.toast(t('notifications.testSent'));
     } catch (err) {
-      app.toast(t('notify.failed', { error: err instanceof Error ? err.message : String(err) }), undefined, 'error');
+      app.toast(t('notifications.failed', { error: err instanceof Error ? err.message : String(err) }), undefined, 'error');
     }
   }
 
@@ -82,41 +82,41 @@
 
 <section class="card" aria-labelledby="set-notify">
   <div class="card-head">
-    <h2 id="set-notify">{t('notify.title')}</h2>
-    {#if saved}<span class="saved" role="status">{t('notify.saved')}</span>{/if}
+    <h2 id="set-notify">{t('notifications.title')}</h2>
+    {#if saved}<span class="saved" role="status">{t('notifications.saved')}</span>{/if}
   </div>
 
   <div class="push">
     <span class="ic" class:on={pushState === 'on'}>{#if pushState === 'on'}<Bell size={18} />{:else}<BellOff size={18} />{/if}</span>
     <div class="ptext">
-      <strong>{t(`notify.state.${pushState}`)}</strong>
-      <small>{t(`notify.stateHint.${pushState}`)}</small>
+      <strong>{t(`notifications.state.${pushState}`)}</strong>
+      <small>{t(`notifications.stateHint.${pushState}`)}</small>
     </div>
     {#if pushState === 'on' || pushState === 'off'}
       <button class="btn" class:btn-primary={pushState === 'off'} disabled={busy} onclick={togglePush}>
-        {pushState === 'on' ? t('notify.disable') : t('notify.enable')}
+        {pushState === 'on' ? t('notifications.disable') : t('notifications.enable')}
       </button>
     {/if}
   </div>
 
   {#if settings}
     <fieldset>
-      <legend class="label">{t('notify.privacy')}</legend>
-      <label class="radio"><input type="radio" name="privacy" value="full" bind:group={settings.privacy} onchange={save} /> {t('notify.privacyFull')}</label>
-      <label class="radio"><input type="radio" name="privacy" value="generic" bind:group={settings.privacy} onchange={save} /> {t('notify.privacyGeneric')}</label>
+      <legend class="label">{t('notifications.privacy')}</legend>
+      <label class="radio"><input type="radio" name="privacy" value="full" bind:group={settings.privacy} onchange={save} /> {t('notifications.privacyFull')}</label>
+      <label class="radio"><input type="radio" name="privacy" value="generic" bind:group={settings.privacy} onchange={save} /> {t('notifications.privacyGeneric')}</label>
     </fieldset>
 
     <fieldset>
-      <legend class="label">{t('notify.quietHours')}</legend>
+      <legend class="label">{t('notifications.quietHours')}</legend>
       <div class="row">
-        <label class="check"><input type="checkbox" bind:checked={settings.quietHours.enabled} onchange={save} /> {t('notify.quietEnabled')}</label>
-        <label class="time">{t('notify.from')} <input class="input" type="time" bind:value={settings.quietHours.start} onchange={save} disabled={!settings.quietHours.enabled} /></label>
-        <label class="time">{t('notify.to')} <input class="input" type="time" bind:value={settings.quietHours.end} onchange={save} disabled={!settings.quietHours.enabled} /></label>
+        <label class="check"><input type="checkbox" bind:checked={settings.quietHours.enabled} onchange={save} /> {t('notifications.quietEnabled')}</label>
+        <label class="time">{t('notifications.from')} <input class="input" type="time" bind:value={settings.quietHours.start} onchange={save} disabled={!settings.quietHours.enabled} /></label>
+        <label class="time">{t('notifications.to')} <input class="input" type="time" bind:value={settings.quietHours.end} onchange={save} disabled={!settings.quietHours.enabled} /></label>
       </div>
     </fieldset>
 
     <fieldset>
-      <legend class="label">{t('notify.channels')}</legend>
+      <legend class="label">{t('notifications.channels')}</legend>
       <div class="row">
         {#each channels as ch (ch)}
           <label class="check"><input type="checkbox" bind:checked={settings.channels[ch]} onchange={save} /> <ChannelIcon channel={ch} size={14} label /></label>
@@ -125,7 +125,7 @@
     </fieldset>
 
     <fieldset>
-      <legend class="label">{t('notify.accounts')}</legend>
+      <legend class="label">{t('notifications.accounts')}</legend>
       {#each app.accounts as a (a.id)}
         <label class="check acc">
           <input
@@ -143,7 +143,7 @@
     </fieldset>
   {/if}
 
-  <button class="btn" onclick={test}><Send size={14} /> {t('notify.test')}</button>
+  <button class="btn" onclick={test}><Send size={14} /> {t('notifications.test')}</button>
 </section>
 
 <style>

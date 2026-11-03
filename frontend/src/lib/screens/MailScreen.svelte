@@ -10,7 +10,8 @@
   import Moon from '@lucide/svelte/icons/moon';
   import WifiOff from '@lucide/svelte/icons/wifi-off';
   import X from '@lucide/svelte/icons/x';
-  import { app, prefs } from '../state';
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+  import { app, prefs, search } from '../state';
   import { t } from '../i18n/index.svelte';
   import Sidebar from '../components/Sidebar.svelte';
   import MessageList from '../components/mail/MessageList.svelte';
@@ -23,6 +24,12 @@
   function onSearchInput() {
     if (timer) clearTimeout(timer);
     timer = setTimeout(() => app.setSearch(searchText.trim()), 250);
+  }
+  function openAdvanced() {
+    search.text = searchText.trim();
+    search.mode = 'simple';
+    app.navigate('search');
+    if (search.text) void search.run();
   }
   function clearSearch() {
     searchText = '';
@@ -46,7 +53,7 @@
 
   <div class="main">
     <header class="topbar">
-      <button class="icon-btn menu" aria-label={t('sidebar.open')} aria-expanded={app.sidebarOpen} onclick={() => (app.sidebarOpen = !app.sidebarOpen)}><Menu size={19} /></button>
+      <button class="icon-btn menu" aria-label={t('mail.sidebar.open')} aria-expanded={app.sidebarOpen} onclick={() => (app.sidebarOpen = !app.sidebarOpen)}><Menu size={19} /></button>
       <div class="search" role="search">
         <Search size={16} aria-hidden="true" />
         <input
@@ -59,29 +66,30 @@
               (e.currentTarget as HTMLInputElement).blur();
             }
           }}
-          placeholder={prefs.viewMode === 'classic' ? t('search.placeholderMail') : t('search.placeholderChat')}
-          aria-label={t('search.label')}
+          placeholder={prefs.viewMode === 'classic' ? t('search.bar.placeholderMail') : t('search.bar.placeholderChat')}
+          aria-label={t('search.bar.label')}
           data-search
         />
+        <button class="clear" aria-label={t('search.bar.advanced')} title={t('search.bar.advanced')} onclick={openAdvanced}><SlidersHorizontal size={14} /></button>
         {#if searchText}
-          <button class="clear" aria-label={t('search.clear')} onclick={clearSearch}><X size={14} /></button>
+          <button class="clear" aria-label={t('search.bar.clear')} onclick={clearSearch}><X size={14} /></button>
         {:else}
-          <button class="kbd palette-hint" onclick={() => (app.paletteOpen = true)} title={t('palette.title')}>Ctrl K</button>
+          <button class="kbd palette-hint" onclick={() => (app.paletteOpen = true)} title={t('common.palette.title')}>Ctrl K</button>
         {/if}
       </div>
       <div class="grow"></div>
       {#if app.connection !== 'online'}
-        <span class="conn" role="status"><WifiOff size={15} /> {t(`conn.${app.connection}`)}</span>
+        <span class="conn" role="status"><WifiOff size={15} /> {t(`common.conn.${app.connection}`)}</span>
       {/if}
-      <div class="seg view-toggle" role="radiogroup" aria-label={t('view.label')} title="Ctrl+Shift+V">
+      <div class="seg view-toggle" role="radiogroup" aria-label={t('mail.view.label')} title="Ctrl+Shift+V">
         <button role="radio" aria-checked={prefs.viewMode === 'classic'} onclick={() => app.setViewMode('classic')}>
-          <Rows3 size={15} aria-hidden="true" /><span class="hide-xs">{t('view.classic')}</span>
+          <Rows3 size={15} aria-hidden="true" /><span class="hide-xs">{t('mail.view.classic')}</span>
         </button>
         <button role="radio" aria-checked={prefs.viewMode === 'chat'} onclick={() => app.setViewMode('chat')}>
-          <MessagesSquare size={15} aria-hidden="true" /><span class="hide-xs">{t('view.chat')}</span>
+          <MessagesSquare size={15} aria-hidden="true" /><span class="hide-xs">{t('mail.view.chat')}</span>
         </button>
       </div>
-      <button class="icon-btn hide-xs" aria-label={t('palette.title')} title={t('palette.title') + ' (Ctrl+K)'} onclick={() => (app.paletteOpen = true)}><Command size={17} /></button>
+      <button class="icon-btn hide-xs" aria-label={t('common.palette.title')} title={t('common.palette.title') + ' (Ctrl+K)'} onclick={() => (app.paletteOpen = true)}><Command size={17} /></button>
       <button class="icon-btn" aria-label={t('settings.theme')} title={t('settings.theme')} onclick={toggleTheme}>
         {#if prefs.effectiveTheme === 'dark'}<Sun size={17} />{:else}<Moon size={17} />{/if}
       </button>
@@ -133,7 +141,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    width: min(520px, 100%);
+    flex: 0 1 520px;
+    min-width: 0;
     height: 36px;
     padding: 0 6px 0 12px;
     border-radius: 10px;
@@ -251,6 +260,13 @@
       gap: 4px;
     }
     .palette-hint {
+      display: none;
+    }
+    .search {
+      flex: 1 1 auto;
+      padding: 0 4px 0 10px;
+    }
+    .grow {
       display: none;
     }
   }

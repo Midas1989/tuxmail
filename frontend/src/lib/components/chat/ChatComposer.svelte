@@ -76,7 +76,7 @@
     {#if option}<ChannelIcon channel={option.channel} size={15} />{/if}
     <select class="sel" value={option?.key} onchange={(e) => (selectedKey = (e.currentTarget as HTMLSelectElement).value)} aria-label={t('chat.channel')} title={t('chat.channel')}>
       {#each options as o (o.key)}
-        <option value={o.key}>{t(`channel.${o.channel}`)} · {o.label}</option>
+        <option value={o.key}>{t(`common.channel.${o.channel}`)} · {o.label}</option>
       {/each}
     </select>
     <ChevronDown size={14} class="chev-down" aria-hidden="true" />
@@ -95,7 +95,7 @@
     <div class="actions">
       <button class="icon-btn" title={t('compose.attach')} aria-label={t('compose.attach')} onclick={expand}><Paperclip size={17} /></button>
       <button class="icon-btn" title={t('chat.expand')} aria-label={t('chat.expand')} onclick={expand}><Maximize2 size={16} /></button>
-      <button class="send" disabled={!text.trim() || sending || !option} onclick={send} aria-label={t('action.send')} title={t('action.send') + ' (Enter)'}>
+      <button class="send" disabled={!text.trim() || sending || !option} onclick={send} aria-label={t('common.action.send')} title={t('common.action.send') + ' (Enter)'}>
         <SendHorizontal size={17} />
       </button>
     </div>

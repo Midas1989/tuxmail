@@ -42,13 +42,13 @@
     <span class="name">{a.filename}</span>
     <span class="sub">
       {#if a.cloudLink}
-        {t(`delivery.${a.cloudLink.provider}`)}
+        {t(`compose.delivery.${a.cloudLink.provider}`)}
       {:else}
         {formatSize(a.size)}
       {/if}
     </span>
   </span>
-  <button class="icon-btn dl" aria-label={t('attachment.download', { name: a.filename })} title={t('attachment.download', { name: a.filename })}>
+  <button class="icon-btn dl" aria-label={t('mail.attachment.download', { name: a.filename })} title={t('mail.attachment.download', { name: a.filename })}>
     <Download size={16} />
   </button>
 </div>

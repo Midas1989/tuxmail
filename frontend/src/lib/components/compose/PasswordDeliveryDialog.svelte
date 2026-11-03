@@ -31,7 +31,7 @@
   let messengerAccountId = $state<number | null>(null);
   let remember = $state(false);
 
-  const fileLabel = $derived(files.length === 1 ? `„${files[0]}"` : t('pw.nFiles', { count: files.length }));
+  const fileLabel = $derived(files.length === 1 ? files[0] : t('sendcheck.password.nFiles', { count: files.length }));
 
   function confirm() {
     if (!mode) return;
@@ -39,20 +39,20 @@
   }
 </script>
 
-<Modal title={t('pw.title')} onclose={oncancel} width="480px">
+<Modal title={t('sendcheck.password.title')} onclose={oncancel} width="480px">
   <div class="intro">
     <span class="ic"><KeyRound size={18} /></span>
-    <p>{t('pw.intro', { files: fileLabel })}</p>
+    <p>{t('sendcheck.password.intro', { files: fileLabel })}</p>
   </div>
   <fieldset>
-    <legend class="sr-only">{t('pw.title')}</legend>
+    <legend class="sr-only">{t('sendcheck.password.title')}</legend>
     <label class="opt">
       <input type="radio" name="pw" value="inline" bind:group={mode} data-autofocus />
-      <span><b>{t('pw.inline')}</b><small>{t('pw.inlineHint')}</small></span>
+      <span><b>{t('sendcheck.password.inline')}</b><small>{t('sendcheck.password.inlineHint')}</small></span>
     </label>
     <label class="opt">
       <input type="radio" name="pw" value="separate_mail" bind:group={mode} />
-      <span><b>{t('pw.separate')}</b><small>{t('pw.separateHint')}</small></span>
+      <span><b>{t('sendcheck.password.separate')}</b><small>{t('sendcheck.password.separateHint')}</small></span>
     </label>
     {#if messengerTargets.length}
       {#each messengerTargets as m (m.accountId)}
@@ -68,30 +68,30 @@
             }}
           />
           <span>
-            <b class="row"><ChannelIcon channel={m.channel} size={14} /> {t('pw.messenger', { channel: m.label, name: recipientName })}</b>
-            <small>{t('pw.messengerHint')}</small>
+            <b class="row"><ChannelIcon channel={m.channel} size={14} /> {t('sendcheck.password.messenger', { channel: m.label, name: recipientName })}</b>
+            <small>{t('sendcheck.password.messengerHint')}</small>
           </span>
         </label>
       {/each}
     {:else}
       <div class="opt disabled" aria-disabled="true">
         <input type="radio" disabled />
-        <span><b>{t('pw.messengerGeneric')}</b><small>{t('pw.messengerUnknown', { name: recipientName })}</small></span>
+        <span><b>{t('sendcheck.password.messengerGeneric')}</b><small>{t('sendcheck.password.messengerUnknown', { name: recipientName })}</small></span>
       </div>
     {/if}
     <label class="opt">
       <input type="radio" name="pw" value="none" bind:group={mode} />
-      <span><b>{t('pw.none')}</b><small>{t('pw.noneHint')}</small></span>
+      <span><b>{t('sendcheck.password.none')}</b><small>{t('sendcheck.password.noneHint')}</small></span>
     </label>
   </fieldset>
   <label class="remember">
     <input type="checkbox" bind:checked={remember} />
-    {t('pw.remember', { name: recipientName })}
+    {t('sendcheck.password.remember', { name: recipientName })}
   </label>
 
   {#snippet footer()}
-    <button class="btn" onclick={oncancel}>{t('action.cancel')}</button>
-    <button class="btn btn-primary" disabled={!mode} onclick={confirm}>{t('pw.sendNow')}</button>
+    <button class="btn" onclick={oncancel}>{t('common.action.cancel')}</button>
+    <button class="btn btn-primary" disabled={!mode} onclick={confirm}>{t('sendcheck.password.sendNow')}</button>
   {/snippet}
 </Modal>
 

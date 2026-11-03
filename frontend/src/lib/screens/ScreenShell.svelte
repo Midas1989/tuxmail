@@ -57,6 +57,7 @@
     gap: 8px;
   }
   .content {
+    position: relative;
     flex: 1;
     min-height: 0;
     overflow: auto;

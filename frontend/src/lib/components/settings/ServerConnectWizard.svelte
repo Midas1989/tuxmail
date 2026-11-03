@@ -19,6 +19,7 @@
   import { normalizeServerUrl, openExternal } from '../../platform';
   import type { ClientMode, DeviceAuthorization, ProvisioningProfile } from '../../types';
   import Modal from '../common/Modal.svelte';
+  import logoUrl from '$branding/tuxmail-logo.png';
 
   interface Props {
     onclose: () => void;
@@ -59,7 +60,7 @@
   function validUrl(): boolean {
     const u = normalizeServerUrl(urlInput);
     if (!u) {
-      error = t('connect.errUrl');
+      error = t('onboarding.connect.errUrl');
       return false;
     }
     serverUrl = u;
@@ -76,7 +77,7 @@
       step = 'device';
       schedulePoll(auth.interval);
     } catch (err) {
-      error = t('connect.errReach', { error: err instanceof Error ? err.message : String(err) });
+      error = t('onboarding.connect.errReach', { error: err instanceof Error ? err.message : String(err) });
     } finally {
       busy = false;
     }
@@ -90,7 +91,7 @@
   async function poll(interval: number) {
     if (cancelled || !auth || step !== 'device') return;
     if (Date.now() > expiresAt) {
-      error = t('connect.expired');
+      error = t('onboarding.connect.expired');
       return;
     }
     try {
@@ -107,10 +108,10 @@
           schedulePoll(interval + 5);
           return;
         case 'denied':
-          error = t('connect.denied');
+          error = t('onboarding.connect.denied');
           return;
         case 'expired':
-          error = t('connect.expired');
+          error = t('onboarding.connect.expired');
           return;
       }
     } catch (err) {
@@ -126,7 +127,7 @@
     try {
       const r = await app.api.serverLogin(serverUrl, { username, password, totp: totp || undefined });
       if (r.status === 'approved' && r.profile) gotProfile(r.profile);
-      else error = r.error ?? t('connect.denied');
+      else error = r.error ?? t('onboarding.connect.denied');
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     } finally {
@@ -176,14 +177,14 @@
     if (!auth) return;
     try {
       await navigator.clipboard.writeText(auth.userCode);
-      app.toast(t('connect.codeCopied'));
+      app.toast(t('onboarding.connect.codeCopied'));
     } catch {
       /* clipboard blocked */
     }
   }
 </script>
 
-<Modal title={t('connect.title')} {onclose} width="620px">
+<Modal title={t('onboarding.connect.title')} {onclose} width="620px">
   {#if step === 'url'}
     <form
       class="form"
@@ -192,39 +193,40 @@
         void startDevice();
       }}
     >
-      <p class="lead">{t('connect.lead')}</p>
+      <img class="brand" src={logoUrl} alt="TuxMail" width="120" height="120" />
+      <p class="lead">{t('onboarding.connect.lead')}</p>
       <label>
-        <span class="label">{t('connect.serverUrl')}</span>
+        <span class="label">{t('onboarding.connect.serverUrl')}</span>
         <input class="input" type="text" inputmode="url" autocapitalize="off" spellcheck="false" bind:value={urlInput} placeholder="https://mail.example.de" data-autofocus />
       </label>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
-        <button type="button" class="btn btn-ghost" onclick={toLogin}><KeyRound size={15} /> {t('connect.withPassword')}</button>
+        <button type="button" class="btn btn-ghost" onclick={toLogin}><KeyRound size={15} /> {t('onboarding.connect.withPassword')}</button>
         <button type="submit" class="btn btn-primary" disabled={busy}>
           {#if busy}<LoaderCircle size={15} class="spin" />{/if}
-          {t('wizard.next')}
+          {t('onboarding.account.next')}
         </button>
       </div>
     </form>
   {:else if step === 'device' && auth}
     <div class="device">
-      <p class="lead">{t('connect.deviceLead', { server: serverUrl })}</p>
-      <div class="code" aria-label={t('connect.userCode')}>{auth.userCode}</div>
+      <p class="lead">{t('onboarding.connect.deviceLead', { server: serverUrl })}</p>
+      <div class="code" aria-label={t('onboarding.connect.userCode')}>{auth.userCode}</div>
       <div class="device-actions">
         <button class="btn btn-primary" onclick={() => openExternal(auth!.verificationUriComplete)} data-autofocus>
-          <ExternalLink size={15} /> {t('connect.confirmInBrowser')}
+          <ExternalLink size={15} /> {t('onboarding.connect.confirmInBrowser')}
         </button>
-        <button class="btn" onclick={copyCode}><Copy size={15} /> {t('connect.copyCode')}</button>
+        <button class="btn" onclick={copyCode}><Copy size={15} /> {t('onboarding.connect.copyCode')}</button>
       </div>
-      <p class="hint">{t('connect.orVisit')} <code>{auth.verificationUri}</code></p>
+      <p class="hint">{t('onboarding.connect.orVisit')} <code>{auth.verificationUri}</code></p>
       {#if error}
         <p class="error" role="alert">{error}</p>
-        <button class="btn" onclick={startDevice}>{t('connect.restart')}</button>
+        <button class="btn" onclick={startDevice}>{t('onboarding.connect.restart')}</button>
       {:else}
-        <p class="waiting" role="status"><LoaderCircle size={15} class="spin" /> {t('connect.waiting')}</p>
+        <p class="waiting" role="status"><LoaderCircle size={15} class="spin" /> {t('onboarding.connect.waiting')}</p>
       {/if}
       <div class="row-actions">
-        <button class="btn btn-ghost" onclick={toLogin}><KeyRound size={15} /> {t('connect.withPassword')}</button>
+        <button class="btn btn-ghost" onclick={toLogin}><KeyRound size={15} /> {t('onboarding.connect.withPassword')}</button>
       </div>
     </div>
   {:else if step === 'login'}
@@ -235,35 +237,35 @@
         void login();
       }}
     >
-      <p class="lead">{t('connect.loginLead', { server: serverUrl })}</p>
-      <label><span class="label">{t('connect.username')}</span><input class="input" bind:value={username} autocomplete="username" data-autofocus /></label>
-      <label><span class="label">{t('wizard.password')}</span><input class="input" type="password" bind:value={password} autocomplete="current-password" /></label>
+      <p class="lead">{t('onboarding.connect.loginLead', { server: serverUrl })}</p>
+      <label><span class="label">{t('onboarding.connect.username')}</span><input class="input" bind:value={username} autocomplete="username" data-autofocus /></label>
+      <label><span class="label">{t('onboarding.account.password')}</span><input class="input" type="password" bind:value={password} autocomplete="current-password" /></label>
       <label>
-        <span class="label">{t('connect.totp')}</span>
+        <span class="label">{t('onboarding.connect.totp')}</span>
         <input class="input totp" bind:value={totp} inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="123456" />
       </label>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
-        <button type="button" class="btn btn-ghost" onclick={() => ((step = 'url'), (error = null))}>{t('action.back')}</button>
+        <button type="button" class="btn btn-ghost" onclick={() => ((step = 'url'), (error = null))}>{t('common.action.back')}</button>
         <button type="submit" class="btn btn-primary" disabled={busy}>
           {#if busy}<LoaderCircle size={15} class="spin" />{/if}
-          {t('connect.signIn')}
+          {t('onboarding.connect.signIn')}
         </button>
       </div>
     </form>
   {:else if (step === 'profile' || step === 'importing') && profile}
     <div class="profile">
-      <p class="ok"><CircleCheck size={18} /> {t('connect.connected', { name: profile.server.name, user: profile.user.email })}</p>
-      <p class="lead">{t('connect.chooseImport')}</p>
+      <p class="ok"><CircleCheck size={18} /> {t('onboarding.connect.connected', { name: profile.server.name, user: profile.user.email })}</p>
+      <p class="lead">{t('onboarding.connect.chooseImport')}</p>
 
       <fieldset>
         <legend>{t('settings.accounts')}</legend>
         {#each profile.accounts as a (a.id)}
-          <label class="check"><input type="checkbox" value={a.id} bind:group={selAccounts} /> <span class="dot" style:background={a.color}></span> {a.displayName} <small>{a.extra?.address} · {t(`protocol.${a.kind}` as 'protocol.imap')}</small></label>
+          <label class="check"><input type="checkbox" value={a.id} bind:group={selAccounts} /> <span class="dot" style:background={a.color}></span> {a.displayName} <small>{a.extra?.address} · {t(`settings.protocol.${a.kind}` as 'settings.protocol.imap')}</small></label>
         {/each}
       </fieldset>
       <fieldset>
-        <legend>{t('connect.identities')}</legend>
+        <legend>{t('onboarding.connect.identities')}</legend>
         {#each profile.identities as i (i.id)}
           <label class="check" class:disabled={!selAccounts.includes(i.accountId)}>
             <input type="checkbox" value={i.id} bind:group={selIdentities} disabled={!selAccounts.includes(i.accountId)} />
@@ -272,48 +274,55 @@
         {/each}
       </fieldset>
       <fieldset>
-        <legend>{t('connect.signatures')}</legend>
+        <legend>{t('onboarding.connect.signatures')}</legend>
         {#each profile.signatures as s (s.id)}
           <label class="check"><input type="checkbox" value={s.id} bind:group={selSignatures} /> {s.name}</label>
         {/each}
       </fieldset>
       <fieldset>
-        <legend>{t('connect.workflows')}</legend>
+        <legend>{t('onboarding.connect.workflows')}</legend>
         {#each profile.workflows as w (w.id)}
           <label class="check"><input type="checkbox" value={w.id} bind:group={selWorkflows} /> {w.name} {#if w.description}<small>{w.description}</small>{/if}</label>
         {/each}
       </fieldset>
 
       <fieldset class="modes">
-        <legend>{t('connect.mode')}</legend>
+        <legend>{t('onboarding.connect.mode')}</legend>
         <label class="mode">
           <input type="radio" name="mode" value="thin" bind:group={mode} />
-          <span><b>{t('connect.modeThin')}</b><small>{t('connect.modeThinHint')}</small></span>
+          <span><b>{t('onboarding.connect.modeThin')}</b><small>{t('onboarding.connect.modeThinHint')}</small></span>
         </label>
         <label class="mode">
           <input type="radio" name="mode" value="local" bind:group={mode} />
-          <span><b>{t('connect.modeLocal')}</b><small>{t('connect.modeLocalHint')}</small></span>
+          <span><b>{t('onboarding.connect.modeLocal')}</b><small>{t('onboarding.connect.modeLocalHint')}</small></span>
         </label>
       </fieldset>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
-        <button class="btn" onclick={onclose}>{t('action.cancel')}</button>
+        <button class="btn" onclick={onclose}>{t('common.action.cancel')}</button>
         <button class="btn btn-primary" onclick={doImport} disabled={step === 'importing'}>
           {#if step === 'importing'}<LoaderCircle size={15} class="spin" />{:else}<Server size={15} />{/if}
-          {t('connect.import')}
+          {t('onboarding.connect.import')}
         </button>
       </div>
     </div>
   {:else if step === 'done'}
     <div class="done">
       <CircleCheck size={40} />
-      <p>{mode === 'thin' ? t('connect.doneThin') : t('connect.doneLocal')}</p>
-      <button class="btn btn-primary" onclick={onclose} data-autofocus>{t('action.close')}</button>
+      <p>{mode === 'thin' ? t('onboarding.connect.doneThin') : t('onboarding.connect.doneLocal')}</p>
+      <button class="btn btn-primary" onclick={onclose} data-autofocus>{t('common.action.close')}</button>
     </div>
   {/if}
 </Modal>
 
 <style>
+  .brand {
+    display: block;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 4px;
+    border-radius: 18px;
+  }
   .form,
   .device,
   .profile {

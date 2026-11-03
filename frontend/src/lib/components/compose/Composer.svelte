@@ -337,7 +337,7 @@
             <label class="sr-only" for="dlv-{a.key}">{t('compose.deliveryFor', { name: a.filename })}</label>
             <select id="dlv-{a.key}" class="input dlv" bind:value={a.delivery}>
               {#each deliveryOptions as d (d)}
-                <option value={d}>{t(`delivery.${d}`)}</option>
+                <option value={d}>{t(`compose.delivery.${d}`)}</option>
               {/each}
             </select>
             <button class="icon-btn" aria-label={t('compose.removeAttachment', { name: a.filename })} onclick={() => attachments.splice(i, 1)}><Trash size={15} /></button>
@@ -354,7 +354,7 @@
     <button class="btn" onclick={onclose}>{t('compose.discard')}</button>
     <button class="btn btn-primary" onclick={trySend} disabled={sending} title="Ctrl+Enter">
       <SendIcon size={15} />
-      {sending ? t('compose.sending') : t('action.send')}
+      {sending ? t('compose.sending') : t('common.action.send')}
     </button>
   {/snippet}
 </Modal>

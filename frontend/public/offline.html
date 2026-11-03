@@ -1,25 +1,25 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<html lang="de">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
-    <title>TuxMail – Offline</title>
+    <title>TuxMail – offline</title>
     <style>
       :root {
         color-scheme: light dark;
-        --bg: #f6f7f9;
+        --bg: #f3f6fa;
         --fg: #16181d;
         --muted: #5d6573;
-        --accent: #2563eb;
+        --accent: #1c2b45;
       }
       @media (prefers-color-scheme: dark) {
         :root {
           --bg: #0f1115;
           --fg: #e7e9ee;
           --muted: #a2a9b6;
-          --accent: #3b82f6;
+          --accent: #f59e0b;
         }
       }
       body {
@@ -63,9 +63,10 @@
   <body>
     <main>
       <img src="icons/icon-192.png" width="72" height="72" alt="" />
-      <h1>Keine Verbindung</h1>
-      <p>TuxMail kann den Server gerade nicht erreichen. Sobald du wieder online bist, geht es weiter.</p>
-      <a class="btn" href="./">Erneut versuchen</a>
+      <h1>You are offline</h1>
+      <p>TuxMail cannot reach the server right now. It will continue as soon as you are back online.</p>
+      <p lang="de">Keine Verbindung – TuxMail macht weiter, sobald du wieder online bist.</p>
+      <a class="btn" href="./">Try again · Erneut versuchen</a>
     </main>
   </body>
 </html>

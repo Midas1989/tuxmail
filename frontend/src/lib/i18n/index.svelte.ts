@@ -1,77 +1,108 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { translate, type Params } from './core';
-import { de, type MessageKey } from './de';
-import { en } from './en';
+//
+// Reactive i18n for the UI. Language files live in /locales (repo root),
+// imported through the `$locales` Vite alias. English is the reference and
+// the fallback: selected -> en -> key. Extra or override languages can be
+// delivered by the core at runtime (Api.listLocales/getLocale) and are merged
+// on top of the built-in files.
 
-export type Locale = 'de' | 'en';
-export const LOCALES: readonly Locale[] = ['de', 'en'];
-export const dictionaries: Record<Locale, Record<MessageKey, string>> = { de, en };
+import en from '$locales/en.json';
+import de from '$locales/de.json';
+import { flatten, mergeDeep, negotiateLocale, translate, type Dict, type LocaleMeta, type Params } from './core';
+import { DEFAULT_REGION, Formatter } from '../format';
+import type { RegionSettings } from '../types';
 
-const state = $state<{ locale: Locale }>({ locale: 'de' });
+type Leaves<T, P extends string = ''> = {
+  [K in keyof T & string]: T[K] extends string ? `${P}${K}` : Leaves<T[K], `${P}${K}.`>;
+}[keyof T & string];
+
+/** Every key of the reference file (locales/en.json), e.g. "mail.list.count". */
+export type MessageKey = Leaves<Omit<typeof en, 'meta'>>;
+
+export const REFERENCE_LOCALE = 'en';
+
+const builtinRaw: Record<string, Record<string, unknown>> = { en, de };
+
+function metaOf(raw: Record<string, unknown>): LocaleMeta {
+  return raw.meta as LocaleMeta;
+}
+
+const state = $state<{
+  locale: string;
+  dicts: Record<string, Dict>;
+  metas: Record<string, LocaleMeta>;
+  region: RegionSettings;
+}>({
+  locale: REFERENCE_LOCALE,
+  dicts: Object.fromEntries(Object.entries(builtinRaw).map(([c, r]) => [c, flatten(r)])),
+  metas: Object.fromEntries(Object.entries(builtinRaw).map(([c, r]) => [c, metaOf(r)])),
+  region: { ...DEFAULT_REGION },
+});
+
+const reportedMissing = new Set<string>();
+function onMissing(key: string, locale: string) {
+  if (!import.meta.env.DEV || locale === REFERENCE_LOCALE) return;
+  const id = `${locale}:${key}`;
+  if (reportedMissing.has(id)) return;
+  reportedMissing.add(id);
+  console.warn(`[i18n] missing key "${key}" in locale "${locale}"`);
+}
 
 export const i18n = {
-  get locale(): Locale {
+  get locale(): string {
     return state.locale;
   },
-  set locale(l: Locale) {
-    state.locale = l;
-    if (typeof document !== 'undefined') document.documentElement.lang = l;
+  set locale(code: string) {
+    state.locale = state.dicts[code] ? code : REFERENCE_LOCALE;
+    if (typeof document !== 'undefined') {
+      document.documentElement.lang = state.locale;
+      document.documentElement.dir = state.metas[state.locale]?.direction ?? 'ltr';
+    }
+  },
+  get region(): RegionSettings {
+    return state.region;
+  },
+  set region(r: RegionSettings) {
+    state.region = { ...DEFAULT_REGION, ...r };
+  },
+  /** Available languages (built-in + delivered by the core). */
+  get locales(): LocaleMeta[] {
+    return Object.values(state.metas).sort((a, b) => a.nativeName.localeCompare(b.nativeName));
+  },
+  /** Merge a language file (nested JSON) on top of the built-in one. */
+  register(code: string, raw: Record<string, unknown>, meta?: LocaleMeta) {
+    const merged = mergeDeep(builtinRaw[code] ?? {}, raw);
+    state.dicts[code] = flatten(merged);
+    state.metas[code] = meta ?? (merged.meta as LocaleMeta) ?? { code, name: code, nativeName: code, direction: 'ltr' };
+  },
+  /** Resolve "system" or a stored code against navigator.languages. */
+  resolve(pref: string, requested: readonly string[] = typeof navigator !== 'undefined' ? (navigator.languages ?? [navigator.language]) : []): string {
+    const codes = Object.keys(state.dicts);
+    if (pref && pref !== 'system' && codes.includes(pref)) return pref;
+    return negotiateLocale(requested, codes, REFERENCE_LOCALE);
   },
 };
 
 /** Reactive translation (re-evaluated in templates when the locale changes). */
 export function t(key: MessageKey, params?: Params): string {
-  return translate(dictionaries[state.locale], de, state.locale, key, params);
+  return translate(state.dicts[state.locale] ?? {}, state.dicts[REFERENCE_LOCALE], state.locale, key, params, onMissing);
 }
 
-function intlLocale(): string {
-  return state.locale === 'de' ? 'de-DE' : 'en-GB';
+// ---------------------------------------------------------------------------
+// Formatting: one Formatter per (locale, region settings), see ../format.ts
+// ---------------------------------------------------------------------------
+
+let cache: { key: string; f: Formatter } | null = null;
+
+export function fmt(): Formatter {
+  const key = state.locale + '|' + JSON.stringify(state.region);
+  if (!cache || cache.key !== key) cache = { key, f: new Formatter(state.locale, state.region) };
+  return cache.f;
 }
 
-function sameDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
-/** Compact date for lists: time today, weekday this week, else date. */
-export function formatListDate(iso: string, now = new Date()): string {
-  const d = new Date(iso);
-  const loc = intlLocale();
-  if (sameDay(d, now)) return d.toLocaleTimeString(loc, { hour: '2-digit', minute: '2-digit' });
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (sameDay(d, yesterday)) return t('date.yesterday');
-  const diffDays = (now.getTime() - d.getTime()) / 86400_000;
-  if (diffDays < 7) return d.toLocaleDateString(loc, { weekday: 'short' });
-  if (d.getFullYear() === now.getFullYear()) return d.toLocaleDateString(loc, { day: '2-digit', month: '2-digit' });
-  return d.toLocaleDateString(loc, { day: '2-digit', month: '2-digit', year: '2-digit' });
-}
-
-export function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString(intlLocale(), { hour: '2-digit', minute: '2-digit' });
-}
-
-export function formatFullDate(iso: string): string {
-  return new Date(iso).toLocaleString(intlLocale(), { weekday: 'short', day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
-
-export function formatDay(iso: string, now = new Date()): string {
-  const d = new Date(iso);
-  if (sameDay(d, now)) return t('date.today');
-  const y = new Date(now);
-  y.setDate(now.getDate() - 1);
-  if (sameDay(d, y)) return t('date.yesterday');
-  return d.toLocaleDateString(intlLocale(), { weekday: 'long', day: 'numeric', month: 'long' });
-}
-
-export function formatSize(bytes: number): string {
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let v = bytes;
-  let i = 0;
-  while (v >= 1024 && i < units.length - 1) {
-    v /= 1024;
-    i++;
-  }
-  return `${v.toLocaleString(intlLocale(), { maximumFractionDigits: i === 0 ? 0 : 1 })} ${units[i]}`;
-}
-
-export type { MessageKey };
+export const formatListDate = (iso: string) => fmt().listDate(iso);
+export const formatTime = (iso: string) => fmt().time(iso);
+export const formatFullDate = (iso: string) => fmt().full(iso);
+export const formatDay = (iso: string) => fmt().day(iso);
+export const formatSize = (bytes: number) => fmt().size(bytes);
+export const formatNumber = (n: number) => fmt().number(n);

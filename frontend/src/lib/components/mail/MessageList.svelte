@@ -60,9 +60,9 @@
   }
 
   function who(m: MessageSummary): string {
-    if (showRecipients) return t('list.toPrefix', { names: m.to.map((a) => a.name || a.email).join(', ') });
+    if (showRecipients) return t('mail.list.toPrefix', { names: m.to.map((a) => a.name || a.email).join(', ') });
     const f = m.from[0];
-    return f?.name || f?.email || t('list.unknownSender');
+    return f?.name || f?.email || t('mail.list.unknownSender');
   }
 
   function onkeydown(e: KeyboardEvent) {
@@ -83,21 +83,21 @@
 
   const scopeLabel = $derived.by(() => {
     const s = app.sel;
-    if (s.kind === 'unified') return s.role === 'inbox' ? t('folder.unifiedInbox') : s.role === 'flagged' ? t('folder.flagged') : t('folder.unread');
+    if (s.kind === 'unified') return s.role === 'inbox' ? t('mail.folder.unifiedInbox') : s.role === 'flagged' ? t('mail.folder.flagged') : t('mail.folder.unread');
     if (s.kind === 'folder') {
       const f = app.folder(s.folderId);
-      return f ? (f.role ? t(`folder.role.${f.role}` as 'folder.role.inbox') : f.name) : '';
+      return f ? (f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name) : '';
     }
     return '';
   });
-  const scopeAccount = $derived(app.sel.kind === 'folder' ? app.account(app.sel.accountId)?.displayName : t('sidebar.allAccounts'));
+  const scopeAccount = $derived(app.sel.kind === 'folder' ? app.account(app.sel.accountId)?.displayName : t('mail.sidebar.allAccounts'));
 </script>
 
-<section class="list" aria-label={t('list.label')}>
+<section class="list" aria-label={t('mail.list.label')}>
   <header class="list-head">
     <div class="ttl">
       <h1>{scopeLabel}</h1>
-      <span class="sub">{scopeAccount} · {t('list.count', { count: app.messagesTotal })}</span>
+      <span class="sub">{scopeAccount} · {t('mail.list.count', { count: app.messagesTotal })}</span>
     </div>
   </header>
   <div
@@ -115,8 +115,8 @@
     {#if total === 0 && !app.messagesLoading}
       <div class="empty">
         <Inbox size={36} strokeWidth={1.4} aria-hidden="true" />
-        <p class="e1">{app.search ? t('list.noResults') : t('list.empty')}</p>
-        <p class="e2">{app.search ? t('list.noResultsHint') : t('list.emptyHint')}</p>
+        <p class="e1">{app.search ? t('mail.list.noResults') : t('mail.list.empty')}</p>
+        <p class="e2">{app.search ? t('mail.list.noResultsHint') : t('mail.list.emptyHint')}</p>
       </div>
     {/if}
     <div class="spacer" style:height="{total * rowH}px">
@@ -149,15 +149,15 @@
             <div class="l1">
               <span class="from">{who(m)}</span>
               <span class="icons">
-                {#if m.flags.includes(FLAG_ANSWERED)}<Reply size={13} aria-label={t('list.answered')} />{/if}
-                {#if m.flags.includes(FLAG_FORWARDED)}<Forward size={13} aria-label={t('list.forwarded')} />{/if}
-                {#if m.hasAttachments}<Paperclip size={13} aria-label={t('list.hasAttachments')} />{/if}
-                {#if flagged}<Star size={13} class="star" aria-label={t('list.flagged')} />{/if}
+                {#if m.flags.includes(FLAG_ANSWERED)}<Reply size={13} aria-label={t('mail.list.answered')} />{/if}
+                {#if m.flags.includes(FLAG_FORWARDED)}<Forward size={13} aria-label={t('mail.list.forwarded')} />{/if}
+                {#if m.hasAttachments}<Paperclip size={13} aria-label={t('mail.list.hasAttachments')} />{/if}
+                {#if flagged}<Star size={13} class="star" aria-label={t('mail.list.flagged')} />{/if}
               </span>
               <time class="date" datetime={m.date}>{formatListDate(m.date)}</time>
             </div>
             <div class="l2">
-              <span class="subject">{m.subject || t('list.noSubject')}</span>
+              <span class="subject">{m.subject || t('mail.list.noSubject')}</span>
               {#if prefs.density === 'compact'}<span class="preview-inline">— {m.preview}</span>{/if}
             </div>
             {#if prefs.density !== 'compact'}
@@ -165,12 +165,12 @@
             {/if}
           </div>
           <div class="hover-actions">
-            <button class="icon-btn" title={t('action.archive')} aria-label={t('action.archive')} onclick={(e) => (e.stopPropagation(), app.moveToRole(m.id, 'archive'))}><Archive size={15} /></button>
-            <button class="icon-btn" title={t('action.delete')} aria-label={t('action.delete')} onclick={(e) => (e.stopPropagation(), app.moveToRole(m.id, 'trash'))}><Trash size={15} /></button>
-            <button class="icon-btn" title={unread ? t('action.markRead') : t('action.markUnread')} aria-label={unread ? t('action.markRead') : t('action.markUnread')} onclick={(e) => (e.stopPropagation(), app.toggleRead(m.id))}>
+            <button class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={(e) => (e.stopPropagation(), app.moveToRole(m.id, 'archive'))}><Archive size={15} /></button>
+            <button class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={(e) => (e.stopPropagation(), app.moveToRole(m.id, 'trash'))}><Trash size={15} /></button>
+            <button class="icon-btn" title={unread ? t('common.action.markRead') : t('common.action.markUnread')} aria-label={unread ? t('common.action.markRead') : t('common.action.markUnread')} onclick={(e) => (e.stopPropagation(), app.toggleRead(m.id))}>
               {#if unread}<MailOpen size={15} />{:else}<Mail size={15} />{/if}
             </button>
-            <button class="icon-btn" title={t('action.flag')} aria-label={t('action.flag')} aria-pressed={flagged} onclick={(e) => (e.stopPropagation(), app.toggleFlag(m.id))}><Star size={15} /></button>
+            <button class="icon-btn" title={t('common.action.flag')} aria-label={t('common.action.flag')} aria-pressed={flagged} onclick={(e) => (e.stopPropagation(), app.toggleFlag(m.id))}><Star size={15} /></button>
           </div>
         </div>
       {/each}

@@ -409,3 +409,138 @@ export interface ProvisioningImport {
   signatureIds: number[];
   workflowIds: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Search (KONZEPT 8.4 / 8.4.1)
+// ---------------------------------------------------------------------------
+
+export type SearchScope = 'mail' | 'chat' | 'event' | 'task' | 'contact' | 'file';
+export type SearchSort = 'relevance' | 'date' | 'sender' | 'size';
+export type SearchLocation = 'local' | 'server' | 'auto';
+
+export interface SearchQuery {
+  /** Free text (simple mode) or a query in the expert language. */
+  text: string;
+  mode: 'simple' | 'expert';
+  /** Empty = all scopes. */
+  scopes: SearchScope[];
+  /** Empty = all accounts. */
+  accountIds: number[];
+  /** Empty = all folders. */
+  folderIds: number[];
+  includeSubfolders: boolean;
+  excludeTrashSpam: boolean;
+  /** ISO dates (inclusive). */
+  from?: string;
+  to?: string;
+  location: SearchLocation;
+  sort: SearchSort;
+  cursor?: string;
+  limit?: number;
+}
+
+export type SearchHitKind = 'mail' | 'chat' | 'event' | 'task' | 'contact' | 'file';
+
+export interface SearchHit {
+  id: string;
+  kind: SearchHitKind;
+  title: string;
+  /** Plain-text snippet; `highlights` are [start, end) ranges into it. */
+  snippet: string;
+  highlights: [number, number][];
+  /** Ranges in `title` to highlight. */
+  titleHighlights: [number, number][];
+  date?: string;
+  accountId?: number;
+  folderId?: number;
+  channel?: Channel;
+  sender?: string;
+  size?: number;
+  hasAttachments?: boolean;
+  unread?: boolean;
+  score: number;
+  /** Navigation targets. */
+  messageId?: number;
+  conversationId?: number;
+  itemId?: string;
+  personId?: number;
+}
+
+export interface FacetBucket {
+  key: string;
+  label: string;
+  count: number;
+  /** Clause the UI appends to the query when the bucket is clicked, e.g. account:"Kanzlei Sommer". */
+  clause: string;
+}
+
+export interface SearchFacets {
+  account: FacetBucket[];
+  folder: FacetBucket[];
+  sender: FacetBucket[];
+  domain: FacetBucket[];
+  channel: FacetBucket[];
+  type: FacetBucket[];
+  attachment: FacetBucket[];
+}
+
+export interface SearchResult {
+  hits: SearchHit[];
+  total: number;
+  facets: SearchFacets;
+  /** Per month, oldest first. */
+  histogram: FacetBucket[];
+  nextCursor?: string;
+  /** Expert query error; the server then falls back to a simple search. */
+  error?: { message: string; position: number; code?: string; token?: string };
+  fallback?: boolean;
+  tookMs: number;
+}
+
+export interface SearchProfile {
+  id: string;
+  name: string;
+  query: SearchQuery;
+  pinned: boolean;
+}
+
+export interface SearchHistoryEntry {
+  text: string;
+  mode: 'simple' | 'expert';
+  at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Runtime-loadable languages
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// User preferences (Settings -> Language & region)
+// ---------------------------------------------------------------------------
+
+export interface RegionSettings {
+  /** IANA zone or 'system' (always follow the device). */
+  timeZone: string;
+  dateFormat: 'locale' | 'DD.MM.YYYY' | 'YYYY-MM-DD' | 'MM/DD/YYYY' | 'DD/MM/YYYY' | 'D. MMMM YYYY' | 'custom';
+  customDatePattern: string;
+  timeFormat: 'locale' | '24' | '12';
+  /** 'locale' or 0 = Sunday, 1 = Monday, 6 = Saturday. */
+  weekStart: 'locale' | 0 | 1 | 6;
+  numberFormat: 'locale' | '1.234,56' | '1,234.56' | '1 234,56';
+  relativeTimes: boolean;
+  /** Extra zone shown in the calendar ('' = none). */
+  secondaryTimeZone: string;
+}
+
+export interface UserPreferences {
+  /** UI language code or 'system' (navigator.languages). */
+  locale: string;
+  region: RegionSettings;
+}
+
+export interface LocaleInfo {
+  code: string;
+  name: string;
+  nativeName: string;
+  direction: 'ltr' | 'rtl';
+}

@@ -14,7 +14,7 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type {
-  Account,
+Account,
   ApiEvent,
   Conversation,
   ConversationGrouping,
@@ -23,20 +23,26 @@ import type {
   DeviceTokenResult,
   DiscoveryResult,
   Flag,
-  NotificationSettings,
-  ProvisioningImport,
-  PushSubscriptionInput,
-  ServerLoginInput,
   Folder,
   Identity,
+  LocaleInfo,
   MessageDetail,
   MessageSummary,
   NewAccountInput,
+  NotificationSettings,
   OutgoingMessage,
   Page,
   Person,
+  ProvisioningImport,
+  PushSubscriptionInput,
+  SearchHistoryEntry,
+  SearchProfile,
+  SearchQuery,
+  SearchResult,
   SendResult,
+  ServerLoginInput,
   Signature,
+  UserPreferences,
 } from '../types';
 
 type BoundFn = (...args: unknown[]) => Promise<unknown>;
@@ -165,6 +171,36 @@ export class WailsTransport implements Api {
   }
   importProvisioning(input: ProvisioningImport): Promise<void> {
     return this.call('ImportProvisioning', input);
+  }
+  search(query: SearchQuery): Promise<SearchResult> {
+    return this.call('Search', query);
+  }
+  listSearchProfiles(): Promise<SearchProfile[]> {
+    return this.call('ListSearchProfiles');
+  }
+  saveSearchProfile(profile: SearchProfile): Promise<SearchProfile> {
+    return this.call('SaveSearchProfile', profile);
+  }
+  deleteSearchProfile(id: string): Promise<void> {
+    return this.call('DeleteSearchProfile', id);
+  }
+  getSearchHistory(): Promise<SearchHistoryEntry[]> {
+    return this.call('GetSearchHistory');
+  }
+  clearSearchHistory(): Promise<void> {
+    return this.call('ClearSearchHistory');
+  }
+  getPreferences(): Promise<UserPreferences> {
+    return this.call('GetPreferences');
+  }
+  setPreferences(prefs: UserPreferences): Promise<UserPreferences> {
+    return this.call('SetPreferences', prefs);
+  }
+  listLocales(): Promise<LocaleInfo[]> {
+    return this.call('ListLocales');
+  }
+  getLocale(code: string): Promise<Record<string, unknown>> {
+    return this.call('GetLocale', code);
   }
 
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {

@@ -16,7 +16,13 @@ import type {
   DeviceTokenResult,
   DiscoveryResult,
   Flag,
+  LocaleInfo,
   NotificationSettings,
+  SearchHistoryEntry,
+  SearchProfile,
+  SearchQuery,
+  SearchResult,
+  UserPreferences,
   ProvisioningImport,
   PushSubscriptionInput,
   ServerLoginInput,
@@ -117,6 +123,23 @@ export interface Api {
   deviceToken(serverUrl: string, deviceCode: string): Promise<DeviceTokenResult>;
   serverLogin(serverUrl: string, credentials: ServerLoginInput): Promise<DeviceTokenResult>;
   importProvisioning(input: ProvisioningImport): Promise<void>;
+
+  // Search (KONZEPT 8.4)
+  search(query: SearchQuery): Promise<SearchResult>;
+  listSearchProfiles(): Promise<SearchProfile[]>;
+  saveSearchProfile(profile: SearchProfile): Promise<SearchProfile>;
+  deleteSearchProfile(id: string): Promise<void>;
+  getSearchHistory(): Promise<SearchHistoryEntry[]>;
+  clearSearchHistory(): Promise<void>;
+
+  // User preferences synced with the core (language, time zone, formats)
+  getPreferences(): Promise<UserPreferences>;
+  setPreferences(prefs: UserPreferences): Promise<UserPreferences>;
+
+  // Additional / override language files delivered by the core
+  listLocales(): Promise<LocaleInfo[]>;
+  /** Nested JSON in the same shape as locales/de.json. */
+  getLocale(code: string): Promise<Record<string, unknown>>;
 
   // Live events
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe;

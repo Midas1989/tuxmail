@@ -29,7 +29,17 @@
 //   GET  /api/notifications/settings            -> NotificationSettings
 //   PUT  /api/notifications/settings            NotificationSettings -> NotificationSettings
 //   POST /api/provisioning/import               ProvisioningImport
-//   WS   /api/events                            server -> client: one ApiEvent JSON per frame
+//   POST /api/search                            SearchQuery -> SearchResult
+//   GET  /api/search/profiles                   -> SearchProfile[]
+//   PUT  /api/search/profiles/{id}              SearchProfile -> SearchProfile
+//   DELETE /api/search/profiles/{id}
+//   GET  /api/search/history                    -> SearchHistoryEntry[]
+//   DELETE /api/search/history
+//   GET  /api/preferences                       -> UserPreferences
+//   PUT  /api/preferences                       UserPreferences -> UserPreferences
+//   GET  /api/locales                           -> LocaleInfo[]
+//   GET  /api/locales/{code}                    -> nested JSON (same shape as locales/en.json)
+//   WS   /api/events                          server -> client: one ApiEvent JSON per frame
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`):
 //   POST {serverUrl}/api/device/authorize       {client} -> DeviceAuthorization
@@ -41,7 +51,7 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type {
-  Account,
+Account,
   ApiEvent,
   Conversation,
   ConversationGrouping,
@@ -50,20 +60,26 @@ import type {
   DeviceTokenResult,
   DiscoveryResult,
   Flag,
-  NotificationSettings,
-  ProvisioningImport,
-  PushSubscriptionInput,
-  ServerLoginInput,
   Folder,
   Identity,
+  LocaleInfo,
   MessageDetail,
   MessageSummary,
   NewAccountInput,
+  NotificationSettings,
   OutgoingMessage,
   Page,
   Person,
+  ProvisioningImport,
+  PushSubscriptionInput,
+  SearchHistoryEntry,
+  SearchProfile,
+  SearchQuery,
+  SearchResult,
   SendResult,
+  ServerLoginInput,
   Signature,
+  UserPreferences,
 } from '../types';
 
 export interface HttpTransportOptions {
@@ -264,6 +280,36 @@ export class HttpTransport implements Api {
   }
   importProvisioning(input: ProvisioningImport): Promise<void> {
     return this.request('POST', '/api/provisioning/import', input);
+  }
+  search(query: SearchQuery): Promise<SearchResult> {
+    return this.request('POST', '/api/search', query);
+  }
+  listSearchProfiles(): Promise<SearchProfile[]> {
+    return this.request('GET', '/api/search/profiles');
+  }
+  saveSearchProfile(profile: SearchProfile): Promise<SearchProfile> {
+    return this.request('PUT', `/api/search/profiles/${encodeURIComponent(profile.id || 'new')}`, profile);
+  }
+  deleteSearchProfile(id: string): Promise<void> {
+    return this.request('DELETE', `/api/search/profiles/${encodeURIComponent(id)}`);
+  }
+  getSearchHistory(): Promise<SearchHistoryEntry[]> {
+    return this.request('GET', '/api/search/history');
+  }
+  clearSearchHistory(): Promise<void> {
+    return this.request('DELETE', '/api/search/history');
+  }
+  getPreferences(): Promise<UserPreferences> {
+    return this.request('GET', '/api/preferences');
+  }
+  setPreferences(prefs: UserPreferences): Promise<UserPreferences> {
+    return this.request('PUT', '/api/preferences', prefs);
+  }
+  listLocales(): Promise<LocaleInfo[]> {
+    return this.request('GET', '/api/locales');
+  }
+  getLocale(code: string): Promise<Record<string, unknown>> {
+    return this.request('GET', `/api/locales/${encodeURIComponent(code)}`);
   }
 
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {

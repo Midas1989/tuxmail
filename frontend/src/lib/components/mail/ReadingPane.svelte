@@ -38,28 +38,28 @@
   const rcptCount = $derived(m ? m.to.length + m.cc.length : 0);
 </script>
 
-<section class="pane" aria-label={t('reader.label')}>
+<section class="pane" aria-label={t('mail.reader.label')}>
   {#if m}
-    <div class="toolbar" role="toolbar" aria-label={t('reader.actions')}>
-      <button class="icon-btn back" aria-label={t('action.back')} onclick={() => app.selectMessage(null)}><ArrowLeft size={18} /></button>
-      <button class="btn btn-ghost" onclick={() => app.replyTo('reply')} title="R"><Reply size={16} /> <span class="hide-sm">{t('action.reply')}</span></button>
-      <button class="btn btn-ghost" onclick={() => app.replyTo('replyAll')} title="Shift+R"><ReplyAll size={16} /> <span class="hide-sm">{t('action.replyAll')}</span></button>
-      <button class="btn btn-ghost" onclick={() => app.replyTo('forward')} title="F"><Forward size={16} /> <span class="hide-sm">{t('action.forward')}</span></button>
+    <div class="toolbar" role="toolbar" aria-label={t('mail.reader.actions')}>
+      <button class="icon-btn back" aria-label={t('common.action.back')} onclick={() => app.selectMessage(null)}><ArrowLeft size={18} /></button>
+      <button class="btn btn-ghost" onclick={() => app.replyTo('reply')} title="R"><Reply size={16} /> <span class="hide-sm">{t('common.action.reply')}</span></button>
+      <button class="btn btn-ghost" onclick={() => app.replyTo('replyAll')} title="Shift+R"><ReplyAll size={16} /> <span class="hide-sm">{t('common.action.replyAll')}</span></button>
+      <button class="btn btn-ghost" onclick={() => app.replyTo('forward')} title="F"><Forward size={16} /> <span class="hide-sm">{t('common.action.forward')}</span></button>
       <span class="sep"></span>
-      <button class="icon-btn" title={t('action.archive')} aria-label={t('action.archive')} onclick={() => app.moveToRole(m.id, 'archive')}><Archive size={17} /></button>
-      <button class="icon-btn" title={t('action.delete')} aria-label={t('action.delete')} onclick={() => app.moveToRole(m.id, 'trash')}><Trash size={17} /></button>
+      <button class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.moveToRole(m.id, 'archive')}><Archive size={17} /></button>
+      <button class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.moveToRole(m.id, 'trash')}><Trash size={17} /></button>
       <MoveMenu messageId={m.id} accountId={m.accountId} currentFolderIds={m.folderIds} />
-      <button class="icon-btn" title={t('action.flag')} aria-label={t('action.flag')} aria-pressed={flagged} onclick={() => app.toggleFlag(m.id)}><Star size={17} class={flagged ? 'starred' : ''} /></button>
-      <button class="icon-btn" title={t('action.markUnread')} aria-label={t('action.markUnread')} onclick={() => app.toggleRead(m.id)}><Mail size={17} /></button>
+      <button class="icon-btn" title={t('common.action.flag')} aria-label={t('common.action.flag')} aria-pressed={flagged} onclick={() => app.toggleFlag(m.id)}><Star size={17} class={flagged ? 'starred' : ''} /></button>
+      <button class="icon-btn" title={t('common.action.markUnread')} aria-label={t('common.action.markUnread')} onclick={() => app.toggleRead(m.id)}><Mail size={17} /></button>
       <span class="grow"></span>
-      <button class="btn btn-ghost conv" onclick={() => app.setViewMode('chat')} title={t('view.showAsConversation') + ' (Ctrl+Shift+V)'}>
-        <MessagesSquare size={16} /> <span class="hide-sm">{t('view.showAsConversation')}</span>
+      <button class="btn btn-ghost conv" onclick={() => app.setViewMode('chat')} title={t('mail.view.showAsConversation') + ' (Ctrl+Shift+V)'}>
+        <MessagesSquare size={16} /> <span class="hide-sm">{t('mail.view.showAsConversation')}</span>
       </button>
     </div>
 
     <div class="scroll">
       <header class="head">
-        <h2 class="subject">{m.subject || t('list.noSubject')}</h2>
+        <h2 class="subject">{m.subject || t('mail.list.noSubject')}</h2>
         <div class="sender">
           <Avatar name={m.from[0]?.name || m.from[0]?.email || '?'} seed={m.from[0]?.email} size={40} />
           <div class="who">
@@ -69,10 +69,10 @@
             </div>
             <div class="l2">
               {#if showAllRecipients || rcptCount <= 2}
-                <span>{t('reader.to')}: {fmt(m.to)}</span>
-                {#if m.cc.length}<span> · {t('reader.cc')}: {fmt(m.cc)}</span>{/if}
+                <span>{t('mail.reader.to')}: {fmt(m.to)}</span>
+                {#if m.cc.length}<span> · {t('mail.reader.cc')}: {fmt(m.cc)}</span>{/if}
               {:else}
-                <button class="linkish" onclick={() => (showAllRecipients = true)}>{t('reader.toMany', { name: m.to[0]?.name || m.to[0]?.email || '', count: rcptCount - 1 })}</button>
+                <button class="linkish" onclick={() => (showAllRecipients = true)}>{t('mail.reader.toMany', { name: m.to[0]?.name || m.to[0]?.email || '', count: rcptCount - 1 })}</button>
               {/if}
             </div>
           </div>
@@ -86,13 +86,13 @@
       {#if m.hasRemoteContent && !allowRemote}
         <div class="notice" role="note">
           <ImageOff size={16} aria-hidden="true" />
-          <span>{t('reader.remoteBlocked')}</span>
-          <button class="btn" onclick={() => (allowRemote = true)}>{t('reader.loadRemote')}</button>
+          <span>{t('mail.reader.remoteBlocked')}</span>
+          <button class="btn" onclick={() => (allowRemote = true)}>{t('mail.reader.loadRemote')}</button>
         </div>
       {/if}
 
       {#if m.attachments.length}
-        <div class="atts" aria-label={t('reader.attachments', { count: m.attachments.length })}>
+        <div class="atts" aria-label={t('mail.reader.attachments', { count: m.attachments.length })}>
           {#each m.attachments as a (a.id)}
             <AttachmentCard attachment={a} />
           {/each}
@@ -100,14 +100,14 @@
       {/if}
 
       <div class="body" class:html={!!m.html}>
-        <MailFrame html={m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={t('reader.bodyTitle', { subject: m.subject })} />
+        <MailFrame html={m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
       </div>
     </div>
   {:else}
     <div class="empty">
       <MailOpen size={44} strokeWidth={1.2} aria-hidden="true" />
-      <p class="e1">{t('reader.empty')}</p>
-      <p class="e2"><span class="kbd">J</span> / <span class="kbd">K</span> {t('reader.emptyHint')}</p>
+      <p class="e1">{t('mail.reader.empty')}</p>
+      <p class="e2"><span class="kbd">J</span> / <span class="kbd">K</span> {t('mail.reader.emptyHint')}</p>
     </div>
   {/if}
 </section>

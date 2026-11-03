@@ -6,14 +6,16 @@
   import Contact from '@lucide/svelte/icons/contact';
   import Cloud from '@lucide/svelte/icons/cloud';
   import Settings from '@lucide/svelte/icons/settings';
+  import Search from '@lucide/svelte/icons/search';
   import { app, prefs } from '../state';
   import { t } from '../i18n/index.svelte';
 
-  type Item = { id: 'mail' | 'chats' | 'calendar' | 'contacts' | 'files'; icon: typeof Mail; label: string; badge?: number };
+  type Item = { id: 'mail' | 'chats' | 'search' | 'calendar' | 'contacts' | 'files'; icon: typeof Mail; label: string; badge?: number };
 
   const items: Item[] = $derived([
     { id: 'mail', icon: Mail, label: t('nav.mail'), badge: app.unifiedUnread },
     { id: 'chats', icon: MessagesSquare, label: t('nav.chats') },
+    { id: 'search', icon: Search, label: t('nav.search') },
     { id: 'calendar', icon: Calendar, label: t('nav.calendar') },
     { id: 'contacts', icon: Contact, label: t('nav.contacts') },
     { id: 'files', icon: Cloud, label: t('nav.files') },
@@ -36,17 +38,7 @@
 </script>
 
 <nav class="rail" aria-label={t('nav.label')}>
-  <div class="logo" aria-hidden="true">
-    <svg viewBox="0 0 64 64" width="26" height="26"
-      ><rect width="64" height="64" rx="16" fill="var(--tm-accent)" /><path
-        d="M15 22h34v21H15z M15 22l17 12 17-12"
-        fill="none"
-        stroke="#fff"
-        stroke-width="4"
-        stroke-linejoin="round"
-      /></svg
-    >
-  </div>
+  <div class="logo"><img src="./icons/icon-64.png" alt="TuxMail" width="34" height="34" /></div>
   <ul>
     {#each items as item (item.id)}
       {@const Icon = item.icon}
@@ -54,7 +46,7 @@
         <button class="item" aria-current={isActive(item.id) ? 'page' : undefined} onclick={() => go(item.id)} title={item.label}>
           <Icon size={21} strokeWidth={1.8} aria-hidden="true" />
           <span class="lbl">{item.label}</span>
-          {#if item.badge}<span class="dot" aria-label={t('folder.unreadCount', { count: item.badge })}>{item.badge > 99 ? '99+' : item.badge}</span>{/if}
+          {#if item.badge}<span class="dot" aria-label={t('mail.folder.unreadCount', { count: item.badge })}>{item.badge > 99 ? '99+' : item.badge}</span>{/if}
         </button>
       </li>
     {/each}
@@ -75,7 +67,10 @@
     flex: none;
     padding: 10px 0;
     background: var(--tm-rail);
-    border-right: 1px solid var(--tm-line);
+  }
+  .logo img {
+    display: block;
+    filter: drop-shadow(0 1px 2px rgb(0 0 0 / 0.35));
   }
   .logo {
     height: 40px;
@@ -106,18 +101,18 @@
     border: none;
     border-radius: 12px;
     background: transparent;
-    color: var(--tm-muted);
+    color: var(--tm-rail-fg);
     transition:
       background var(--tm-dur),
       color var(--tm-dur);
   }
   .item:hover {
-    background: color-mix(in srgb, var(--tm-fg) 7%, transparent);
-    color: var(--tm-fg);
+    background: rgb(255 255 255 / 0.08);
+    color: var(--tm-rail-active);
   }
   .item[aria-current='page'] {
-    background: var(--tm-accent-soft);
-    color: var(--tm-accent-text);
+    background: rgb(255 255 255 / 0.12);
+    color: var(--tm-rail-active);
   }
   .item[aria-current='page']::before {
     content: '';
@@ -127,7 +122,7 @@
     bottom: 12px;
     width: 3px;
     border-radius: 3px;
-    background: var(--tm-accent);
+    background: var(--tm-brand);
   }
   .lbl {
     font-size: 10px;
@@ -145,8 +140,8 @@
     height: 17px;
     padding: 0 4px;
     border-radius: 999px;
-    background: var(--tm-accent);
-    color: white;
+    background: var(--tm-brand);
+    color: var(--tm-brand-navy);
     font-size: 10px;
     font-weight: 700;
     display: flex;

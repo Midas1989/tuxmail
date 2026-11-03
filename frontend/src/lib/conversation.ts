@@ -109,12 +109,13 @@ export type TimelineEntry =
 /** Bubbles of the same sender within this window are visually grouped. */
 export const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
-function dayKey(iso: string): string {
+function localDayKey(iso: string): string {
   const d = new Date(iso);
   return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`;
 }
 
-export function buildTimeline(items: ConversationItem[]): TimelineEntry[] {
+/** `dayKey` maps a timestamp to its calendar day (pass the Formatter's, so the user's time zone applies). */
+export function buildTimeline(items: ConversationItem[], dayKey: (iso: string) => string = localDayKey): TimelineEntry[] {
   const sorted = [...items].sort((a, b) => a.sentAt.localeCompare(b.sentAt));
   const out: TimelineEntry[] = [];
   let lastDay = '';

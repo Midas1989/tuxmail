@@ -25,7 +25,7 @@
   let { item, groupStart, groupEnd, showSender, showSubject, focused, onfocusitem, onopenoriginal }: Props = $props();
 
   let showQuote = $state(false);
-  const label = $derived(`${item.isOwn ? t('chat.you') : item.senderName}, ${formatTime(item.sentAt)}, ${t(`channel.${item.channel}`)}`);
+  const label = $derived(`${item.isOwn ? t('chat.you') : item.senderName}, ${formatTime(item.sentAt)}, ${t(`common.channel.${item.channel}`)}`);
 </script>
 
 <div class="row" class:own={item.isOwn} class:start={groupStart} class:end={groupEnd}>

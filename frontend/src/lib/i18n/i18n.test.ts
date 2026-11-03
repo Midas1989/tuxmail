@@ -1,53 +1,79 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-import { describe, expect, it } from 'vitest';
-import { createTranslator, interpolate, negotiateLocale, translate } from './core';
-import { de } from './de';
-import { en } from './en';
+import { describe, expect, it, vi } from 'vitest';
+import en from '$locales/en.json';
+import de from '$locales/de.json';
+import { createTranslator, flatten, interpolate, mergeDeep, negotiateLocale, placeholders, translate } from './core';
 
-describe('i18n core', () => {
-  it('interpolates placeholders and leaves unknown ones', () => {
-    expect(interpolate('Hallo {name}!', { name: 'Anna' })).toBe('Hallo Anna!');
-    expect(interpolate('{a} {b}', { a: 1 })).toBe('1 {b}');
-  });
+const EN = flatten(en);
+const DE = flatten(de);
 
-  it('selects plural forms via Intl.PluralRules', () => {
-    const tDe = createTranslator(de, de, 'de');
-    expect(tDe('list.count', { count: 1 })).toBe('1 Nachricht');
-    expect(tDe('list.count', { count: 5 })).toBe('5 Nachrichten');
-    const tEn = createTranslator(en, de, 'en');
-    expect(tEn('list.count', { count: 1 })).toBe('1 message');
-    expect(tEn('list.count', { count: 0 })).toBe('0 messages');
-  });
-
-  it('falls back to German, then to the key', () => {
-    expect(translate({}, de, 'en', 'nav.mail')).toBe('Mail');
-    expect(translate({}, {}, 'de', 'does.not.exist')).toBe('does.not.exist');
-  });
-
-  it('negotiates the locale', () => {
-    expect(negotiateLocale(['en-US', 'de'], ['de', 'en'], 'de')).toBe('en');
-    expect(negotiateLocale(['fr-FR'], ['de', 'en'], 'de')).toBe('de');
-    expect(negotiateLocale([], ['de', 'en'], 'de')).toBe('de');
-  });
-});
-
-describe('dictionaries', () => {
-  it('English covers every German key', () => {
-    const missing = Object.keys(de).filter((k) => !(k in en));
+describe('language files (locales/*.json)', () => {
+  it('English is the reference and German has exactly the same keys', () => {
+    const missing = Object.keys(EN).filter((k) => !(k in DE));
+    const extra = Object.keys(DE).filter((k) => !(k in EN));
     expect(missing).toEqual([]);
-    const extra = Object.keys(en).filter((k) => !(k in de));
     expect(extra).toEqual([]);
+    expect(en.meta.reference).toBe(true);
   });
 
-  it('placeholders match between languages', () => {
-    const ph = (s: string) => [...s.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort().join(',');
-    for (const k of Object.keys(de) as (keyof typeof de)[]) {
-      expect(ph(en[k]), k).toBe(ph(de[k]));
+  it('uses the same {placeholders} per key', () => {
+    for (const k of Object.keys(EN)) expect(placeholders(DE[k]), k).toEqual(placeholders(EN[k]));
+  });
+
+  it('has a meta block and no empty strings', () => {
+    for (const file of [en, de]) {
+      expect(file.meta).toMatchObject({ code: expect.any(String), name: expect.any(String), nativeName: expect.any(String), direction: 'ltr' });
+    }
+    for (const [k, v] of [...Object.entries(EN), ...Object.entries(DE)]) expect(v.trim(), k).not.toBe('');
+  });
+
+  it('keeps the required top-level areas', () => {
+    const areas = Object.keys(en).filter((k) => k !== 'meta');
+    for (const a of ['common', 'nav', 'mail', 'chat', 'calendar', 'contacts', 'files', 'settings', 'search', 'compose', 'workflow', 'errors', 'notifications', 'sendcheck', 'onboarding']) {
+      expect(areas).toContain(a);
     }
   });
 
-  it('has no empty strings', () => {
-    for (const [k, v] of Object.entries(de)) expect(v.trim(), k).not.toBe('');
-    for (const [k, v] of Object.entries(en)) expect(v.trim(), k).not.toBe('');
+  it('plural variants only use Intl.PluralRules categories', () => {
+    const cats = new Set(['zero', 'one', 'two', 'few', 'many', 'other']);
+    for (const k of Object.keys(EN)) {
+      const m = /_([a-z]+)$/.exec(k);
+      if (m && cats.has(m[1])) expect(k.replace(/_[a-z]+$/, '') in EN, `${k} needs a base key`).toBe(true);
+    }
+  });
+});
+
+describe('translator', () => {
+  it('interpolates placeholders and leaves unknown ones', () => {
+    expect(interpolate('Hello {name}!', { name: 'Anna' })).toBe('Hello Anna!');
+    expect(interpolate('{a} {b}', { a: 1 })).toBe('1 {b}');
+  });
+
+  it('selects plural forms via Intl.PluralRules (key_one / key)', () => {
+    const tEn = createTranslator(EN, EN, 'en');
+    expect(tEn('mail.list.count', { count: 1 })).toBe('1 message');
+    expect(tEn('mail.list.count', { count: 0 })).toBe('0 messages');
+    const tDe = createTranslator(DE, EN, 'de');
+    expect(tDe('mail.list.count', { count: 1 })).toBe('1 Nachricht');
+    expect(tDe('mail.list.count', { count: 7 })).toBe('7 Nachrichten');
+  });
+
+  it('falls back selected -> en -> key and reports missing keys', () => {
+    const missing = vi.fn();
+    expect(translate({}, EN, 'de', 'nav.mail', undefined, missing)).toBe('Mail');
+    expect(missing).toHaveBeenCalledWith('nav.mail', 'de');
+    expect(translate({}, {}, 'de', 'does.not.exist')).toBe('does.not.exist');
+  });
+
+  it('negotiates the locale with English as default', () => {
+    expect(negotiateLocale(['de-AT', 'en'], ['en', 'de'], 'en')).toBe('de');
+    expect(negotiateLocale(['fr-FR', 'it'], ['en', 'de'], 'en')).toBe('en');
+    expect(negotiateLocale([], ['en', 'de'], 'en')).toBe('en');
+  });
+
+  it('merges server-delivered overrides on top of built-ins', () => {
+    const merged = flatten(mergeDeep(en as unknown as Record<string, unknown>, { nav: { mail: 'Inbox' } }));
+    expect(merged['nav.mail']).toBe('Inbox');
+    expect(merged['nav.chats']).toBe(EN['nav.chats']);
   });
 });

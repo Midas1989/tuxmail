@@ -14,6 +14,7 @@
   import ContactsScreen from './lib/screens/ContactsScreen.svelte';
   import FilesScreen from './lib/screens/FilesScreen.svelte';
   import SettingsScreen from './lib/screens/SettingsScreen.svelte';
+  import SearchScreen from './lib/screens/SearchScreen.svelte';
   import IosInstallHint from './lib/components/IosInstallHint.svelte';
   import { registerServiceWorker } from './lib/pwa';
 
@@ -44,18 +45,20 @@
   });
 </script>
 
-<a class="skip" href="#main">{t('a11y.skipToContent')}</a>
+<a class="skip" href="#main">{t('common.a11y.skipToContent')}</a>
 <div class="app">
   <ActivityBar />
   <main id="main" class="main" tabindex="-1">
     {#if app.loadError}
       <div class="fatal" role="alert">
-        <h1>{t('error.loadTitle')}</h1>
+        <h1>{t('errors.loadTitle')}</h1>
         <p>{app.loadError}</p>
-        <button class="btn btn-primary" onclick={() => location.reload()}>{t('error.retry')}</button>
+        <button class="btn btn-primary" onclick={() => location.reload()}>{t('errors.retry')}</button>
       </div>
     {:else if app.route === 'mail'}
       <MailScreen />
+    {:else if app.route === 'search'}
+      <SearchScreen />
     {:else if app.route === 'calendar'}
       <CalendarScreen />
     {:else if app.route === 'contacts'}

@@ -32,10 +32,10 @@
   }
 </script>
 
-<ScreenShell title={t('nav.contacts')} subtitle={t('placeholder.contacts')}>
+<ScreenShell title={t('nav.contacts')} subtitle={t('contacts.placeholder')}>
   {#snippet actions()}
     <input class="input filter" placeholder={t('contacts.filter')} bind:value={filter} aria-label={t('contacts.filter')} />
-    <button class="btn" disabled title={t('placeholder.soon')}><UserPlus size={15} /> {t('contacts.add')}</button>
+    <button class="btn" disabled title={t('common.soon')}><UserPlus size={15} /> {t('contacts.add')}</button>
   {/snippet}
   <ul class="grid">
     {#each people as p (p.id)}

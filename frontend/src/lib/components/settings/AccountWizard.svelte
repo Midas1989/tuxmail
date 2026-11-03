@@ -23,6 +23,7 @@
   import { t } from '../../i18n/index.svelte';
   import type { AccountKind, AuthMethod, DiscoveryResult, ServerConfig } from '../../types';
   import Modal from '../common/Modal.svelte';
+  import logoUrl from '$branding/tuxmail-logo.png';
 
   interface Props {
     onclose: () => void;
@@ -47,14 +48,14 @@
   const emailOk = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email));
 
   const steps: { id: Step[]; label: string }[] = $derived([
-    { id: ['credentials', 'discovering'], label: t('wizard.step1') },
-    { id: ['discovered'], label: t('wizard.step2') },
-    { id: ['manual', 'saving'], label: t('wizard.step3') },
+    { id: ['credentials', 'discovering'], label: t('onboarding.account.step1') },
+    { id: ['discovered'], label: t('onboarding.account.step2') },
+    { id: ['manual', 'saving'], label: t('onboarding.account.step3') },
   ]);
 
   async function discover() {
     if (!emailOk) {
-      error = t('wizard.errEmail');
+      error = t('onboarding.account.errEmail');
       return;
     }
     error = null;
@@ -87,7 +88,7 @@
 
   async function save() {
     if (insecure && !allowInsecure) {
-      error = t('wizard.errInsecure');
+      error = t('onboarding.account.errInsecure');
       return;
     }
     error = null;
@@ -114,8 +115,8 @@
   const authMethods: AuthMethod[] = ['password', 'oauth2', 'client_cert'];
 </script>
 
-<Modal title={t('wizard.title')} {onclose} width="600px">
-  <ol class="steps" aria-label={t('wizard.progress')}>
+<Modal title={t('onboarding.account.title')} {onclose} width="600px">
+  <ol class="steps" aria-label={t('onboarding.account.progress')}>
     {#each steps as s, i (i)}
       <li class:current={s.id.includes(step)}>{i + 1}. {s.label}</li>
     {/each}
@@ -129,37 +130,38 @@
         void discover();
       }}
     >
-      <p class="lead">{t('wizard.lead')}</p>
-      <label><span class="label">{t('wizard.name')}</span><input class="input" bind:value={name} autocomplete="name" data-autofocus /></label>
-      <label><span class="label">{t('wizard.email')}</span><input class="input" type="email" bind:value={email} autocomplete="email" required /></label>
-      <label><span class="label">{t('wizard.password')}</span><input class="input" type="password" bind:value={password} autocomplete="current-password" /></label>
-      <p class="hint">{t('wizard.passwordHint')}</p>
+      <img class="brand" src={logoUrl} alt="TuxMail" width="120" height="120" />
+      <p class="lead">{t('onboarding.account.lead')}</p>
+      <label><span class="label">{t('onboarding.account.name')}</span><input class="input" bind:value={name} autocomplete="name" data-autofocus /></label>
+      <label><span class="label">{t('onboarding.account.email')}</span><input class="input" type="email" bind:value={email} autocomplete="email" required /></label>
+      <label><span class="label">{t('onboarding.account.password')}</span><input class="input" type="password" bind:value={password} autocomplete="current-password" /></label>
+      <p class="hint">{t('onboarding.account.passwordHint')}</p>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
-        <button type="button" class="btn btn-ghost" onclick={manual}>{t('wizard.manual')}</button>
+        <button type="button" class="btn btn-ghost" onclick={manual}>{t('onboarding.account.manual')}</button>
         <button type="submit" class="btn btn-primary" disabled={step === 'discovering' || !email}>
-          {#if step === 'discovering'}<LoaderCircle size={15} class="spin" /> {t('wizard.discovering')}{:else}{t('wizard.next')}{/if}
+          {#if step === 'discovering'}<LoaderCircle size={15} class="spin" /> {t('onboarding.account.discovering')}{:else}{t('onboarding.account.next')}{/if}
         </button>
       </div>
     </form>
   {:else if step === 'discovered' && discovery}
     <div class="found">
-      <p class="ok"><CircleCheck size={18} /> {t(`wizard.source.${discovery.source}`)}</p>
+      <p class="ok"><CircleCheck size={18} /> {t(`onboarding.account.source.${discovery.source}`)}</p>
       <dl>
-        <dt>{t('wizard.incoming')}</dt>
-        <dd><Server size={14} /> {discovery.kind.toUpperCase()} · {incoming.host}:{incoming.port} · {t(`tls.${incoming.tls}`)}</dd>
+        <dt>{t('onboarding.account.incoming')}</dt>
+        <dd><Server size={14} /> {discovery.kind.toUpperCase()} · {incoming.host}:{incoming.port} · {t(`settings.tls.${incoming.tls}`)}</dd>
         {#if discovery.outgoing}
-          <dt>{t('wizard.outgoing')}</dt>
-          <dd><Server size={14} /> SMTP · {outgoing.host}:{outgoing.port} · {t(`tls.${outgoing.tls}`)}</dd>
+          <dt>{t('onboarding.account.outgoing')}</dt>
+          <dd><Server size={14} /> SMTP · {outgoing.host}:{outgoing.port} · {t(`settings.tls.${outgoing.tls}`)}</dd>
         {/if}
-        <dt>{t('wizard.username')}</dt>
+        <dt>{t('onboarding.account.username')}</dt>
         <dd>{incoming.username}</dd>
       </dl>
-      {#if discovery.oauthAvailable}<p class="hint">{t('wizard.oauthHint')}</p>{/if}
+      {#if discovery.oauthAvailable}<p class="hint">{t('onboarding.account.oauthHint')}</p>{/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
-        <button class="btn btn-ghost" onclick={() => (step = 'manual')}>{t('wizard.editManually')}</button>
-        <button class="btn btn-primary" onclick={save} data-autofocus>{t('wizard.addAccount')}</button>
+        <button class="btn btn-ghost" onclick={() => (step = 'manual')}>{t('onboarding.account.editManually')}</button>
+        <button class="btn btn-primary" onclick={save} data-autofocus>{t('onboarding.account.addAccount')}</button>
       </div>
     </div>
   {:else if step === 'manual' || step === 'saving'}
@@ -171,79 +173,86 @@
       }}
     >
       <label>
-        <span class="label">{t('wizard.protocol')}</span>
+        <span class="label">{t('onboarding.account.protocol')}</span>
         <select class="input" bind:value={protocol} onchange={() => onTls('incoming')}>
-          {#each protocols as p (p)}<option value={p}>{t(`protocol.${p}`)}</option>{/each}
+          {#each protocols as p (p)}<option value={p}>{t(`settings.protocol.${p}`)}</option>{/each}
         </select>
       </label>
       <fieldset>
-        <legend>{t('wizard.incoming')}</legend>
+        <legend>{t('onboarding.account.incoming')}</legend>
         <div class="grid">
-          <label class="wide"><span class="label">{t('wizard.host')}</span><input class="input" bind:value={incoming.host} required /></label>
-          <label><span class="label">{t('wizard.port')}</span><input class="input" type="number" min="1" max="65535" bind:value={incoming.port} required /></label>
+          <label class="wide"><span class="label">{t('onboarding.account.host')}</span><input class="input" bind:value={incoming.host} required /></label>
+          <label><span class="label">{t('onboarding.account.port')}</span><input class="input" type="number" min="1" max="65535" bind:value={incoming.port} required /></label>
           <label>
-            <span class="label">{t('wizard.tls')}</span>
+            <span class="label">{t('onboarding.account.tls')}</span>
             <select class="input" bind:value={incoming.tls} onchange={() => onTls('incoming')}>
-              {#each tlsModes as m (m)}<option value={m}>{t(`tls.${m}`)}</option>{/each}
+              {#each tlsModes as m (m)}<option value={m}>{t(`settings.tls.${m}`)}</option>{/each}
             </select>
           </label>
           <label>
-            <span class="label">{t('wizard.auth')}</span>
+            <span class="label">{t('onboarding.account.auth')}</span>
             <select class="input" bind:value={incoming.auth}>
-              {#each authMethods as a (a)}<option value={a}>{t(`auth.${a}`)}</option>{/each}
+              {#each authMethods as a (a)}<option value={a}>{t(`settings.auth.${a}`)}</option>{/each}
             </select>
           </label>
-          <label class="wide"><span class="label">{t('wizard.username')}</span><input class="input" bind:value={incoming.username} /></label>
+          <label class="wide"><span class="label">{t('onboarding.account.username')}</span><input class="input" bind:value={incoming.username} /></label>
         </div>
       </fieldset>
       {#if needsOutgoing}
         <fieldset>
-          <legend>{t('wizard.outgoing')}</legend>
+          <legend>{t('onboarding.account.outgoing')}</legend>
           <div class="grid">
-            <label class="wide"><span class="label">{t('wizard.host')}</span><input class="input" bind:value={outgoing.host} required /></label>
-            <label><span class="label">{t('wizard.port')}</span><input class="input" type="number" min="1" max="65535" bind:value={outgoing.port} required /></label>
+            <label class="wide"><span class="label">{t('onboarding.account.host')}</span><input class="input" bind:value={outgoing.host} required /></label>
+            <label><span class="label">{t('onboarding.account.port')}</span><input class="input" type="number" min="1" max="65535" bind:value={outgoing.port} required /></label>
             <label>
-              <span class="label">{t('wizard.tls')}</span>
+              <span class="label">{t('onboarding.account.tls')}</span>
               <select class="input" bind:value={outgoing.tls} onchange={() => onTls('outgoing')}>
-                {#each tlsModes as m (m)}<option value={m}>{t(`tls.${m}`)}</option>{/each}
+                {#each tlsModes as m (m)}<option value={m}>{t(`settings.tls.${m}`)}</option>{/each}
               </select>
             </label>
             <label>
-              <span class="label">{t('wizard.auth')}</span>
+              <span class="label">{t('onboarding.account.auth')}</span>
               <select class="input" bind:value={outgoing.auth}>
-                {#each authMethods as a (a)}<option value={a}>{t(`auth.${a}`)}</option>{/each}
+                {#each authMethods as a (a)}<option value={a}>{t(`settings.auth.${a}`)}</option>{/each}
               </select>
             </label>
-            <label class="wide"><span class="label">{t('wizard.username')}</span><input class="input" bind:value={outgoing.username} /></label>
+            <label class="wide"><span class="label">{t('onboarding.account.username')}</span><input class="input" bind:value={outgoing.username} /></label>
           </div>
         </fieldset>
       {/if}
       {#if insecure}
         <label class="warn">
           <TriangleAlert size={16} />
-          <span>{t('wizard.insecureWarning')}</span>
-          <input type="checkbox" bind:checked={allowInsecure} aria-label={t('wizard.insecureConfirm')} />
+          <span>{t('onboarding.account.insecureWarning')}</span>
+          <input type="checkbox" bind:checked={allowInsecure} aria-label={t('onboarding.account.insecureConfirm')} />
         </label>
       {/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
-        <button type="button" class="btn btn-ghost" onclick={() => (step = 'credentials')}>{t('action.back')}</button>
+        <button type="button" class="btn btn-ghost" onclick={() => (step = 'credentials')}>{t('common.action.back')}</button>
         <button type="submit" class="btn btn-primary" disabled={step === 'saving'}>
           {#if step === 'saving'}<LoaderCircle size={15} class="spin" />{/if}
-          {t('wizard.addAccount')}
+          {t('onboarding.account.addAccount')}
         </button>
       </div>
     </form>
   {:else if step === 'done'}
     <div class="done">
       <CircleCheck size={40} />
-      <p>{t('wizard.done', { email })}</p>
-      <button class="btn btn-primary" onclick={onclose} data-autofocus>{t('action.close')}</button>
+      <p>{t('onboarding.account.done', { email })}</p>
+      <button class="btn btn-primary" onclick={onclose} data-autofocus>{t('common.action.close')}</button>
     </div>
   {/if}
 </Modal>
 
 <style>
+  .brand {
+    display: block;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 4px;
+    border-radius: 18px;
+  }
   .steps {
     display: flex;
     gap: 16px;

@@ -30,7 +30,7 @@
   const folders = $derived((app.folders[accountId] ?? []).filter((f) => !currentFolderIds.includes(f.id) && f.name.toLowerCase().includes(filter.toLowerCase())));
 
   function label(f: Folder): string {
-    return f.role ? t(`folder.role.${f.role}` as 'folder.role.inbox') : f.name;
+    return f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name;
   }
 
   async function pick(f: Folder) {
@@ -63,20 +63,20 @@
 </script>
 
 <div class="wrap">
-  <button bind:this={trigger} class="icon-btn" aria-haspopup="menu" aria-expanded={open} title={t('action.move')} aria-label={t('action.move')} onclick={() => (open = !open)}>
+  <button bind:this={trigger} class="icon-btn" aria-haspopup="menu" aria-expanded={open} title={t('common.action.move')} aria-label={t('common.action.move')} onclick={() => (open = !open)}>
     <FolderInput size={17} />
   </button>
   {#if open}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div class="backdrop" role="presentation" onclick={() => (open = false)}></div>
-    <div class="menu" role="menu" tabindex="-1" bind:this={menu} {onkeydown} aria-label={t('action.move')}>
-      <input class="input" placeholder={t('move.filter')} bind:value={filter} aria-label={t('move.filter')} />
+    <div class="menu" role="menu" tabindex="-1" bind:this={menu} {onkeydown} aria-label={t('common.action.move')}>
+      <input class="input" placeholder={t('mail.move.filter')} bind:value={filter} aria-label={t('mail.move.filter')} />
       <div class="items">
         {#each folders as f (f.id)}
           {@const all = app.folders[accountId] ?? []}
           <button role="menuitem" class="item" style:padding-left="{10 + depth(f, all) * 14}px" onclick={() => pick(f)}>{label(f)}</button>
         {:else}
-          <div class="none">{t('move.none')}</div>
+          <div class="none">{t('mail.move.none')}</div>
         {/each}
       </div>
     </div>

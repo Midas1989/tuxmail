@@ -11,6 +11,8 @@
   import ChannelIcon from '../components/common/ChannelIcon.svelte';
   import AccountWizard from '../components/settings/AccountWizard.svelte';
   import NotificationSettings from '../components/settings/NotificationSettings.svelte';
+  import RegionSettings from '../components/settings/RegionSettings.svelte';
+  import logoUrl from '$branding/tuxmail-logo.png';
   import ServerConnectWizard from '../components/settings/ServerConnectWizard.svelte';
   import Server from '@lucide/svelte/icons/server';
   import ScreenShell from './ScreenShell.svelte';
@@ -21,7 +23,7 @@
   function server(a: Account): string {
     if (a.kind === 'whatsapp' || a.kind === 'signal') return a.extra?.address ?? '';
     const i = a.incoming;
-    return i ? `${i.host}:${i.port} · ${t(`tls.${i.tls}`)}` : '';
+    return i ? `${i.host}:${i.port} · ${t(`settings.tls.${i.tls}`)}` : '';
   }
 
   const themes: { id: Theme; icon: typeof Sun }[] = [
@@ -32,17 +34,17 @@
   const densities: Density[] = ['compact', 'normal', 'comfortable'];
 
   const shortcuts: [string, string][] = $derived([
-    ['Ctrl+K', t('shortcut.palette')],
-    ['Ctrl+Shift+V', t('shortcut.toggleView')],
-    ['J / K', t('shortcut.nextPrev')],
-    ['Enter', t('shortcut.open')],
-    ['Esc', t('shortcut.close')],
-    ['C', t('shortcut.compose')],
-    ['R / Shift+R / F', t('shortcut.reply')],
-    ['E / Entf', t('shortcut.archiveDelete')],
-    ['S', t('shortcut.flag')],
-    ['/', t('shortcut.search')],
-    ['Ctrl+Enter', t('shortcut.send')],
+    ['Ctrl+K', t('settings.shortcut.palette')],
+    ['Ctrl+Shift+V', t('settings.shortcut.toggleView')],
+    ['J / K', t('settings.shortcut.nextPrev')],
+    ['Enter', t('settings.shortcut.open')],
+    ['Esc', t('settings.shortcut.close')],
+    ['C', t('settings.shortcut.compose')],
+    ['R / Shift+R / F', t('settings.shortcut.reply')],
+    ['E / Entf', t('settings.shortcut.archiveDelete')],
+    ['S', t('settings.shortcut.flag')],
+    ['/', t('settings.shortcut.search')],
+    ['Ctrl+Enter', t('settings.shortcut.send')],
   ]);
 </script>
 
@@ -64,7 +66,7 @@
               </span>
               <span class="sub">{a.extra?.address} · {server(a)}</span>
             </div>
-            <span class="kind">{t(`protocol.${a.kind}` as 'protocol.imap')}</span>
+            <span class="kind">{t(`settings.protocol.${a.kind}` as 'settings.protocol.imap')}</span>
             <span class="state" class:on={a.enabled}>{a.enabled ? t('settings.active') : t('settings.inactive')}</span>
           </li>
         {/each}
@@ -72,12 +74,14 @@
     </section>
 
     <section class="card" aria-labelledby="set-server">
-      <h2 id="set-server">{t('connect.cardTitle')}</h2>
-      <p class="about">{t('connect.cardText')}</p>
-      <button class="btn btn-primary" onclick={() => (connectOpen = true)}><Server size={15} /> {t('connect.title')}</button>
+      <h2 id="set-server">{t('onboarding.connect.cardTitle')}</h2>
+      <p class="about">{t('onboarding.connect.cardText')}</p>
+      <button class="btn btn-primary" onclick={() => (connectOpen = true)}><Server size={15} /> {t('onboarding.connect.title')}</button>
     </section>
 
     <NotificationSettings />
+
+    <RegionSettings />
 
     <section class="card" aria-labelledby="set-look">
       <h2 id="set-look">{t('settings.appearance')}</h2>
@@ -86,7 +90,7 @@
         <div class="seg" role="radiogroup" aria-labelledby="lbl-theme">
           {#each themes as th (th.id)}
             {@const Icon = th.icon}
-            <button role="radio" aria-checked={prefs.theme === th.id} onclick={() => ((prefs.theme = th.id), prefs.save())}><Icon size={14} /> {t(`theme.${th.id}`)}</button>
+            <button role="radio" aria-checked={prefs.theme === th.id} onclick={() => ((prefs.theme = th.id), prefs.save())}><Icon size={14} /> {t(`settings.themes.${th.id}`)}</button>
           {/each}
         </div>
       </div>
@@ -94,22 +98,15 @@
         <span class="label" id="lbl-density">{t('settings.density')}</span>
         <div class="seg" role="radiogroup" aria-labelledby="lbl-density">
           {#each densities as d (d)}
-            <button role="radio" aria-checked={prefs.density === d} onclick={() => ((prefs.density = d), prefs.save())}>{t(`density.${d}`)}</button>
+            <button role="radio" aria-checked={prefs.density === d} onclick={() => ((prefs.density = d), prefs.save())}>{t(`settings.densities.${d}`)}</button>
           {/each}
         </div>
       </div>
       <div class="field">
-        <label class="label" for="set-lang">{t('settings.language')}</label>
-        <select id="set-lang" class="input narrow" value={prefs.locale} onchange={(e) => prefs.setLocale((e.currentTarget as HTMLSelectElement).value as 'de' | 'en')}>
-          <option value="de">Deutsch</option>
-          <option value="en">English</option>
-        </select>
-      </div>
-      <div class="field">
         <span class="label" id="lbl-view">{t('settings.defaultView')}</span>
         <div class="seg" role="radiogroup" aria-labelledby="lbl-view">
-          <button role="radio" aria-checked={prefs.viewMode === 'classic'} onclick={() => app.setViewMode('classic')}>{t('view.classic')}</button>
-          <button role="radio" aria-checked={prefs.viewMode === 'chat'} onclick={() => app.setViewMode('chat')}>{t('view.chat')}</button>
+          <button role="radio" aria-checked={prefs.viewMode === 'classic'} onclick={() => app.setViewMode('classic')}>{t('mail.view.classic')}</button>
+          <button role="radio" aria-checked={prefs.viewMode === 'chat'} onclick={() => app.setViewMode('chat')}>{t('mail.view.chat')}</button>
         </div>
       </div>
     </section>
@@ -126,6 +123,7 @@
 
     <section class="card" aria-labelledby="set-about">
       <h2 id="set-about">{t('settings.about')}</h2>
+      <img class="logo" src={logoUrl} alt="TuxMail" width="160" height="160" />
       <p class="about">{t('settings.aboutText')}</p>
       <p class="about">{t('settings.transport', { kind: app.api.kind })}</p>
     </section>
@@ -222,9 +220,6 @@
   .field {
     margin-bottom: 14px;
   }
-  .narrow {
-    width: 200px;
-  }
   .keys {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -235,6 +230,13 @@
   .keys dd {
     margin: 0;
     color: var(--tm-muted);
+  }
+  .logo {
+    display: block;
+    width: 160px;
+    height: auto;
+    border-radius: 16px;
+    margin: 0 0 10px;
   }
   .about {
     margin: 0 0 10px;

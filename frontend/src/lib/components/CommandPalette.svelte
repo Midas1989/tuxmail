@@ -22,8 +22,8 @@
 <script lang="ts">
   import Search from '@lucide/svelte/icons/search';
   import CornerDownLeft from '@lucide/svelte/icons/corner-down-left';
-  import { app, prefs } from '../state';
-  import { t } from '../i18n/index.svelte';
+  import { app, prefs, search } from '../state';
+  import { i18n, t } from '../i18n/index.svelte';
   import Modal from './common/Modal.svelte';
 
   interface Command {
@@ -41,46 +41,46 @@
   const close = () => (app.paletteOpen = false);
 
   const commands = $derived.by((): Command[] => {
-    const nav = t('palette.section.navigation');
-    const act = t('palette.section.actions');
-    const view = t('palette.section.view');
-    const go = t('palette.section.folders');
-    const conv = t('palette.section.conversations');
+    const nav = t('common.palette.section.navigation');
+    const act = t('common.palette.section.actions');
+    const view = t('common.palette.section.view');
+    const go = t('common.palette.section.folders');
+    const conv = t('common.palette.section.conversations');
     const list: Command[] = [
-      { id: 'compose', label: t('action.compose'), section: act, hint: 'C', run: () => app.openCompose() },
-      { id: 'view.toggle', label: prefs.viewMode === 'classic' ? t('palette.toChat') : t('palette.toClassic'), section: view, hint: 'Ctrl+Shift+V', run: () => app.toggleViewMode() },
+      { id: 'compose', label: t('common.action.compose'), section: act, hint: 'C', run: () => app.openCompose() },
+      { id: 'view.toggle', label: prefs.viewMode === 'classic' ? t('common.palette.toChat') : t('common.palette.toClassic'), section: view, hint: 'Ctrl+Shift+V', run: () => app.toggleViewMode() },
       { id: 'nav.mail', label: t('nav.mail'), section: nav, run: () => (app.navigate('mail'), app.setViewMode('classic')) },
       { id: 'nav.chats', label: t('nav.chats'), section: nav, run: () => (app.navigate('mail'), app.setViewMode('chat')) },
       { id: 'nav.calendar', label: t('nav.calendar'), section: nav, run: () => app.navigate('calendar') },
       { id: 'nav.contacts', label: t('nav.contacts'), section: nav, run: () => app.navigate('contacts') },
       { id: 'nav.files', label: t('nav.files'), section: nav, run: () => app.navigate('files') },
       { id: 'nav.settings', label: t('nav.settings'), section: nav, run: () => app.navigate('settings') },
-      { id: 'group.person', label: t('palette.groupByPerson'), section: view, run: () => app.setGrouping('person') },
-      { id: 'group.thread', label: t('palette.groupByThread'), section: view, run: () => app.setGrouping('thread') },
-      { id: 'theme.light', label: t('palette.themeLight'), section: view, run: () => ((prefs.theme = 'light'), prefs.save()) },
-      { id: 'theme.dark', label: t('palette.themeDark'), section: view, run: () => ((prefs.theme = 'dark'), prefs.save()) },
-      { id: 'theme.system', label: t('palette.themeSystem'), section: view, run: () => ((prefs.theme = 'system'), prefs.save()) },
-      { id: 'density.compact', label: t('palette.densityCompact'), section: view, run: () => ((prefs.density = 'compact'), prefs.save()) },
-      { id: 'density.normal', label: t('palette.densityNormal'), section: view, run: () => ((prefs.density = 'normal'), prefs.save()) },
-      { id: 'density.comfortable', label: t('palette.densityComfortable'), section: view, run: () => ((prefs.density = 'comfortable'), prefs.save()) },
-      { id: 'lang.de', label: 'Sprache: Deutsch', section: view, run: () => prefs.setLocale('de') },
-      { id: 'lang.en', label: 'Language: English', section: view, run: () => prefs.setLocale('en') },
+      { id: 'group.person', label: t('common.palette.groupByPerson'), section: view, run: () => app.setGrouping('person') },
+      { id: 'group.thread', label: t('common.palette.groupByThread'), section: view, run: () => app.setGrouping('thread') },
+      { id: 'settings.themes.light', label: t('common.palette.themeLight'), section: view, run: () => ((prefs.theme = 'light'), prefs.save()) },
+      { id: 'settings.themes.dark', label: t('common.palette.themeDark'), section: view, run: () => ((prefs.theme = 'dark'), prefs.save()) },
+      { id: 'settings.themes.system', label: t('common.palette.themeSystem'), section: view, run: () => ((prefs.theme = 'system'), prefs.save()) },
+      { id: 'settings.densities.compact', label: t('common.palette.densityCompact'), section: view, run: () => ((prefs.density = 'compact'), prefs.save()) },
+      { id: 'settings.densities.normal', label: t('common.palette.densityNormal'), section: view, run: () => ((prefs.density = 'normal'), prefs.save()) },
+      { id: 'settings.densities.comfortable', label: t('common.palette.densityComfortable'), section: view, run: () => ((prefs.density = 'comfortable'), prefs.save()) },
+      ...i18n.locales.map((l) => ({ id: 'lang.' + l.code, label: `${t('settings.language')}: ${l.nativeName}`, section: view, run: () => prefs.setLocale(l.code) })),
+      { id: 'nav.search', label: t('common.palette.openSearch'), section: nav, hint: '/', run: () => app.navigate('search') },
     ];
     if (app.message && prefs.viewMode === 'classic') {
       const id = app.message.id;
       list.unshift(
-        { id: 'reply', label: t('action.reply'), section: act, hint: 'R', run: () => app.replyTo('reply') },
-        { id: 'replyAll', label: t('action.replyAll'), section: act, hint: 'Shift+R', run: () => app.replyTo('replyAll') },
-        { id: 'forward', label: t('action.forward'), section: act, hint: 'F', run: () => app.replyTo('forward') },
-        { id: 'archive', label: t('action.archive'), section: act, hint: 'E', run: () => app.moveToRole(id, 'archive') },
-        { id: 'delete', label: t('action.delete'), section: act, hint: 'Del', run: () => app.moveToRole(id, 'trash') },
-        { id: 'flag', label: t('action.flag'), section: act, hint: 'S', run: () => app.toggleFlag(id) },
+        { id: 'reply', label: t('common.action.reply'), section: act, hint: 'R', run: () => app.replyTo('reply') },
+        { id: 'replyAll', label: t('common.action.replyAll'), section: act, hint: 'Shift+R', run: () => app.replyTo('replyAll') },
+        { id: 'forward', label: t('common.action.forward'), section: act, hint: 'F', run: () => app.replyTo('forward') },
+        { id: 'archive', label: t('common.action.archive'), section: act, hint: 'E', run: () => app.moveToRole(id, 'archive') },
+        { id: 'delete', label: t('common.action.delete'), section: act, hint: 'Del', run: () => app.moveToRole(id, 'trash') },
+        { id: 'flag', label: t('common.action.flag'), section: act, hint: 'S', run: () => app.toggleFlag(id) },
       );
     }
-    list.push({ id: 'unified.inbox', label: t('folder.unifiedInbox'), section: go, run: () => app.select({ kind: 'unified', role: 'inbox' }) });
+    list.push({ id: 'unified.inbox', label: t('mail.folder.unifiedInbox'), section: go, run: () => app.select({ kind: 'unified', role: 'inbox' }) });
     for (const acc of app.mailAccounts) {
       for (const f of app.folders[acc.id] ?? []) {
-        const name = f.role ? t(`folder.role.${f.role}` as 'folder.role.inbox') : f.name;
+        const name = f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name;
         list.push({ id: `f${f.id}`, label: `${acc.displayName} › ${name}`, section: go, run: () => app.select({ kind: 'folder', accountId: acc.id, folderId: f.id }) });
       }
     }
@@ -100,7 +100,12 @@
     const scored = commands.map((c) => ({ c, s: q ? fuzzyScore(`${c.label} ${c.section}`, q) : 0 })).filter((x) => x.s >= 0);
     if (q) scored.sort((a, b) => b.s - a.s);
     const out = scored.slice(0, 50).map((x) => x.c);
-    if (q) out.push({ id: 'search', label: t('palette.searchFor', { q }), section: t('palette.section.search'), hint: 'Enter', run: () => app.setSearch(q) });
+    if (q) out.push({ id: 'search', label: t('common.palette.searchFor', { q }), section: t('common.palette.section.search'), hint: 'Enter', run: () => {
+          search.text = q;
+          search.mode = 'simple';
+          app.navigate('search');
+          return search.run();
+        } });
     return out;
   });
 
@@ -133,24 +138,24 @@
   }
 </script>
 
-<Modal title={t('palette.title')} onclose={close} bare align="top" width="620px">
+<Modal title={t('common.palette.title')} onclose={close} bare align="top" width="620px">
   <div class="pal">
     <div class="search">
       <Search size={18} aria-hidden="true" />
       <input
         bind:value={query}
         {onkeydown}
-        placeholder={t('palette.placeholder')}
+        placeholder={t('common.palette.placeholder')}
         role="combobox"
         aria-expanded="true"
         aria-controls="palette-list"
         aria-activedescendant={results.length ? `pal-${active}` : undefined}
-        aria-label={t('palette.title')}
+        aria-label={t('common.palette.title')}
         data-autofocus
       />
       <span class="kbd">Esc</span>
     </div>
-    <ul id="palette-list" role="listbox" bind:this={listEl} aria-label={t('palette.title')}>
+    <ul id="palette-list" role="listbox" bind:this={listEl} aria-label={t('common.palette.title')}>
       {#each results as c, i (c.id)}
         <li id="pal-{i}" role="option" aria-selected={i === active} onmousemove={() => (active = i)} onclick={() => run(c)} onkeydown={() => {}}>
           <span class="label">{c.label}</span>
@@ -159,7 +164,7 @@
           {#if i === active}<CornerDownLeft size={14} class="enter" aria-hidden="true" />{/if}
         </li>
       {:else}
-        <li class="none" role="presentation">{t('palette.noResults')}</li>
+        <li class="none" role="presentation">{t('common.palette.noResults')}</li>
       {/each}
     </ul>
   </div>

@@ -19,7 +19,7 @@
           }}>{toast.actionLabel}</button
         >
       {/if}
-      <button class="close" aria-label={t('action.close')} onclick={() => app.dismissToast(toast.id)}><X size={14} /></button>
+      <button class="close" aria-label={t('common.action.close')} onclick={() => app.dismissToast(toast.id)}><X size={14} /></button>
     </div>
   {/each}
 </div>

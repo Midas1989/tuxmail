@@ -9,7 +9,7 @@ import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery,
 import { ApiError, EventHub } from './api';
 import { chatItemId, mailItemId, normalizeSubject, splitQuoted } from '../conversation';
 import type {
-  Account,
+Account,
   Address,
   ApiEvent,
   Attachment,
@@ -22,23 +22,31 @@ import type {
   DeviceTokenResult,
   DiscoveryResult,
   Flag,
-  NotificationSettings,
-  ProvisioningImport,
-  ProvisioningProfile,
-  PushSubscriptionInput,
-  ServerLoginInput,
   Folder,
   Identity,
+  LocaleInfo,
   MessageDetail,
   MessageSummary,
   NewAccountInput,
+  NotificationSettings,
   OutgoingMessage,
   Page,
   Person,
+  ProvisioningImport,
+  ProvisioningProfile,
+  PushSubscriptionInput,
+  SearchHistoryEntry,
+  SearchProfile,
+  SearchQuery,
+  SearchResult,
   SendResult,
+  ServerLoginInput,
   Signature,
+  UserPreferences,
 } from '../types';
 import * as data from './mockData';
+import { runSearch, type SearchDoc } from '../search/engine';
+import { DEFAULT_REGION } from '../format';
 
 const SEEN: Flag = '\\Seen';
 const ANSWERED: Flag = '\\Answered';
@@ -873,6 +881,215 @@ export class MockTransport implements Api {
     await sleep(this.latency * 6);
     if (input.accountIds.length === 0 && input.identityIds.length === 0) throw new ApiError('Nichts zum Importieren ausgewählt', 400, 'empty');
     await this.reply(null);
+  }
+
+  // ---- search ------------------------------------------------------------------
+
+  private searchProfiles: SearchProfile[] = [
+    {
+      id: 'buchhaltung',
+      name: 'Buchhaltung',
+      pinned: true,
+      query: {
+        text: '(rechnung OR filename:*.pdf) AND NOT from:newsletter',
+        mode: 'expert',
+        scopes: ['mail'],
+        accountIds: [],
+        folderIds: [],
+        includeSubfolders: true,
+        excludeTrashSpam: true,
+        location: 'auto',
+        sort: 'date',
+      },
+    },
+  ];
+  private searchHistory: SearchHistoryEntry[] = [];
+
+  private folderLabel(f: Folder): string {
+    const names: Record<string, string> = { inbox: 'Posteingang', sent: 'Gesendet', drafts: 'Entwürfe', archive: 'Archiv', trash: 'Papierkorb', junk: 'Spam' };
+    return f.role ? names[f.role] : f.name;
+  }
+
+  private searchDocs(): SearchDoc[] {
+    const docs: SearchDoc[] = [];
+    const acc = (id: number) => this.accounts.find((a) => a.id === id);
+    const fmt = (a: Address) => (a.name ? `${a.name} <${a.email}>` : a.email);
+    for (const m of this.messages.values()) {
+      const meta = this.meta.get(m.id)!;
+      const folders = m.folderIds.map((id) => this.folder(id)).filter((f): f is Folder => !!f);
+      const text = (m.text ?? '').replace(/<[^>]+>/g, ' ');
+      const cats: string[] = [];
+      if (/rechnung|invoice/i.test(m.subject + ' ' + m.attachments.map((a) => a.filename).join(' '))) cats.push('rechnung');
+      if (/newsletter|wochenrückblick/i.test(m.subject + ' ' + m.from[0]?.email)) cats.push('newsletter');
+      if (m.accountId === 2) cats.push('arbeit');
+      docs.push({
+        id: 'm:' + m.id,
+        kind: 'mail',
+        title: m.subject,
+        body: splitQuoted(text).body || text,
+        from: m.from.map(fmt).join(', '),
+        to: m.to.map(fmt).join(', '),
+        cc: m.cc.map(fmt).join(', '),
+        filenames: m.attachments.map((a) => a.filename),
+        accountId: m.accountId,
+        accountLabel: acc(m.accountId)?.displayName ?? '',
+        folderIds: m.folderIds,
+        folderNames: folders.map((f) => this.folderLabel(f)),
+        inTrashOrSpam: this.isHidden(m),
+        channel: 'email',
+        categories: cats,
+        date: m.date,
+        size: m.size,
+        unread: !m.flags.includes(SEEN),
+        flagged: m.flags.includes(FLAGGED),
+        answered: m.flags.includes(ANSWERED),
+        hasCalendar: m.attachments.some((a) => a.mimeType === 'text/calendar'),
+        senderName: m.from[0]?.name ?? m.from[0]?.email ?? '',
+        senderEmail: m.from[0]?.email ?? '',
+        messageId: m.id,
+        conversationId: meta.thread,
+        itemId: mailItemId(m.id),
+      });
+      for (const a of m.attachments) {
+        docs.push({
+          ...docs[docs.length - 1],
+          id: `f:${a.id}`,
+          kind: 'file',
+          title: a.filename,
+          body: m.subject,
+          filenames: [a.filename],
+          size: a.size,
+        });
+      }
+    }
+    for (const c of this.chatMsgs) {
+      const chat = this.chats.find((x) => x.id === c.chatId)!;
+      const sender = this.person(c.from);
+      const account = acc(chat.accountId);
+      const handle = sender.handles.find((h) => h.kind === this.chatChannel(chat))?.value ?? '';
+      docs.push({
+        id: chatItemId(c.id),
+        kind: 'chat',
+        title: chat.title ?? this.person(chat.memberIds[0]).displayName,
+        body: c.text,
+        from: `${sender.displayName} <${handle}>`,
+        to: chat.memberIds.map((id) => this.person(id).displayName).join(', '),
+        cc: '',
+        filenames: c.attachments.map((a) => a.filename),
+        accountId: chat.accountId,
+        accountLabel: account?.displayName ?? '',
+        folderIds: [],
+        folderNames: [],
+        inTrashOrSpam: false,
+        channel: this.chatChannel(chat),
+        categories: [],
+        date: c.sentAt,
+        size: c.text.length + c.attachments.reduce((n, a) => n + a.size, 0),
+        unread: !c.seen,
+        flagged: false,
+        answered: false,
+        hasCalendar: false,
+        senderName: sender.displayName,
+        senderEmail: '',
+        conversationId: chat.id,
+        itemId: chatItemId(c.id),
+      });
+    }
+    for (const p of this.persons) {
+      if (p.isMe) continue;
+      docs.push({
+        id: 'p:' + p.id,
+        kind: 'contact',
+        title: p.displayName,
+        body: p.handles.map((h) => h.value).join(' · '),
+        from: `${p.displayName} <${p.handles.find((h) => h.kind === 'email')?.value ?? ''}>`,
+        to: '',
+        cc: '',
+        filenames: [],
+        accountLabel: '',
+        folderIds: [],
+        folderNames: [],
+        inTrashOrSpam: false,
+        categories: [],
+        size: 0,
+        unread: false,
+        flagged: false,
+        answered: false,
+        hasCalendar: false,
+        senderName: p.displayName,
+        senderEmail: p.handles.find((h) => h.kind === 'email')?.value ?? '',
+        personId: p.id,
+      });
+    }
+    return docs;
+  }
+
+  async search(query: SearchQuery): Promise<SearchResult> {
+    const result = runSearch(this.searchDocs(), query, {
+      now: new Date(),
+      descendants: (id) => {
+        const out: number[] = [];
+        const walk = (pid: number) => this.folders.filter((f) => f.parentId === pid).forEach((f) => (out.push(f.id), walk(f.id)));
+        walk(id);
+        return out;
+      },
+      monthLabel: (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' }),
+    });
+    if (query.text.trim() && !query.cursor) {
+      this.searchHistory = [{ text: query.text, mode: query.mode, at: new Date().toISOString() }, ...this.searchHistory.filter((h) => h.text !== query.text)].slice(0, 20);
+    }
+    return this.reply(result);
+  }
+  listSearchProfiles(): Promise<SearchProfile[]> {
+    return this.reply(this.searchProfiles);
+  }
+  async saveSearchProfile(profile: SearchProfile): Promise<SearchProfile> {
+    const p = { ...structuredClone(profile), id: profile.id || 'p-' + Math.random().toString(36).slice(2, 8) };
+    this.searchProfiles = [...this.searchProfiles.filter((x) => x.id !== p.id), p];
+    return this.reply(p);
+  }
+  async deleteSearchProfile(id: string): Promise<void> {
+    this.searchProfiles = this.searchProfiles.filter((p) => p.id !== id);
+    await this.reply(null);
+  }
+  getSearchHistory(): Promise<SearchHistoryEntry[]> {
+    return this.reply(this.searchHistory);
+  }
+  async clearSearchHistory(): Promise<void> {
+    this.searchHistory = [];
+    await this.reply(null);
+  }
+
+  // ---- preferences (in memory, mirrored to localStorage when available) --------
+
+  private static PREFS_KEY = 'tuxmail.mock.preferences.v1';
+
+  async getPreferences(): Promise<UserPreferences> {
+    let stored: Partial<UserPreferences> = {};
+    try {
+      stored = JSON.parse(globalThis.localStorage?.getItem(MockTransport.PREFS_KEY) ?? '{}') as Partial<UserPreferences>;
+    } catch {
+      /* no storage */
+    }
+    const prefs: UserPreferences = { locale: stored.locale ?? 'system', region: { ...DEFAULT_REGION, ...(stored.region ?? {}) } };
+    return this.reply(prefs);
+  }
+  async setPreferences(prefs: UserPreferences): Promise<UserPreferences> {
+    try {
+      globalThis.localStorage?.setItem(MockTransport.PREFS_KEY, JSON.stringify(prefs));
+    } catch {
+      /* no storage */
+    }
+    return this.reply(prefs);
+  }
+
+  // ---- extra languages (none in the demo) -------------------------------------
+
+  listLocales(): Promise<LocaleInfo[]> {
+    return this.reply([]);
+  }
+  getLocale(code: string): Promise<Record<string, unknown>> {
+    return Promise.reject(new ApiError(`Locale ${code} not available`, 404, 'not_found'));
   }
 
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {

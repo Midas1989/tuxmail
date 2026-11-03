@@ -14,7 +14,7 @@
     label?: boolean;
   }
   let { channel, size = 14, badge = false, label = false }: Props = $props();
-  const name = $derived(t(`channel.${channel}`));
+  const name = $derived(t(`common.channel.${channel}`));
 </script>
 
 <span class="ch ch-{channel}" class:badge title={name}>
@@ -30,6 +30,7 @@
 
 <style>
   .ch {
+    position: relative;
     display: inline-flex;
     align-items: center;
     gap: 4px;

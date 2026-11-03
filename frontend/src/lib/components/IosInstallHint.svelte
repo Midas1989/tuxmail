@@ -30,17 +30,17 @@
 </script>
 
 {#if visible}
-  <aside class="hint" aria-label={t('ios.title')} transition:fly={{ y: 40, duration: 200 }}>
+  <aside class="hint" aria-label={t('notifications.ios.title')} transition:fly={{ y: 40, duration: 200 }}>
     <img src="./icons/icon-192.png" alt="" width="40" height="40" />
     <div class="text">
-      <strong>{t('ios.title')}</strong>
+      <strong>{t('notifications.ios.title')}</strong>
       <span>
-        {t('ios.step1')} <Share size={14} aria-label={t('ios.shareIcon')} />
-        {t('ios.step2')} <SquarePlus size={14} aria-hidden="true" /> <b>{t('ios.addToHome')}</b>.
+        {t('notifications.ios.step1')} <Share size={14} aria-label={t('notifications.ios.shareIcon')} />
+        {t('notifications.ios.step2')} <SquarePlus size={14} aria-hidden="true" /> <b>{t('notifications.ios.addToHome')}</b>.
       </span>
-      <small>{t('ios.why')}</small>
+      <small>{t('notifications.ios.why')}</small>
     </div>
-    <button class="icon-btn" aria-label={t('action.close')} onclick={dismiss}><X size={16} /></button>
+    <button class="icon-btn" aria-label={t('common.action.close')} onclick={dismiss}><X size={16} /></button>
   </aside>
 {/if}
 
@@ -77,6 +77,7 @@
     line-height: 1.6;
   }
   .text :global(svg) {
+    display: inline-block;
     vertical-align: -2px;
     color: var(--tm-accent-text);
   }
