@@ -1159,7 +1159,7 @@ Die Oberfläche (Svelte) und die Transport-Abstraktion ermöglichen native Mobil
 
 | Stufe | Umsetzung | Beschreibung |
 |---|---|---|
-| **A – Thin Client (empfohlen zuerst)** | **Capacitor** (Android, später iOS) | UI im APK, verbindet sich mit beliebigen TuxMail-Servern (Geräte-Anmeldung wie 15.8). Native Push: **FCM** (Play-Store-Variante) bzw. **UnifiedPush** (F-Droid/ohne Google-Dienste, z. B. ntfy). Teilen-Menü (Dateien/Text an TuxMail senden), Anhänge mit System-Apps öffnen, Kamera/Galerie, biometrische App-Sperre, Benachrichtigungen mit Schnellantwort, Offline-Cache. |
+| **A – Thin Client (Version 1.0, in Umsetzung)** | **Capacitor** (Android, später iOS) | UI im APK, verbindet sich mit beliebigen TuxMail-Servern (Geräte-Anmeldung wie 15.8). Native Push: **FCM** (Play-Store-Variante) bzw. **UnifiedPush** (F-Droid/ohne Google-Dienste, z. B. ntfy). Teilen-Menü (Dateien/Text an TuxMail senden), Anhänge mit System-Apps öffnen, Kamera/Galerie, biometrische App-Sperre, Benachrichtigungen mit Schnellantwort, Offline-Cache. |
 | **B – Eigenständig (später)** | Go-Kern per `gomobile bind` als Android-Bibliothek + gleiche UI | Synchronisiert Konten direkt auf dem Gerät (ohne Server). Hintergrund-Sync per Vordergrunddienst/WorkManager; Messenger nur über den Bridge-Modus. |
 | PWA-Verpackung (TWA) | Bubblewrap | Nur für eine feste Server-Domain sinnvoll (z. B. Firmenserver), nicht als allgemeine App. |
 
@@ -1377,10 +1377,11 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | **8 – Bridge-Modus** | `plugin-matrix-bridge`, Bridge-Zuordnung, Kopplungsassistent, docker-compose mit Homeserver + Bridges | Messenger 24/7 | 2 PM |
 | **9 – Server & Web-Client** | `tuxmail serve`, API-Generierung (Connect-RPC), Transport-Abstraktion im Frontend, Benutzerverwaltung (Rollen, Gruppen, 2FA, OIDC, CLI), PWA/Web-Push, Docker-Image, **Ansible-Playbook** (nginx neu/bestehend, systemd, Let's Encrypt/eigenes Zertifikat) | Zugriff über Browser | 5 PM |
 | **9b – Workflows & Team** | Workflow-Engine + grafischer Editor + YAML, Vorlagen, Trockenlauf, Protokoll; „Warten auf Antwort"; Versand-Prüfungen; Druck/PDF/A-Archivierung inkl. E-Rechnungserkennung; gemeinsame Postfächer (Zuweisung, Kommentare, Kollisionserkennung) | Automatisierung & Teamarbeit | 5 PM |
+| **9c – Android-App** | Thin Client mit Capacitor: Server verbinden + Geräte-Anmeldung, Push (FCM / UnifiedPush), Teilen-Menü, App-Sperre, Build per GitHub Actions, F-Droid-/Play-Vorbereitung | APK für Android | 1,5 PM |
 | **10 – Feinschliff & Release 1.0** | Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (lokal + Cloud-Anbieter), S/MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Sicherheitsprüfung des Web-Modus, Dokumentation | Release | 5 PM |
-| | | **Summe 1.0** | **≈ 49 PM** |
+| | | **Summe 1.0** | **≈ 50,5 PM** |
 | *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat | Optionale Kanäle | *≈ 3–4 PM* |
-| *nach 1.0* | **Android-App** als Thin Client (Capacitor, FCM/UnifiedPush), danach iOS; später eigenständige Android-App mit Go-Kern | Mobil-Apps | *≈ 1,5 PM (Thin Client) + 3–4 PM (eigenständig)* |
+| *nach 1.0* | iOS-App (Capacitor); eigenständiger Android-Modus mit Go-Kern | Mobil-Apps | *≈ 1 PM (iOS) + 3–4 PM (eigenständig)* |
 
 - Mit 3 Entwicklern: **ca. 16–18 Monate** bis Version 1.0 (mit 4 Entwicklern ca. 12–14 Monate); ein nutzbarer Mail-Client mit PGP und Konversationsansicht (Phasen 0–2) nach **ca. 5 Monaten**.
 - Phasen 5–8 lassen sich nach Phase 2 teilweise **parallel** bearbeiten.
