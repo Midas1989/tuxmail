@@ -107,6 +107,7 @@ type App struct {
 
 	syncCreds tsync.Credentials // credentials of the sync engine (EAS PIM, OOF)
 	easPIM    easPIM            // EAS calendar/contacts scheduling (eas.go)
+	cloud     cloudState        // cloud_accounts.go
 }
 
 // New creates the application layer.
@@ -192,7 +193,8 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.sync = &localSyncer{st: a.st}
 	}
 	a.wfReg = workflow.DefaultRegistry()
-	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient}
+	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient,
+		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}}
 	a.proj.Workflow().Deps(&deps)
 	loc := workflow.RunLocal
 	if opts.Mode == ModeServer {

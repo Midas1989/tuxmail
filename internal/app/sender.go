@@ -39,7 +39,7 @@ type MailSender struct {
 func newMailSender(a *App, opts *SendOptions) (*MailSender, error) {
 	ad := &sendAdapters{a: a}
 	cfg := send.Config{Identities: a.st, Transports: a.transports(), Hooks: a.bus, Events: a.bus,
-		CloudLinks: a.st, Secrets: a.opts.Secrets, Sent: ad, Relations: ad, Flags: ad,
+		Cloud: cloudUploader{a: a}, CloudLinks: a.st, Secrets: a.opts.Secrets, Sent: ad, Relations: ad, Flags: ad,
 		FollowUps: followup.New(a.st, a.bus, followup.Options{Logger: a.log}), Queue: send.StoreQueue{Store: a.st}, Blobs: ad,
 		Now: a.opts.Now, Logger: a.log}
 	if opts != nil && opts.Configure != nil {
@@ -92,7 +92,12 @@ func (s *MailSender) Send(ctx context.Context, r SendRequest) (SendResult, error
 		if at.Delivery == "" || at.Delivery == "attach" {
 			d.Attachments = append(d.Attachments, ca)
 		} else {
+			acc, err := s.a.deliveryAccount(ctx, at.Delivery)
+			if err != nil {
+				return SendResult{}, err
+			}
 			req.Cloud.Files = append(req.Cloud.Files, ca)
+			req.Cloud.FileAccounts = append(req.Cloud.FileAccounts, acc)
 		}
 	}
 	if pd := msg.PasswordDelivery; pd != nil {
@@ -120,6 +125,7 @@ func (s *MailSender) Send(ctx context.Context, r SendRequest) (SendResult, error
 		return SendResult{}, err
 	}
 	out := SendResult{Queued: res.Scheduled || !res.Sent, ConversationID: msg.ConversationID, Findings: findings(res.Findings)}
+	defer func() { s.a.linkSharesToMessage(ctx, res.Shares, out.MessageID) }()
 	for _, sh := range res.Shares {
 		if sh.Password != "" {
 			out.SharePasswords = append(out.SharePasswords, SharePassword{Filename: sh.FileName, Password: sh.Password})

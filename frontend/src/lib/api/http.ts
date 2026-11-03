@@ -84,6 +84,27 @@
 //   GET  /api/workflows/{id}/runs?limit=        -> WorkflowRun[]
 //   POST /api/workflows/validate                {src, mode} -> WorkflowValidation
 //   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
+//   --- Cloud --- (KONZEPT 12)
+//   GET  /api/cloud/accounts                    -> CloudAccount[]
+//   DELETE /api/cloud/accounts/{id}
+//   POST /api/cloud/login                       CloudLoginInput -> CloudLoginFlow
+//   GET  /api/cloud/login/{flowId}              -> CloudLoginFlow (poll)
+//   DELETE /api/cloud/login/{flowId}
+//   GET  /api/cloud/oauth/callback?code=&state= OpenID Connect redirect (server mode, HTML)
+//   GET  /api/cloud/accounts/{id}/files?path=   -> CloudListing
+//   DELETE /api/cloud/accounts/{id}/files?path=
+//   GET  /api/cloud/accounts/{id}/quota         -> CloudQuota
+//   GET  /api/cloud/accounts/{id}/download?path=  file content (attachment)
+//   POST /api/cloud/accounts/{id}/folders       {path} -> CloudEntry
+//   POST /api/cloud/accounts/{id}/move          {from, to}
+//   POST /api/cloud/accounts/{id}/upload        {dir, uploadToken} -> CloudEntry
+//   POST /api/cloud/accounts/{id}/import        {path} -> CloudImportResult
+//   GET  /api/cloud/accounts/{id}/password      -> {password} (policy compliant)
+//   POST /api/cloud/save                        CloudSaveInput -> CloudEntry
+//   GET  /api/cloud/shares                      -> CloudShare[]
+//   POST /api/cloud/shares                      CloudShareInput -> CloudShare
+//   DELETE /api/cloud/shares/{id}               -> CloudShare (revoked)
+//   GET  /api/cloud/shares/{id}/password        -> {password}
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
@@ -161,6 +182,20 @@ Account,
   ServerLoginInput,
   Signature,
   UserPreferences,
+} from '../types';
+
+// --- Cloud ---
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
 } from '../types';
 
 export interface HttpTransportOptions {
@@ -743,6 +778,79 @@ export class HttpTransport implements Api {
       s.onclose = null;
       s.close();
     }
+  }
+
+  // --- Cloud ---
+  listCloudAccounts(): Promise<CloudAccount[]> {
+    return this.request('GET', '/api/cloud/accounts');
+  }
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow> {
+    return this.request('POST', '/api/cloud/login', input);
+  }
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow> {
+    return this.request('GET', `/api/cloud/login/${encodeURIComponent(flowId)}`);
+  }
+  cancelCloudLogin(flowId: string): Promise<void> {
+    return this.request('DELETE', `/api/cloud/login/${encodeURIComponent(flowId)}`);
+  }
+  deleteCloudAccount(id: number): Promise<void> {
+    return this.request('DELETE', `/api/cloud/accounts/${id}`);
+  }
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing> {
+    return this.request('GET', `/api/cloud/accounts/${accountId}/files${buildQuery({ path })}`);
+  }
+  cloudQuota(accountId: number): Promise<CloudQuota> {
+    return this.request('GET', `/api/cloud/accounts/${accountId}/quota`);
+  }
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry> {
+    return this.request('POST', `/api/cloud/accounts/${accountId}/folders`, { path });
+  }
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void> {
+    return this.request('POST', `/api/cloud/accounts/${accountId}/move`, { from, to });
+  }
+  deleteCloudFile(accountId: number, path: string): Promise<void> {
+    return this.request('DELETE', `/api/cloud/accounts/${accountId}/files${buildQuery({ path })}`);
+  }
+  async uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry> {
+    const { uploadToken } = await this.uploadAttachment(file, filename);
+    return this.request('POST', `/api/cloud/accounts/${accountId}/upload`, { dir, uploadToken });
+  }
+  async downloadCloudFile(accountId: number, path: string): Promise<Blob> {
+    const h: Record<string, string> = {};
+    const bearer = this.authToken();
+    if (bearer) h.Authorization = `Bearer ${bearer}`;
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.base}/api/cloud/accounts/${accountId}/download${buildQuery({ path })}`, {
+        headers: h,
+        credentials: bearer ? 'omit' : 'same-origin',
+      });
+    } catch (err) {
+      throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
+    }
+    if (!res.ok) throw new ApiError(res.statusText, res.status, 'http_' + res.status);
+    return res.blob();
+  }
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult> {
+    return this.request('POST', `/api/cloud/accounts/${accountId}/import`, { path });
+  }
+  saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry> {
+    return this.request('POST', '/api/cloud/save', input);
+  }
+  createCloudShare(input: CloudShareInput): Promise<CloudShare> {
+    return this.request('POST', '/api/cloud/shares', input);
+  }
+  listCloudShares(): Promise<CloudShare[]> {
+    return this.request('GET', '/api/cloud/shares');
+  }
+  revokeCloudShare(id: number): Promise<CloudShare> {
+    return this.request('DELETE', `/api/cloud/shares/${id}`);
+  }
+  cloudSharePassword(id: number): Promise<{ password: string }> {
+    return this.request('GET', `/api/cloud/shares/${id}/password`);
+  }
+  generateCloudPassword(accountId: number): Promise<{ password: string }> {
+    return this.request('GET', `/api/cloud/accounts/${accountId}/password`);
   }
 }
 

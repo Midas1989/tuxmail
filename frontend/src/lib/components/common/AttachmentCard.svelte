@@ -7,6 +7,9 @@
   import Cloud from '@lucide/svelte/icons/cloud';
   import Lock from '@lucide/svelte/icons/lock';
   import Download from '@lucide/svelte/icons/download';
+  import CloudUpload from '@lucide/svelte/icons/cloud-upload';
+  import { cloud } from '../../state';
+  import { attachmentSource } from '../../state/cloud.svelte';
   import type { Attachment } from '../../types';
   import { formatSize, t } from '../../i18n/index.svelte';
 
@@ -20,6 +23,9 @@
   const kind = $derived(
     a.cloudLink ? 'cloud' : a.mimeType.startsWith('image/') ? 'image' : a.mimeType === 'text/calendar' ? 'calendar' : a.mimeType.includes('pdf') || a.mimeType.includes('word') ? 'doc' : 'file',
   );
+  /** "Save to cloud" (KONZEPT 12.1 #2) for stored mail/chat attachments. */
+  const saveSource = $derived(a.cloudLink ? null : attachmentSource(a));
+  const canSave = $derived(saveSource != null && cloud.storageAccounts.length > 0);
   const ext = $derived((a.filename.split('.').pop() ?? '').toUpperCase().slice(0, 4));
 </script>
 
@@ -48,6 +54,11 @@
       {/if}
     </span>
   </span>
+  {#if canSave}
+    <button class="icon-btn dl" aria-label={t('cloud.save.title', { name: a.filename })} title={t('cloud.save.button')} onclick={() => saveSource && cloud.openSave(saveSource)}>
+      <CloudUpload size={16} />
+    </button>
+  {/if}
   <button class="icon-btn dl" aria-label={t('mail.attachment.download', { name: a.filename })} title={t('mail.attachment.download', { name: a.filename })}>
     <Download size={16} />
   </button>

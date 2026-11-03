@@ -19,6 +19,7 @@
   import OrganizeDialogs from './lib/components/organize/OrganizeDialogs.svelte';
   import IosInstallHint from './lib/components/IosInstallHint.svelte';
   import { registerServiceWorker } from './lib/pwa';
+  import CloudDialogs from './lib/components/cloud/CloudDialogs.svelte';
 
   // Theme + density tokens on <html>.
   $effect(() => {
@@ -83,6 +84,7 @@
   <Composer init={app.composer} onclose={() => (app.composer = null)} />
 {/if}
 <OrganizeDialogs />
+<CloudDialogs />
 <Toasts />
 <IosInstallHint />
 

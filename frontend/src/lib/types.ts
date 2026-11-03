@@ -1167,3 +1167,134 @@ export interface WorkflowTemplate {
   description: string;
   workflow: Workflow;
 }
+
+// --- Cloud ---
+// Cloud files (KONZEPT 12): Nextcloud, OpenCloud/oCIS, Vaultwarden Send, WebDAV.
+// Mirrors internal/app/cloud_types.go.
+
+export type CloudAccountProvider = CloudProvider | 'webdav';
+
+export interface CloudCaps {
+  /** Browse, upload, download. */
+  files: boolean;
+  /** Public links of stored files. */
+  share: boolean;
+  /** Encrypted Sends of local files or text (Vaultwarden). */
+  send: boolean;
+}
+
+export interface CloudAccount {
+  id: number;
+  provider: CloudAccountProvider;
+  displayName: string;
+  server: string;
+  user?: string;
+  capabilities: CloudCaps;
+  /** CalDAV/CardDAV of the same Nextcloud account (offered to calendar/contacts). */
+  dav?: { caldav: string; carddav: string };
+  /** Base directory of attachments sent as links. */
+  uploadDir?: string;
+}
+
+export interface CloudLoginInput {
+  provider: CloudAccountProvider;
+  server: string;
+  displayName?: string;
+  /** OpenCloud in server mode: `<origin>/api/cloud/oauth/callback`. */
+  redirectUrl?: string;
+  clientId?: string;
+  /** Vaultwarden: e-mail + master password (+ TOTP); WebDAV: username + password. */
+  email?: string;
+  username?: string;
+  password?: string;
+  totp?: string;
+}
+
+export type CloudLoginStatus = 'pending' | 'done' | 'error' | 'two_factor';
+
+export interface CloudLoginFlow {
+  id: string;
+  provider: CloudAccountProvider;
+  status: CloudLoginStatus;
+  /** Open in the browser (Nextcloud Login Flow v2, OpenID Connect). */
+  loginUrl?: string;
+  error?: string;
+  account?: CloudAccount;
+}
+
+export interface CloudEntry {
+  name: string;
+  path: string;
+  dir: boolean;
+  size: number;
+  modified?: string;
+  contentType?: string;
+}
+
+export interface CloudListing {
+  accountId: number;
+  path: string;
+  entries: CloudEntry[];
+}
+
+/** -1 = unknown / unlimited. */
+export interface CloudQuota {
+  used: number;
+  available: number;
+}
+
+export interface CloudShareInput {
+  accountId: number;
+  /** Stored file (Nextcloud, OpenCloud). */
+  path?: string;
+  /** Vaultwarden Send: a file (Api.uploadAttachment) or a text. */
+  uploadToken?: string;
+  text?: string;
+  name?: string;
+  password?: string;
+  /** Generate a password following the server's policy. */
+  generatePassword?: boolean;
+  expiresAt?: string;
+  note?: string;
+  maxAccessCount?: number;
+  hideEmail?: boolean;
+}
+
+export type CloudShareSource = 'mail' | 'files' | 'workflow' | 'chat';
+
+export interface CloudShare {
+  id: number;
+  accountId: number;
+  provider: CloudAccountProvider;
+  fileName: string;
+  remotePath?: string;
+  url: string;
+  /** Only returned right after creation. */
+  password?: string;
+  hasPassword: boolean;
+  expiresAt?: string;
+  createdAt: string;
+  revokedAt?: string;
+  active: boolean;
+  source: CloudShareSource;
+  size?: number;
+  messageId?: number;
+}
+
+/** Save a mail/chat attachment (messageId + index) or an upload into a cloud folder. */
+export interface CloudSaveInput {
+  accountId: number;
+  dir: string;
+  messageId?: number;
+  index?: number;
+  uploadToken?: string;
+  filename?: string;
+}
+
+/** A cloud file copied into an upload, ready to attach. */
+export interface CloudImportResult {
+  uploadToken: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}

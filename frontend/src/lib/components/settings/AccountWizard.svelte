@@ -24,11 +24,17 @@
   import type { AccountKind, AuthMethod, DiscoveryResult, ServerConfig } from '../../types';
   import Modal from '../common/Modal.svelte';
   import logoUrl from '$branding/tuxmail-logo.png';
+  import CloudConnectForm, { CLOUD_PROVIDERS } from '../cloud/CloudConnectForm.svelte';
+  import ProviderIcon from '../cloud/ProviderIcon.svelte';
+  import type { CloudAccountProvider } from '../../types';
 
   interface Props {
     onclose: () => void;
   }
   let { onclose }: Props = $props();
+
+  /** Cloud accounts (KONZEPT 12) are added through their own login flows. */
+  let cloudProvider = $state<CloudAccountProvider | null>(null);
 
   type Step = 'credentials' | 'discovering' | 'discovered' | 'manual' | 'saving' | 'done';
   let step = $state<Step>('credentials');
@@ -118,7 +124,10 @@
   const authMethods: AuthMethod[] = ['password', 'oauth2', 'client_cert'];
 </script>
 
-<Modal title={t('onboarding.account.title')} {onclose} width="600px">
+<Modal title={cloudProvider ? t('cloud.connect.title') : t('onboarding.account.title')} {onclose} width="600px">
+  {#if cloudProvider}
+    <CloudConnectForm provider={cloudProvider} ondone={onclose} oncancel={() => (cloudProvider = null)} />
+  {:else}
   <ol class="steps" aria-label={t('onboarding.account.progress')}>
     {#each steps as s, i (i)}
       <li class:current={s.id.includes(step)}>{i + 1}. {s.label}</li>
@@ -145,6 +154,14 @@
         <button type="submit" class="btn btn-primary" disabled={step === 'discovering' || !email}>
           {#if step === 'discovering'}<LoaderCircle size={15} class="spin" /> {t('onboarding.account.discovering')}{:else}{t('onboarding.account.next')}{/if}
         </button>
+      </div>
+      <div class="cloud-alt">
+        <span class="hint">{t('cloud.connect.wizardTitle')}</span>
+        <div class="cloud-btns">
+          {#each CLOUD_PROVIDERS as p (p)}
+            <button type="button" class="btn btn-ghost" onclick={() => (cloudProvider = p)}><ProviderIcon provider={p} /> {t(`cloud.provider.${p}`)}</button>
+          {/each}
+        </div>
       </div>
     </form>
   {:else if step === 'discovered' && discovery}
@@ -249,6 +266,7 @@
       <button class="btn btn-primary" onclick={onclose} data-autofocus>{t('common.action.close')}</button>
     </div>
   {/if}
+  {/if}
 </Modal>
 
 <style>
@@ -292,6 +310,18 @@
     margin: 0;
     color: var(--tm-danger);
     font-size: 13px;
+  }
+  .cloud-alt {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 12px;
+    border-top: 1px solid var(--tm-line);
+  }
+  .cloud-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
   .row-actions {
     display: flex;

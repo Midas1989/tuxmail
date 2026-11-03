@@ -121,6 +121,10 @@ type CloudOptions struct {
 	Files []compose.Attachment `json:"files,omitempty"`
 	// AccountID is the cloud account (Nextcloud, OpenCloud, Vaultwarden).
 	AccountID int64 `json:"accountId,omitempty"`
+	// FileAccounts optionally selects the cloud account per file (parallel
+	// to Files; 0 = AccountID), so every attachment can use its own
+	// delivery (KONZEPT 12.1 #3).
+	FileAccounts []int64 `json:"fileAccounts,omitempty"`
 	// Expiry of the shares (default 14 days).
 	Expiry time.Duration `json:"expiry,omitempty"`
 	// Delivery of the passwords (default in_mail).
