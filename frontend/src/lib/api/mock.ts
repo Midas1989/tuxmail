@@ -1075,6 +1075,19 @@ export class MockTransport implements Api {
     await this.reply(null);
   }
 
+  async saveSignature(signature: Signature): Promise<Signature> {
+    const s = clone(signature);
+    if (!s.html && s.plain) s.html = s.plain.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!).replace(/\n/g, '<br>');
+    if (!s.id) {
+      s.id = Math.max(0, ...this.signatures.map((x) => x.id)) + 1;
+      this.signatures.push(s);
+    } else this.signatures = this.signatures.map((x) => (x.id === s.id ? s : x));
+    return this.reply(s);
+  }
+  async deleteSignature(id: number): Promise<void> {
+    this.signatures = this.signatures.filter((x) => x.id !== id);
+    return this.reply(undefined);
+  }
   async updateIdentity(identity: Identity): Promise<Identity> {
     this.identities = this.identities.map((i) => (i.id === identity.id ? clone(identity) : i));
     return this.reply(identity);

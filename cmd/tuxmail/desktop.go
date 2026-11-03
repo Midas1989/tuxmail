@@ -6,10 +6,14 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
 	"flag"
+	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -20,6 +24,38 @@ import (
 	"github.com/Midas1989/Mailclient/internal/server/api"
 	"github.com/Midas1989/Mailclient/web"
 )
+
+// serveDesktopTestHook serves the desktop API (the same handlers the
+// window uses) on a loopback address for automated end-to-end tests of the
+// native build (scripts/e2e.sh, docs/ENTWICKLUNG.md). It is off unless
+// TUXMAIL_DESKTOP_TEST_LISTEN (loopback host:port) and
+// TUXMAIL_DESKTOP_TEST_TOKEN are set; every request needs the header
+// X-TuxMail-Test-Token.
+func serveDesktopTestHook(ctx context.Context, mux http.Handler, log *slog.Logger) error {
+	addr, token := os.Getenv("TUXMAIL_DESKTOP_TEST_LISTEN"), os.Getenv("TUXMAIL_DESKTOP_TEST_TOKEN")
+	if addr == "" {
+		return nil
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if ip := net.ParseIP(host); err != nil || ip == nil || !ip.IsLoopback() || len(token) < 16 {
+		return fmt.Errorf("TUXMAIL_DESKTOP_TEST_LISTEN must be a loopback host:port and TUXMAIL_DESKTOP_TEST_TOKEN at least 16 characters")
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
+	}
+	log.Warn("desktop test hook enabled: the API is reachable on loopback", "addr", ln.Addr().String())
+	srv := &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if subtle.ConstantTimeCompare([]byte(r.Header.Get("X-TuxMail-Test-Token")), []byte(token)) != 1 {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	go func() { <-ctx.Done(); _ = srv.Close() }()
+	return nil
+}
 
 // desktopBuild reports whether this binary contains the Wails desktop shell.
 const desktopBuild = true
@@ -55,6 +91,10 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 	api.Mount(mux, func(h api.AppHandler) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) { h(w, r, a) }
 	}, api.Options{Logger: log, Skip: map[string]bool{"GET /api/events": true}})
+
+	if err := serveDesktopTestHook(ctx, mux, log); err != nil {
+		return err
+	}
 
 	assets := web.FS()
 	if assets == nil {

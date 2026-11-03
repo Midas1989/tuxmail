@@ -18,6 +18,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/store"
 	"github.com/Midas1989/Mailclient/internal/workflow"
 	"github.com/Midas1989/Mailclient/internal/workflow/followup"
+	"github.com/Midas1989/Mailclient/internal/workflow/sendcheck"
 )
 
 // SendOptions enable sending through internal/send.
@@ -50,6 +51,13 @@ func newMailSender(a *App, opts *SendOptions) (*MailSender, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Built-in send checks (KONZEPT 8.13) on mail.before_send.
+	loc := a.opts.Location
+	a.bus.RegisterHook(events.MailBeforeSend, "sendcheck", sendcheck.Hook(func() sendcheck.Config {
+		c := sendcheck.DefaultConfig()
+		c.WorkingHours.Location = loc
+		return c
+	}, sendcheck.Deps{}, a.opts.Now))
 	return &MailSender{a: a, Service: svc, Actions: &send.Actions{Service: svc, Loader: ad, Drafts: ad}}, nil
 }
 
@@ -64,7 +72,10 @@ func (s *MailSender) Send(ctx context.Context, r SendRequest) (SendResult, error
 	}
 	d := compose.Draft{Identity: *r.Identity, To: msg.To, Cc: msg.Cc, Bcc: msg.Bcc, Subject: msg.Subject, TextBody: msg.Text,
 		HTMLBody: msg.HTML, KeepSubject: msg.Subject != ""}
-	req := send.Request{IdentityID: r.Identity.ID, Source: "ui"}
+	// Composer sends: warnings must be confirmed before the mail leaves;
+	// the UI resends with ConfirmChecks after the user confirmed them.
+	req := send.Request{IdentityID: r.Identity.ID, Source: "ui", ConfirmWarnings: !r.Unattended,
+		Override: len(msg.ConfirmChecks) > 0, Confirm: msg.ConfirmChecks}
 	orig := r.InReplyTo
 	if orig != nil {
 		d.Kind = compose.KindReply
@@ -150,7 +161,8 @@ func (s *MailSender) Send(ctx context.Context, r SendRequest) (SendResult, error
 func findings(fs []events.Finding) []SendFinding {
 	var out []SendFinding
 	for _, f := range fs {
-		out = append(out, SendFinding{Check: f.Check, Severity: string(f.Severity), Key: f.Key, Message: f.EN, Params: f.Params})
+		out = append(out, SendFinding{Check: f.Check, Severity: string(f.Severity), Key: f.Key, Message: f.EN, Params: f.Params,
+			Localized: map[string]string{"de": f.DE, "en": f.EN}})
 	}
 	return out
 }

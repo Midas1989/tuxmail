@@ -47,6 +47,21 @@ func Routes(opts Options) []Route {
 			}
 		})},
 		{"GET /api/signatures", func(w w, r r, a A) { send(w)(a.ListSignatures(r.Context())) }},
+		{"POST /api/signatures", func(w w, r r, a A) {
+			var in app.Signature
+			if readJSON(w, r, &in) {
+				in.ID = 0
+				send(w)(a.SaveSignature(r.Context(), in))
+			}
+		}},
+		{"PUT /api/signatures/{id}", withID(func(w w, r r, a A, id int64) {
+			var in app.Signature
+			if readJSON(w, r, &in) {
+				in.ID = id
+				send(w)(a.SaveSignature(r.Context(), in))
+			}
+		})},
+		{"DELETE /api/signatures/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DeleteSignature(r.Context(), id)) })},
 		{"GET /api/persons", func(w w, r r, a A) { send(w)(a.ListPersons(r.Context())) }},
 		{"GET /api/persons/frequent", func(w w, r r, a A) { send(w)(a.FrequentContacts(r.Context())) }},
 		{"PUT /api/persons/{id}/card", withID(func(w w, r r, a A, id int64) {

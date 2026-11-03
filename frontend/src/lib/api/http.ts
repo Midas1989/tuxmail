@@ -28,6 +28,7 @@
 //   POST /api/items/{itemId}/forward            {conversationId} -> SendResult
 //   PUT  /api/persons/{id}/card                 ContactCard
 //   PUT  /api/identities/{id}                   Identity -> Identity
+//   POST /api/signatures, PUT|DELETE /api/signatures/{id}   Signature -> Signature
 //   GET/PUT/DELETE /api/chat-folders[/{id}]     ChatFolder (with unreadCount)
 //   PUT  /api/conversations/{id}/items/{itemId}/star|pin   {starred}|{pinned}
 //   GET  /api/starred?conversationId=           -> StarredItem[]
@@ -417,6 +418,12 @@ export class HttpTransport implements Api {
   }
   saveContactCard(personId: number, card: ContactCard): Promise<void> {
     return this.request('PUT', `/api/persons/${personId}/card`, card);
+  }
+  saveSignature(signature: Signature): Promise<Signature> {
+    return signature.id ? this.request('PUT', `/api/signatures/${signature.id}`, signature) : this.request('POST', '/api/signatures', signature);
+  }
+  async deleteSignature(id: number): Promise<void> {
+    await this.request('DELETE', `/api/signatures/${id}`);
   }
   updateIdentity(identity: Identity): Promise<Identity> {
     return this.request('PUT', `/api/identities/${identity.id}`, identity);
