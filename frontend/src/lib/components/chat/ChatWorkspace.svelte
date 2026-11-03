@@ -10,6 +10,7 @@
   import InfoPanel from './InfoPanel.svelte';
   import OriginalMailDialog from './OriginalMailDialog.svelte';
   import ForwardDialog from './ForwardDialog.svelte';
+  import ChatDialogs from './ChatDialogs.svelte';
 </script>
 
 <div class="ws" class:has-selection={app.selectedConversationId != null} class:info={app.infoOpen && app.conversation}>
@@ -23,6 +24,7 @@
 {#if app.originalMessage}
   <OriginalMailDialog message={app.originalMessage} />
 {/if}
+<ChatDialogs />
 {#if app.forwarding}
   <ForwardDialog item={app.forwarding} />
 {/if}

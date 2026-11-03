@@ -243,7 +243,12 @@
       "task": "Als Aufgabe",
       "event": "Als Termin",
       "original": "Original-E-Mail anzeigen",
-      "delete": "Löschen"
+      "delete": "Löschen",
+      "pin": "Nachricht anheften",
+      "star": "Markieren",
+      "translate": "Übersetzen",
+      "unpin": "Nachricht lösen",
+      "unstar": "Markierung entfernen"
     },
     "reactWith": "Mit {emoji} reagieren",
     "moreReactions": "Weitere Reaktionen",
@@ -314,10 +319,132 @@
         "links": "Links"
       },
       "none": "Noch nichts geteilt.",
-      "block": "Blockieren"
+      "block": "Blockieren",
+      "starred": "Markiert in diesem Chat"
     },
     "original": {
       "date": "Datum"
+    },
+    "ai": {
+      "enableHint": "KI-Antwortvorschläge aktivieren",
+      "notConfigured": "Es ist noch kein KI-Anbieter eingerichtet.",
+      "openSettings": "Einrichten",
+      "showOriginal": "Original anzeigen",
+      "showTranslation": "Übersetzung anzeigen",
+      "skipped": "{count} verschlüsselte Nachrichten wurden nicht einbezogen.",
+      "suggestions": "Antwortvorschläge",
+      "summarize": "Zusammenfassen",
+      "summary": "Zusammenfassung",
+      "translated": "Übersetzt aus {lang}"
+    },
+    "draft": {
+      "label": "Entwurf"
+    },
+    "focus": {
+      "active": "Fokusmodus – nur wichtige Chats",
+      "enabled": "Fokusmodus an",
+      "frequent": "Personen einbeziehen, mit denen ich häufig schreibe",
+      "frequentBadge": "häufig",
+      "intro": "Im Fokusmodus zeigt die Chatliste nur wichtige Personen und Chats; alles andere wartet in einer eingeklappten Zeile.",
+      "off": "Fokusmodus aus",
+      "on": "Fokusmodus an",
+      "schedule": "Zeitplan",
+      "scheduleEnabled": "Nur zu diesen Zeiten",
+      "title": "Fokusmodus",
+      "toggle": "Fokusmodus",
+      "vip": "Wichtige Personen",
+      "waiting": "Wartet ({count})"
+    },
+    "folders": {
+      "accounts": "Konten",
+      "added": "Zu „{name}“ hinzugefügt",
+      "all": "Alle Chats",
+      "channels": "Kanäle",
+      "chats": "Chats",
+      "delete": "Ordner löschen",
+      "edit": "Chat-Ordner bearbeiten",
+      "emoji": "Symbol",
+      "excludeArchived": "Archivierte Chats ausschließen",
+      "excludeMuted": "Stummgeschaltete Chats ausschließen",
+      "groups": "Gruppen",
+      "groupsAny": "Gruppen und Einzelchats",
+      "groupsExclude": "Keine Gruppen",
+      "groupsOnly": "Nur Gruppen",
+      "label": "Chat-Ordner",
+      "name": "Name",
+      "new": "Neuer Chat-Ordner",
+      "options": "Optionen",
+      "save": "Speichern",
+      "unreadOnly": "Nur ungelesene Chats"
+    },
+    "meeting": {
+      "booked": "Termin am {when} erstellt",
+      "bookedShort": "Gebucht",
+      "created": "Termin erstellt: {title} · {when}",
+      "defaultTitle": "Termin mit {name}",
+      "duration": "Dauer",
+      "freeSlots": "Freie Zeiten aus deinem Kalender",
+      "hintChat": "Wird als Nachricht mit den Optionen als Liste gesendet.",
+      "hintMail": "Wird als E-Mail mit den Optionen und einer .ics-Datei gesendet.",
+      "minutes": "{count} Min.",
+      "noSlots": "Keine freien Zeiten in diesem Zeitraum.",
+      "pickDemo": "Demo: klicken, um die Auswahl des Empfängers zu simulieren",
+      "pickUpTo": "Bis zu 5 auswählen",
+      "send": "{count} Termine vorschlagen",
+      "send_one": "1 Termin vorschlagen",
+      "sent": "Terminvorschlag gesendet",
+      "slots": "Vorgeschlagene Zeiten",
+      "subject": "Titel",
+      "title": "Termin vorschlagen",
+      "waiting": "Wartet auf Auswahl"
+    },
+    "mention": {
+      "cc": "Cc:",
+      "title": "Erwähnen"
+    },
+    "pin": {
+      "banner": "Angeheftete Nachricht {current}/{total}",
+      "jump": "Zur angehefteten Nachricht",
+      "limit": "Es können höchstens drei Nachrichten angeheftet werden.",
+      "pinned": "Angeheftet"
+    },
+    "schedule": {
+      "action": "Planen",
+      "cancel": "Geplante Nachricht verwerfen",
+      "cancelled": "Geplante Nachricht verworfen",
+      "count": "{count} geplant",
+      "edit": "Bearbeiten",
+      "empty": "Keine geplanten Nachrichten.",
+      "for": "Geplant für {when}",
+      "later": "Später senden",
+      "overview": "Geplante Nachrichten",
+      "save": "Speichern",
+      "scheduled": "Geplant für {when}",
+      "sendNow": "Jetzt senden",
+      "sentNow": "Gesendet"
+    },
+    "snippets": {
+      "title": "Schnellantworten"
+    },
+    "snooze": {
+      "action": "Schlummern",
+      "back": "Wieder da nach dem Schlummern",
+      "backShort": "wieder da",
+      "done": "Geschlummert bis {when}",
+      "menu": "Schlummern…",
+      "title": "„{name}“ schlummern"
+    },
+    "starred": {
+      "empty": "Noch keine markierten Nachrichten.",
+      "starred": "Markiert",
+      "title": "Markierte Nachrichten"
+    },
+    "time": {
+      "custom": "Datum & Uhrzeit wählen",
+      "evening": "Heute Abend",
+      "hour": "In 1 Stunde",
+      "monday": "Montag früh",
+      "tomorrow": "Morgen früh"
     }
   },
   "calendar": {
@@ -441,7 +568,43 @@
       },
       "modeFor": "Chat-Signatur für {email}",
       "shortFor": "Kurzsignatur für {email}",
-      "noShort": "Keine Kurzsignatur"
+      "noShort": "Keine Kurzsignatur",
+      "signatureDisplay": "Signaturen in der Chat-Ansicht",
+      "signatureDisplayMode": {
+        "collapsed": "Eingeklappt",
+        "shown": "Anzeigen"
+      }
+    },
+    "ai": {
+      "title": "KI-Assistenz",
+      "intro": "Antwortvorschläge, Übersetzung und Zusammenfassungen in Chats. Es wird nichts übertragen, bevor du einen Anbieter wählst.",
+      "provider": "Anbieter",
+      "model": "Modell",
+      "baseUrl": "Basis-URL",
+      "apiKey": "API-Schlüssel",
+      "keySaved": "•••••••• (gespeichert – zum Ersetzen eingeben)",
+      "accounts": "Für diese Konten erlaubt",
+      "mask": "Personenbezogene Daten (Namen, Adressen, Nummern) vor dem Senden maskieren",
+      "pgpNote": "PGP/S-MIME-verschlüsselte Mails werden nie an Cloud-Anbieter gesendet.",
+      "providers": {
+        "none": "Nicht eingerichtet",
+        "ollama": "Ollama (lokal)",
+        "openai": "OpenAI",
+        "gemini": "Google Gemini",
+        "deepseek": "DeepSeek",
+        "anthropic": "Anthropic",
+        "mistral": "Mistral",
+        "custom": "Eigener Dienst (OpenAI-kompatibel)"
+      }
+    },
+    "snippets": {
+      "add": "Hinzufügen",
+      "hint": "Im Chat „/“ am Zeilenanfang tippen. Platzhalter: {vorname}, {name}, {datum}, {uhrzeit}, {meinname}.",
+      "newTitle": "Neue Schnellantwort",
+      "trigger": "Kürzel",
+      "titleLabel": "Titel",
+      "text": "Text",
+      "delete": "/{name} löschen"
     }
   },
   "search": {

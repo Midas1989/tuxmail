@@ -13,6 +13,8 @@
   import NotificationSettings from '../components/settings/NotificationSettings.svelte';
   import RegionSettings from '../components/settings/RegionSettings.svelte';
   import ChatSettings from '../components/settings/ChatSettings.svelte';
+  import SnippetSettings from '../components/settings/SnippetSettings.svelte';
+  import AiSettingsCard from '../components/settings/AiSettingsCard.svelte';
   import logoUrl from '$branding/tuxmail-logo.png';
   import ServerConnectWizard from '../components/settings/ServerConnectWizard.svelte';
   import Server from '@lucide/svelte/icons/server';
@@ -85,6 +87,10 @@
     <RegionSettings />
 
     <ChatSettings />
+
+    <SnippetSettings />
+
+    <AiSettingsCard />
 
     <section class="card" aria-labelledby="set-look">
       <h2 id="set-look">{t('settings.appearance')}</h2>

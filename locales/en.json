@@ -244,7 +244,12 @@
       "task": "Create task",
       "event": "Create event",
       "original": "Show original e-mail",
-      "delete": "Delete"
+      "delete": "Delete",
+      "pin": "Pin message",
+      "star": "Star",
+      "translate": "Translate",
+      "unpin": "Unpin message",
+      "unstar": "Remove star"
     },
     "reactWith": "React with {emoji}",
     "moreReactions": "More reactions",
@@ -315,10 +320,132 @@
         "links": "Links"
       },
       "none": "Nothing shared yet.",
-      "block": "Block"
+      "block": "Block",
+      "starred": "Starred in this chat"
     },
     "original": {
       "date": "Date"
+    },
+    "ai": {
+      "enableHint": "Enable AI reply suggestions",
+      "notConfigured": "No AI provider is set up yet.",
+      "openSettings": "Set up",
+      "showOriginal": "Show original",
+      "showTranslation": "Show translation",
+      "skipped": "{count} encrypted messages were not included.",
+      "suggestions": "Reply suggestions",
+      "summarize": "Summarize",
+      "summary": "Summary",
+      "translated": "Translated from {lang}"
+    },
+    "draft": {
+      "label": "Draft"
+    },
+    "focus": {
+      "active": "Focus mode – only important chats",
+      "enabled": "Focus mode on",
+      "frequent": "Include people I write with frequently",
+      "frequentBadge": "frequent",
+      "intro": "In focus mode the chat list only shows important people and chats; everything else waits in a collapsed row.",
+      "off": "Focus mode off",
+      "on": "Focus mode on",
+      "schedule": "Schedule",
+      "scheduleEnabled": "Only during these hours",
+      "title": "Focus mode",
+      "toggle": "Focus mode",
+      "vip": "Important people",
+      "waiting": "Waiting ({count})"
+    },
+    "folders": {
+      "accounts": "Accounts",
+      "added": "Added to “{name}”",
+      "all": "All chats",
+      "channels": "Channels",
+      "chats": "Chats",
+      "delete": "Delete folder",
+      "edit": "Edit chat folder",
+      "emoji": "Icon",
+      "excludeArchived": "Exclude archived chats",
+      "excludeMuted": "Exclude muted chats",
+      "groups": "Groups",
+      "groupsAny": "Groups and 1:1",
+      "groupsExclude": "No groups",
+      "groupsOnly": "Only groups",
+      "label": "Chat folders",
+      "name": "Name",
+      "new": "New chat folder",
+      "options": "Options",
+      "save": "Save",
+      "unreadOnly": "Only unread chats"
+    },
+    "meeting": {
+      "booked": "Event created for {when}",
+      "bookedShort": "Booked",
+      "created": "Event created: {title} · {when}",
+      "defaultTitle": "Meeting with {name}",
+      "duration": "Duration",
+      "freeSlots": "Free times from your calendar",
+      "hintChat": "Sent as a message with the options as a list.",
+      "hintMail": "Sent as an e-mail with the options and an .ics file.",
+      "minutes": "{count} min",
+      "noSlots": "No free times in this range.",
+      "pickDemo": "Demo: click to simulate the recipient choosing this time",
+      "pickUpTo": "Pick up to 5",
+      "send": "Propose {count} times",
+      "send_one": "Propose 1 time",
+      "sent": "Meeting proposal sent",
+      "slots": "Proposed times",
+      "subject": "Title",
+      "title": "Propose meeting",
+      "waiting": "Waiting for a choice"
+    },
+    "mention": {
+      "cc": "Cc:",
+      "title": "Mention"
+    },
+    "pin": {
+      "banner": "Pinned message {current}/{total}",
+      "jump": "Go to pinned message",
+      "limit": "You can pin up to three messages.",
+      "pinned": "Pinned"
+    },
+    "schedule": {
+      "action": "Schedule",
+      "cancel": "Cancel scheduled message",
+      "cancelled": "Scheduled message cancelled",
+      "count": "{count} scheduled",
+      "edit": "Edit",
+      "empty": "No scheduled messages.",
+      "for": "Scheduled for {when}",
+      "later": "Send later",
+      "overview": "Scheduled messages",
+      "save": "Save",
+      "scheduled": "Scheduled for {when}",
+      "sendNow": "Send now",
+      "sentNow": "Sent"
+    },
+    "snippets": {
+      "title": "Quick replies"
+    },
+    "snooze": {
+      "action": "Snooze",
+      "back": "Back from snooze",
+      "backShort": "back",
+      "done": "Snoozed until {when}",
+      "menu": "Snooze…",
+      "title": "Snooze “{name}”"
+    },
+    "starred": {
+      "empty": "No starred messages yet.",
+      "starred": "Starred",
+      "title": "Starred messages"
+    },
+    "time": {
+      "custom": "Pick date & time",
+      "evening": "This evening",
+      "hour": "In 1 hour",
+      "monday": "Monday morning",
+      "tomorrow": "Tomorrow morning"
     }
   },
   "calendar": {
@@ -442,7 +569,43 @@
       },
       "modeFor": "Chat signature for {email}",
       "shortFor": "Short signature for {email}",
-      "noShort": "No short signature"
+      "noShort": "No short signature",
+      "signatureDisplay": "Signatures in the chat view",
+      "signatureDisplayMode": {
+        "collapsed": "Collapsed",
+        "shown": "Shown"
+      }
+    },
+    "ai": {
+      "title": "AI assistant",
+      "intro": "Reply suggestions, translation and summaries in chats. Nothing is sent anywhere until you choose a provider.",
+      "provider": "Provider",
+      "model": "Model",
+      "baseUrl": "Base URL",
+      "apiKey": "API key",
+      "keySaved": "•••••••• (saved – enter to replace)",
+      "accounts": "Allowed for these accounts",
+      "mask": "Mask personal data (names, addresses, numbers) before sending",
+      "pgpNote": "PGP/S-MIME encrypted mails are never sent to cloud providers.",
+      "providers": {
+        "none": "Not set up",
+        "ollama": "Ollama (local)",
+        "openai": "OpenAI",
+        "gemini": "Google Gemini",
+        "deepseek": "DeepSeek",
+        "anthropic": "Anthropic",
+        "mistral": "Mistral",
+        "custom": "Custom (OpenAI-compatible)"
+      }
+    },
+    "snippets": {
+      "add": "Add",
+      "hint": "Type “/” at the start of a line in the chat composer. Placeholders: {vorname}, {name}, {datum}, {uhrzeit}, {meinname}.",
+      "newTitle": "New quick reply",
+      "trigger": "Shortcut",
+      "titleLabel": "Title",
+      "text": "Text",
+      "delete": "Delete /{name}"
     }
   },
   "search": {

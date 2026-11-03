@@ -24,6 +24,16 @@
   import Archive from '@lucide/svelte/icons/archive';
   import Rows3 from '@lucide/svelte/icons/rows-3';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
+  import Sparkles from '@lucide/svelte/icons/sparkles';
+  import Languages from '@lucide/svelte/icons/languages';
+  import Star from '@lucide/svelte/icons/star';
+  import CalendarCheck from '@lucide/svelte/icons/calendar-check';
+  import Send from '@lucide/svelte/icons/send';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import AlarmClock from '@lucide/svelte/icons/alarm-clock';
+  import { i18n } from '../../i18n/index.svelte';
+  import type { AiSummary } from '../../types';
+  import { ApiError } from '../../api/api';
   import { app } from '../../state';
   import { buildTimeline } from '../../conversation';
   import type { Attachment, ConversationItem } from '../../types';
@@ -56,6 +66,45 @@
   const conv = $derived(app.conversation);
   const isGroupChat = $derived(!!conv && conv.isGroup);
   const timeline = $derived(buildTimeline(app.items, { dayKey: (iso) => fmt().dayKey(iso), unreadFromId: app.unreadFromId }));
+
+  let pinIndex = $state(0);
+  let summary = $state<AiSummary | null>(null);
+  let summarizing = $state(false);
+  let translations = $state<Record<string, { text: string; sourceLang: string; showOriginal: boolean }>>({});
+
+  const pinnedItems = $derived((conv?.pinnedItemIds ?? []).map((id) => app.items.find((i) => i.id === id)).filter((i): i is ConversationItem => !!i));
+  const longChat = $derived(app.items.length > 8 || app.items.filter((i) => i.unread).length >= 3);
+
+  function requireAi(): boolean {
+    if (app.aiReady) return true;
+    app.toast(t('chat.ai.notConfigured'), { label: t('chat.ai.openSettings'), run: () => app.openAiSettings() });
+    return false;
+  }
+
+  async function summarize() {
+    if (!conv || !requireAi()) return;
+    summarizing = true;
+    try {
+      summary = await app.api.aiSummarize(conv.id);
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'ai_not_configured') requireAi();
+      else app.toast(String(err), undefined, 'error');
+    } finally {
+      summarizing = false;
+    }
+  }
+
+  async function translate(item: ConversationItem) {
+    if (!conv || !requireAi()) return;
+    const r = await app.api.aiTranslate(conv.id, item.id, i18n.locale);
+    translations = { ...translations, [item.id]: { ...r, showOriginal: false } };
+  }
+
+  function cyclePinned() {
+    const it = pinnedItems[pinIndex % pinnedItems.length];
+    if (it) jumpTo(it.id);
+    pinIndex = (pinIndex + 1) % Math.max(1, pinnedItems.length);
+  }
 
   const hits = $derived.by(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -122,6 +171,9 @@
       newCount = 0;
       searchOpen = false;
       searchQuery = '';
+      summary = null;
+      translations = {};
+      pinIndex = 0;
       return;
     }
     if (len > lastLen) {
@@ -160,10 +212,20 @@
   }
 
   function bubbleItems(item: ConversationItem): MenuItem[] {
+    if (item.scheduledFor) {
+      return [
+        { id: 'edit', label: t('chat.schedule.edit'), icon: Pencil, run: () => void (app.chatDialog = { kind: 'scheduled' }) },
+        { id: 'now', label: t('chat.schedule.sendNow'), icon: Send, run: () => app.scheduledAction(item, 'now') },
+        { id: 'cancel', label: t('chat.schedule.cancel'), icon: Trash, danger: true, run: () => app.scheduledAction(item, 'cancel') },
+      ];
+    }
     const list: MenuItem[] = [
       { id: 'reply', label: t('chat.menu.reply'), icon: Reply, run: () => void (app.replyingTo = item) },
       { id: 'forward', label: t('chat.menu.forward'), icon: Forward, run: () => void (app.forwarding = item) },
       { id: 'copy', label: t('chat.menu.copy'), icon: Copy, run: () => copy(item) },
+      { id: 'star', label: item.starred ? t('chat.menu.unstar') : t('chat.menu.star'), icon: Star, run: () => app.toggleStar(item) },
+      { id: 'pin', label: item.pinned ? t('chat.menu.unpin') : t('chat.menu.pin'), icon: item.pinned ? PinOff : Pin, run: () => app.togglePin(item) },
+      { id: 'translate', label: t('chat.menu.translate'), icon: Languages, run: () => translate(item) },
       { id: 'task', label: t('chat.menu.task'), icon: ListTodo, run: () => app.createFromItem(item, 'task') },
       { id: 'event', label: t('chat.menu.event'), icon: CalendarPlus, run: () => app.createFromItem(item, 'event') },
     ];
@@ -185,6 +247,8 @@
     if (!conv) return [];
     return [
       { id: 'search', label: t('chat.searchInChat'), icon: Search, run: openSearch },
+      { id: 'summary', label: t('chat.ai.summarize'), icon: Sparkles, run: summarize },
+      { id: 'snooze', label: t('chat.snooze.menu'), icon: AlarmClock, run: () => void (app.chatDialog = { kind: 'snooze', conversation: conv }) },
       { id: 'pin', label: conv.pinned ? t('chat.action.unpin') : t('chat.action.pin'), icon: conv.pinned ? PinOff : Pin, run: () => app.updateConversation(conv.id, { pinned: !conv.pinned }) },
       { id: 'mute', label: conv.muted ? t('chat.action.unmute') : t('chat.action.mute'), icon: conv.muted ? Bell : BellOff, run: () => app.updateConversation(conv.id, { muted: !conv.muted }) },
       { id: 'archive', label: conv.archived ? t('chat.action.unarchive') : t('chat.action.archive'), icon: Archive, run: () => app.updateConversation(conv.id, { archived: !conv.archived }, conv.archived ? 'chat.toast.unarchived' : 'chat.toast.archived') },
@@ -214,11 +278,32 @@
           <span class="sub">{subtitle}</span>
         </span>
       </button>
+      {#if longChat}
+        <button class="icon-btn" class:busy={summarizing} aria-label={t('chat.ai.summarize')} title={t('chat.ai.summarize')} onclick={summarize}><Sparkles size={18} /></button>
+      {/if}
       <button class="icon-btn" aria-label={t('chat.searchInChat')} title={t('chat.searchInChat')} aria-pressed={searchOpen} onclick={() => (searchOpen ? (searchOpen = false) : openSearch())}><Search size={18} /></button>
       <button class="icon-btn" aria-label={t('chat.info.toggle')} title={t('chat.info.toggle')} aria-pressed={app.infoOpen} onclick={() => (app.infoOpen = !app.infoOpen)}><Info size={18} /></button>
       <button class="icon-btn" aria-label={t('chat.moreActions')} title={t('chat.moreActions')} aria-haspopup="menu" onclick={(e) => (headerMenu = { x: e.clientX - 220, y: e.clientY + 12 })}><EllipsisVertical size={18} /></button>
     </header>
 
+    {#if pinnedItems.length}
+      {@const cur = pinnedItems[pinIndex % pinnedItems.length]}
+      <div class="pinned-banner">
+        <span class="pin-bars" aria-hidden="true">{#each pinnedItems as p, i (p.id)}<span class:on={i === pinIndex % pinnedItems.length}></span>{/each}</span>
+        <button class="pin-main" onclick={cyclePinned} aria-label={t('chat.pin.jump')}>
+          <span class="pin-title"><Pin size={12} /> {t('chat.pin.banner', { current: (pinIndex % pinnedItems.length) + 1, total: pinnedItems.length })}</span>
+          <span class="pin-text">{cur.body || cur.card?.title || cur.attachments[0]?.filename}</span>
+        </button>
+        <button class="icon-btn" aria-label={t('chat.menu.unpin')} onclick={() => app.togglePin(cur)}><X size={15} /></button>
+      </div>
+    {/if}
+    {#if summary}
+      <div class="summary" role="region" aria-label={t('chat.ai.summary')}>
+        <div class="sum-head"><Sparkles size={15} /> <strong>{t('chat.ai.summary')}</strong> <button class="icon-btn" aria-label={t('common.action.close')} onclick={() => (summary = null)}><X size={14} /></button></div>
+        <ul>{#each summary.bullets as b (b)}<li>{b}</li>{/each}</ul>
+        {#if summary.skipped}<small>{t('chat.ai.skipped', { count: summary.skipped })}</small>{/if}
+      </div>
+    {/if}
     {#if searchOpen}
       <div class="chat-search" role="search">
         <Search size={15} aria-hidden="true" />
@@ -258,6 +343,9 @@
             <div class="day" role="separator"><span>{formatDay(entry.date)}</span></div>
           {:else if entry.type === 'unread'}
             <div class="unread-marker" role="separator"><span>{t('chat.unreadMarker', { count: entry.count })}</span></div>
+          {:else if entry.type === 'event'}
+            {@const sys = entry.item.system}
+            <div class="system event" role="note"><span><CalendarCheck size={13} aria-hidden="true" /> {sys ? t('chat.meeting.created', { title: sys.title, when: fmt().full(sys.start) }) : ''}</span></div>
           {:else if entry.type === 'subject'}
             <div class="system" role="note"><span>{entry.changed ? t('chat.subjectChanged', { subject: entry.subject }) : t('chat.subject', { subject: entry.subject })}</span></div>
           {:else}
@@ -277,6 +365,12 @@
               onoriginal={(item) => app.showOriginal(item)}
               onimage={(item, index) => (lightbox = { images: item.attachments.filter((a) => a.previewUrl), index })}
               onfocusitem={(id) => app.focusItem(id)}
+              translation={translations[entry.item.id] ?? null}
+              ontoggletranslation={(item) => {
+                const tr = translations[item.id];
+                if (tr) translations = { ...translations, [item.id]: { ...tr, showOriginal: !tr.showOriginal } };
+              }}
+              onslot={(item, start) => app.acceptMeetingSlot(item, start)}
             />
           {/if}
         {/each}
@@ -441,6 +535,97 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .pinned-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 8px 4px 14px;
+    background: var(--tm-surface);
+    border-bottom: 1px solid var(--tm-line);
+  }
+  .pin-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    height: 32px;
+  }
+  .pin-bars span {
+    flex: 1;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--tm-line-strong);
+  }
+  .pin-bars span.on {
+    background: var(--tm-brand);
+  }
+  .pin-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    padding: 2px 0;
+  }
+  .pin-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11.5px;
+    font-weight: 650;
+    color: var(--tm-accent-text);
+  }
+  .pin-text {
+    font-size: 13px;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .summary {
+    margin: 8px 12px 0;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: var(--tm-surface);
+    border: 1px solid color-mix(in srgb, var(--tm-brand) 45%, var(--tm-line));
+    box-shadow: var(--tm-shadow);
+    font-size: 13px;
+  }
+  .sum-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--tm-accent-text);
+  }
+  .sum-head strong {
+    flex: 1;
+  }
+  .summary ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+  }
+  .summary small {
+    color: var(--tm-faint);
+  }
+  .busy {
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    50% {
+      opacity: 0.4;
+    }
+  }
+  .system.event span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--tm-success);
+    font-weight: 600;
   }
   .chat-search {
     display: flex;

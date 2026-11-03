@@ -12,6 +12,7 @@
   import Ban from '@lucide/svelte/icons/ban';
   import Rows3 from '@lucide/svelte/icons/rows-3';
   import Link from '@lucide/svelte/icons/link';
+  import Star from '@lucide/svelte/icons/star';
   import { app } from '../../state';
   import { parseSignature } from '../../conversation';
   import { formatListDate, t } from '../../i18n/index.svelte';
@@ -39,6 +40,7 @@
     return card.card.phones.every((p) => values.has(p.replace(/[^\d+]/g, '')));
   });
 
+  const starredHere = $derived(app.items.filter((i) => i.starred));
   const media = $derived(app.items.flatMap((i) => i.attachments.filter((a) => a.previewUrl).map((a) => ({ a, item: i }))));
   const files = $derived(app.items.flatMap((i) => i.attachments.filter((a) => !a.previewUrl && !a.mimeType.startsWith('audio/')).map((a) => ({ a, item: i }))));
   const links = $derived.by(() => {
@@ -111,6 +113,17 @@
             <UserPlus size={15} />
             {known ? t('chat.info.updateContact') : t('chat.info.addContact')}
           </button>
+        </section>
+      {/if}
+
+      {#if starredHere.length}
+        <section class="sec">
+          <h4><Star size={13} /> {t('chat.info.starred')}</h4>
+          <ul class="links">
+            {#each starredHere as it (it.id)}
+              <li><button class="starred-row" onclick={() => jump(it)}>{it.body || it.card?.title || it.attachments[0]?.filename}</button></li>
+            {/each}
+          </ul>
         </section>
       {/if}
 
@@ -341,6 +354,22 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .starred-row {
+    border: none;
+    background: transparent;
+    color: var(--tm-fg);
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    padding: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+  .starred-row:hover {
+    color: var(--tm-accent-text);
   }
   .actions {
     display: flex;

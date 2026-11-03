@@ -27,6 +27,22 @@
     <span>{t('settings.chat.enterSends')}<small>{t('settings.chat.enterSendsHint')}</small></span>
   </label>
 
+  <div class="field">
+    <span class="label" id="sig-display">{t('settings.chat.signatureDisplay')}</span>
+    <div class="seg" role="radiogroup" aria-labelledby="sig-display">
+      {#each ['collapsed', 'shown'] as const as m (m)}
+        <button
+          role="radio"
+          aria-checked={prefs.chatSignatures === m}
+          onclick={() => {
+            prefs.chatSignatures = m;
+            prefs.save(false);
+          }}>{t(`settings.chat.signatureDisplayMode.${m}`)}</button
+        >
+      {/each}
+    </div>
+  </div>
+
   <h3>{t('settings.chat.signatures')}</h3>
   <p class="hint">{t('settings.chat.signaturesHint')}</p>
   <div class="table" role="table" aria-label={t('settings.chat.signatures')}>
@@ -72,6 +88,9 @@
     margin: 0 0 8px;
     font-size: 12.5px;
     color: var(--tm-muted);
+  }
+  .field {
+    margin-top: 14px;
   }
   .check {
     display: flex;

@@ -17,6 +17,11 @@ import {
   type Attachment,
   type Channel,
   type ChatFilter,
+  type ChatFolder,
+  type FocusSettings,
+  type AiSettings,
+  type Snippet,
+  type TimeSlot,
   type ContactCard,
   type ConversationPatch,
   type OutgoingAttachment,
@@ -31,6 +36,8 @@ import {
   type Signature,
 } from '../types';
 import { prefs } from './prefs.svelte';
+import { ApiError } from '../api/api';
+import { isFocusActive } from '../chatfeatures';
 
 export type Route = 'mail' | 'search' | 'calendar' | 'contacts' | 'files' | 'settings';
 export const ROUTES: Route[] = ['mail', 'search', 'calendar', 'contacts', 'files', 'settings'];
@@ -140,6 +147,29 @@ export class AppState {
   /** Bubble chosen for "Forward". */
   forwarding = $state<ConversationItem | null>(null);
 
+  // chat folders, focus mode, AI, overlays of the chat features
+  chatFolders = $state<ChatFolder[]>([]);
+  activeFolderId = $state<string | null>(null);
+  focus = $state<FocusSettings>({ enabled: false, vipPersonIds: [], vipConversationIds: [], includeFrequent: true });
+  frequentIds = $state<number[]>([]);
+  waitingCount = $state(0);
+  waitingOpen = $state(false);
+  waitingConversations = $state<Conversation[]>([]);
+  aiSettings = $state<AiSettings | null>(null);
+  snippets = $state<Snippet[]>([]);
+  /** Open overlay of the chat features. */
+  chatDialog = $state<
+    | null
+    | { kind: 'folder'; folder: ChatFolder | null }
+    | { kind: 'snooze'; conversation: Conversation }
+    | { kind: 'starred' }
+    | { kind: 'scheduled' }
+    | { kind: 'focus' }
+    | { kind: 'meeting' }
+  >(null);
+  /** Clock tick (1/min) so schedule-dependent UI (focus hours) updates. */
+  now = $state(Date.now());
+
   // overlays
   composer = $state<ComposerInit | null>(null);
   paletteOpen = $state(false);
@@ -198,6 +228,7 @@ export class AppState {
   async init(): Promise<void> {
     try {
       await prefs.connect(this.api);
+      void this.initChatFeatures();
       const [accounts, identities, signatures, persons] = await Promise.all([
         this.api.listAccounts(),
         this.api.listIdentities(),
@@ -353,12 +384,16 @@ export class AppState {
         search: (this.viewMode === 'chat' ? this.chatQuery : this.search) || undefined,
         filter: this.viewMode === 'chat' ? this.chatFilter : undefined,
         archived: this.viewMode === 'chat' ? this.showArchived : undefined,
+        folderId: this.viewMode === 'chat' && !this.showArchived ? (this.activeFolderId ?? undefined) : undefined,
+        focus: this.viewMode === 'chat' && this.focusActive && !this.showArchived ? 'vip' : undefined,
       });
       this.conversations = page.items;
       if (this.viewMode === 'chat' && !this.showArchived) {
         void this.api
           .listConversations({ scope: { kind: 'all' }, grouping: prefs.grouping, offset: 0, limit: 1, archived: true })
           .then((p) => (this.archivedCount = p.total));
+        void this.loadChatFolders();
+        if (this.focusActive) void this.loadWaiting();
       }
       if (this.selectedConversationId != null) {
         const c = page.items.find((x) => x.id === this.selectedConversationId);
@@ -445,7 +480,7 @@ export class AppState {
     }
   }
 
-  private async reloadItems(newItemId?: string): Promise<void> {
+  async reloadItems(newItemId?: string): Promise<void> {
     const id = this.selectedConversationId;
     if (id == null) return;
     const items = await this.api.listConversationItems(id);
@@ -711,7 +746,11 @@ export class AppState {
    * References via inReplyToMessageId, "Re:" subject generated and hidden,
    * signature as chosen in the composer).
    */
-  async sendChat(text: string, option: ChannelOption, extra: { replyTo?: ConversationItem | null; signature?: Signature | null; attachments?: OutgoingAttachment[] } = {}): Promise<void> {
+  async sendChat(
+    text: string,
+    option: ChannelOption,
+    extra: { replyTo?: ConversationItem | null; signature?: Signature | null; attachments?: OutgoingAttachment[]; sendAt?: string; cc?: Address[] } = {},
+  ): Promise<void> {
     const conv = this.conversation;
     const attachments = extra.attachments ?? [];
     if (!conv || (!text.trim() && attachments.length === 0)) return;
@@ -725,7 +764,7 @@ export class AppState {
           .map((id) => this.person(id))
           .map((p) => ({ name: p?.displayName, email: p?.handles.find((h) => h.kind === 'email')?.value ?? '' }))
           .filter((a) => a.email);
-        const res = await this.api.send({ channel: 'email', identityId: option.identityId, to, cc: [], bcc: [], subject: text.split('\n')[0].slice(0, 60), text: textWithSig, html, attachments });
+        const res = await this.api.send({ channel: 'email', identityId: option.identityId, conversationId: conv.id, sendAt: extra.sendAt, to, cc: extra.cc ?? [], bcc: [], subject: text.split('\n')[0].slice(0, 60), text: textWithSig, html, attachments });
         await this.reloadItems(res.itemId);
         return;
       }
@@ -734,8 +773,10 @@ export class AppState {
       const res = await this.api.send({
         channel: 'email',
         identityId: option.identityId,
+        conversationId: conv.id,
+        sendAt: extra.sendAt,
         to: init.to ?? [],
-        cc: init.cc ?? [],
+        cc: [...(init.cc ?? []), ...(extra.cc ?? []).filter((a) => !(init.cc ?? []).some((c) => c.email === a.email) && !(init.to ?? []).some((c) => c.email === a.email))],
         bcc: [],
         subject: init.subject ?? '',
         text: textWithSig,
@@ -746,12 +787,14 @@ export class AppState {
         attachments,
       });
       await this.reloadItems(res.itemId);
+      if (res.scheduledId) this.toast(t('chat.schedule.scheduled', { when: fmt().dateTime(extra.sendAt!) }));
       return;
     }
     const res = await this.api.send({
       channel: option.channel,
       accountId: option.accountId,
       conversationId: conv.id,
+      sendAt: extra.sendAt,
       to: [],
       cc: [],
       bcc: [],
@@ -762,6 +805,7 @@ export class AppState {
       attachments,
     });
     await this.reloadItems(res.itemId);
+    if (res.scheduledId) this.toast(t('chat.schedule.scheduled', { when: fmt().dateTime(extra.sendAt!) }));
   }
 
   /** Signature for mails written in chat mode (identity setting: full / short / off). */
@@ -774,6 +818,145 @@ export class AppState {
       if (short) return short;
     }
     return this.signatureFor(identityId, true);
+  }
+
+  // ----- chat folders, focus, snooze ----------------------------------------------
+
+  get focusActive(): boolean {
+    void this.now;
+    return isFocusActive(this.focus, new Date(this.now));
+  }
+
+  async initChatFeatures(): Promise<void> {
+    const [focus, freq, ai, snippets] = await Promise.all([
+      this.api.getFocusSettings(),
+      this.api.frequentContacts(),
+      this.api.getAiSettings(),
+      this.api.listSnippets(),
+    ]);
+    this.focus = focus;
+    this.frequentIds = freq;
+    this.aiSettings ??= ai; // a save that raced this initial load wins
+    this.snippets = snippets;
+    await this.loadChatFolders();
+    setInterval(() => (this.now = Date.now()), 60_000);
+  }
+
+  async loadChatFolders(): Promise<void> {
+    this.chatFolders = await this.api.listChatFolders();
+  }
+
+  async setActiveFolder(id: string | null): Promise<void> {
+    this.activeFolderId = id;
+    await this.loadConversations(true);
+  }
+
+  async saveChatFolder(folder: ChatFolder): Promise<void> {
+    const saved = await this.api.saveChatFolder(folder);
+    await this.loadChatFolders();
+    this.activeFolderId = saved.id;
+    await this.loadConversations(true);
+  }
+
+  async deleteChatFolder(id: string): Promise<void> {
+    await this.api.deleteChatFolder(id);
+    if (this.activeFolderId === id) this.activeFolderId = null;
+    await this.loadChatFolders();
+    await this.loadConversations(true);
+  }
+
+  /** Drag & drop a chat onto a folder tab. */
+  async addToFolder(conversationId: number, folderId: string): Promise<void> {
+    const f = this.chatFolders.find((x) => x.id === folderId);
+    if (!f) return;
+    const rules = { ...f.rules, includeConversationIds: [...new Set([...f.rules.includeConversationIds, conversationId])], excludeConversationIds: f.rules.excludeConversationIds.filter((i) => i !== conversationId) };
+    await this.api.saveChatFolder({ ...f, rules });
+    await this.loadChatFolders();
+    if (this.activeFolderId === folderId) await this.loadConversations(true);
+    this.toast(t('chat.folders.added', { name: f.name }));
+  }
+
+  async saveFocus(next: FocusSettings): Promise<void> {
+    this.focus = await this.api.saveFocusSettings(next);
+    await this.loadConversations(true);
+  }
+
+  async toggleFocus(): Promise<void> {
+    await this.saveFocus({ ...this.focus, enabled: !this.focus.enabled });
+    this.toast(this.focus.enabled ? t('chat.focus.on') : t('chat.focus.off'));
+  }
+
+  async loadWaiting(): Promise<void> {
+    const page = await this.api.listConversations({ scope: { kind: 'all' }, grouping: prefs.grouping, offset: 0, limit: 500, focus: 'waiting', filter: this.chatFilter, folderId: this.activeFolderId ?? undefined });
+    this.waitingCount = page.total;
+    this.waitingConversations = page.items;
+  }
+
+  async snooze(conversationId: number, until: Date): Promise<void> {
+    await this.api.updateConversation(conversationId, { snoozedUntil: until.toISOString() });
+    if (this.selectedConversationId === conversationId) await this.selectConversation(null);
+    await this.loadConversations(true);
+    this.toast(t('chat.snooze.done', { when: fmt().dateTime(until) }), { label: t('common.action.undo'), run: () => void this.api.updateConversation(conversationId, { snoozedUntil: null }).then(() => this.loadConversations(true)) });
+  }
+
+  // ----- starred & pinned messages ----------------------------------------------------
+
+  async toggleStar(item: ConversationItem): Promise<void> {
+    await this.api.setItemStarred(item.conversationId, item.id, !item.starred);
+    this.items = this.items.map((i) => (i.id === item.id ? { ...i, starred: !item.starred } : i));
+  }
+
+  async togglePin(item: ConversationItem): Promise<void> {
+    try {
+      await this.api.setItemPinned(item.conversationId, item.id, !item.pinned);
+      await this.reloadItems();
+      if (this.conversation) this.conversation = await this.api.getConversation(this.conversation.id);
+    } catch (err) {
+      this.toast(err instanceof ApiError && err.code === 'pin_limit' ? t('chat.pin.limit') : String(err), undefined, 'error');
+    }
+  }
+
+  // ----- drafts & scheduled messages ---------------------------------------------------
+
+  async scheduledAction(item: ConversationItem, action: 'now' | 'cancel'): Promise<void> {
+    if (!item.scheduledId) return;
+    if (action === 'now') await this.api.sendScheduledNow(item.scheduledId);
+    else await this.api.cancelScheduled(item.scheduledId);
+    await this.reloadItems();
+    this.toast(action === 'now' ? t('chat.schedule.sentNow') : t('chat.schedule.cancelled'));
+  }
+
+  // ----- AI -------------------------------------------------------------------------------
+
+  get aiReady(): boolean {
+    return !!this.aiSettings && this.aiSettings.provider !== 'none';
+  }
+
+  async saveAiSettings(next: AiSettings): Promise<void> {
+    this.aiSettings = await this.api.saveAiSettings(next);
+  }
+
+  /** Open Settings and scroll to the AI section. */
+  openAiSettings(): void {
+    this.navigate('settings');
+    setTimeout(() => document.getElementById('set-ai')?.scrollIntoView({ behavior: 'smooth' }), 120);
+  }
+
+  // ----- meeting proposals ----------------------------------------------------------------
+
+  async proposeMeeting(p: { title: string; durationMin: number; slots: TimeSlot[] }, option: ChannelOption): Promise<void> {
+    const conv = this.conversation;
+    if (!conv) return;
+    const res = await this.api.proposeMeeting(conv.id, { ...p, channel: option.channel, identityId: option.identityId, accountId: option.accountId });
+    await this.reloadItems(res.itemId);
+    this.toast(t('chat.meeting.sent'));
+  }
+
+  async acceptMeetingSlot(item: ConversationItem, slotStart: string): Promise<void> {
+    if (!item.meeting) return;
+    await this.api.acceptMeetingSlot(item.conversationId, item.meeting.id, slotStart);
+    await this.reloadItems();
+    this.toast(t('chat.meeting.booked', { when: fmt().full(slotStart) }));
   }
 
   // ----- messenger actions ------------------------------------------------------
@@ -800,7 +983,7 @@ export class AppState {
     await this.loadConversations(true);
     if (toastKey) {
       const undo: ConversationPatch = {};
-      for (const k of Object.keys(patch) as (keyof ConversationPatch)[]) undo[k] = before ? (before[k] as boolean) : !patch[k];
+      for (const k of Object.keys(patch) as (keyof ConversationPatch)[]) (undo as Record<string, unknown>)[k] = before ? ((before as unknown as Record<string, unknown>)[k] ?? null) : !patch[k];
       this.toast(t(toastKey), { label: t('common.action.undo'), run: () => void this.updateConversation(id, undo) });
     }
   }

@@ -181,6 +181,7 @@ export type TimelineEntry =
   | { type: 'day'; key: string; date: string }
   | { type: 'unread'; key: string; count: number }
   | { type: 'subject'; key: string; subject: string; changed: boolean }
+  | { type: 'event'; key: string; item: ConversationItem }
   | {
       type: 'item';
       key: string;
@@ -224,6 +225,11 @@ export function buildTimeline(items: ConversationItem[], opts: TimelineOptions |
       out.push({ type: 'day', key: 'day:' + dk, date: it.sentAt });
       lastDay = dk;
       breaks.add(i);
+    }
+    if (it.display === 'system') {
+      out.push({ type: 'event', key: it.id, item: it });
+      breaks.add(i + 1);
+      continue;
     }
     if (i === unreadIdx) {
       out.push({ type: 'unread', key: 'unread', count: sorted.length - i });
