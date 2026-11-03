@@ -46,7 +46,9 @@
 // send.OpKind, account 0) are executed by runSendOps; chat-mode scheduled
 // messages are kept in scheduled_messages and sent when due. Send-check
 // blocks are returned as SendResult{blocked, findings}; too large mails as
-// error code "too_large".
+// error code "too_large". The built-in checks (workflow/sendcheck) run as
+// mail.before_send hook; composer sends also wait for warnings to be
+// confirmed (OutgoingMessage.ConfirmChecks), due scheduled messages do not.
 //
 // Rendering (internal/mime/parse + internal/mime/sanitize): MIMERenderer
 // (default) sanitizes HTML with cid URLs /api/messages/{id}/cid/{cid} and

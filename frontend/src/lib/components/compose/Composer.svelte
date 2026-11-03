@@ -56,10 +56,11 @@
   import CloudPickerDialog from '../cloud/CloudPickerDialog.svelte';
   import type { CloudImportResult, CloudShare } from '../../types';
   import type { ComposerInit } from '../../state';
-  import { messengerChannel, type Address, type OutgoingAttachment, type PasswordDelivery, type PasswordDeliveryMode } from '../../types';
+  import { messengerChannel, type Address, type OutgoingAttachment, type PasswordDelivery, type PasswordDeliveryMode, type SendFinding } from '../../types';
   import { formatSize, t } from '../../i18n/index.svelte';
   import Modal from '../common/Modal.svelte';
   import RecipientInput, { isValidEmail } from './RecipientInput.svelte';
+  import SendChecks from './SendChecks.svelte';
   import PasswordDeliveryDialog, { type MessengerTarget } from './PasswordDeliveryDialog.svelte';
 
   interface Props {
@@ -85,6 +86,9 @@
   let sending = $state(false);
   let error = $state<string | null>(null);
   let askPassword = $state(false);
+  /** Findings of a send blocked by send checks (KONZEPT 8.13). */
+  let checks = $state<SendFinding[] | null>(null);
+  let lastPw: PasswordDelivery | undefined;
   let dragOver = $state(false);
   let pickCloud = $state(false);
 
@@ -233,10 +237,12 @@
     void doSend();
   }
 
-  async function doSend(pw?: PasswordDelivery) {
+  async function doSend(pw?: PasswordDelivery, confirmChecks?: string[]) {
     askPassword = false;
     sending = true;
     error = null;
+    checks = null;
+    lastPw = pw;
     try {
       if (pw?.rememberForRecipient) {
         const first = (to[0] ?? cc[0])?.email;
@@ -262,7 +268,12 @@
         forwardOfMessageId: start.forwardOfMessageId,
         attachments: outgoing,
         passwordDelivery: pw,
+        confirmChecks,
       });
+      if (res.blocked) {
+        checks = res.findings ?? [];
+        return;
+      }
       if (pw?.mode === 'none' && res.sharePasswords?.length) {
         try {
           await navigator.clipboard.writeText(res.sharePasswords.map((s) => `${s.filename}: ${s.password}`).join('\n'));
@@ -388,6 +399,9 @@
           </div>
         {/each}
       </div>
+    {/if}
+    {#if checks}
+      <SendChecks findings={checks} oncancel={() => (checks = null)} onconfirm={(c) => doSend(lastPw, c)} />
     {/if}
     {#if dragOver}<div class="dropzone">{t('compose.dropHere')}</div>{/if}
   </div>

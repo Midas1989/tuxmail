@@ -391,6 +391,8 @@ export interface OutgoingMessage {
   signatureId?: number | null;
   /** Schedule instead of sending now (ISO). */
   sendAt?: string;
+  /** Send checks the user confirmed after a blocked result ("send anyway", KONZEPT 8.13). */
+  confirmChecks?: string[];
 }
 
 export interface SendResult {
@@ -417,6 +419,8 @@ export interface SendFinding {
   /** English fallback text. */
   message: string;
   params?: Record<string, string>;
+  /** Ready texts by locale ("de", "en"). */
+  localized?: Record<string, string>;
 }
 
 /** Secret store of the desktop client: OS keyring (installed), master-password vault (portable) or the server. */

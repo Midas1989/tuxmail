@@ -26,6 +26,8 @@
   /** "Save to cloud" (KONZEPT 12.1 #2) for stored mail/chat attachments. */
   const saveSource = $derived(a.cloudLink ? null : attachmentSource(a));
   const canSave = $derived(saveSource != null && cloud.storageAccounts.length > 0);
+  // Core-served attachments are downloaded with ?download=1 (Content-Disposition: attachment).
+  const href = $derived(a.cloudLink ? (/^https?:\/\//i.test(a.cloudLink.url) ? a.cloudLink.url : undefined) : a.url ? a.url + (a.url.includes('?') ? '&' : '?') + 'download=1' : undefined);
   const ext = $derived((a.filename.split('.').pop() ?? '').toUpperCase().slice(0, 4));
 </script>
 
@@ -59,9 +61,19 @@
       <CloudUpload size={16} />
     </button>
   {/if}
-  <button class="icon-btn dl" aria-label={t('mail.attachment.download', { name: a.filename })} title={t('mail.attachment.download', { name: a.filename })}>
-    <Download size={16} />
-  </button>
+  {#if href}
+    <a
+      class="icon-btn dl"
+      {href}
+      download={a.cloudLink ? undefined : a.filename}
+      target={a.cloudLink ? '_blank' : undefined}
+      rel="noopener noreferrer"
+      aria-label={t('mail.attachment.download', { name: a.filename })}
+      title={t('mail.attachment.download', { name: a.filename })}
+    >
+      <Download size={16} />
+    </a>
+  {/if}
 </div>
 
 <style>

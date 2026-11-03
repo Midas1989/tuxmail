@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -57,6 +59,43 @@ func (a *App) ListSignatures(ctx context.Context) ([]Signature, error) {
 	return sigs, err
 }
 
+// SaveSignature creates (ID 0) or updates a signature. A missing HTML
+// version is generated from the plain text.
+func (a *App) SaveSignature(ctx context.Context, sig Signature) (Signature, error) {
+	sig.Name = strings.TrimSpace(sig.Name)
+	if sig.Name == "" {
+		return Signature{}, invalid("signature name required")
+	}
+	switch sig.Placement {
+	case "", "below_reply", "above_quote":
+	default:
+		return Signature{}, invalid("invalid placement %q", sig.Placement)
+	}
+	if strings.TrimSpace(sig.HTML) == "" && sig.Plain != "" {
+		sig.HTML = strings.ReplaceAll(html.EscapeString(strings.TrimRight(sig.Plain, "\n")), "\n", "<br>")
+	}
+	if sig.ID == 0 {
+		id, err := a.st.CreateSignature(ctx, sig)
+		if err != nil {
+			return Signature{}, err
+		}
+		sig.ID = id
+	} else if err := a.st.UpdateSignature(ctx, sig); err != nil {
+		return Signature{}, err
+	}
+	a.hub.Publish(Event{Type: EventAccountUpdated})
+	return a.st.GetSignature(ctx, sig.ID)
+}
+
+// DeleteSignature deletes a signature; identities using it fall back to none.
+func (a *App) DeleteSignature(ctx context.Context, id int64) error {
+	if err := a.st.DeleteSignature(ctx, id); err != nil {
+		return err
+	}
+	a.hub.Publish(Event{Type: EventAccountUpdated})
+	return nil
+}
+
 var frontendHandleKinds = map[string]bool{"email": true, "phone": true, "whatsapp": true, "signal": true, "telegram": true}
 
 func toPerson(p store.PersonWithHandles) Person {
@@ -88,6 +127,9 @@ func (a *App) ListPersons(ctx context.Context) ([]Person, error) {
 	return out, nil
 }
 
+// EnvISPDBURL overrides the ISPDB base URL of the default Discoverer.
+const EnvISPDBURL = "TUXMAIL_ISPDB_URL"
+
 // autoconfigDiscoverer is the default Discoverer (internal/autoconfig).
 type autoconfigDiscoverer struct{}
 
@@ -95,6 +137,11 @@ func (autoconfigDiscoverer) Discover(ctx context.Context, email, password string
 	d := autoconfig.New()
 	d.UseAutodiscover = true // Microsoft Autodiscover -> EAS (KONZEPT 7.5)
 	d.AutodiscoverPassword = func(string) string { return password }
+	// TUXMAIL_ISPDB_URL replaces Thunderbird's ISPDB, e.g. with an
+	// organization's own mirror or the dev server (docs/ENTWICKLUNG.md).
+	if u := os.Getenv(EnvISPDBURL); u != "" {
+		d.ISPDBURL = u
+	}
 	cands, err := d.Discover(ctx, email)
 	res := DiscoveryResult{Source: "none", Kind: string(domain.KindIMAP)}
 	if _, dom, e := autoconfig.SplitAddress(email); e == nil {
