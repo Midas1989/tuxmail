@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/Midas1989/Mailclient/internal/events"
+	tsync "github.com/Midas1989/Mailclient/internal/sync"
 )
 
 // Hub fans out UI events (ApiEvent in types.ts) to subscribers: the
@@ -73,12 +74,13 @@ func (h *Hub) Subscribers() int {
 // bridgeBus translates core events (tag/project/search folder live updates,
 // new mail and chat messages) into UI events until ctx is done.
 func (a *App) bridgeBus(ctx context.Context) {
-	sub := a.bus.Subscribe(ctx, events.SubscribeOptions{Name: "app-ui", Types: []events.Type{
+	types := []events.Type{
 		events.TagChanged, events.TagAdded, events.TagRemoved,
 		events.ProjectChanged, events.ProjectItemAdded, events.ProjectStatusChanged,
 		events.SearchFolderChanged, events.SearchFolderMatched,
 		events.MailReceived, events.ChatReceived,
-	}})
+	}
+	sub := a.bus.Subscribe(ctx, events.SubscribeOptions{Name: "app-ui", Types: append(types, tsync.UITypes...), Buffer: 512})
 	defer sub.Unsubscribe()
 	for {
 		select {
@@ -103,6 +105,9 @@ func (a *App) publishCoreEvent(ctx context.Context, ev events.Event) {
 		}
 	case events.SearchFolderChanged, events.SearchFolderMatched:
 		a.hub.Publish(Event{Type: EventSearchFoldersChange})
+	case tsync.EventAccountStatus, tsync.EventConversationUpdated, tsync.EventMessageUpdated,
+		tsync.EventFolderUpdated, tsync.EventFoldersChanged, tsync.EventOpFailed:
+		a.publishSyncEvent(ctx, ev)
 	case events.MailReceived, events.ChatReceived:
 		// The sync manager publishes UI events itself (Notify*); the bus
 		// events only trigger a re-index of conversation counterparts.
@@ -141,7 +146,9 @@ func (a *App) NotifyMessageRemoved(ctx context.Context, messageID int64) {
 }
 
 // NotifyFolderUpdated is called after the counters of a folder changed.
-func (a *App) NotifyFolderUpdated(ctx context.Context, folderID int64) { a.publishFolder(ctx, folderID) }
+func (a *App) NotifyFolderUpdated(ctx context.Context, folderID int64) {
+	a.publishFolder(ctx, folderID)
+}
 
 // NotifyAccountUpdated is called after an account (state, folders) changed.
 func (a *App) NotifyAccountUpdated(ctx context.Context, accountID int64) {

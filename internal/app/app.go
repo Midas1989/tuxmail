@@ -17,11 +17,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Midas1989/Mailclient/internal/ai"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/project"
 	"github.com/Midas1989/Mailclient/internal/store"
 	"github.com/Midas1989/Mailclient/internal/store/blob"
+	tsync "github.com/Midas1989/Mailclient/internal/sync"
 	"github.com/Midas1989/Mailclient/internal/workflow"
 )
 
@@ -43,7 +45,10 @@ type Options struct {
 	// Vault controls a portable master-password vault (desktop, optional).
 	Vault VaultControl
 
-	Syncer     Syncer          // default: local-only fallback (no server sync)
+	// Sync enables the sync engine (internal/sync); it is ignored when
+	// Syncer is set. Without both, actions only change the local store.
+	Sync       *SyncOptions
+	Syncer     Syncer          // default: sync manager (Sync) or local-only fallback
 	Sender     Sender          // default: sending fails with send_not_configured
 	Renderer   MessageRenderer // default: basic go-message renderer (text only)
 	Discoverer Discoverer      // default: internal/autoconfig
@@ -81,6 +86,7 @@ type App struct {
 	wf      *workflow.Engine
 	wfReg   *workflow.Registry
 	sync    Syncer
+	mgr     *tsync.Manager
 	render  MessageRenderer
 	log     *slog.Logger
 
@@ -133,20 +139,42 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if a.opts.Secrets == nil {
 		a.opts.Secrets = newMemorySecrets()
 	}
-	a.sync = opts.Syncer
-	if a.sync == nil {
-		a.sync = &localSyncer{st: a.st}
-	}
 	a.render = opts.Renderer
 	if a.render == nil {
 		a.render = BasicRenderer{}
+	}
+	if a.opts.AI == nil {
+		hc := opts.HTTPClient
+		a.opts.AI = func(s AiSettings, key string) (AIProvider, error) {
+			if s.Provider == "none" {
+				return nil, nil
+			}
+			return ai.New(s.Provider, s.BaseURL, s.Model, key, hc)
+		}
 	}
 	if a.opts.Discoverer == nil {
 		a.opts.Discoverer = autoconfigDiscoverer{}
 	}
 	a.proj = project.New(a.st, a.bus, project.Options{Now: opts.Now, Logger: opts.Logger})
+	a.sync = opts.Syncer
+	var mail workflow.MailActions = &workflowMail{a: a}
+	if a.sync == nil && opts.Sync != nil && a.blobs != nil {
+		cfg := tsync.Config{Store: a.st, Blobs: a.blobs, Bus: a.bus, Secrets: a.opts.Secrets, Projects: a.proj, Tags: a.proj,
+			Logger: opts.Logger, Now: opts.Now}
+		if opts.Sync.Configure != nil {
+			opts.Sync.Configure(&cfg)
+		}
+		m, err := tsync.New(cfg)
+		if err != nil {
+			return nil, err
+		}
+		a.mgr, a.sync, mail = m, managerSyncer{m: m}, m.MailActions()
+	}
+	if a.sync == nil {
+		a.sync = &localSyncer{st: a.st}
+	}
 	a.wfReg = workflow.DefaultRegistry()
-	deps := workflow.Deps{Mail: &workflowMail{a: a}, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient}
+	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient}
 	a.proj.Workflow().Deps(&deps)
 	loc := workflow.RunLocal
 	if opts.Mode == ModeServer {
@@ -170,6 +198,11 @@ func (a *App) Start() {
 	a.runOnce.Do(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		a.cancel = cancel
+		if a.mgr != nil {
+			if err := a.mgr.Start(ctx); err != nil {
+				a.log.Warn("app: starting sync failed", "err", err)
+			}
+		}
 		a.wg.Add(3)
 		go func() { defer a.wg.Done(); a.bridgeBus(ctx) }()
 		go func() {
@@ -188,6 +221,9 @@ func (a *App) Close() error {
 		a.cancel()
 	}
 	a.wg.Wait()
+	if a.mgr != nil {
+		a.mgr.Stop()
+	}
 	if a.ownsBus {
 		a.bus.Close()
 	}

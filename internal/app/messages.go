@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -224,6 +225,11 @@ func (a *App) summaries(ctx context.Context, msgs []store.Message) ([]MessageSum
 // rawMessage loads the raw RFC 5322 message from the blob store.
 func (a *App) rawMessage(m store.Message) ([]byte, error) {
 	if m.BlobHash == "" || a.blobs == nil {
+		if f, ok := a.sync.(bodyFetcher); ok && m.BlobHash == "" {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			return f.FetchBody(ctx, m.ID)
+		}
 		return nil, errNotFound
 	}
 	r, err := a.blobs.Open(m.BlobHash)

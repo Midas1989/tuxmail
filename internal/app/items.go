@@ -14,8 +14,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/Midas1989/Mailclient/internal/store"
 	"github.com/Midas1989/Mailclient/internal/mime/quote"
+	"github.com/Midas1989/Mailclient/internal/store"
 )
 
 // bodyParts is the bubble text of a mail (new text, quote, signature).
@@ -106,12 +106,12 @@ func excerpt(s string, n int) string {
 
 // itemCtx holds lookups shared by the items of one timeline.
 type itemCtx struct {
-	me        meSet
-	stars     map[string]bool
-	pins      []string
-	reactions map[string][]string
-	hidden    map[string]bool
-	persons   map[int64]string
+	me           meSet
+	stars        map[string]bool
+	pins         []string
+	reactions    map[string][]string
+	hidden       map[string]bool
+	persons      map[int64]string
 	scopeMail    map[int64]bool
 	scopeChat    map[int64]bool
 	chatAll      bool // all chat messages (of chatAccounts) are in scope
