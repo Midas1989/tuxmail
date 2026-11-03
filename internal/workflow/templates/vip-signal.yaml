@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+id: vip-mail-signal
+name: VIP-Mails per Signal melden
+description: >-
+  Sends me a Signal message when a mail from a VIP sender arrives. Edit the
+  address list in the condition.
+enabled: false
+trigger:
+  event: mail.received
+condition: >-
+  mail.from in ["chefin@example.com", "wichtig@example.org"]
+  || mail.fromDomain == "vip-kunde.example"
+actions:
+  - type: notify
+    channel: signal:me
+    title: "VIP-Mail von {{absender}}"
+    text: "{{absender}}: {{betreff}}"
+options:
+  rate_limit:
+    max: 20
+    per: 1h

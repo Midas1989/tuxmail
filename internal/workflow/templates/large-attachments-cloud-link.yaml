@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+id: large-attachments-cloud-link
+name: Anhänge über 10 MB automatisch als Cloud-Link
+description: >-
+  Before sending, uploads attachments larger than 10 MB to Nextcloud and
+  replaces them in the draft with a share link that expires after 14 days.
+enabled: false
+trigger:
+  event: mail.before_send
+condition: mail.maxAttachmentSize > mb(10)
+actions:
+  - type: upload_attachments
+    target: nextcloud
+    dir: "/Mail-Anhänge/{{jahr}}-{{monat}}"
+    min_size: 10MB
+    replace_with_link: true
+    share_expiry: 14d
