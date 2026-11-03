@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+id: waiting-for-reply
+name: Warten auf Antwort
+description: >-
+  Reminds me on the desktop and flags the mail when nobody answered a sent
+  mail in time (scheduled by the composer switch or the remind_no_reply action).
+enabled: false
+trigger:
+  event: noreply.timeout
+actions:
+  - type: notify
+    channel: desktop
+    title: Keine Antwort erhalten
+    text: "Keine Antwort auf „{{betreff}}“ an {{empfaenger}} – nachfassen?"
+  - type: flag
+    add: [flagged]

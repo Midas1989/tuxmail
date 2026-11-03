@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+id: out-of-office
+name: Abwesenheitsnotiz
+description: >-
+  Answers incoming mail according to the out-of-office settings (time window,
+  internal/external text, once per sender, no replies to lists or bulk mail).
+enabled: false
+trigger:
+  event: mail.received
+  folders: [inbox]
+actions:
+  - type: vacation_reply
+options:
+  loop_protection:
+    max_per_message: 1
+    window: 1d

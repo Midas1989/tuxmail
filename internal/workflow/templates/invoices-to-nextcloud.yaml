@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+id: invoices-to-nextcloud
+name: Rechnungen als PDF in Nextcloud ablegen
+description: >-
+  Archives every incoming invoice as PDF/A-3 (original mail and attachments
+  embedded) in Nextcloud under /Buchhaltung/<year>/<month>/ and labels it.
+enabled: false
+trigger:
+  event: mail.received
+  folders: [inbox]
+condition: >-
+  mail.isInvoice
+  || mail.category == "rechnung"
+  || anyGlob(mail.attachmentNames, "*rechnung*.pdf")
+  || anyGlob(mail.attachmentNames, "*invoice*.pdf")
+actions:
+  - type: archive_pdf
+    target: nextcloud
+    path: "/Buchhaltung/{{jahr}}/{{monat}}/{{datum}}_{{absender}}_{{betreff}}.pdf"
+  - type: label
+    add: [Rechnung, archiviert]
+options:
+  loop_protection:
+    max_per_message: 1
+    window: 30d

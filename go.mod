@@ -3,9 +3,11 @@ module github.com/Midas1989/Mailclient
 go 1.24.0
 
 require (
+	github.com/expr-lang/expr v1.17.8
 	github.com/klauspost/compress v1.18.7
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.45.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.44.0
 )
 

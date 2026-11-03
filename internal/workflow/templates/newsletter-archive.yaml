@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+id: newsletter-auto-archive
+name: Newsletter automatisch archivieren
+description: >-
+  Marks newsletters (List-Id / List-Unsubscribe header or smart category
+  "newsletter") as read and moves them to the archive.
+enabled: false
+trigger:
+  event: mail.received
+  folders: [inbox]
+condition:
+  any:
+    - {field: mail.category, op: eq, value: newsletter}
+    - {field: mail.headers.List-Unsubscribe, op: not_empty}
+    - {field: mail.headers.List-Id, op: not_empty}
+actions:
+  - type: flag
+    add: [seen]
+  - type: archive
