@@ -1,0 +1,125 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { app, prefs } from './lib/state';
+  import { startRouter } from './lib/router';
+  import { installShortcuts } from './lib/keyboard';
+  import { t } from './lib/i18n/index.svelte';
+  import ActivityBar from './lib/components/ActivityBar.svelte';
+  import CommandPalette from './lib/components/CommandPalette.svelte';
+  import Composer from './lib/components/compose/Composer.svelte';
+  import Toasts from './lib/components/common/Toasts.svelte';
+  import MailScreen from './lib/screens/MailScreen.svelte';
+  import CalendarScreen from './lib/screens/CalendarScreen.svelte';
+  import ContactsScreen from './lib/screens/ContactsScreen.svelte';
+  import FilesScreen from './lib/screens/FilesScreen.svelte';
+  import SettingsScreen from './lib/screens/SettingsScreen.svelte';
+  import SearchScreen from './lib/screens/SearchScreen.svelte';
+  import IosInstallHint from './lib/components/IosInstallHint.svelte';
+  import { registerServiceWorker } from './lib/pwa';
+
+  // Theme + density tokens on <html>.
+  $effect(() => {
+    prefs.apply(document.documentElement);
+  });
+
+  onMount(() => {
+    const stopRouter = startRouter((r) => (app.route = r));
+    const stopKeys = installShortcuts(app);
+    void app.init().then(() => {
+      // PWA shortcuts: #/mail?compose=1, #/mail?view=chat
+      const q = new URLSearchParams(location.hash.split('?')[1] ?? '');
+      if (q.get('view') === 'chat') void app.setViewMode('chat');
+      if (q.get('compose')) app.openCompose();
+    });
+    // Browser/PWA only (never inside Wails); notification clicks navigate here.
+    void registerServiceWorker((url) => {
+      const u = new URL(url, location.href);
+      if (u.origin === location.origin) location.hash = u.hash || '#/mail';
+    });
+    return () => {
+      stopRouter();
+      stopKeys();
+      app.destroy();
+    };
+  });
+</script>
+
+<a class="skip" href="#main">{t('common.a11y.skipToContent')}</a>
+<div class="app">
+  <ActivityBar />
+  <main id="main" class="main" tabindex="-1">
+    {#if app.loadError}
+      <div class="fatal" role="alert">
+        <h1>{t('errors.loadTitle')}</h1>
+        <p>{app.loadError}</p>
+        <button class="btn btn-primary" onclick={() => location.reload()}>{t('errors.retry')}</button>
+      </div>
+    {:else if app.route === 'mail'}
+      <MailScreen />
+    {:else if app.route === 'search'}
+      <SearchScreen />
+    {:else if app.route === 'calendar'}
+      <CalendarScreen />
+    {:else if app.route === 'contacts'}
+      <ContactsScreen />
+    {:else if app.route === 'files'}
+      <FilesScreen />
+    {:else if app.route === 'settings'}
+      <SettingsScreen />
+    {/if}
+  </main>
+</div>
+
+{#if app.paletteOpen}
+  <CommandPalette />
+{/if}
+{#if app.composer}
+  <Composer init={app.composer} onclose={() => (app.composer = null)} />
+{/if}
+<Toasts />
+<IosInstallHint />
+
+<style>
+  .app {
+    display: flex;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+    outline: none;
+  }
+  .skip {
+    position: absolute;
+    left: -999px;
+    top: 8px;
+    z-index: 100;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: var(--tm-accent);
+    color: var(--tm-accent-fg);
+  }
+  .skip:focus {
+    left: 8px;
+  }
+  .fatal {
+    margin: auto;
+    text-align: center;
+    max-width: 420px;
+    padding: 24px;
+  }
+  .fatal p {
+    color: var(--tm-muted);
+  }
+  @media (max-width: 639px) {
+    .app {
+      padding-bottom: 60px;
+    }
+  }
+</style>
