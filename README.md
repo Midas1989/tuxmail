@@ -1,4 +1,4 @@
-# Konflux (Arbeitstitel)
+# TuxMail
 
 Plattformübergreifender Kommunikations-Client für **Windows und Linux**:
 E-Mail (IMAP/POP3/SMTP, Exchange ActiveSync, Microsoft Graph/EWS, Gmail, JMAP),
@@ -13,3 +13,5 @@ jederzeit umschaltbar.
 
 **Geplanter Stack:** Go (Kern & Protokolle) · Wails + Svelte 5/TypeScript (Oberfläche) · SQLite (Daten) ·
 Messenger als separate Plugin-Prozesse (gRPC) · portabel lauffähig (Windows-ZIP, Linux-AppImage) oder installierbar.
+
+**Lizenz:** AGPL-3.0-or-later

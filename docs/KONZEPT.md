@@ -1,8 +1,8 @@
 # Entwicklungskonzept: Unified Communication Client
 
-**Arbeitstitel:** *Konflux* – E-Mail, Messenger, Kalender, Kontakte und Cloud-Dateien in einer Anwendung
+**Produktname:** *TuxMail* – E-Mail, Messenger, Kalender, Kontakte und Cloud-Dateien in einer Anwendung
 **Zielplattformen:** Windows 10/11 (x64, ARM64), Linux (x64, ARM64)
-**Stand:** 03.11.2026 – Version 1.0 des Konzepts
+**Stand:** 03.11.2026 – Version 1.1 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
 
 ---
 
@@ -172,7 +172,7 @@ Ziel ist ein **lokal laufender Desktop-Client**, der klassische E-Mail-Arbeit (O
 1. **Local-First:** Die Oberfläche liest *ausschließlich* aus der lokalen Datenbank. Synchronisation läuft im Hintergrund. Dadurch ist die UI immer schnell und offline nutzbar.
 2. **Operations-Queue (Op-Log):** Jede Benutzeraktion (verschieben, markieren, löschen, senden) wird zuerst lokal angewendet und als Operation in eine persistente Warteschlange geschrieben. Ein Worker spielt sie gegen den Server ab – mit Wiederholung, Backoff und Konfliktauflösung.
 3. **Provider-Interfaces:** Jeder Kontotyp implementiert dieselben Go-Interfaces. Der Kern kennt keine Protokolldetails.
-4. **Headless-fähiger Kern:** Der Kern läuft auch ohne GUI (`konflux --headless`). Das ermöglicht später einen Web- oder Mobil-Client und erleichtert Tests.
+4. **Headless-fähiger Kern + Web-Client (Version 1.0):** Der Kern läuft auch ohne GUI (`tuxmail serve`). Das Svelte-Frontend ist dasselbe für Desktop und Browser; es spricht über eine **Transport-Abstraktion** mit dem Kern – im Desktop über Wails-Bindings, im Web über HTTPS + WebSocket (siehe 4.5). Ein Mobil-Client kann später dieselbe API nutzen.
 5. **Event-getrieben:** Änderungen erzeugen Events (`message.added`, `conversation.updated`, …), die per Event-Bus an die UI gepusht werden – kein Polling in der Oberfläche.
 
 ### 4.3 Provider-Interfaces (Auszug)
@@ -207,7 +207,7 @@ type MessengerProvider interface { /* Pair (QR), ListChats, SyncHistory, Send, R
 ### 4.4 Prozessmodell
 
 ```
-konflux.exe (Hauptprozess: GUI + Kern)
+tuxmail.exe (Hauptprozess: GUI + Kern)
  ├─ plugin-whatsapp   (je Plugin ein Prozess, verwaltet n Konten)
  ├─ plugin-signal
  ├─ plugin-meta       (experimentell, standardmäßig deaktiviert)
@@ -215,6 +215,25 @@ konflux.exe (Hauptprozess: GUI + Kern)
 ```
 
 Alle Plugins liegen als Binaries neben der Hauptanwendung (`plugins/`). Der Kern startet sie bei Bedarf, überwacht sie (Health-Check, automatischer Neustart) und kommuniziert per gRPC. Ein Absturz eines Messenger-Plugins reißt damit nie den Mail-Client mit.
+
+### 4.5 Betriebsarten: Desktop und Server/Web (Version 1.0)
+
+| Betriebsart | Läuft wo | Zugriff | Typischer Einsatz |
+|---|---|---|---|
+| **Desktop (lokal)** | Windows/Linux-PC, portabel oder installiert | Wails-Fenster | Einzelplatz, alles lokal |
+| **Server (Web)** | Linux-Server/NAS als Docker-Container (`tuxmail serve`) | Browser (HTTPS), optional Desktop-App als „Thin Client" | Zugriff von überall, Messenger 24/7 online |
+| **Desktop + Bridge** | Desktop-Client lokal, Messenger über Matrix-Bridges auf dem Server | Wails-Fenster | Messenger auch bei ausgeschaltetem PC, Mails lokal |
+
+**API-Design:** Alle Application Services werden als typisierte API beschrieben (Protobuf/Connect-RPC oder OpenAPI) und daraus Go-Server- und TypeScript-Client-Code generiert. Dieselben Aufrufe laufen
+- im Desktop direkt in-process über Wails-Bindings,
+- im Server-Modus über **HTTPS (Connect-RPC/JSON) + WebSocket** für Live-Events.
+
+**Server-Modus – Zusatzanforderungen:**
+- Benutzerverwaltung (mehrere Benutzer pro Server, strikt getrennte Datenbanken je Benutzer), Anmeldung per Passwort + TOTP/WebAuthn oder **OIDC** (z. B. Nextcloud, OpenCloud, Authentik, Keycloak).
+- TLS über Reverse-Proxy (Caddy/Traefik) oder eingebautes ACME (Let's Encrypt).
+- Sitzungsverwaltung, CSRF-Schutz, Rate-Limits, Audit-Log.
+- Web-Push-Benachrichtigungen (PWA) – der Web-Client ist als installierbare **Progressive Web App** nutzbar, auch auf dem Smartphone.
+- Lieferform: Docker-Image + `docker-compose.yml` (TuxMail, optional Matrix-Homeserver und mautrix-Bridges).
 
 ---
 
@@ -224,8 +243,8 @@ Alle Plugins liegen als Binaries neben der Hauptanwendung (`plugins/`). Der Kern
 
 ```
 <Datenverzeichnis>/
-├── konflux.db              # SQLite: Metadaten, Beziehungen, Index
-├── konflux.db-wal
+├── tuxmail.db              # SQLite: Metadaten, Beziehungen, Index
+├── tuxmail.db-wal
 ├── blobs/                  # Inhaltsadressierter Speicher (SHA-256)
 │   ├── ab/cd/abcd…eml      # Rohmails (komprimiert, zstd)
 │   └── 12/34/1234…bin      # Anhänge, Medien aus Messengern
@@ -235,7 +254,7 @@ Alle Plugins liegen als Binaries neben der Hauptanwendung (`plugins/`). Der Kern
 └── settings.json           # Nur Bootstrap-Einstellungen; Rest in DB
 ```
 
-- **Installiert:** Windows `%APPDATA%\Konflux`, Linux `$XDG_DATA_HOME/konflux` (meist `~/.local/share/konflux`).
+- **Installiert:** Windows `%APPDATA%\TuxMail`, Linux `$XDG_DATA_HOME/tuxmail` (meist `~/.local/share/tuxmail`).
 - **Portabel:** `./data/` neben der ausführbaren Datei (siehe Kapitel 15).
 
 Rohmails werden **inhaltsadressiert** gespeichert: Dieselbe Mail in zwei Ordnern (z. B. Gmail-Labels) belegt nur einmal Platz.
@@ -663,7 +682,17 @@ Keiner der großen Messenger bietet eine offizielle API für **private Konten** 
 
 ### 11.3 Architektur-Variante „Bridge-Modus"
 
-Alternativ (oder zusätzlich) kann der Client mit einem **eigenen Matrix-Homeserver + mautrix-Bridges** arbeiten: Die Messenger laufen dann auf einem Server (z. B. neben Nextcloud), der Desktop-Client spricht nur Matrix. Vorteil: Nachrichten kommen auch an, wenn der PC aus ist; mehrere Geräte. Nachteil: Serverbetrieb nötig. Empfehlung: **Direkter Modus als Standard, Bridge-Modus als Option** – beide nutzen dieselben Plugin-Schnittstellen.
+**Entscheidung: Der Bridge-Modus ist Bestandteil von Version 1.0.**
+
+Der Client kann – zusätzlich zum direkten Modus – mit einem **eigenen Matrix-Homeserver + mautrix-Bridges** arbeiten: Die Messenger laufen dann auf einem Server (z. B. neben Nextcloud), der Client spricht nur Matrix. Vorteil: Nachrichten kommen auch an, wenn der PC aus ist; mehrere Geräte gleichzeitig; Ende-zu-Ende-Verschlüsselung zwischen Client und Homeserver möglich. Nachteil: Serverbetrieb nötig.
+
+Umsetzung:
+- Neues Plugin **`plugin-matrix-bridge`** implementiert dieselbe `MessengerPlugin`-Schnittstelle (11.4) auf Basis von `mautrix-go`. Für den Rest des Clients ist es egal, ob WhatsApp direkt oder über die Bridge kommt.
+- Die Bridge-Räume werden anhand der Bridge-Metadaten (`m.bridge`-State-Events) wieder den Kanälen WhatsApp/Signal zugeordnet → gleiches Symbol, gleiche Personen-Zuordnung.
+- Kopplung (QR-Code) wird über die Bot-Kommandos der Bridge im Client grafisch abgebildet – der Benutzer sieht denselben Assistenten wie im direkten Modus.
+- Mitgelieferte `docker-compose.yml`: Homeserver (**Synapse** oder das schlankere **Continuwuity/Conduit-Familie**), `mautrix-whatsapp`, `mautrix-signal`, optional `mautrix-meta`, `mautrix-gmessages`, PostgreSQL.
+- Ein Konto kann **entweder** direkt **oder** über die Bridge laufen (nicht beides gleichzeitig, sonst doppelte verknüpfte Geräte). Ein Umzug „direkt → Bridge" wird per Assistent unterstützt (Neukopplung nötig).
+- Im **Server-/Web-Betrieb** (4.5) ist der Bridge-Modus die empfohlene Messenger-Anbindung.
 
 ### 11.4 Plugin-Schnittstelle (gRPC, Auszug)
 
@@ -703,7 +732,7 @@ service MessengerPlugin {
 ```
 Benutzer wählt Anhang → Versandart "Nextcloud-Link"
   1. Upload per WebDAV (Chunked Upload v2 bei großen Dateien) nach
-     /Konflux/Mail-Anhänge/2026-11-03/<Betreff>/datei.pdf
+     /TuxMail/Mail-Anhänge/2026-11-03/<Betreff>/datei.pdf
   2. Freigabe erstellen mit:
        - Passwort (automatisch generiert, 16 Zeichen, oder manuell)
        - Ablaufdatum (Standard 14 Tage, einstellbar)
@@ -718,7 +747,18 @@ Benutzer wählt Anhang → Versandart "Nextcloud-Link"
 **Sicherheitsoption:** Passwort *nicht* in dieselbe Mail schreiben, sondern
 a) in einer zweiten, separaten Mail senden, oder
 b) per Messenger (Signal/WhatsApp) an denselben Empfänger schicken – praktisch, da der Client beide Kanäle kennt.
-Standard ist laut Anforderung „Link + Passwort in der Mail"; die sicheren Varianten sind wählbar.
+**Entscheidung: Es gibt keine feste Voreinstellung – der Client fragt bei jedem Versand mit Cloud-Link nach.** Beim Senden erscheint ein kompakter Dialog:
+
+```
+Passwort für die Freigabe „Angebot.pdf" übermitteln:
+  ( ) In dieser Mail
+  ( ) Separat per zweiter Mail
+  ( ) Per Signal / WhatsApp an Anna Müller   (nur wenn Kanal bekannt)
+  ( ) Nicht senden – ich übermittle es selbst (Passwort wird in Zwischenablage kopiert)
+  [ ] Für diesen Empfänger merken
+```
+
+Optional kann die Wahl pro Empfänger/Domain gespeichert werden; der Dialog lässt sich dann für diese Empfänger überspringen.
 
 ### 12.3 Nextcloud
 - Anmeldung über **Login Flow v2** (Browser öffnet sich, App-Passwort wird erzeugt – kein Hauptpasswort im Client).
@@ -790,7 +830,7 @@ Beim Import wird die **Ordnerstruktur** wahlweise übernommen oder in einen Ziel
 | **Benutzerdefiniert** | Auswahl je Konto und Bereich (Häkchen-Baum) |
 
 ### 14.2 Format & Sicherheit
-- Ein Archiv `konflux-backup-2026-11-03.kfx` = **tar + zstd**, verschlüsselt mit **age** (Passphrase, scrypt) – Pflicht, sobald Zugangsdaten oder Messenger-Sitzungen enthalten sind.
+- Ein Archiv `tuxmail-backup-2026-11-03.txmb` = **tar + zstd**, verschlüsselt mit **age** (Passphrase, scrypt) – Pflicht, sobald Zugangsdaten oder Messenger-Sitzungen enthalten sind.
 - `manifest.json` mit Version, Schema-Version, Zeitstempel, Umfang, SHA-256-Prüfsummen.
 - **Konsistente Sicherung im laufenden Betrieb** über die SQLite-Online-Backup-API bzw. `VACUUM INTO`.
 - Inkrementelle Backups (Blob-Store ist inhaltsadressiert → nur neue Blobs werden gesichert).
@@ -812,8 +852,8 @@ Beim Import wird die **Ordnerstruktur** wahlweise übernommen oder in einen Ziel
 
 | Plattform | Portabel | Installiert |
 |---|---|---|
-| **Windows 10/11** | `Konflux-portable.zip`: `konflux.exe` + `plugins\` + leere Datei `portable` → Daten in `.\data\`. WebView2 ist auf Windows 10 (aktuelle Builds) und 11 vorinstalliert; fehlt es, wird der Fixed-Version-Runtime im Portable-Paket mitgeliefert (optional, ~150 MB). | MSI-Installer bzw. **winget**: Startmenü, `mailto:`/`webcal:`-Handler, Autostart, Standard-Mailprogramm |
-| **Linux** | **AppImage** (enthält WebKitGTK und alle Abhängigkeiten); Portable-Modus über `Konflux.AppImage.home`-Ordner oder `--portable`-Schalter | **Flatpak** (Flathub), `.deb`, `.rpm`, AUR; Desktop-Integration, Benachrichtigungen, Tray (StatusNotifierItem) |
+| **Windows 10/11** | `TuxMail-portable.zip`: `tuxmail.exe` + `plugins\` + leere Datei `portable` → Daten in `.\data\`. Mindestversion Windows 10 22H2 / Windows 11 – dort ist WebView2 vorinstalliert, das Portable-Paket braucht keine zusätzliche Runtime. | MSI-Installer bzw. **winget**: Startmenü, `mailto:`/`webcal:`-Handler, Autostart, Standard-Mailprogramm |
+| **Linux** | **AppImage** (enthält WebKitGTK und alle Abhängigkeiten); Portable-Modus über `TuxMail.AppImage.home`-Ordner oder `--portable`-Schalter | **Flatpak** (Flathub), `.deb`, `.rpm`, AUR; Desktop-Integration, Benachrichtigungen, Tray (StatusNotifierItem) |
 
 ### 15.2 Portabler Modus – Details
 - Erkennung: Datei `portable` oder Ordner `data/` neben der Binärdatei, oder Parameter `--data-dir`.
@@ -933,7 +973,7 @@ Beim Import wird die **Ordnerstruktur** wahlweise übernommen oder in einen Ziel
 | emersion/go-imap, go-smtp, go-webdav | MIT | unkritisch |
 | Wails | MIT | unkritisch |
 
-**Empfehlung:** Das **gesamte Projekt unter AGPL-3.0** (oder GPL-3.0 für den Kern und AGPL-3.0 für die Plugins) veröffentlichen. Soll der Kern später proprietär/kommerziell werden, ist die gewählte **Prozesstrennung der Plugins** die Grundlage, um die AGPL-Teile sauber abzugrenzen (rechtliche Prüfung vorausgesetzt).
+**Entscheidung: Das gesamte Projekt wird unter AGPL-3.0 veröffentlicht.** Damit sind alle verwendeten Bibliotheken (MIT, MPL-2.0, AGPL-3.0) kompatibel. Da es einen Server-/Web-Modus gibt, ist die AGPL hier auch inhaltlich passend: Wer TuxMail als Dienst für andere betreibt, muss seinen geänderten Quellcode bereitstellen. Jede Quelldatei erhält einen SPDX-Header (`SPDX-License-Identifier: AGPL-3.0-or-later`); Beiträge Dritter werden über ein DCO (`Signed-off-by`) angenommen.
 
 ### 18.3 Weitere Punkte
 - Google-OAuth-Verifizierung (CASA) und Microsoft-Publisher-Verifizierung für die öffentliche Verteilung einplanen (Zeit: mehrere Wochen, ggf. Kosten für das Sicherheitsaudit).
@@ -946,8 +986,8 @@ Beim Import wird die **Ordnerstruktur** wahlweise übernommen oder in einen Ziel
 ```
 Mailclient/
 ├── cmd/
-│   ├── konflux/               # Hauptprogramm (GUI + Kern)
-│   ├── konflux-cli/           # Kommandozeile: Backup, Import/Export, Headless
+│   ├── tuxmail/               # Hauptprogramm (GUI + Kern)
+│   ├── tuxmail-cli/           # Kommandozeile: Backup, Import/Export, Headless
 │   └── plugins/
 │       ├── whatsapp/
 │       ├── signal/
@@ -1022,12 +1062,14 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | **4 – Import/Export & Backup** | EML/MBOX/Maildir/PST, ICS, vCard/CSV/LDIF, Backup/Restore (alle Modi), Thunderbird-Import | Datenhoheit | 2 PM |
 | **5 – Microsoft & Google** | OAuth2, Graph, Gmail API, Google Calendar/People, **ActiveSync**, EWS (On-Prem) | Unternehmenstauglich | 5 PM |
 | **6 – Cloud-Anhänge** | Nextcloud, OpenCloud, Vaultwarden Send, Link-Verwaltung, Anhang-Ablage-Regeln | Cloud-Workflow | 2 PM |
-| **7 – Messenger** | Plugin-Host, WhatsApp, Signal, gemischte Personen-Zeitleiste | Unified Inbox | 4 PM |
-| **8 – Erweiterte Messenger** | Instagram/Facebook (experimentell), Google Messages, Google Chat, optional Telegram/Matrix, Bridge-Modus | Optionale Kanäle | 3 PM |
-| **9 – Feinschliff & Release 1.0** | OpenPGP/S-MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Dokumentation | Release | 3 PM |
-| | | **Summe** | **≈ 33 PM** |
+| **7 – Messenger** | Plugin-Host, **WhatsApp, Signal** (Pflicht für 1.0), gemischte Personen-Zeitleiste | Unified Inbox | 4 PM |
+| **8 – Bridge-Modus** | `plugin-matrix-bridge`, Bridge-Zuordnung, Kopplungsassistent, docker-compose mit Homeserver + Bridges | Messenger 24/7 | 2 PM |
+| **9 – Server & Web-Client** | `tuxmail serve`, API-Generierung (Connect-RPC), Transport-Abstraktion im Frontend, Benutzerverwaltung, OIDC, PWA/Web-Push, Docker-Image | Zugriff über Browser | 4 PM |
+| **10 – Feinschliff & Release 1.0** | OpenPGP/S-MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Sicherheitsprüfung des Web-Modus, Dokumentation | Release | 3 PM |
+| | | **Summe 1.0** | **≈ 36 PM** |
+| *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat, optional Telegram, Mobil-App | Optionale Kanäle | *≈ 3–4 PM* |
 
-- Mit 3 Entwicklern: **ca. 11–13 Monate** bis Version 1.0; ein nutzbarer Mail-Client mit Konversationsansicht (Phasen 0–2) nach **ca. 4 Monaten**.
+- Mit 3 Entwicklern: **ca. 12–14 Monate** bis Version 1.0; ein nutzbarer Mail-Client mit Konversationsansicht (Phasen 0–2) nach **ca. 4 Monaten**.
 - Phasen 5–8 lassen sich nach Phase 2 teilweise **parallel** bearbeiten.
 
 ### Meilensteine
@@ -1036,8 +1078,9 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | **M1 – Alpha** | Phasen 0–2: IMAP/SMTP, Ordner, Signaturen, Aliase, Konversationsansicht |
 | **M2 – Beta 1** | + Kalender, Kontakte, Import/Export, Backup |
 | **M3 – Beta 2** | + Microsoft/Google, ActiveSync, Cloud-Anhänge |
-| **M4 – Beta 3** | + WhatsApp, Signal |
-| **M5 – 1.0** | + Feinschliff, optionale Messenger, Signierung, Verifizierungen |
+| **M4 – Beta 3** | + WhatsApp, Signal (direkt und über Bridge) |
+| **M5 – Beta 4** | + Server-Modus und Web-Client |
+| **M6 – 1.0** | + Feinschliff, Signierung, Verifizierungen |
 
 ---
 
@@ -1056,17 +1099,18 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 
 ---
 
-## 23. Offene Entscheidungen
+## 23. Getroffene Entscheidungen
 
-Folgende Punkte sollten vor bzw. während Phase 0 festgelegt werden:
-
-1. **Produktname** und **Lizenzmodell** (Open Source AGPL vs. kommerziell mit getrennten Plugins).
-2. **Frontend-Framework** final: Svelte 5 (Empfehlung) oder React.
-3. **Mindest-Windows-Version** (Empfehlung: Windows 10 22H2 / Windows 11).
-4. **Bridge-Modus** (eigener Matrix-Server) ja/nein für Version 1.0.
-5. Soll der Kern später auch einen **Web- oder Mobil-Client** bedienen? (Beeinflusst API-Design – der Headless-Kern ist bereits vorgesehen.)
-6. **Standardverhalten Cloud-Link-Passwort:** in derselben Mail (Anforderung) oder getrennt (sicherer) als Voreinstellung.
-7. Welche Messenger sind für Version 1.0 **Pflicht** (Empfehlung: WhatsApp + Signal) und welche folgen später (Instagram, Facebook, Google Messages)?
+| # | Thema | Entscheidung | Auswirkung im Konzept |
+|---|---|---|---|
+| 1 | Produktname | **TuxMail** | Binary `tuxmail`, Datenordner `TuxMail`/`tuxmail`, Backup-Endung `.txmb` |
+| 2 | Lizenz | **AGPL-3.0 für das gesamte Projekt** | Kapitel 18.2 |
+| 3 | Frontend | **Svelte 5** + TypeScript + Tailwind CSS | Kapitel 3.2 |
+| 4 | Windows-Mindestversion | **Windows 10 22H2 und Windows 11** (WebView2 vorinstalliert) | Kapitel 15.1 – keine Runtime im Portable-Paket nötig |
+| 5 | Bridge-Modus | **Bestandteil von Version 1.0** | Kapitel 11.3, Phase 8 der Roadmap |
+| 6 | Web-/Mobil-Client | **Web-Client in Version 1.0**, Mobil-App später über dieselbe API | Kapitel 4.2, 4.5, Phase 9 der Roadmap |
+| 7 | Cloud-Link-Passwort | **Bei jedem Versand fragen** (Wahl pro Empfänger merkbar) | Kapitel 12.2 |
+| 8 | Messenger für 1.0 | **WhatsApp und Signal**; Instagram, Facebook, Google Messages/Chat nach 1.0 | Kapitel 11, Roadmap |
 
 ---
 
