@@ -1,0 +1,362 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!--
+  Account setup skeleton (KONZEPT 7.5 / 16.2 onboarding):
+  e-mail + password -> discovered settings -> manual server form.
+-->
+<script lang="ts" module>
+  import type { TLSMode } from '../../types';
+
+  export function defaultPort(kind: 'incoming' | 'outgoing', protocol: string, tls: TLSMode): number {
+    if (kind === 'outgoing') return tls === 'tls' ? 465 : 587;
+    if (protocol === 'pop3') return tls === 'tls' ? 995 : 110;
+    if (protocol === 'eas' || protocol === 'graph' || protocol === 'ews' || protocol === 'jmap') return 443;
+    return tls === 'tls' ? 993 : 143;
+  }
+</script>
+
+<script lang="ts">
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+  import CircleCheck from '@lucide/svelte/icons/circle-check';
+  import Server from '@lucide/svelte/icons/server';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import { app } from '../../state';
+  import { t } from '../../i18n/index.svelte';
+  import type { AccountKind, AuthMethod, DiscoveryResult, ServerConfig } from '../../types';
+  import Modal from '../common/Modal.svelte';
+
+  interface Props {
+    onclose: () => void;
+  }
+  let { onclose }: Props = $props();
+
+  type Step = 'credentials' | 'discovering' | 'discovered' | 'manual' | 'saving' | 'done';
+  let step = $state<Step>('credentials');
+  let name = $state('');
+  let email = $state('');
+  let password = $state('');
+  let error = $state<string | null>(null);
+  let discovery = $state<DiscoveryResult | null>(null);
+
+  let protocol = $state<AccountKind>('imap');
+  let incoming = $state<ServerConfig>({ host: '', port: 993, tls: 'tls', auth: 'password', username: '' });
+  let outgoing = $state<ServerConfig>({ host: '', port: 465, tls: 'tls', auth: 'password', username: '' });
+  let allowInsecure = $state(false);
+
+  const needsOutgoing = $derived(protocol === 'imap' || protocol === 'pop3');
+  const insecure = $derived(incoming.tls === 'none' || (needsOutgoing && outgoing.tls === 'none'));
+  const emailOk = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email));
+
+  const steps: { id: Step[]; label: string }[] = $derived([
+    { id: ['credentials', 'discovering'], label: t('wizard.step1') },
+    { id: ['discovered'], label: t('wizard.step2') },
+    { id: ['manual', 'saving'], label: t('wizard.step3') },
+  ]);
+
+  async function discover() {
+    if (!emailOk) {
+      error = t('wizard.errEmail');
+      return;
+    }
+    error = null;
+    step = 'discovering';
+    try {
+      discovery = await app.api.discoverAccount(email, password);
+      if (discovery.incoming) incoming = { ...discovery.incoming };
+      if (discovery.outgoing) outgoing = { ...discovery.outgoing };
+      protocol = discovery.kind;
+      step = discovery.source === 'none' ? 'manual' : 'discovered';
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      step = 'credentials';
+    }
+  }
+
+  function manual() {
+    if (!incoming.username) incoming.username = email;
+    if (!outgoing.username) outgoing.username = email;
+    const domain = email.split('@')[1] ?? '';
+    if (!incoming.host && domain) incoming.host = `imap.${domain}`;
+    if (!outgoing.host && domain) outgoing.host = `smtp.${domain}`;
+    step = 'manual';
+  }
+
+  function onTls(which: 'incoming' | 'outgoing') {
+    const cfg = which === 'incoming' ? incoming : outgoing;
+    cfg.port = defaultPort(which, protocol, cfg.tls);
+  }
+
+  async function save() {
+    if (insecure && !allowInsecure) {
+      error = t('wizard.errInsecure');
+      return;
+    }
+    error = null;
+    step = 'saving';
+    try {
+      await app.api.createAccount({
+        kind: protocol,
+        displayName: email.split('@')[1] ?? email,
+        email,
+        name,
+        password,
+        incoming,
+        outgoing: needsOutgoing ? outgoing : undefined,
+      });
+      step = 'done';
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      step = 'manual';
+    }
+  }
+
+  const protocols: AccountKind[] = ['imap', 'pop3', 'jmap', 'eas', 'graph', 'ews', 'gmail'];
+  const tlsModes: TLSMode[] = ['tls', 'starttls', 'none'];
+  const authMethods: AuthMethod[] = ['password', 'oauth2', 'client_cert'];
+</script>
+
+<Modal title={t('wizard.title')} {onclose} width="600px">
+  <ol class="steps" aria-label={t('wizard.progress')}>
+    {#each steps as s, i (i)}
+      <li class:current={s.id.includes(step)}>{i + 1}. {s.label}</li>
+    {/each}
+  </ol>
+
+  {#if step === 'credentials' || step === 'discovering'}
+    <form
+      class="form"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void discover();
+      }}
+    >
+      <p class="lead">{t('wizard.lead')}</p>
+      <label><span class="label">{t('wizard.name')}</span><input class="input" bind:value={name} autocomplete="name" data-autofocus /></label>
+      <label><span class="label">{t('wizard.email')}</span><input class="input" type="email" bind:value={email} autocomplete="email" required /></label>
+      <label><span class="label">{t('wizard.password')}</span><input class="input" type="password" bind:value={password} autocomplete="current-password" /></label>
+      <p class="hint">{t('wizard.passwordHint')}</p>
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      <div class="row-actions">
+        <button type="button" class="btn btn-ghost" onclick={manual}>{t('wizard.manual')}</button>
+        <button type="submit" class="btn btn-primary" disabled={step === 'discovering' || !email}>
+          {#if step === 'discovering'}<LoaderCircle size={15} class="spin" /> {t('wizard.discovering')}{:else}{t('wizard.next')}{/if}
+        </button>
+      </div>
+    </form>
+  {:else if step === 'discovered' && discovery}
+    <div class="found">
+      <p class="ok"><CircleCheck size={18} /> {t(`wizard.source.${discovery.source}`)}</p>
+      <dl>
+        <dt>{t('wizard.incoming')}</dt>
+        <dd><Server size={14} /> {discovery.kind.toUpperCase()} · {incoming.host}:{incoming.port} · {t(`tls.${incoming.tls}`)}</dd>
+        {#if discovery.outgoing}
+          <dt>{t('wizard.outgoing')}</dt>
+          <dd><Server size={14} /> SMTP · {outgoing.host}:{outgoing.port} · {t(`tls.${outgoing.tls}`)}</dd>
+        {/if}
+        <dt>{t('wizard.username')}</dt>
+        <dd>{incoming.username}</dd>
+      </dl>
+      {#if discovery.oauthAvailable}<p class="hint">{t('wizard.oauthHint')}</p>{/if}
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      <div class="row-actions">
+        <button class="btn btn-ghost" onclick={() => (step = 'manual')}>{t('wizard.editManually')}</button>
+        <button class="btn btn-primary" onclick={save} data-autofocus>{t('wizard.addAccount')}</button>
+      </div>
+    </div>
+  {:else if step === 'manual' || step === 'saving'}
+    <form
+      class="form"
+      onsubmit={(e) => {
+        e.preventDefault();
+        void save();
+      }}
+    >
+      <label>
+        <span class="label">{t('wizard.protocol')}</span>
+        <select class="input" bind:value={protocol} onchange={() => onTls('incoming')}>
+          {#each protocols as p (p)}<option value={p}>{t(`protocol.${p}`)}</option>{/each}
+        </select>
+      </label>
+      <fieldset>
+        <legend>{t('wizard.incoming')}</legend>
+        <div class="grid">
+          <label class="wide"><span class="label">{t('wizard.host')}</span><input class="input" bind:value={incoming.host} required /></label>
+          <label><span class="label">{t('wizard.port')}</span><input class="input" type="number" min="1" max="65535" bind:value={incoming.port} required /></label>
+          <label>
+            <span class="label">{t('wizard.tls')}</span>
+            <select class="input" bind:value={incoming.tls} onchange={() => onTls('incoming')}>
+              {#each tlsModes as m (m)}<option value={m}>{t(`tls.${m}`)}</option>{/each}
+            </select>
+          </label>
+          <label>
+            <span class="label">{t('wizard.auth')}</span>
+            <select class="input" bind:value={incoming.auth}>
+              {#each authMethods as a (a)}<option value={a}>{t(`auth.${a}`)}</option>{/each}
+            </select>
+          </label>
+          <label class="wide"><span class="label">{t('wizard.username')}</span><input class="input" bind:value={incoming.username} /></label>
+        </div>
+      </fieldset>
+      {#if needsOutgoing}
+        <fieldset>
+          <legend>{t('wizard.outgoing')}</legend>
+          <div class="grid">
+            <label class="wide"><span class="label">{t('wizard.host')}</span><input class="input" bind:value={outgoing.host} required /></label>
+            <label><span class="label">{t('wizard.port')}</span><input class="input" type="number" min="1" max="65535" bind:value={outgoing.port} required /></label>
+            <label>
+              <span class="label">{t('wizard.tls')}</span>
+              <select class="input" bind:value={outgoing.tls} onchange={() => onTls('outgoing')}>
+                {#each tlsModes as m (m)}<option value={m}>{t(`tls.${m}`)}</option>{/each}
+              </select>
+            </label>
+            <label>
+              <span class="label">{t('wizard.auth')}</span>
+              <select class="input" bind:value={outgoing.auth}>
+                {#each authMethods as a (a)}<option value={a}>{t(`auth.${a}`)}</option>{/each}
+              </select>
+            </label>
+            <label class="wide"><span class="label">{t('wizard.username')}</span><input class="input" bind:value={outgoing.username} /></label>
+          </div>
+        </fieldset>
+      {/if}
+      {#if insecure}
+        <label class="warn">
+          <TriangleAlert size={16} />
+          <span>{t('wizard.insecureWarning')}</span>
+          <input type="checkbox" bind:checked={allowInsecure} aria-label={t('wizard.insecureConfirm')} />
+        </label>
+      {/if}
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      <div class="row-actions">
+        <button type="button" class="btn btn-ghost" onclick={() => (step = 'credentials')}>{t('action.back')}</button>
+        <button type="submit" class="btn btn-primary" disabled={step === 'saving'}>
+          {#if step === 'saving'}<LoaderCircle size={15} class="spin" />{/if}
+          {t('wizard.addAccount')}
+        </button>
+      </div>
+    </form>
+  {:else if step === 'done'}
+    <div class="done">
+      <CircleCheck size={40} />
+      <p>{t('wizard.done', { email })}</p>
+      <button class="btn btn-primary" onclick={onclose} data-autofocus>{t('action.close')}</button>
+    </div>
+  {/if}
+</Modal>
+
+<style>
+  .steps {
+    display: flex;
+    gap: 16px;
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 0;
+    font-size: 12.5px;
+    color: var(--tm-faint);
+    flex-wrap: wrap;
+  }
+  .steps li.current {
+    color: var(--tm-accent-text);
+    font-weight: 600;
+  }
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .lead {
+    margin: 0;
+    color: var(--tm-muted);
+    font-size: 13.5px;
+  }
+  .hint {
+    margin: -4px 0 0;
+    font-size: 12px;
+    color: var(--tm-faint);
+  }
+  .error {
+    margin: 0;
+    color: var(--tm-danger);
+    font-size: 13px;
+  }
+  .row-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
+  }
+  fieldset {
+    border: 1px solid var(--tm-line);
+    border-radius: 10px;
+    padding: 10px 12px 12px;
+    margin: 0;
+  }
+  legend {
+    font-size: 12.5px;
+    font-weight: 600;
+    padding: 0 4px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .grid .wide {
+    grid-column: span 2;
+  }
+  .found dl {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 14px;
+    margin: 12px 0;
+    font-size: 13.5px;
+  }
+  .found dt {
+    color: var(--tm-muted);
+  }
+  .found dd {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ok {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: var(--tm-success);
+    font-weight: 600;
+  }
+  .warn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--tm-warn) 14%, var(--tm-surface));
+    font-size: 13px;
+  }
+  .warn span {
+    flex: 1;
+  }
+  .done {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    padding: 16px;
+    color: var(--tm-success);
+  }
+  .done p {
+    color: var(--tm-fg);
+    margin: 0;
+  }
+  :global(.spin) {
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+</style>
