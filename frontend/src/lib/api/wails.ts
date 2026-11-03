@@ -12,6 +12,16 @@
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
+// --- OAuth/Cloud accounts ---
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
+} from '../types';
 import type {
   ItemRef,
   Project,
@@ -528,5 +538,37 @@ export class WailsTransport implements Api {
   }
   generateCloudPassword(accountId: number): Promise<{ password: string }> {
     return this.call('GenerateCloudPassword', accountId);
+  }
+
+  // --- OAuth/Cloud accounts --- (internal/app/oauth_api.go)
+  listOAuthProviders(): Promise<OAuthProviderInfo[]> {
+    return this.call('ListOAuthProviders');
+  }
+  saveOAuthClient(input: OAuthClientInput): Promise<void> {
+    return this.call('SaveOAuthClient', input);
+  }
+  deleteOAuthClient(provider: string): Promise<void> {
+    return this.call('DeleteOAuthClient', provider);
+  }
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus> {
+    return this.call('StartOAuth', input);
+  }
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus> {
+    return this.call('GetOAuthFlow', id);
+  }
+  cancelOAuth(id: string): Promise<void> {
+    return this.call('CancelOAuth', id);
+  }
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account> {
+    return this.call('AddSharedMailbox', input);
+  }
+  listIdentityDelegations(): Promise<IdentityDelegation[]> {
+    return this.call('ListIdentityDelegations');
+  }
+  setIdentityDelegation(d: { identityId: number; mode: string; mailbox?: string }): Promise<void> {
+    return this.call('SetIdentityDelegation', d);
+  }
+  syncCloudPim(accountId: number): Promise<CloudPimResult> {
+    return this.call('SyncCloudPim', accountId);
   }
 }

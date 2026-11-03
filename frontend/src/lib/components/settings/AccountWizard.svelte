@@ -27,6 +27,7 @@
   import CloudConnectForm, { CLOUD_PROVIDERS } from '../cloud/CloudConnectForm.svelte';
   import ProviderIcon from '../cloud/ProviderIcon.svelte';
   import type { CloudAccountProvider } from '../../types';
+  import OAuthSignIn from './OAuthSignIn.svelte';
 
   interface Props {
     onclose: () => void;
@@ -49,6 +50,7 @@
   let outgoing = $state<ServerConfig>({ host: '', port: 465, tls: 'tls', auth: 'password', username: '' });
   let allowInsecure = $state(false);
   let easUrl = $state('');
+  let usePassword = $state(false); // OAuth/Cloud accounts: skip the sign-in step
 
   const needsOutgoing = $derived(protocol === 'imap' || protocol === 'pop3');
   const insecure = $derived(incoming.tls === 'none' || (needsOutgoing && outgoing.tls === 'none'));
@@ -164,6 +166,19 @@
         </div>
       </div>
     </form>
+  {:else if step === 'discovered' && discovery && discovery.oauthProvider && !usePassword}
+    <!-- OAuth/Cloud accounts -->
+    <OAuthSignIn
+      provider={discovery.oauthProvider}
+      {email}
+      {name}
+      ondone={() => (step = 'done')}
+      onpassword={() => (usePassword = true)}
+      onsettings={() => {
+        app.settingsAnchor = 'set-signin';
+        onclose();
+      }}
+    />
   {:else if step === 'discovered' && discovery}
     <div class="found">
       <p class="ok"><CircleCheck size={18} /> {t(`onboarding.account.source.${discovery.source}`)}</p>

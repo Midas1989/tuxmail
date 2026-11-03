@@ -55,14 +55,17 @@ func (a *App) configureEASSync(cfg *tsync.Config) {
 	}
 }
 
-// transports returns the send transports: EAS SendMail for EAS accounts,
-// SMTP otherwise.
+// transports returns the send transports, one router for all account
+// kinds: EAS SendMail for EAS accounts (sharing the EAS sync state), the
+// API transports for Graph/Gmail/EWS accounts and SMTP (with XOAUTH2 via
+// the OAuth manager) otherwise.
 func (a *App) transports() send.TransportFactory {
-	return send.KindFactory{
-		Default: send.SMTPFactory{Secrets: a.opts.Secrets},
-		Kinds: map[domain.AccountKind]send.TransportFactory{
-			domain.KindEAS: send.EASFactory{Secrets: a.opts.Secrets, State: a.easState()},
-		},
+	tokens := a.oauthTokens()
+	kinds := send.CloudFactories(tokens, a.opts.Secrets)
+	kinds[domain.KindEAS] = send.EASFactory{Secrets: a.opts.Secrets, State: a.easState()}
+	return send.KindRouter{
+		Default: send.SMTPFactory{Secrets: a.opts.Secrets, TokenSource: tokens},
+		Kinds:   kinds,
 	}
 }
 

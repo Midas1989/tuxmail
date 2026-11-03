@@ -55,6 +55,7 @@ type Config struct {
 	TrustedProxies []string `yaml:"trusted_proxies"`
 	Auth           Auth     `yaml:"auth"`
 	Limits         Limits   `yaml:"limits"`
+	OAuth          OAuth    `yaml:"oauth"` // oauth.go
 }
 
 // Log configures logging.

@@ -94,6 +94,9 @@ func DefaultRegistry() *Registry {
 	r := NewRegistry()
 	r.Register(domain.KindIMAP, IMAPFactory)
 	r.Register(domain.KindEAS, EASFactory) // see eas_register.go (RegisterEAS for persistent state)
+	for k, f := range builtinFactories {   // cloud_register.go
+		r.Register(k, f)
+	}
 	return r
 }
 

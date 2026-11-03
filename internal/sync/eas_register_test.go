@@ -117,10 +117,12 @@ func TestEASAccountSync(t *testing.T) {
 		s.AddMail(eastest.Sent, easMail("t3@x", "Re: Plan", "In-Reply-To: <t2@x>\r\nReferences: <t1@x> <t2@x>\r\n"), true)
 	})
 	e.eventually("initial sync", func() bool {
-		_, a := e.msg("t1@x")
-		_, b := e.msg("t2@x")
-		_, c := e.msg("t3@x")
-		return a && b && c
+		// Threading of the Sent folder can finish after the message rows
+		// exist (under load), so wait for all conversation ids as well.
+		a, okA := e.msg("t1@x")
+		b, okB := e.msg("t2@x")
+		c, okC := e.msg("t3@x")
+		return okA && okB && okC && a.ConversationID != 0 && b.ConversationID != 0 && c.ConversationID != 0
 	})
 	m1, _ := e.msg("t1@x")
 	m2, _ := e.msg("t2@x")

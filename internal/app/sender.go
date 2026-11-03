@@ -42,6 +42,7 @@ func newMailSender(a *App, opts *SendOptions) (*MailSender, error) {
 		Cloud: cloudUploader{a: a}, CloudLinks: a.st, Secrets: a.opts.Secrets, Sent: ad, Relations: ad, Flags: ad,
 		FollowUps: followup.New(a.st, a.bus, followup.Options{Logger: a.log}), Queue: send.StoreQueue{Store: a.st}, Blobs: ad,
 		Now: a.opts.Now, Logger: a.log}
+	a.configureOAuthSend(&cfg)
 	if opts != nil && opts.Configure != nil {
 		opts.Configure(&cfg)
 	}

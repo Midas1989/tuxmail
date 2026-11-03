@@ -57,6 +57,7 @@ type Options struct {
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
+	OAuth      *OAuthOptions   // OAuth clients/redirect (default: environment), oauth_app.go
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -108,6 +109,7 @@ type App struct {
 	syncCreds tsync.Credentials // credentials of the sync engine (EAS PIM, OOF)
 	easPIM    easPIM            // EAS calendar/contacts scheduling (eas.go)
 	cloud     cloudState        // cloud_accounts.go
+	oauth     *oauthState       // oauth_app.go
 }
 
 // New creates the application layer.
@@ -146,6 +148,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if a.opts.Secrets == nil {
 		a.opts.Secrets = newMemorySecrets()
 	}
+	a.oauth = newOAuthState(a)
 	a.render = opts.Renderer
 	if a.render == nil {
 		a.render = NewMIMERenderer()
@@ -179,6 +182,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 			cfg.Sender = syncSender{act: func() *send.Actions { return ms.Actions }}
 		}
 		a.configureEASSync(&cfg)
+		a.configureOAuthSync(&cfg)
 		if opts.Sync.Configure != nil {
 			opts.Sync.Configure(&cfg)
 		}

@@ -333,6 +333,8 @@ type DiscoveryResult struct {
 	OAuthAvailable bool          `json:"oauthAvailable,omitempty"`
 	// EASURL is the ActiveSync endpoint found by Autodiscover (kind "eas").
 	EASURL string `json:"easUrl,omitempty"`
+	// OAuthProvider names the sign-in service ("microsoft", "google").
+	OAuthProvider string `json:"oauthProvider,omitempty"`
 }
 
 // NewAccountInput creates an account.

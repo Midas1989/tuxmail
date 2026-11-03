@@ -58,22 +58,8 @@ func (f EASFactory) Transport(ctx context.Context, account domain.Account) (doma
 	return eas.NewTransport(c), nil
 }
 
-// KindFactory dispatches to a factory per account kind and falls back to
-// Default (typically SMTPFactory), e.g.
+// KindFactory is the per-kind transport router (an alias of KindRouter,
+// see cloud_transport.go), e.g.
 //
 //	KindFactory{Default: SMTPFactory{...}, Kinds: map[domain.AccountKind]TransportFactory{domain.KindEAS: EASFactory{...}}}
-type KindFactory struct {
-	Default TransportFactory
-	Kinds   map[domain.AccountKind]TransportFactory
-}
-
-// Transport implements TransportFactory.
-func (f KindFactory) Transport(ctx context.Context, account domain.Account) (domain.Transport, error) {
-	if tf, ok := f.Kinds[account.Kind]; ok && tf != nil {
-		return tf.Transport(ctx, account)
-	}
-	if f.Default == nil {
-		return nil, fmt.Errorf("send: no transport for account kind %q", account.Kind)
-	}
-	return f.Default.Transport(ctx, account)
-}
+type KindFactory = KindRouter
