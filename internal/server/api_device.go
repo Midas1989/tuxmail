@@ -1,0 +1,333 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package server
+
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/Midas1989/Mailclient/internal/auth"
+	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/server/sealed"
+	"github.com/Midas1989/Mailclient/internal/store"
+)
+
+// Device authorization flow for the desktop client ("Mit TuxMail-Server
+// verbinden"), modelled on RFC 8628. Field names follow the RFC (snake_case).
+
+func decodePubKey(s string) ([]byte, error) {
+	if s == "" {
+		return nil, nil
+	}
+	s = strings.TrimRight(s, "=")
+	b, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		b, err = base64.RawStdEncoding.DecodeString(s)
+	}
+	if err != nil || len(b) != 32 {
+		return nil, errors.New("client_public_key must be a base64 X25519 public key (32 bytes)")
+	}
+	return b, nil
+}
+
+func deviceError(w http.ResponseWriter, status int, code, desc string) {
+	writeJSON(w, status, map[string]string{"error": code, "error_description": desc})
+}
+
+func (s *Server) handleDeviceAuthorize(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ClientName      string `json:"client_name"`
+		ClientPublicKey string `json:"client_public_key"`
+	}
+	if !readJSON(w, r, &req) || !s.limitLogin(w, r, "device-authorize") {
+		return
+	}
+	pub, err := decodePubKey(req.ClientPublicKey)
+	if err != nil {
+		deviceError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	ci := s.clientInfoFor(r, req.ClientName)
+	ci.PubKey = pub
+	g, err := s.auth.StartDeviceAuthorization(r.Context(), ci)
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	verify := s.cfg.PublicURLJoin("/device")
+	writeJSON(w, http.StatusOK, map[string]any{
+		"device_code":               g.DeviceCode,
+		"user_code":                 g.UserCode,
+		"verification_uri":          verify,
+		"verification_uri_complete": verify + "?user_code=" + url.QueryEscape(g.UserCode),
+		"interval":                  int(g.Interval / time.Second),
+		"expires_in":                int(g.ExpiresIn / time.Second),
+	})
+}
+
+func (s *Server) writeDeviceToken(w http.ResponseWriter, res *auth.LoginResult) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": res.Token,
+		"token_type":   "Bearer",
+		"expires_in":   int(time.Until(res.Session.ExpiresAt) / time.Second),
+		"user":         res.User,
+		"session_id":   res.Session.ID,
+	})
+}
+
+func (s *Server) handleDeviceToken(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		DeviceCode string `json:"device_code"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	res, err := s.auth.PollDeviceToken(r.Context(), req.DeviceCode)
+	switch {
+	case err == nil:
+		s.writeDeviceToken(w, res)
+	case errors.Is(err, auth.ErrAuthorizationPending), errors.Is(err, auth.ErrSlowDown),
+		errors.Is(err, auth.ErrAccessDenied), errors.Is(err, auth.ErrExpiredToken):
+		deviceError(w, http.StatusBadRequest, err.Error(), "")
+	case errors.Is(err, auth.ErrInvalidCode):
+		deviceError(w, http.StatusBadRequest, "invalid_grant", "unknown device code")
+	default:
+		s.writeAuthError(w, err)
+	}
+}
+
+// handleDeviceLogin is the direct login alternative for clients.
+func (s *Server) handleDeviceLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username        string `json:"username"`
+		Password        string `json:"password"`
+		TOTPCode        string `json:"totp_code"`
+		RecoveryCode    string `json:"recovery_code"`
+		DeviceName      string `json:"device_name"`
+		ClientPublicKey string `json:"client_public_key"`
+	}
+	if !readJSON(w, r, &req) || !s.limitLogin(w, r, req.Username) {
+		return
+	}
+	pub, err := decodePubKey(req.ClientPublicKey)
+	if err != nil {
+		deviceError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return
+	}
+	ci := s.clientInfoFor(r, req.DeviceName)
+	ci.PubKey = pub
+	res, err := s.auth.Login(r.Context(), auth.LoginRequest{
+		Login: req.Username, Password: req.Password, TOTPCode: req.TOTPCode, RecoveryCode: req.RecoveryCode,
+		Kind: auth.KindDevice, Client: ci,
+	})
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	if res.MFARequired {
+		// Clients resend the request including totp_code.
+		deviceError(w, http.StatusUnauthorized, "mfa_required", "two-factor code required (totp_code or recovery_code)")
+		return
+	}
+	s.writeDeviceToken(w, res)
+}
+
+// handleDeviceRequest shows the approval page what is being approved.
+func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	req, err := s.auth.LookupDeviceRequest(r.Context(), r.URL.Query().Get("user_code"))
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"request": req, "totpRequired": a.User.TOTPEnabled})
+}
+
+func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	var req struct {
+		UserCode     string `json:"user_code"`
+		Approve      *bool  `json:"approve"`
+		TOTPCode     string `json:"totp_code"`
+		RecoveryCode string `json:"recovery_code"`
+	}
+	if !readJSON(w, r, &req) || !s.limitLogin(w, r, a.User.Username) {
+		return
+	}
+	if a.Bearer {
+		writeError(w, http.StatusForbidden, "forbidden", "approve devices from a browser session")
+		return
+	}
+	approve := req.Approve == nil || *req.Approve
+	if approve && a.User.TOTPEnabled {
+		if err := s.auth.VerifySecondFactor(r.Context(), a.User.ID, req.TOTPCode, req.RecoveryCode); err != nil {
+			s.writeAuthError(w, err)
+			return
+		}
+	}
+	if err := s.auth.ApproveDevice(r.Context(), a.User.ID, req.UserCode, approve); err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// MailData is the part of a user's mail store exported for provisioning.
+type MailData struct {
+	Accounts   []domain.Account   `json:"accounts"`
+	Identities []domain.Identity  `json:"identities"`
+	Signatures []domain.Signature `json:"signatures"`
+}
+
+// MailDataSource reads MailData from a user data directory.
+type MailDataSource func(ctx context.Context, userDir string) (*MailData, error)
+
+// UserStoreFile is the per-user mail database inside data_dir/users/<id>/.
+const UserStoreFile = "tuxmail.db"
+
+// storeMailData reads the per-user store if it exists (it is never created here).
+func storeMailData(ctx context.Context, userDir string) (*MailData, error) {
+	md := &MailData{Accounts: []domain.Account{}, Identities: []domain.Identity{}, Signatures: []domain.Signature{}}
+	path := filepath.Join(userDir, UserStoreFile)
+	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
+		return md, nil
+	}
+	st, err := store.Open(ctx, path)
+	if err != nil {
+		return nil, err
+	}
+	defer st.Close()
+	if md.Accounts, err = st.ListAccounts(ctx); err != nil {
+		return nil, err
+	}
+	for _, a := range md.Accounts {
+		ids, err := st.ListIdentities(ctx, a.ID)
+		if err != nil {
+			return nil, err
+		}
+		md.Identities = append(md.Identities, ids...)
+	}
+	if md.Signatures, err = st.ListSignatures(ctx); err != nil {
+		return nil, err
+	}
+	if md.Accounts == nil {
+		md.Accounts = []domain.Account{}
+	}
+	if md.Signatures == nil {
+		md.Signatures = []domain.Signature{}
+	}
+	return md, nil
+}
+
+// Provisioning modes recommended to the desktop client.
+const (
+	ModeThin  = "thin"  // the client uses this server as its backend
+	ModeLocal = "local" // the client syncs mail itself with the given settings
+)
+
+// handleProvisioningProfile returns the configuration bundle for a client
+// (without secrets). It works with a device token or a browser session.
+func (s *Server) handleProvisioningProfile(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	ctx := r.Context()
+	md, err := s.mailData(ctx, s.auth.UserDir(a.User.ID))
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	templates, err := s.auth.TemplatesForUser(ctx, a.User)
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	settings, err := s.auth.Settings(ctx, a.User.ID)
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	mode, reason := ModeLocal, "no accounts are synchronised by the server; apply the templates locally"
+	if len(md.Accounts) > 0 {
+		mode, reason = ModeThin, "the server already synchronises this user's accounts"
+	}
+	if raw, ok := settings["provisioning"]; ok {
+		var p struct {
+			Mode string `json:"mode"`
+		}
+		if json.Unmarshal(raw, &p) == nil && (p.Mode == ModeThin || p.Mode == ModeLocal) {
+			mode, reason = p.Mode, "chosen by the user"
+		}
+	}
+	refs := 0
+	for _, acc := range md.Accounts {
+		if acc.SecretRef != "" {
+			refs++
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version": 1,
+		"server":  map[string]string{"publicUrl": s.cfg.PublicURL, "version": s.version},
+		"user": map[string]any{"id": a.User.ID, "username": a.User.Username, "email": a.User.Email,
+			"displayName": a.User.DisplayName, "role": a.User.Role},
+		"mode":       map[string]string{"recommended": mode, "reason": reason},
+		"accounts":   md.Accounts,
+		"identities": md.Identities,
+		"signatures": md.Signatures,
+		"templates":  templates,
+		"settings":   settings,
+		"secrets": map[string]any{
+			"count":     refs,
+			"available": refs > 0 && len(a.Session.ClientPubKey) == 32,
+			"endpoint":  "/api/provisioning/secrets",
+		},
+	})
+}
+
+// handleProvisioningSecrets returns the account secrets sealed to the X25519
+// key the client registered when its device token was issued.
+func (s *Server) handleProvisioningSecrets(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	ctx := r.Context()
+	if len(a.Session.ClientPubKey) != 32 {
+		writeError(w, http.StatusConflict, "no_client_key", "this device token has no client public key; re-authorize with client_public_key")
+		return
+	}
+	md, err := s.mailData(ctx, s.auth.UserDir(a.User.ID))
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	vault, err := s.auth.UserSecrets(ctx, a.User.ID)
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	out := map[string][]byte{}
+	for _, acc := range md.Accounts {
+		if acc.SecretRef == "" {
+			continue
+		}
+		v, err := vault.Get(acc.SecretRef)
+		if err != nil {
+			continue // missing secrets are simply not included
+		}
+		out[acc.SecretRef] = v
+	}
+	plain, err := json.Marshal(map[string]any{"secrets": out})
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	box, err := sealed.Seal(a.Session.ClientPubKey, plain)
+	clear(plain)
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	s.auth.Audit(ctx, "provisioning.secrets", a.User.Username, true, "device="+a.Session.DeviceName)
+	writeJSON(w, http.StatusOK, box)
+}

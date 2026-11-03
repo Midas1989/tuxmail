@@ -1,0 +1,366 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package server
+
+import (
+	"context"
+	"crypto/subtle"
+	"errors"
+	"net"
+	"net/http"
+	"net/netip"
+	"net/url"
+	"runtime/debug"
+	"strings"
+	"time"
+
+	"github.com/Midas1989/Mailclient/internal/auth"
+)
+
+type ctxKey int
+
+const (
+	ctxClient ctxKey = iota
+	ctxAuth
+	ctxCSRF
+)
+
+// client is the resolved peer of a request (after trusted proxy handling).
+type client struct {
+	IP     string
+	Secure bool // request reached the public endpoint via HTTPS
+}
+
+func clientFrom(r *http.Request) client {
+	c, _ := r.Context().Value(ctxClient).(client)
+	return c
+}
+
+// authInfo is attached to authenticated requests.
+type authInfo struct {
+	User    *auth.User
+	Session *auth.Session
+	Token   string
+	Bearer  bool // authenticated via Authorization header (device token)
+}
+
+func authFrom(r *http.Request) *authInfo {
+	a, _ := r.Context().Value(ctxAuth).(*authInfo)
+	return a
+}
+
+func (s *Server) isTrusted(a netip.Addr) bool {
+	a = a.Unmap()
+	for _, p := range s.trusted {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
+}
+
+// clientInfo resolves the client IP and scheme. X-Forwarded-For and
+// X-Forwarded-Proto are only honoured when the direct peer is a trusted proxy
+// (or the connection came through the unix socket, which only the local
+// reverse proxy can reach). The client IP is the right-most XFF entry that is
+// not itself a trusted proxy.
+func (s *Server) clientInfo(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := client{Secure: r.TLS != nil}
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		peer, perr := netip.ParseAddr(host)
+		trusted := (perr == nil && s.isTrusted(peer)) || (perr != nil && (host == "" || host == "@"))
+		if perr == nil {
+			c.IP = peer.Unmap().String()
+		} else {
+			c.IP = "local"
+		}
+		if trusted {
+			if xff := r.Header.Values("X-Forwarded-For"); len(xff) > 0 {
+				parts := strings.Split(strings.Join(xff, ","), ",")
+				for i := len(parts) - 1; i >= 0; i-- {
+					a, err := netip.ParseAddr(strings.TrimSpace(parts[i]))
+					if err != nil {
+						break
+					}
+					c.IP = a.Unmap().String()
+					if !s.isTrusted(a) {
+						break
+					}
+				}
+			} else if xr := r.Header.Get("X-Real-Ip"); xr != "" {
+				if a, err := netip.ParseAddr(strings.TrimSpace(xr)); err == nil {
+					c.IP = a.Unmap().String()
+				}
+			}
+			if p := r.Header.Get("X-Forwarded-Proto"); p != "" {
+				c.Secure = strings.EqualFold(strings.TrimSpace(strings.Split(p, ",")[0]), "https")
+			}
+		}
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxClient, c)))
+	})
+}
+
+func (s *Server) recoverPanics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if v := recover(); v != nil {
+				if v == http.ErrAbortHandler {
+					panic(v)
+				}
+				s.log.Error("panic in handler", "panic", v, "path", r.URL.Path, "stack", string(debug.Stack()))
+				writeError(w, http.StatusInternalServerError, "internal", "internal server error")
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusWriter) WriteHeader(code int) {
+	if w.status == 0 {
+		w.status = code
+	}
+	w.ResponseWriter.WriteHeader(code)
+}
+
+func (w *statusWriter) Write(b []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	return w.ResponseWriter.Write(b)
+}
+
+func (w *statusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
+
+func (s *Server) logRequests(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		sw := &statusWriter{ResponseWriter: w}
+		next.ServeHTTP(sw, r)
+		lvl := s.log.Debug
+		if isAPI(r.URL.Path) && r.URL.Path != "/healthz" {
+			lvl = s.log.Info
+		}
+		// Never log query strings: they may contain codes or tokens.
+		lvl("http request", "method", r.Method, "path", r.URL.Path, "status", sw.status,
+			"duration_ms", time.Since(start).Milliseconds(), "ip", clientFrom(r).IP)
+	})
+}
+
+// contentSecurityPolicy for the SPA. Mail HTML is expected to be rendered in
+// a sandboxed iframe by the frontend.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob:; " +
+	"worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+
+func (s *Server) securityHeaders(next http.Handler) http.Handler {
+	hsts := s.cfg.SecureCookies()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Cross-Origin-Opener-Policy", "same-origin")
+		h.Set("Cross-Origin-Resource-Policy", "same-origin")
+		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		if hsts {
+			h.Set("Strict-Transport-Security", "max-age=31536000")
+		}
+		if isAPI(r.URL.Path) || r.URL.Path == "/healthz" {
+			h.Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// Cookie names. With HTTPS the __Host- prefix pins cookies to this origin.
+func (s *Server) cookieName(base string) string {
+	if s.cfg.SecureCookies() {
+		return "__Host-" + base
+	}
+	return base
+}
+
+const (
+	sessionCookie = "tuxmail_session"
+	csrfCookie    = "tuxmail_csrf"
+	oidcCookie    = "tuxmail_oidc"
+	csrfHeader    = "X-CSRF-Token"
+)
+
+func (s *Server) setCookie(w http.ResponseWriter, name, value string, maxAge time.Duration, httpOnly bool, same http.SameSite) {
+	c := &http.Cookie{
+		Name: s.cookieName(name), Value: value, Path: "/", HttpOnly: httpOnly,
+		Secure: s.cfg.SecureCookies(), SameSite: same,
+	}
+	if maxAge > 0 {
+		c.MaxAge = int(maxAge / time.Second)
+	} else if maxAge < 0 {
+		c.MaxAge = -1
+	}
+	http.SetCookie(w, c)
+}
+
+func (s *Server) cookie(r *http.Request, name string) string {
+	c, err := r.Cookie(s.cookieName(name))
+	if err != nil {
+		return ""
+	}
+	return c.Value
+}
+
+// csrfExempt endpoints are called by native clients without cookies and
+// return tokens in the response body only.
+var csrfExempt = map[string]bool{
+	"/api/device/authorize": true,
+	"/api/device/token":     true,
+	"/api/device/login":     true,
+}
+
+func safeMethod(m string) bool {
+	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
+}
+
+// csrf protects cookie-authenticated state-changing API requests with two
+// independent checks: the Origin (or Referer) must be our public origin, and
+// the X-CSRF-Token header must match the CSRF cookie (double submit). The
+// session cookie is additionally SameSite=Lax. Requests authenticated with an
+// Authorization header carry no ambient credentials and are exempt.
+func (s *Server) csrf(next http.Handler) http.Handler {
+	public := s.cfg.PublicOrigin()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		want := s.cookie(r, csrfCookie)
+		current := want
+		if len(want) < 32 {
+			want = "" // missing or not issued by us: the request below must fail
+			current = randomToken()
+			s.setCookie(w, csrfCookie, current, 0, false, http.SameSiteStrictMode)
+		}
+		r = r.WithContext(context.WithValue(r.Context(), ctxCSRF, current))
+		if safeMethod(r.Method) || !isAPI(r.URL.Path) || csrfExempt[r.URL.Path] || bearerToken(r) != "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if !s.originAllowed(r, public) {
+			writeError(w, http.StatusForbidden, "csrf", "cross-origin request rejected")
+			return
+		}
+		got := r.Header.Get(csrfHeader)
+		if got == "" || want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+			writeError(w, http.StatusForbidden, "csrf", "missing or invalid CSRF token")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) originAllowed(r *http.Request, public string) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		ref := r.Header.Get("Referer")
+		if ref == "" {
+			return true // non-browser client; the token check still applies
+		}
+		u, err := url.Parse(ref)
+		if err != nil {
+			return false
+		}
+		origin = u.Scheme + "://" + u.Host
+	}
+	if strings.EqualFold(origin, public) {
+		return true
+	}
+	// Direct access without the proxy (e.g. http://127.0.0.1:8080 during setup).
+	scheme := "http"
+	if clientFrom(r).Secure {
+		scheme = "https"
+	}
+	return strings.EqualFold(origin, scheme+"://"+r.Host)
+}
+
+func bearerToken(r *http.Request) string {
+	h := r.Header.Get("Authorization")
+	if len(h) > 7 && strings.EqualFold(h[:7], "bearer ") {
+		return strings.TrimSpace(h[7:])
+	}
+	return ""
+}
+
+// authenticate resolves the session cookie or bearer token.
+func (s *Server) authenticate(r *http.Request) (*authInfo, error) {
+	tok, bearer := bearerToken(r), true
+	if tok == "" {
+		tok, bearer = s.cookie(r, sessionCookie), false
+	}
+	if tok == "" {
+		return nil, auth.ErrNotFound
+	}
+	sess, u, err := s.auth.Authenticate(r.Context(), tok, clientFrom(r).IP)
+	if err != nil {
+		return nil, err
+	}
+	return &authInfo{User: u, Session: sess, Token: tok, Bearer: bearer}, nil
+}
+
+type handlerFunc func(w http.ResponseWriter, r *http.Request, a *authInfo)
+
+func (s *Server) withAuth(check func(http.ResponseWriter, *authInfo) bool, h handlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		a, err := s.authenticate(r)
+		if err != nil {
+			if errors.Is(err, auth.ErrUserDisabled) {
+				writeError(w, http.StatusForbidden, "user_disabled", "account is disabled")
+				return
+			}
+			if !errors.Is(err, auth.ErrNotFound) {
+				s.log.Error("authenticate", "err", err)
+			}
+			writeError(w, http.StatusUnauthorized, "unauthenticated", "login required")
+			return
+		}
+		if check != nil && !check(w, a) {
+			return
+		}
+		ctx := context.WithValue(r.Context(), ctxAuth, a)
+		ctx = auth.WithActor(ctx, auth.Actor{UserID: a.User.ID, Name: a.User.Username, IP: clientFrom(r).IP})
+		h(w, r.WithContext(ctx), a)
+	}
+}
+
+// user requires any logged-in user (cookie session or device token).
+func (s *Server) user(h handlerFunc) http.HandlerFunc { return s.withAuth(nil, h) }
+
+// admin requires the admin role and, if configured, an enrolled second factor.
+func (s *Server) admin(h handlerFunc) http.HandlerFunc {
+	return s.withAuth(func(w http.ResponseWriter, a *authInfo) bool {
+		if !a.User.IsAdmin() {
+			writeError(w, http.StatusForbidden, "forbidden", "administrator role required")
+			return false
+		}
+		if s.auth.MFASetupRequired(a.User) {
+			writeError(w, http.StatusForbidden, "mfa_setup_required", "set up two-factor authentication first")
+			return false
+		}
+		return true
+	}, h)
+}
+
+// device requires a device token (Authorization: Bearer).
+func (s *Server) device(h handlerFunc) http.HandlerFunc {
+	return s.withAuth(func(w http.ResponseWriter, a *authInfo) bool {
+		if !a.Bearer || a.Session.Kind != auth.KindDevice {
+			writeError(w, http.StatusForbidden, "device_token_required", "a device token is required")
+			return false
+		}
+		return true
+	}, h)
+}
