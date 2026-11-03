@@ -3,6 +3,7 @@ module github.com/Midas1989/Mailclient
 go 1.24.0
 
 require (
+	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
 	github.com/emersion/go-smtp v0.25.0
@@ -11,6 +12,8 @@ require (
 	golang.org/x/crypto v0.45.0
 	modernc.org/sqlite v1.44.0
 )
+
+require github.com/cloudflare/circl v1.6.3 // indirect
 
 require (
 	github.com/danieljoos/wincred v1.2.3 // indirect
