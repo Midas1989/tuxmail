@@ -41,6 +41,12 @@ env:
   NFPM_VERSION: v2.43.0      # last nfpm release that builds with Go 1.24
   GO_WINRES_VERSION: v0.3.3
   IMAGE: ghcr.io/midas1989/tuxmail
+  # OAuth app registrations of the project (public client IDs; set them as
+  # repository variables under Settings -> Secrets and variables -> Variables).
+  TUXMAIL_BUILD_MS_CLIENT_ID: ${{ vars.TUXMAIL_MS_CLIENT_ID }}
+  TUXMAIL_BUILD_GOOGLE_CLIENT_ID: ${{ vars.TUXMAIL_GOOGLE_CLIENT_ID }}
+  # Google treats desktop-app client secrets as non-confidential; still kept as a secret.
+  TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
 
 jobs:
   version:
