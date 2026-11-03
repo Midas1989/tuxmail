@@ -139,7 +139,7 @@ func (e *Engine) compile(w *Workflow) (*compiled, error) {
 	}
 	c := &compiled{wf: w}
 	var err error
-	if c.cond, err = w.Condition.Compile(); err != nil {
+	if c.cond, err = w.compileCondition(); err != nil {
 		return nil, err
 	}
 	for _, a := range w.Actions {
@@ -376,7 +376,7 @@ func (t Trigger) Matches(ev events.Event) bool {
 	if t.Name != "" && t.Event == events.Manual && ev.Data["name"] != t.Name {
 		return false
 	}
-	return true
+	return t.matchesOrganize(ev)
 }
 
 func (e *Engine) locationOK(w *Workflow) bool {
@@ -438,7 +438,7 @@ func (e *Engine) HandleEvent(ctx context.Context, ev events.Event) ([]int64, err
 		if !w.Enabled || !e.locationOK(w) || !w.Trigger.Matches(ev) {
 			continue
 		}
-		ok, err := c.cond.Eval(NewEnv(ev, now, nil))
+		ok, err := c.cond.Eval(attachRuntime(ctx, NewEnv(ev, now, nil), &e.cfg.Deps, ev))
 		if err != nil {
 			errs = append(errs, fmt.Errorf("workflow %s: %w", w.ID, err))
 			continue
@@ -625,8 +625,8 @@ func mustJSON(v any) string {
 func (e *Engine) newRunContext(w *Workflow, ev events.Event, dry bool) *RunContext {
 	now := e.now()
 	vars := map[string]string{}
-	rc := &RunContext{Workflow: w, Event: ev, Env: NewEnv(ev, now, vars), Vars: vars, Deps: &e.cfg.Deps,
-		Now: now, DryRun: dry}
+	rc := &RunContext{Workflow: w, Event: ev, Env: attachRuntime(context.Background(), NewEnv(ev, now, vars), &e.cfg.Deps, ev),
+		Vars: vars, Deps: &e.cfg.Deps, Now: now, DryRun: dry}
 	rc.runSub = e.runSub
 	return rc
 }

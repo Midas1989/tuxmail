@@ -115,7 +115,7 @@ type SearchResult struct {
 // Facet is an aggregation over the result set (like a Kibana terms or
 // date-histogram aggregation).
 type Facet struct {
-	Name    string // "type", "account", "folder", "domain", "month", "channel", "has_attachment"
+	Name    string // "type", "account", "folder", "domain", "month", "channel", "has_attachment", "tag"
 	Buckets []FacetBucket
 }
 
@@ -441,7 +441,8 @@ func (s *Store) facets(ctx context.Context, c *compiler, root query.Node, size i
 			FROM r WHERE kind = 'mail' AND instr(sender, '@') > 0 GROUP BY 2
 		UNION ALL SELECT 'month', strftime('%Y-%m', time, 'unixepoch'), '', COUNT(*) FROM r WHERE time <> 0 GROUP BY 2
 		UNION ALL SELECT 'channel', channel, '', COUNT(*) FROM r WHERE channel <> '' GROUP BY 2
-		UNION ALL SELECT 'has_attachment', CAST(hasatt AS TEXT), '', COUNT(*) FROM r GROUP BY 2`
+		UNION ALL SELECT 'has_attachment', CAST(hasatt AS TEXT), '', COUNT(*) FROM r GROUP BY 2
+		UNION ALL ` + tagFacetSQL
 	rows, err := s.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: search facets: %w", err)
@@ -457,7 +458,7 @@ func (s *Store) facets(ctx context.Context, c *compiler, root query.Node, size i
 	if err != nil {
 		return nil, err
 	}
-	order := []string{"type", "account", "folder", "domain", "month", "channel", "has_attachment"}
+	order := []string{"type", "account", "folder", "domain", "month", "channel", "has_attachment", "tag"}
 	byName := map[string][]FacetBucket{}
 	for _, r := range all {
 		b := FacetBucket{Value: r.value, Label: r.label, Count: r.count}
@@ -473,6 +474,8 @@ func (s *Store) facets(ctx context.Context, c *compiler, root query.Node, size i
 			if r.value == "0" {
 				b.Clause = &query.Not{Node: b.Clause}
 			}
+		case "tag":
+			b.Clause = tagFacetClause(r.label)
 		}
 		if b.Label == "" {
 			b.Label = b.Value
@@ -912,7 +915,9 @@ func (c *compiler) arm(root query.Node, a *armSchema, facets bool) (compiledArm,
 
 // textIn matches items whose index document matches an FTS5 expression.
 func (c *compiler) textIn(a *armSchema, expr string) cond {
-	return sqlCond(a.id+` IN (SELECT dd.`+a.idCol+` FROM fts_docs dd WHERE dd.id IN
+	// "IS NOT NULL": documents of other kinds have NULL in idCol, and a NULL
+	// in the IN list would make NOT (... IN ...) unknown (never true).
+	return sqlCond(a.id+` IN (SELECT dd.`+a.idCol+` FROM fts_docs dd WHERE dd.`+a.idCol+` IS NOT NULL AND dd.id IN
 		(SELECT rowid FROM fts_items WHERE fts_items MATCH ?))`, expr)
 }
 
@@ -1125,6 +1130,8 @@ func (c *compiler) term(t *query.Term, a *armSchema, driven bool) cond {
 			c.warn("unknown type " + strconv.Quote(t.Value))
 		}
 		return constCond(ok && sc == a.kind)
+	case "label":
+		return c.labelCond(t, a)
 	case "is":
 		return c.isFlag(t.Value, a)
 	case "has":

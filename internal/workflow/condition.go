@@ -138,6 +138,7 @@ var exprOptions = sync.OnceValue(func() []expr.Option {
 		}, new(func([]string, string) bool), new(func([]any, string) bool)),
 		expr.Function("kb", func(p ...any) (any, error) { return toInt64(p[0]) << 10, nil }, new(func(int) int64)),
 		expr.Function("mb", func(p ...any) (any, error) { return toInt64(p[0]) << 20, nil }, new(func(int) int64)),
+		queryFunction(), searchFolderFunction(), expr.Patch(envArgPatcher{}),
 	}
 })
 
@@ -170,6 +171,9 @@ func toInt64(v any) int64 {
 }
 
 func compileExpr(src string) (*Program, error) {
+	if err := checkQueryCalls(src); err != nil {
+		return nil, err
+	}
 	p, err := expr.Compile(src, exprOptions()...)
 	if err != nil {
 		return nil, err

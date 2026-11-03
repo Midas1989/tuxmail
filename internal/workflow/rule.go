@@ -27,6 +27,9 @@ type Rule struct {
 	Field string `yaml:"field,omitempty" json:"field,omitempty"`
 	Op    string `yaml:"op,omitempty" json:"op,omitempty"`
 	Value any    `yaml:"value,omitempty" json:"value,omitempty"`
+	// Query is an expert search query (internal/search/query) the item must
+	// match, e.g. {query: "from:*@kunde.de AND has:attachment"}.
+	Query string `yaml:"query,omitempty" json:"query,omitempty"`
 }
 
 // FieldKind is the value type of a rule field.
@@ -130,10 +133,18 @@ func (r *Rule) expr(at string) (string, error) {
 	if r.Field != "" {
 		n++
 	}
+	if r.Query != "" {
+		n++
+	}
 	if n != 1 {
-		return "", fmt.Errorf("%s: a rule must have exactly one of all, any, not or field", at)
+		return "", fmt.Errorf("%s: a rule must have exactly one of all, any, not, field or query", at)
 	}
 	switch {
+	case r.Query != "":
+		if err := checkQuery(r.Query); err != nil {
+			return "", fmt.Errorf("%s.query: %w", at, err)
+		}
+		return queryCall(r.Query), nil
 	case len(r.All) > 0:
 		return r.join(at+".all", r.All, " && ")
 	case len(r.Any) > 0:

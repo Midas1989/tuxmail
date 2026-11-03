@@ -61,6 +61,13 @@ type Trigger struct {
 	Schedule string `yaml:"schedule,omitempty"`
 	// Name is the hook name for webhook triggers (empty matches all).
 	Name string `yaml:"name,omitempty"`
+
+	// Filters for tags, projects and search folders (see organize.go).
+	AccountNames  []string `yaml:"account_names,omitempty"`
+	Tags          []string `yaml:"tags,omitempty"`
+	Projects      []string `yaml:"projects,omitempty"`
+	Statuses      []string `yaml:"statuses,omitempty"`
+	SearchFolders []string `yaml:"search_folders,omitempty"`
 }
 
 // ActionSpec is an action as written in YAML: a type plus type-specific
@@ -209,6 +216,7 @@ func (w *Workflow) Validate(reg *Registry) error {
 		ve.add("name: required")
 	}
 	w.validateTrigger(ve)
+	w.validateTriggerExtra(ve)
 	if _, err := w.Condition.Compile(); err != nil {
 		ve.add("condition: %v", err)
 	}

@@ -43,6 +43,7 @@ var AllTypes = []Type{
 	MailReceived, MailSent, MailMoved, MailFlagged, MailBeforeSend,
 	ChatReceived, CalendarEventStarting, CalendarInviteAnswer, ContactCreated,
 	FileCreated, ScheduleTick, Manual, Webhook, NoReplyTimeout,
+	TagAdded, TagRemoved, ProjectItemAdded, ProjectStatusChanged, ProjectDueSoon, SearchFolderMatched,
 }
 
 // Valid reports whether t is a known event type.
@@ -86,6 +87,11 @@ type Event struct {
 	Webhook  *WebhookCall      `json:"webhook,omitempty"`
 	NoReply  *NoReply          `json:"noReply,omitempty"`
 	Data     map[string]string `json:"data,omitempty"` // free-form extras (manual runs, webhook query ...)
+
+	// Payloads of the tag, project and search folder topics (organize.go).
+	Tag          *TagChange          `json:"tag,omitempty"`
+	Project      *ProjectChange      `json:"project,omitempty"`
+	SearchFolder *SearchFolderChange `json:"searchFolder,omitempty"`
 }
 
 // NewID returns a random event id.

@@ -51,7 +51,7 @@ var mailTriggers = []events.Type{events.MailReceived, events.MailSent, events.Ma
 	events.NoReplyTimeout, events.Manual}
 
 func builtinActions() []ActionType {
-	return []ActionType{
+	return append([]ActionType{
 		{Name: ActMove, Description: "Move the mail to a folder", Triggers: mailTriggers,
 			New: newFolderAction(ActMove, func(ctx context.Context, m MailActions, ref ItemRef, f string) error { return m.Move(ctx, ref, f) })},
 		{Name: ActCopy, Description: "Copy the mail to a folder", Triggers: mailTriggers,
@@ -81,7 +81,7 @@ func builtinActions() []ActionType {
 			New: newFindingAction(events.SeverityWarn)},
 		{Name: ActBlock, Description: "Prevent sending", Triggers: []events.Type{events.MailBeforeSend},
 			New: newFindingAction(events.SeverityBlock)},
-	}
+	}, organizeActions()...)
 }
 
 func checkTemplates(fields map[string]string) error {
