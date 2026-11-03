@@ -57,6 +57,10 @@ type Options struct {
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
+	// PIM configures calendars, tasks and contacts (pim.go). The background
+	// loop (CalDAV/CardDAV sync, reminders, invitations) runs when PIM or
+	// Sync is set and PIM.Disabled is false.
+	PIM *PIMOptions
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -104,6 +108,9 @@ type App struct {
 
 	remoteMu sync.Mutex
 	remote   map[string]*remoteSession // provisioning sessions by server URL
+
+	pimOnce sync.Once
+	pim     *pimService
 }
 
 // New creates the application layer.
@@ -225,6 +232,10 @@ func (a *App) Start() {
 			}
 		}()
 		go func() { defer a.wg.Done(); a.timers(ctx) }()
+		if a.opts.PIM != nil || a.opts.Sync != nil {
+			a.wg.Add(1)
+			go func() { defer a.wg.Done(); a.runPIM(ctx) }()
+		}
 	})
 }
 

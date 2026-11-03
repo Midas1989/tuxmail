@@ -470,7 +470,8 @@ export type ApiEvent =
   | { type: 'searchfolders.changed' }
   | { type: 'workflow.run'; workflowId: string; run: WorkflowRunSummary }
   /** Desktop portable mode: the secret vault needs the master password (Api.unlockVault). */
-  | { type: 'vault.locked' };
+  | { type: 'vault.locked' }
+  | PimEvent;
 
 export type ApiEventType = ApiEvent['type'];
 
@@ -1162,4 +1163,347 @@ export interface WorkflowTemplate {
   name: string;
   description: string;
   workflow: Workflow;
+}
+
+// --- PIM ---
+// Calendars, tasks and contacts (KONZEPT 9, 10). Times are RFC 3339 (UTC);
+// all-day values are dates "YYYY-MM-DD" with an exclusive end.
+
+/** Live events of the PIM area. calendar.reminder: itemId = event id, state = trigger time. */
+export type PimEvent =
+  | { type: 'calendar.changed' }
+  | { type: 'contacts.changed' }
+  | { type: 'calendar.reminder'; itemId: string; state: string }
+  | { type: 'calendar.invitation'; messageId: number };
+
+export type CalendarKind = 'local' | 'caldav' | 'subscription' | 'birthdays';
+
+export interface PimCalendar {
+  id: number;
+  accountId?: number;
+  accountName?: string;
+  name: string;
+  color: string;
+  kind: CalendarKind;
+  readOnly: boolean;
+  visible: boolean;
+  isDefault: boolean;
+  /** Supported components: 'VEVENT', 'VTODO'. */
+  components: string[];
+  url?: string;
+  refreshMinutes?: number;
+  description?: string;
+  lastSync?: string;
+  error?: string;
+}
+
+export interface CalendarInput {
+  id?: number;
+  name: string;
+  color?: string;
+  kind?: 'local' | 'subscription';
+  url?: string;
+  refreshMinutes?: number;
+  visible?: boolean;
+  isDefault?: boolean;
+  components?: string[];
+}
+
+export type RecurrenceFreq = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+export interface RecurrenceRule {
+  freq: RecurrenceFreq | string;
+  interval?: number;
+  count?: number;
+  /** Inclusive end date YYYY-MM-DD. */
+  until?: string;
+  /** "MO", "1MO", "-1FR" */
+  byDay?: string[];
+  byMonthDay?: number[];
+  byMonth?: number[];
+  bySetPos?: number[];
+  /** Raw RRULE (read-only). */
+  raw?: string;
+}
+
+export type PartStat = 'NEEDS-ACTION' | 'ACCEPTED' | 'TENTATIVE' | 'DECLINED' | 'DELEGATED';
+
+export interface Attendee {
+  email: string;
+  name?: string;
+  role?: string;
+  partStat?: PartStat | string;
+  rsvp?: boolean;
+  cuType?: string;
+}
+
+export interface EventAlarm {
+  minutesBefore: number;
+  action?: string;
+}
+
+export type RecurrenceScope = 'this' | 'following' | 'all';
+
+export interface CalendarEvent {
+  /** "<objectId>", "<objectId>/<instance>", "bday/<contact>/<year>", "inv/<invitation>". */
+  id: string;
+  objectId: number;
+  calendarId: number;
+  uid: string;
+  recurrenceId?: string;
+  kind: 'event' | 'birthday' | 'invitation';
+  title: string;
+  description?: string;
+  location?: string;
+  url?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  timeZone?: string;
+  recurrence?: RecurrenceRule;
+  recurring: boolean;
+  exception?: boolean;
+  organizer?: Attendee;
+  attendees: Attendee[];
+  alarms: EventAlarm[];
+  isOrganizer?: boolean;
+  myPartStat?: string;
+  status?: string;
+  busy: boolean;
+  categories: string[];
+  color?: string;
+  readOnly?: boolean;
+  conflict?: boolean;
+  invitationId?: number;
+  birthYear?: number;
+}
+
+export interface EventInput {
+  calendarId: number;
+  title: string;
+  description?: string;
+  location?: string;
+  url?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  timeZone?: string;
+  /** null/absent keeps the rule on updates; { freq: '' } removes it. */
+  recurrence?: RecurrenceRule | null;
+  attendees?: Attendee[];
+  alarms?: EventAlarm[];
+  busy?: boolean;
+  categories?: string[];
+  status?: string;
+  notifyAttendees?: boolean;
+}
+
+export interface EventQuery {
+  from: string;
+  to: string;
+  calendarIds?: number[];
+  includeHidden?: boolean;
+}
+
+export interface PimTask {
+  id: number;
+  calendarId: number;
+  uid: string;
+  title: string;
+  description?: string;
+  start?: string;
+  due?: string;
+  dueAllDay?: boolean;
+  /** 0 = none, 1 = highest ... 9 = lowest. */
+  priority: number;
+  progress: number;
+  status: string;
+  done: boolean;
+  completed?: string;
+  parentId?: number;
+  parentUid?: string;
+  categories: string[];
+  recurrence?: RecurrenceRule;
+  overdue?: boolean;
+  readOnly?: boolean;
+  color?: string;
+}
+
+export interface TaskInput {
+  id?: number;
+  calendarId?: number;
+  title: string;
+  description?: string;
+  due?: string;
+  dueAllDay?: boolean;
+  priority?: number;
+  progress?: number;
+  status?: string;
+  done?: boolean;
+  parentId?: number;
+  categories?: string[];
+  recurrence?: RecurrenceRule | null;
+}
+
+export type TaskFilter = 'open' | 'today' | 'overdue' | 'upcoming' | 'completed' | 'all';
+
+export interface TaskQuery {
+  filter?: TaskFilter;
+  calendarIds?: number[];
+  search?: string;
+}
+
+export interface Invitation {
+  id: number;
+  messageId?: number;
+  method: 'REQUEST' | 'REPLY' | 'CANCEL' | 'COUNTER' | 'DECLINECOUNTER' | 'PUBLISH' | string;
+  status: 'pending' | 'accepted' | 'tentative' | 'declined' | 'applied' | 'cancelled' | 'obsolete' | string;
+  uid: string;
+  title: string;
+  description?: string;
+  location?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  recurring: boolean;
+  organizer?: Attendee;
+  attendees: Attendee[];
+  myPartStat?: string;
+  sender?: string;
+  comment?: string;
+  eventId?: string;
+  conflicts: string[];
+  canRespond: boolean;
+  replyPartStat?: string;
+}
+
+export interface InvitationResponse {
+  partStat: 'ACCEPTED' | 'TENTATIVE' | 'DECLINED';
+  comment?: string;
+  calendarId?: number;
+  sendReply?: boolean;
+  proposeStart?: string;
+  proposeEnd?: string;
+}
+
+export interface FreeBusy {
+  email: string;
+  source: 'local' | 'caldav' | 'unknown';
+  busy: TimeSlot[];
+}
+
+export interface DavAccountInput {
+  displayName: string;
+  url: string;
+  carddavUrl?: string;
+  username: string;
+  password: string;
+  email?: string;
+}
+
+export interface PimAddressBook {
+  id: number;
+  accountId?: number;
+  accountName?: string;
+  name: string;
+  kind: 'local' | 'carddav';
+  isDefault: boolean;
+  count: number;
+  url?: string;
+  lastSync?: string;
+  error?: string;
+}
+
+export interface AddressBookInput {
+  id?: number;
+  name: string;
+  isDefault?: boolean;
+}
+
+export interface ContactValue {
+  type?: string;
+  label?: string;
+  value: string;
+  pref?: boolean;
+}
+
+export interface ContactAddress {
+  type?: string;
+  label?: string;
+  poBox?: string;
+  extended?: string;
+  street?: string;
+  locality?: string;
+  region?: string;
+  postalCode?: string;
+  country?: string;
+}
+
+export interface ContactName {
+  family?: string;
+  given?: string;
+  additional?: string;
+  prefix?: string;
+  suffix?: string;
+}
+
+export interface PimContact {
+  id: number;
+  addressBookId: number;
+  personId?: number;
+  displayName: string;
+  hasPhoto: boolean;
+  photoUrl?: string;
+  /** Input only: data: URL sets the photo, "-" removes it. */
+  photo?: string;
+  /** Channels of the linked person (e-mail, phone, messengers). */
+  channels: PersonHandle[];
+  uid: string;
+  version?: string;
+  kind?: string;
+  fn: string;
+  n: ContactName;
+  nickname?: string;
+  org?: string;
+  department?: string;
+  title?: string;
+  emails: ContactValue[];
+  phones: ContactValue[];
+  addresses: ContactAddress[];
+  urls: ContactValue[];
+  impp: ContactValue[];
+  social: ContactValue[];
+  /** YYYY-MM-DD or --MM-DD */
+  birthday?: string;
+  anniversary?: string;
+  note?: string;
+  categories: string[];
+  custom: { name: string; value: string }[];
+}
+
+export interface ContactQuery {
+  addressBookId?: number;
+  search?: string;
+  group?: string;
+}
+
+export interface ContactGroup {
+  name: string;
+  count: number;
+}
+
+export interface DuplicateGroup {
+  contacts: PimContact[];
+  preview: PimContact;
+}
+
+export interface AddressSuggestion {
+  name: string;
+  email: string;
+  contactId?: number;
+  personId?: number;
+  source: 'contact' | 'recent';
 }

@@ -18,6 +18,7 @@
   import ProjectsScreen from './lib/screens/ProjectsScreen.svelte';
   import OrganizeDialogs from './lib/components/organize/OrganizeDialogs.svelte';
   import IosInstallHint from './lib/components/IosInstallHint.svelte';
+  import Reminders from './lib/components/calendar/Reminders.svelte';
   import { registerServiceWorker } from './lib/pwa';
 
   // Theme + density tokens on <html>.
@@ -84,6 +85,7 @@
 {/if}
 <OrganizeDialogs />
 <Toasts />
+{#if app.ready}<Reminders />{/if}
 <IosInstallHint />
 
 <style>

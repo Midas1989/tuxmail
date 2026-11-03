@@ -23,6 +23,10 @@ type (
 // vault endpoints). Keep in sync with the route list at the top of http.ts;
 // the contract test in internal/server checks every documented route.
 func Routes(opts Options) []Route {
+	return append(coreRoutes(opts), pimRoutes()...)
+}
+
+func coreRoutes(opts Options) []Route {
 	return []Route{
 		// Accounts & identities
 		{"GET /api/accounts", func(w w, r r, a A) { send(w)(a.ListAccounts(r.Context())) }},

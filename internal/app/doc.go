@@ -19,7 +19,9 @@
 // organize.go (tags, projects, search folders), workflows.go, settings.go
 // (preferences, locales, notifications, Web Push passthrough, vault),
 // ai.go (OpenAI-compatible/Anthropic/Gemini via internal/ai),
-// provisioning.go (desktop: connect to a TuxMail server). Additional state
+// provisioning.go (desktop: connect to a TuxMail server), pim*.go
+// (calendars, tasks, contacts, invitations, CalDAV/CardDAV sync; see
+// pim.go). Additional state
 // lives in migration store/migrations/0005_app.sql (store/appstate.go,
 // store/appviews.go).
 //

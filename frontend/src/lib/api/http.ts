@@ -85,6 +85,24 @@
 //   POST /api/workflows/validate                {src, mode} -> WorkflowValidation
 //   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
+//   --- PIM ---
+//   GET  /api/calendars; POST /api/calendars; PUT/DELETE /api/calendars/{id}   CalendarInput -> PimCalendar
+//   POST /api/calendars/sync                    POST /api/calendars/{id}/import (raw .ics) -> {added}
+//   GET  /api/calendar-events?from=&to=&calendarIds=1,2  -> CalendarEvent[];  POST /api/calendar-events  EventInput
+//   GET/PUT/DELETE /api/calendar-events/{id...}  (PUT/DELETE ?scope=this|following|all)
+//   POST /api/event-conflicts/{id}/resolve      {keep}
+//   POST /api/freebusy                          {attendees, from, to} -> FreeBusy[]
+//   POST /api/reminders/snooze                  {eventId, trigger, minutes}
+//   POST /api/dav-accounts                      DavAccountInput -> Account
+//   GET  /api/tasks?filter=&calendarIds=&q=     -> PimTask[];  POST /api/tasks;  PUT/DELETE /api/tasks/{id}
+//   GET  /api/messages/{id}/invitations         -> Invitation[];  GET /api/invitations
+//   POST /api/invitations/{id}/respond          InvitationResponse -> Invitation
+//   GET  /api/addressbooks; POST /api/addressbooks; PUT/DELETE /api/addressbooks/{id}
+//   GET  /api/contacts?addressBookId=&q=&group= -> PimContact[];  POST /api/contacts
+//   GET/PUT/DELETE /api/contacts/{id};  GET /api/contacts/{id}/photo
+//   GET  /api/contacts/duplicates               -> DuplicateGroup[];  POST /api/contacts/merge {ids, merged}
+//   GET  /api/contact-groups                    -> ContactGroup[]
+//   GET  /api/autocomplete?q=&limit=            -> AddressSuggestion[]
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
 // snake_case as in internal/server/api_device.go (see native/server.ts):
@@ -98,6 +116,7 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type { ConversationScope } from './api';
+import type * as pim from '../types';
 import type {
   ItemRef,
   Project,
@@ -743,6 +762,111 @@ export class HttpTransport implements Api {
       s.onclose = null;
       s.close();
     }
+  }
+
+  // --- PIM ---
+  listCalendars(): Promise<pim.PimCalendar[]> {
+    return this.request('GET', '/api/calendars');
+  }
+  saveCalendar(input: pim.CalendarInput): Promise<pim.PimCalendar> {
+    return input.id ? this.request('PUT', `/api/calendars/${input.id}`, input) : this.request('POST', '/api/calendars', input);
+  }
+  deleteCalendar(id: number): Promise<void> {
+    return this.request('DELETE', `/api/calendars/${id}`);
+  }
+  syncCalendars(): Promise<void> {
+    return this.request('POST', '/api/calendars/sync');
+  }
+  importCalendarFile(calendarId: number, ics: string): Promise<{ added: number }> {
+    return this.request('POST', `/api/calendars/${calendarId}/import`, new Blob([ics], { type: 'text/calendar' }));
+  }
+  listEvents(query: pim.EventQuery): Promise<pim.CalendarEvent[]> {
+    return this.request(
+      'GET',
+      `/api/calendar-events${buildQuery({ from: query.from, to: query.to, calendarIds: query.calendarIds?.join(','), includeHidden: query.includeHidden ? 1 : undefined })}`,
+    );
+  }
+  getEvent(id: string): Promise<pim.CalendarEvent> {
+    return this.request('GET', `/api/calendar-events/${encodeURIComponent(id)}`);
+  }
+  createEvent(input: pim.EventInput): Promise<pim.CalendarEvent> {
+    return this.request('POST', '/api/calendar-events', input);
+  }
+  updateEvent(id: string, input: pim.EventInput, scope: pim.RecurrenceScope): Promise<pim.CalendarEvent> {
+    return this.request('PUT', `/api/calendar-events/${encodeURIComponent(id)}${buildQuery({ scope })}`, input);
+  }
+  deleteEvent(id: string, scope: pim.RecurrenceScope): Promise<void> {
+    return this.request('DELETE', `/api/calendar-events/${encodeURIComponent(id)}${buildQuery({ scope })}`);
+  }
+  resolveEventConflict(objectId: number, keep: boolean): Promise<void> {
+    return this.request('POST', `/api/event-conflicts/${objectId}/resolve`, { keep });
+  }
+  getFreeBusy(query: { attendees: string[]; from: string; to: string }): Promise<pim.FreeBusy[]> {
+    return this.request('POST', '/api/freebusy', query);
+  }
+  snoozeReminder(eventId: string, trigger: string, minutes: number): Promise<void> {
+    return this.request('POST', '/api/reminders/snooze', { eventId, trigger, minutes });
+  }
+  addDavAccount(input: pim.DavAccountInput): Promise<Account> {
+    return this.request('POST', '/api/dav-accounts', input);
+  }
+  listTasks(query: pim.TaskQuery): Promise<pim.PimTask[]> {
+    return this.request('GET', `/api/tasks${buildQuery({ filter: query.filter, calendarIds: query.calendarIds?.join(','), q: query.search })}`);
+  }
+  saveTask(input: pim.TaskInput): Promise<pim.PimTask> {
+    return input.id ? this.request('PUT', `/api/tasks/${input.id}`, input) : this.request('POST', '/api/tasks', input);
+  }
+  deleteTask(id: number): Promise<void> {
+    return this.request('DELETE', `/api/tasks/${id}`);
+  }
+  getMessageInvitations(messageId: number): Promise<pim.Invitation[]> {
+    return this.request('GET', `/api/messages/${messageId}/invitations`);
+  }
+  listInvitations(): Promise<pim.Invitation[]> {
+    return this.request('GET', '/api/invitations');
+  }
+  respondInvitation(id: number, response: pim.InvitationResponse): Promise<pim.Invitation> {
+    return this.request('POST', `/api/invitations/${id}/respond`, response);
+  }
+  listAddressBooks(): Promise<pim.PimAddressBook[]> {
+    return this.request('GET', '/api/addressbooks');
+  }
+  saveAddressBook(input: pim.AddressBookInput): Promise<pim.PimAddressBook> {
+    return input.id ? this.request('PUT', `/api/addressbooks/${input.id}`, input) : this.request('POST', '/api/addressbooks', input);
+  }
+  deleteAddressBook(id: number): Promise<void> {
+    return this.request('DELETE', `/api/addressbooks/${id}`);
+  }
+  async listContacts(query: pim.ContactQuery): Promise<pim.PimContact[]> {
+    const list = await this.request<pim.PimContact[]>('GET', `/api/contacts${buildQuery({ addressBookId: query.addressBookId, q: query.search, group: query.group })}`);
+    return list.map((c) => this.absContact(c));
+  }
+  async getContact(id: number): Promise<pim.PimContact> {
+    return this.absContact(await this.request<pim.PimContact>('GET', `/api/contacts/${id}`));
+  }
+  async saveContact(contact: pim.PimContact): Promise<pim.PimContact> {
+    const c = contact.id
+      ? await this.request<pim.PimContact>('PUT', `/api/contacts/${contact.id}`, contact)
+      : await this.request<pim.PimContact>('POST', '/api/contacts', contact);
+    return this.absContact(c);
+  }
+  deleteContact(id: number): Promise<void> {
+    return this.request('DELETE', `/api/contacts/${id}`);
+  }
+  listContactGroups(): Promise<pim.ContactGroup[]> {
+    return this.request('GET', '/api/contact-groups');
+  }
+  findDuplicateContacts(): Promise<pim.DuplicateGroup[]> {
+    return this.request('GET', '/api/contacts/duplicates');
+  }
+  async mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact> {
+    return this.absContact(await this.request<pim.PimContact>('POST', '/api/contacts/merge', { ids, merged }));
+  }
+  autocompleteAddresses(query: string, limit = 8): Promise<pim.AddressSuggestion[]> {
+    return this.request('GET', `/api/autocomplete${buildQuery({ q: query, limit })}`);
+  }
+  private absContact(c: pim.PimContact): pim.PimContact {
+    return c.photoUrl?.startsWith('/') ? { ...c, photoUrl: this.abs(c.photoUrl) } : c;
   }
 }
 

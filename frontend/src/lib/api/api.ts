@@ -70,6 +70,7 @@ import type {
   WorkflowTemplate,
   WorkflowValidation,
 } from '../types';
+import type * as pim from '../types';
 
 export type TransportKind = 'wails' | 'http' | 'mock';
 
@@ -309,6 +310,50 @@ export interface Api {
 
   // Live events
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe;
+
+  // --- PIM --- calendars, tasks, contacts (KONZEPT 9, 10)
+  listCalendars(): Promise<pim.PimCalendar[]>;
+  /** Create (no id: local calendar or ICS subscription) or update name/color/visibility/default. */
+  saveCalendar(input: pim.CalendarInput): Promise<pim.PimCalendar>;
+  deleteCalendar(id: number): Promise<void>;
+  /** Sync CalDAV/CardDAV accounts and subscriptions now. */
+  syncCalendars(): Promise<void>;
+  /** Import an .ics file into a calendar; returns the number of objects. */
+  importCalendarFile(calendarId: number, ics: string): Promise<{ added: number }>;
+  /** Occurrences in [from, to) of visible calendars (recurrences expanded, birthdays, unanswered invitations). */
+  listEvents(query: pim.EventQuery): Promise<pim.CalendarEvent[]>;
+  getEvent(id: string): Promise<pim.CalendarEvent>;
+  createEvent(input: pim.EventInput): Promise<pim.CalendarEvent>;
+  /** scope applies to recurring events (this occurrence, this and following, the whole series). */
+  updateEvent(id: string, input: pim.EventInput, scope: pim.RecurrenceScope): Promise<pim.CalendarEvent>;
+  deleteEvent(id: string, scope: pim.RecurrenceScope): Promise<void>;
+  /** Keep (push as new event) or discard a local conflict copy. */
+  resolveEventConflict(objectId: number, keep: boolean): Promise<void>;
+  getFreeBusy(query: { attendees: string[]; from: string; to: string }): Promise<pim.FreeBusy[]>;
+  /** minutes <= 0 dismisses the reminder. */
+  snoozeReminder(eventId: string, trigger: string, minutes: number): Promise<void>;
+  addDavAccount(input: pim.DavAccountInput): Promise<Account>;
+  listTasks(query: pim.TaskQuery): Promise<pim.PimTask[]>;
+  saveTask(input: pim.TaskInput): Promise<pim.PimTask>;
+  deleteTask(id: number): Promise<void>;
+  /** iTIP parts of a mail (invitation card in the reading pane / bubbles). */
+  getMessageInvitations(messageId: number): Promise<pim.Invitation[]>;
+  listInvitations(): Promise<pim.Invitation[]>;
+  respondInvitation(id: number, response: pim.InvitationResponse): Promise<pim.Invitation>;
+  listAddressBooks(): Promise<pim.PimAddressBook[]>;
+  saveAddressBook(input: pim.AddressBookInput): Promise<pim.PimAddressBook>;
+  deleteAddressBook(id: number): Promise<void>;
+  listContacts(query: pim.ContactQuery): Promise<pim.PimContact[]>;
+  getContact(id: number): Promise<pim.PimContact>;
+  /** Create (id 0) or update. */
+  saveContact(contact: pim.PimContact): Promise<pim.PimContact>;
+  deleteContact(id: number): Promise<void>;
+  listContactGroups(): Promise<pim.ContactGroup[]>;
+  findDuplicateContacts(): Promise<pim.DuplicateGroup[]>;
+  /** Merge into ids[0]; merged replaces the computed preview (edited in the dialog). */
+  mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact>;
+  /** Composer recipient suggestions from contacts and recently used addresses. */
+  autocompleteAddresses(query: string, limit?: number): Promise<pim.AddressSuggestion[]>;
 }
 
 export class ApiError extends Error {
