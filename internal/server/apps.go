@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/app"
+	"github.com/Midas1989/Mailclient/internal/backup"
 	"github.com/Midas1989/Mailclient/internal/server/api"
 	"github.com/Midas1989/Mailclient/internal/server/push"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -51,6 +52,9 @@ func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
 	}
 	dir := p.s.auth.UserDir(userID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	if _, err := backup.ApplyPending(dir); err != nil { // staged in-app "replace" restore
 		return nil, err
 	}
 	st, err := store.Open(ctx, filepath.Join(dir, UserStoreFile))

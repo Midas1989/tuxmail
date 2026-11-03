@@ -21,6 +21,8 @@
   import ScreenShell from './ScreenShell.svelte';
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
+  import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
+  import BackupSettings from '../components/settings/BackupSettings.svelte';
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
   $effect(() => {
@@ -112,6 +114,10 @@
       <p class="about">{t('settings.workflows.intro')}</p>
       <WorkflowList />
     </section>
+
+    <ImportExportSettings />
+
+    <BackupSettings />
 
     <section class="card" aria-labelledby="set-look">
       <h2 id="set-look">{t('settings.appearance')}</h2>

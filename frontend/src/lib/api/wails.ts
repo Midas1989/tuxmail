@@ -436,6 +436,64 @@ export class WailsTransport implements Api {
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
     return this.call('CompleteWorkflow', src, offset, mode);
   }
+
+  // --- Import/Export/Backup ---
+  // Uploads and downloads use the desktop asset handler (/api/io/...),
+  // which serves the same routes as the web server.
+  listIOFormats(): Promise<IO.IOFormats> {
+    return this.call('ListIOFormats');
+  }
+  async uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload> {
+    const res = await fetch('/api/io/uploads', { method: 'POST', body: file, headers: { 'X-Filename': encodeURIComponent(filename) } });
+    if (!res.ok) throw new ApiError(res.statusText, res.status, 'upload_failed');
+    return (await res.json()) as IO.IOUpload;
+  }
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview> {
+    return this.call('InspectImport', source);
+  }
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob> {
+    return this.call('StartImport', request);
+  }
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob> {
+    return this.call('StartExport', request);
+  }
+  listIOJobs(): Promise<IO.IOJob[]> {
+    return this.call('ListIOJobs');
+  }
+  getIOJob(id: string): Promise<IO.IOJob> {
+    return this.call('GetIOJob', id);
+  }
+  cancelIOJob(id: string): Promise<void> {
+    return this.call('CancelIOJob', id);
+  }
+  ioDownloadUrl(token: string): string {
+    return `/api/io/downloads/${encodeURIComponent(token)}`;
+  }
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob> {
+    return this.call('CreateBackup', request);
+  }
+  inspectBackup(source: IO.BackupSource, passphrase = ''): Promise<IO.BackupInspection> {
+    return this.call('InspectBackup', source, passphrase);
+  }
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob> {
+    return this.call('StartRestore', request);
+  }
+  listBackupSchedules(): Promise<IO.BackupSchedule[]> {
+    return this.call('ListBackupSchedules');
+  }
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule> {
+    return this.call('SaveBackupSchedule', schedule);
+  }
+  deleteBackupSchedule(id: string): Promise<void> {
+    return this.call('DeleteBackupSchedule', id);
+  }
+  runBackupSchedule(id: string): Promise<IO.IOJob> {
+    return this.call('RunBackupSchedule', id);
+  }
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]> {
+    return this.call('ListBackupArchives', scheduleId);
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     if (!this.offRuntime && this.win.runtime?.EventsOn) {
@@ -452,3 +510,6 @@ export class WailsTransport implements Api {
     };
   }
 }
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';

@@ -54,6 +54,17 @@
 // bubbles use internal/mime/quote. BasicRenderer is a dependency-free
 // fallback that never returns HTML.
 //
+// Import/export/backup (io_*.go, KONZEPT 13/14): background jobs with
+// progress and cancel (io_jobs.go; resumable imports keep a checkpoint in
+// DataDir/io/jobs), mail import into "Local Folders" (account kind "local",
+// ingested like sync: blob, index, threading engine) or into server folders
+// via sync Actions.Append (io_mail.go), ICS/vCard/CSV/LDIF on the store
+// through the ics.CalendarImporter/Exporter interfaces (io_pim.go; the PIM
+// module may replace them), backups/restores/schedules on internal/backup
+// (io_backup.go; RunDueBackups is called by the application timer). The
+// formats live in internal/importexport/*. Export formats of other modules
+// (PDF) register with RegisterExportFormat.
+//
 // Messenger plugins: chats and chat messages are read from the store;
 // sending to messenger channels returns not_supported until a plugin
 // Sender exists.

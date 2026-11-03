@@ -309,6 +309,29 @@ export interface Api {
 
   // Live events
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe;
+
+  // --- Import/Export/Backup --- (KONZEPT 13/14; Go: internal/app/io_*.go)
+  listIOFormats(): Promise<IO.IOFormats>;
+  /** Upload an import file or backup archive (web mode; desktop may use local paths). */
+  uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload>;
+  /** Wizard step "mapping/options": counts, CSV header + suggested mapping, Thunderbird profile. */
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview>;
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob>;
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob>;
+  listIOJobs(): Promise<IO.IOJob[]>;
+  getIOJob(id: string): Promise<IO.IOJob>;
+  /** Cancel a running job (imports can be resumed with resumeJobId). */
+  cancelIOJob(id: string): Promise<void>;
+  /** URL of an export result or backup download. */
+  ioDownloadUrl(token: string): string;
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob>;
+  inspectBackup(source: IO.BackupSource, passphrase?: string): Promise<IO.BackupInspection>;
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob>;
+  listBackupSchedules(): Promise<IO.BackupSchedule[]>;
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule>;
+  deleteBackupSchedule(id: string): Promise<void>;
+  runBackupSchedule(id: string): Promise<IO.IOJob>;
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]>;
 }
 
 export class ApiError extends Error {
@@ -345,3 +368,6 @@ export class EventHub {
     }
   }
 }
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';

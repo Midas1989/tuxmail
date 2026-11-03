@@ -1,0 +1,16 @@
+BEGIN:VCARD
+VERSION:3.0
+UID:c3-1
+FN:Erika Mustermann
+N:Mustermann;Erika;;;
+EMAIL;TYPE=INTERNET,pref:erika@example.org
+EMAIL;TYPE=INTERNET:erika.private@example.net
+TEL;TYPE=CELL:+49 170 1
+ORG:Example GmbH;Sales
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+UID:c3-2
+FN:John Doe
+EMAIL:john@example.com
+END:VCARD

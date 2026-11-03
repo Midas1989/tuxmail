@@ -23,7 +23,7 @@ type (
 // vault endpoints). Keep in sync with the route list at the top of http.ts;
 // the contract test in internal/server checks every documented route.
 func Routes(opts Options) []Route {
-	return []Route{
+	return append([]Route{
 		// Accounts & identities
 		{"GET /api/accounts", func(w w, r r, a A) { send(w)(a.ListAccounts(r.Context())) }},
 		{"POST /api/accounts", jsonHandler(func(w w, r r, a A, in app.NewAccountInput) {
@@ -431,7 +431,7 @@ func Routes(opts Options) []Route {
 
 		// Live events
 		{"GET /api/events", eventsHandler(opts)},
-	}
+	}, ioRoutes()...)
 }
 
 // send returns a function writing (value, error) results:

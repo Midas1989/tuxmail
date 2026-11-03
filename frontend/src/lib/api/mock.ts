@@ -2043,6 +2043,61 @@ export class MockTransport implements Api {
     return this.run(() => this.org.complete(src, offset, mode));
   }
 
+
+  // --- Import/Export/Backup --- (state and logic in mockIO.ts)
+  private ioMock = new MockIO(this.emit.bind(this));
+  listIOFormats(): Promise<IO.IOFormats> {
+    return this.run(() => this.ioMock.formats());
+  }
+  uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload> {
+    return this.run(() => this.ioMock.upload(file, filename));
+  }
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview> {
+    return this.run(() => this.ioMock.inspect(source));
+  }
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startImport(request));
+  }
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startExport(request));
+  }
+  listIOJobs(): Promise<IO.IOJob[]> {
+    return this.run(() => this.ioMock.jobsList());
+  }
+  getIOJob(id: string): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.job(id));
+  }
+  cancelIOJob(id: string): Promise<void> {
+    return this.run(() => this.ioMock.cancel(id));
+  }
+  ioDownloadUrl(token: string): string {
+    return this.ioMock.downloadUrl(token);
+  }
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.createBackup(request, this.accounts));
+  }
+  inspectBackup(source: IO.BackupSource, passphrase = ''): Promise<IO.BackupInspection> {
+    return this.run(() => this.ioMock.inspectBackup(source, passphrase, this.accounts));
+  }
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startRestore(request));
+  }
+  listBackupSchedules(): Promise<IO.BackupSchedule[]> {
+    return this.run(() => this.ioMock.schedulesList());
+  }
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule> {
+    return this.run(() => this.ioMock.saveSchedule(schedule));
+  }
+  deleteBackupSchedule(id: string): Promise<void> {
+    return this.run(() => this.ioMock.deleteSchedule(id));
+  }
+  runBackupSchedule(id: string): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.runSchedule(id, this.accounts));
+  }
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]> {
+    return this.run(() => this.ioMock.archives(scheduleId));
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     if (this.opts.simulateIncoming && !this.incomingTimer) {
@@ -2060,3 +2115,7 @@ export class MockTransport implements Api {
     };
   }
 }
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';
+import { MockIO } from './mockIO';

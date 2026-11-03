@@ -84,6 +84,19 @@
 //   GET  /api/workflows/{id}/runs?limit=        -> WorkflowRun[]
 //   POST /api/workflows/validate                {src, mode} -> WorkflowValidation
 //   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
+//   GET  /api/io/formats                        -> IOFormats
+//   POST /api/io/uploads                        raw body, X-Filename header -> IOUpload
+//   GET  /api/io/downloads/{token}              export result / backup archive
+//   POST /api/io/inspect                        IOSource -> ImportPreview
+//   POST /api/io/import                         ImportRequest -> IOJob
+//   POST /api/io/export                         ExportRequest -> IOJob
+//   GET  /api/io/jobs                           -> IOJob[];  GET/DELETE /api/io/jobs/{id}
+//   POST /api/backup                            BackupRequest -> IOJob
+//   POST /api/backup/inspect                    {source, passphrase} -> BackupInspection
+//   POST /api/backup/restore                    RestoreRequest -> IOJob
+//   GET  /api/backup/schedules; POST /api/backup/schedules; PUT/DELETE /api/backup/schedules/{id}
+//   POST /api/backup/schedules/{id}/run         -> IOJob
+//   GET  /api/backup/schedules/{id}/archives    -> BackupArchive[]
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
@@ -673,6 +686,62 @@ export class HttpTransport implements Api {
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
     return this.request('POST', '/api/workflows/complete', { src, offset, mode });
   }
+
+  // --- Import/Export/Backup ---
+  listIOFormats(): Promise<IO.IOFormats> {
+    return this.request('GET', '/api/io/formats');
+  }
+  uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload> {
+    return this.request('POST', '/api/io/uploads', file, { 'X-Filename': encodeURIComponent(filename) });
+  }
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview> {
+    return this.request('POST', '/api/io/inspect', source);
+  }
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob> {
+    return this.request('POST', '/api/io/import', request);
+  }
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob> {
+    return this.request('POST', '/api/io/export', request);
+  }
+  listIOJobs(): Promise<IO.IOJob[]> {
+    return this.request('GET', '/api/io/jobs');
+  }
+  getIOJob(id: string): Promise<IO.IOJob> {
+    return this.request('GET', `/api/io/jobs/${encodeURIComponent(id)}`);
+  }
+  cancelIOJob(id: string): Promise<void> {
+    return this.request('DELETE', `/api/io/jobs/${encodeURIComponent(id)}`);
+  }
+  ioDownloadUrl(token: string): string {
+    return `${this.base}/api/io/downloads/${encodeURIComponent(token)}`;
+  }
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob> {
+    return this.request('POST', '/api/backup', request);
+  }
+  inspectBackup(source: IO.BackupSource, passphrase = ''): Promise<IO.BackupInspection> {
+    return this.request('POST', '/api/backup/inspect', { source, passphrase });
+  }
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob> {
+    return this.request('POST', '/api/backup/restore', request);
+  }
+  listBackupSchedules(): Promise<IO.BackupSchedule[]> {
+    return this.request('GET', '/api/backup/schedules');
+  }
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule> {
+    return schedule.id
+      ? this.request('PUT', `/api/backup/schedules/${encodeURIComponent(schedule.id)}`, schedule)
+      : this.request('POST', '/api/backup/schedules', schedule);
+  }
+  deleteBackupSchedule(id: string): Promise<void> {
+    return this.request('DELETE', `/api/backup/schedules/${encodeURIComponent(id)}`);
+  }
+  runBackupSchedule(id: string): Promise<IO.IOJob> {
+    return this.request('POST', `/api/backup/schedules/${encodeURIComponent(id)}/run`);
+  }
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]> {
+    return this.request('GET', `/api/backup/schedules/${encodeURIComponent(scheduleId)}/archives`);
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     this.connect();
@@ -756,3 +825,6 @@ function scopeParams(s: ConversationScope): Record<string, string | number | und
     searchFolderId: s.kind === 'searchFolder' ? s.searchFolderId : undefined,
   };
 }
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';
