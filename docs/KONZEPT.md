@@ -1154,6 +1154,17 @@ Ein Desktop-Client (Windows/Linux, portabel oder installiert) kann sich am eigen
 - Vorgabe, welche Modi erlaubt sind, ob Zugangsdaten übertragen werden dürfen und ob portabler Betrieb erlaubt ist.
 - Geräteübersicht pro Benutzer mit Sperren/Fernabmeldung.
 
+### 15.9 Android-App (APK) und iOS
+Die Oberfläche (Svelte) und die Transport-Abstraktion ermöglichen native Mobil-Apps ohne Neuentwicklung der UI.
+
+| Stufe | Umsetzung | Beschreibung |
+|---|---|---|
+| **A – Thin Client (empfohlen zuerst)** | **Capacitor** (Android, später iOS) | UI im APK, verbindet sich mit beliebigen TuxMail-Servern (Geräte-Anmeldung wie 15.8). Native Push: **FCM** (Play-Store-Variante) bzw. **UnifiedPush** (F-Droid/ohne Google-Dienste, z. B. ntfy). Teilen-Menü (Dateien/Text an TuxMail senden), Anhänge mit System-Apps öffnen, Kamera/Galerie, biometrische App-Sperre, Benachrichtigungen mit Schnellantwort, Offline-Cache. |
+| **B – Eigenständig (später)** | Go-Kern per `gomobile bind` als Android-Bibliothek + gleiche UI | Synchronisiert Konten direkt auf dem Gerät (ohne Server). Hintergrund-Sync per Vordergrunddienst/WorkManager; Messenger nur über den Bridge-Modus. |
+| PWA-Verpackung (TWA) | Bubblewrap | Nur für eine feste Server-Domain sinnvoll (z. B. Firmenserver), nicht als allgemeine App. |
+
+**Verteilung:** F-Droid (freie Abhängigkeiten, UnifiedPush), Google Play (einmalige Entwicklergebühr, Identitätsprüfung), APK-Download über GitHub Releases (künftige Entwickler-Verifizierung durch Google beachten). **iOS** mit demselben Capacitor-Projekt (Mac + Apple-Entwicklerkonto nötig); bis dahin deckt die PWA (15.7) iPhone/iPad ab.
+
 ## 16. Benutzeroberfläche & UX
 
 ### 16.1 Grundlayout
@@ -1368,7 +1379,8 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | **9b – Workflows & Team** | Workflow-Engine + grafischer Editor + YAML, Vorlagen, Trockenlauf, Protokoll; „Warten auf Antwort"; Versand-Prüfungen; Druck/PDF/A-Archivierung inkl. E-Rechnungserkennung; gemeinsame Postfächer (Zuweisung, Kommentare, Kollisionserkennung) | Automatisierung & Teamarbeit | 5 PM |
 | **10 – Feinschliff & Release 1.0** | Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (lokal + Cloud-Anbieter), S/MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Sicherheitsprüfung des Web-Modus, Dokumentation | Release | 5 PM |
 | | | **Summe 1.0** | **≈ 49 PM** |
-| *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat, Mobil-App | Optionale Kanäle | *≈ 3–4 PM* |
+| *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat | Optionale Kanäle | *≈ 3–4 PM* |
+| *nach 1.0* | **Android-App** als Thin Client (Capacitor, FCM/UnifiedPush), danach iOS; später eigenständige Android-App mit Go-Kern | Mobil-Apps | *≈ 1,5 PM (Thin Client) + 3–4 PM (eigenständig)* |
 
 - Mit 3 Entwicklern: **ca. 16–18 Monate** bis Version 1.0 (mit 4 Entwicklern ca. 12–14 Monate); ein nutzbarer Mail-Client mit PGP und Konversationsansicht (Phasen 0–2) nach **ca. 5 Monaten**.
 - Phasen 5–8 lassen sich nach Phase 2 teilweise **parallel** bearbeiten.
