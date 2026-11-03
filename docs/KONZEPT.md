@@ -2,7 +2,7 @@
 
 **Produktname:** *TuxMail* – E-Mail, Messenger, Kalender, Kontakte und Cloud-Dateien in einer Anwendung
 **Zielplattformen:** Windows 10/11 (x64, ARM64), Linux (x64, ARM64)
-**Stand:** 03.11.2026 – Version 1.1 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
+**Stand:** 03.11.2026 – Version 1.2 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
 
 ---
 
@@ -72,7 +72,14 @@ Ziel ist ein **lokal laufender Desktop-Client**, der klassische E-Mail-Arbeit (O
 | M-11 | Mail | Persistente Beziehungstabelle (Antwort, Weiterleitung, …) – auch nach Verschieben | Muss |
 | M-12 | Mail | Import/Export (EML, MBOX, Maildir, PST-Import) | Muss |
 | M-13 | Mail | Filter/Regeln (lokal + Sieve) | Soll |
-| M-14 | Mail | S/MIME und OpenPGP | Soll |
+| M-14 | Mail | OpenPGP (inkl. Autocrypt, WKD) | Muss |
+| M-15 | Mail | S/MIME | Soll |
+| M-16 | Mail | Lokaler Spam-Filter, Ein-Klick-Newsletter-Abmeldung | Muss |
+| M-17 | Mail | Smarte Kategorien (lokal) | Soll |
+| M-18 | Mail | Rechtschreibprüfung, Serienmails | Muss |
+| M-19 | Mail | Exchange-Delegation, geteilte Postfächer, Send-As/On-Behalf | Soll |
+| M-20 | Mail | KI-Assistenz optional: lokal (Ollama) oder Cloud (OpenAI, Gemini, DeepSeek u. a.) | Kann |
+| K-04 | Kalender | Videokonferenz-Links (Nextcloud Talk, Jitsi, Teams) | Soll |
 | K-01 | Kalender | Volle Integration: Termine, Serien, Einladungen, Erinnerungen, Aufgaben | Muss |
 | K-02 | Kalender | CalDAV, Google Calendar, Microsoft Graph, EAS, EWS, lokale Kalender | Muss |
 | K-03 | Kalender | Import/Export iCalendar (.ics) | Muss |
@@ -551,6 +558,12 @@ Für EAS gibt es keine reife Go-Bibliothek; die Implementierung erfolgt eigenst�
 - App-Registrierung in **Microsoft Entra ID** als *öffentlicher Client* (Multi-Tenant, ohne Client-Secret, PKCE, Loopback-Redirect `http://localhost:<port>`). In manchen Organisationen muss ein Admin der App zustimmen – der Client zeigt dafür einen verständlichen Hinweis.
 - **EWS** wird für **On-Premises-Exchange** angeboten (z. B. Exchange Server SE), wo es weiterhin unterstützt wird.
 
+### 7.3a Exchange-Delegation & geteilte Postfächer
+- **Geteilte Postfächer** (Shared Mailboxes) und Postfächer, auf die der Benutzer Vollzugriff hat, werden als eigene Einträge im Ordnerbaum eingebunden (Graph `/users/{id}/…`, EWS `Mailbox`-Element, Autodiscover `AlternativeMailbox`; bei IMAP über `NAMESPACE`/Shared-Folders, z. B. Dovecot ACL).
+- **Senden als** (Send-As) und **Senden im Auftrag von** (Send-on-Behalf): als eigene Identitäten auswählbar; der Client setzt korrekt `From` bzw. `From` + `Sender`; die gesendete Mail wird optional im Gesendet-Ordner des geteilten Postfachs abgelegt.
+- **Kalender-Delegation:** Kalender anderer Personen öffnen (Lese- oder Bearbeitungsrechte), Termine im Auftrag anlegen und Einladungen für den Vorgesetzten beantworten; Freigabe des eigenen Kalenders mit Rechtestufen (Frei/Gebucht, Details, Bearbeiten) über Graph/EWS bzw. CalDAV-ACL (Nextcloud-Kalenderfreigaben).
+- Geteilte Kontaktordner werden ebenso eingebunden.
+
 ### 7.4 Google
 
 - **OAuth2 mit PKCE** über den System-Browser (Loopback-Redirect).
@@ -609,9 +622,59 @@ Bei einem erkannten Mail-Konto werden automatisch **passende Kalender und Adress
 - Serverseitige Regeln per **Sieve** (Editor mit grafischer Oberfläche und Rohansicht) bzw. Graph/EWS-Posteingangsregeln.
 - Abwesenheitsnotiz (Sieve `vacation`, Graph `automaticRepliesSetting`, EAS `Settings/Oof`).
 
-### 8.6 Verschlüsselung (Phase 2)
-- **OpenPGP** (`ProtonMail/go-crypto`), inkl. Autocrypt und WKD-Schlüsselsuche.
-- **S/MIME** mit Zertifikatsverwaltung; Nutzung des Windows-Zertifikatsspeichers optional.
+### 8.6 Verschlüsselung
+**OpenPGP ist Bestandteil des Mail-MVP (Phase 1)** – nicht erst des Feinschliffs.
+
+- Bibliothek: `ProtonMail/go-crypto` (unterstützt v4- und v6-Schlüssel nach RFC 9580), Paket `internal/crypto/pgp`.
+- **Schlüsselverwaltung:** Erzeugen (Ed25519/Curve25519 als Standard, RSA-4096 optional), Import/Export (ASCII-armored, binär), Passphrase ändern, Widerruf, Ablaufdatum, mehrere Benutzer-IDs; Schlüssel je Identität zuordnen.
+- **PGP/MIME** (RFC 3156) zum Signieren und Verschlüsseln, Lesen von **Inline-PGP**; **geschützte Header** (verschlüsselter Betreff).
+- **Autocrypt Level 1:** Schlüssel automatisch mit jeder Mail mitsenden und empfangen; Empfehlung „verschlüsseln / möglich / abraten" beim Verfassen.
+- **Schlüsselsuche:** WKD (Web Key Directory), keys.openpgp.org; angehängte Schlüssel mit einem Klick importieren.
+- **Vertrauensmodell:** unbekannt → TOFU (zuerst gesehen) → verifiziert (Fingerabdruck bestätigt, z. B. per QR-Code), Warnung bei Schlüsselwechsel.
+- **UI:** Schloss-/Siegel-Symbol in Liste, Lesebereich und Chat-Blase; im Verfasser Schalter „Signieren" / „Verschlüsseln" mit Automatik pro Empfänger; Entwürfe verschlüsselter Mails werden ebenfalls verschlüsselt abgelegt.
+- **Suche in verschlüsselten Mails:** entschlüsselter Text wird nur im (optional verschlüsselten) lokalen Index gespeichert – abschaltbar.
+- **Später:** Hardware-Schlüssel (YubiKey/OpenPGP-Card) über `gpg-agent`, Autocrypt-Setup-Message zum Übertragen des Schlüssels.
+- **S/MIME** mit Zertifikatsverwaltung (Phase 10); Nutzung des Windows-Zertifikatsspeichers optional.
+
+### 8.7 Spam-Filter & Newsletter-Abmeldung
+- **Lokaler, lernender Spam-Filter** (Naiver Bayes über Tokens aus Betreff, Text, Headern und Links) zusätzlich zur Server-Bewertung (`X-Spam-Status`, `X-Rspamd-*`). Trainiert durch „Spam" / „Kein Spam"; Modell je Benutzer, kontoübergreifend.
+- Beim Verschieben in den Junk-Ordner lernt auf Wunsch auch der Server (IMAP `$Junk`/`$NotJunk`-Keywords, rspamd-Lernordner).
+- **Ein-Klick-Abmeldung** von Newslettern: `List-Unsubscribe` mit `List-Unsubscribe-Post` (RFC 8058, HTTPS-POST ohne Browser) bzw. `mailto:`-Abmeldung; Leiste „Newsletter von X – abmelden / alle archivieren".
+- Übersicht „Abonnements": alle erkannten Newsletter mit Häufigkeit, Massenabmeldung und Regel „künftig automatisch archivieren".
+
+### 8.8 Smarte Kategorien
+- Der Posteingang wird **lokal** (ohne Cloud) in Kategorien eingeteilt: **Wichtig/Persönlich, Newsletter, Rechnungen & Bestellungen, Benachrichtigungen, Social, Termine**.
+- Grundlage: Regeln/Heuristiken (Header wie `List-Id`, `Precedence: bulk`, Absenderdomänen, Schlagwörter, Anhänge „Rechnung*.pdf", iCalendar-Inhalte) plus der lernende Klassifikator aus 8.7, der durch Verschieben zwischen Kategorien nachtrainiert wird.
+- Darstellung als Reiter über der Liste bzw. als Filter in der Messenger-Ansicht; Kategorien sind auch in Regeln und Suche nutzbar (`category:rechnung`).
+- Kopplung mit Cloud-Ablage: „Rechnungen automatisch in Nextcloud `/Rechnungen/<Jahr>` speichern".
+- Optional verfeinert durch die KI-Assistenz (8.10).
+
+### 8.9 Rechtschreibprüfung & Serienmails
+- **Rechtschreibprüfung** im Editor mit **Hunspell**-Wörterbüchern (Deutsch, Englisch, weitere ladbar); eigenes Benutzerwörterbuch; Sprache je Mail automatisch erkannt oder manuell gewählt; Prüfung im Go-Kern, damit sie in Desktop **und** Web-Client identisch funktioniert.
+- **Serienmails:** Empfänger aus Kontaktgruppe, CSV- oder Tabellendatei; Platzhalter (`{{vorname}}`, `{{firma}}`, eigene Spalten); Vorschau je Empfänger; Versand als **einzelne** Mails (kein offener Verteiler) mit Drosselung (z. B. 30 Mails/Minute) zum Schutz vor Server-Limits; Protokoll mit Fehlern und Wiederholung.
+- Kombinierbar mit Signaturen, Identitäten, PGP (je Empfänger verschlüsselt, wenn Schlüssel vorhanden) und Cloud-Links.
+
+### 8.10 KI-Assistenz (lokal oder Cloud, optional)
+- **Standardmäßig ausgeschaltet**; Aktivierung bewusst in den Einstellungen. Mehrere KI-Anbieter können parallel eingerichtet werden; pro Funktion wählbar, welcher genutzt wird.
+- **Anbieter (Provider-Schnittstelle `internal/ai`):**
+
+  | Anbieter | Art | Anbindung |
+  |---|---|---|
+  | **Ollama**, LM Studio, llama.cpp-Server, LocalAI | lokal / eigener Server im LAN | OpenAI-kompatible API |
+  | **OpenAI (ChatGPT-Modelle)** | Cloud | OpenAI API (eigener API-Schlüssel) |
+  | **Google Gemini** | Cloud | Gemini API (API-Schlüssel) |
+  | **DeepSeek** | Cloud | DeepSeek API (OpenAI-kompatibel) |
+  | Weitere: Anthropic Claude, Mistral (EU-Hosting), beliebige OpenAI-kompatible Endpunkte | Cloud | jeweilige API |
+
+  API-Schlüssel liegen im Secret-Store; Modellname, Temperatur und Basis-URL frei konfigurierbar.
+- **Funktionen:** **Zusammenfassung** langer Mails und Konversationen (auch Messenger-Gruppen), **Antwortvorschläge** in drei Varianten (kurz/freundlich/förmlich), Umformulieren und Übersetzen im Editor, Extraktion von **Terminen und Aufgaben** aus Mails („Termin erkennen → in Kalender übernehmen"), Unterstützung der smarten Kategorien, natürlichsprachliche Suche („Rechnungen von Telekom aus dem Sommer").
+- **Datenschutz bei Cloud-Anbietern:**
+  - Deutlicher Hinweis beim Einrichten, dass Inhalte an den Anbieter (ggf. außerhalb der EU, z. B. USA/China) übertragen werden.
+  - Freigabe **pro Konto** (z. B. privates Konto ja, Firmenkonto nein) und Sperrliste für Ordner/Absender.
+  - Option „Personenbezogene Daten maskieren": E-Mail-Adressen, Telefonnummern, IBANs und Namen werden vor dem Senden durch Platzhalter ersetzt und in der Antwort zurückgesetzt.
+  - **Verschlüsselte (PGP) Mails werden nie an Cloud-Anbieter gesendet**, an lokale Modelle nur nach ausdrücklicher Freigabe.
+  - Kein automatischer Hintergrund-Versand an Cloud-KI – nur auf Aktion des Benutzers (Ausnahme: lokale Modelle, wenn freigegeben).
+- **Transparenz:** KI-Texte sind immer Vorschläge und werden nie automatisch gesendet; jede Anfrage an einen Cloud-Anbieter wird im Protokoll „KI-Aktivität" aufgeführt (Zeitpunkt, Anbieter, Zweck, Größe).
 
 ---
 
@@ -628,6 +691,7 @@ Bei einem erkannten Mail-Konto werden automatisch **passende Kalender und Adress
 - Drag & Drop von Terminen, Größe per Maus ändern, Schnellerfassung mit natürlicher Sprache („Zahnarzt morgen 15 Uhr").
 - Abonnierte Kalender (ICS-URL, z. B. Feiertage, Schulferien) mit Aktualisierungsintervall.
 - Geburtstage aus Kontakten als virtueller Kalender.
+- **Videokonferenz-Links:** Beim Anlegen eines Termins mit einem Klick einen **Nextcloud-Talk-Raum** (OCS Talk API, Raum mit Teilnehmern bzw. öffentlich mit Passwort) oder einen **Jitsi-Raum** (eigene oder öffentliche Instanz, zufälliger Raumname) erzeugen. Der Link wird in `LOCATION`, `CONFERENCE` (RFC 7986) und die Beschreibung der Einladung eingetragen; Teams-Links bei Microsoft-365-Konten über Graph (`isOnlineMeeting`). Vor dem Termin: Benachrichtigung mit „Beitreten"-Schaltfläche.
 
 ### 9.2 Technik
 - Speicherung des **Original-iCalendar** pro Objekt (`cal_objects.ical`) → keine Datenverluste bei unbekannten Eigenschaften (X-Properties bleiben erhalten).
@@ -1056,7 +1120,8 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | Phase | Inhalt | Ergebnis | Aufwand |
 |---|---|---|---|
 | **0 – Fundament** | Repo, Build, Wails-Grundgerüst, SQLite + Migrationen, Blob-Store, Secret-Store, Op-Queue, Event-Bus, Design-System | Lauffähige leere App, portabel & installiert | 2 PM |
-| **1 – Mail-MVP** | IMAP/SMTP/POP3, Autokonfiguration, Ordnerverwaltung, Identitäten/Aliase, Signaturen, Editor, Lesen (Sanitizer), Suche, Offline | **Alltagstauglicher Mail-Client** | 5 PM |
+| **1 – Mail-MVP** | IMAP/SMTP/POP3, Autokonfiguration, Ordnerverwaltung, Identitäten/Aliase, Signaturen, Editor + Rechtschreibprüfung, Lesen (Sanitizer), Suche, Offline, **OpenPGP inkl. Autocrypt/WKD**, Spam-Filter & Newsletter-Abmeldung | **Alltagstauglicher Mail-Client** | 7 PM |
+| **1b – Komfort** | Smarte Kategorien, Serienmails | Organisierter Posteingang | 1,5 PM |
 | **2 – Konversationen** | Beziehungstabelle, Threading-Engine, Verschiebe-Erkennung, Zitat-Entfernung, Messenger-Ansicht, nahtloser Wechsel | **Alleinstellungsmerkmal fertig** | 3 PM |
 | **3 – Kalender & Kontakte** | CalDAV/CardDAV, Kalender-UI, Aufgaben, Einladungen (iMIP), Kontakte-UI, Personen-Resolver | Vollständiges PIM | 4 PM |
 | **4 – Import/Export & Backup** | EML/MBOX/Maildir/PST, ICS, vCard/CSV/LDIF, Backup/Restore (alle Modi), Thunderbird-Import | Datenhoheit | 2 PM |
@@ -1065,11 +1130,11 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | **7 – Messenger** | Plugin-Host, **WhatsApp, Signal** (Pflicht für 1.0), gemischte Personen-Zeitleiste | Unified Inbox | 4 PM |
 | **8 – Bridge-Modus** | `plugin-matrix-bridge`, Bridge-Zuordnung, Kopplungsassistent, docker-compose mit Homeserver + Bridges | Messenger 24/7 | 2 PM |
 | **9 – Server & Web-Client** | `tuxmail serve`, API-Generierung (Connect-RPC), Transport-Abstraktion im Frontend, Benutzerverwaltung, OIDC, PWA/Web-Push, Docker-Image | Zugriff über Browser | 4 PM |
-| **10 – Feinschliff & Release 1.0** | OpenPGP/S-MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Sicherheitsprüfung des Web-Modus, Dokumentation | Release | 3 PM |
-| | | **Summe 1.0** | **≈ 36 PM** |
+| **10 – Feinschliff & Release 1.0** | Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (lokal + Cloud-Anbieter), S/MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Sicherheitsprüfung des Web-Modus, Dokumentation | Release | 5 PM |
+| | | **Summe 1.0** | **≈ 41,5 PM** |
 | *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat, optional Telegram, Mobil-App | Optionale Kanäle | *≈ 3–4 PM* |
 
-- Mit 3 Entwicklern: **ca. 12–14 Monate** bis Version 1.0; ein nutzbarer Mail-Client mit Konversationsansicht (Phasen 0–2) nach **ca. 4 Monaten**.
+- Mit 3 Entwicklern: **ca. 14–16 Monate** bis Version 1.0; ein nutzbarer Mail-Client mit PGP und Konversationsansicht (Phasen 0–2) nach **ca. 5 Monaten**.
 - Phasen 5–8 lassen sich nach Phase 2 teilweise **parallel** bearbeiten.
 
 ### Meilensteine
@@ -1111,6 +1176,9 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | 6 | Web-/Mobil-Client | **Web-Client in Version 1.0**, Mobil-App später über dieselbe API | Kapitel 4.2, 4.5, Phase 9 der Roadmap |
 | 7 | Cloud-Link-Passwort | **Bei jedem Versand fragen** (Wahl pro Empfänger merkbar) | Kapitel 12.2 |
 | 8 | Messenger für 1.0 | **WhatsApp und Signal**; Instagram, Facebook, Google Messages/Chat nach 1.0 | Kapitel 11, Roadmap |
+| 9 | OpenPGP | **Bereits im Mail-MVP** (inkl. Autocrypt, WKD, geschützte Header) | Kapitel 8.6, Phase 1 |
+| 10 | Zusatzfunktionen 1.0 | Spam-Filter & Newsletter-Abmeldung, smarte Kategorien, Rechtschreibprüfung & Serienmails, Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (optional; lokal oder OpenAI/Gemini/DeepSeek) | Kapitel 7.3a, 8.7–8.10, 9.1 |
+| 11 | Bewusst **nicht** in 1.0 | Wegwerf-Aliase (SimpleLogin/addy.io), Terminbuchungsseite | ggf. nach 1.0 |
 
 ---
 
