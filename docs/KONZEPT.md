@@ -2,7 +2,7 @@
 
 **Produktname:** *TuxMail* – E-Mail, Messenger, Kalender, Kontakte und Cloud-Dateien in einer Anwendung
 **Zielplattformen:** Windows 10/11 (x64, ARM64), Linux (x64, ARM64)
-**Stand:** 03.11.2026 – Version 1.5 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
+**Stand:** 03.11.2026 – Version 1.6 des Konzepts (Entscheidungen aus Kapitel 23 eingearbeitet)
 
 ---
 
@@ -625,6 +625,29 @@ Bei einem erkannten Mail-Konto werden automatisch **passende Kalender und Adress
 - Die Auswahl erfolgt über **Filter-Chips** direkt im Suchfeld; die Standard-Einstellung wird unter *Einstellungen → Suche* festgelegt. Häufige Kombinationen lassen sich als **Suchprofil** speichern (z. B. „Buchhaltung": nur Firmenkonto, Ordner Rechnungen, inkl. Anhangsinhalte) und als virtueller Ordner anheften.
 - **Indexierung einstellbar:** pro Konto, ob Inhalte lokal indexiert werden (z. B. aus Datenschutzgründen nicht für ein bestimmtes Konto), Anhangsinhalte ja/nein, verschlüsselte (PGP-)Inhalte ja/nein.
 - Suchsyntax: `from:`, `to:`, `subject:`, `has:attachment`, `before:`, `after:`, `in:`, `is:unread`, `account:`, `channel:whatsapp`, `type:event`, `category:rechnung`.
+
+#### 8.4.1 Expertenmodus (Abfragesprache ähnlich Kibana/Lucene)
+Neben der einfachen Suche (Wörter + Filter-Chips) gibt es einen **Expertenmodus** mit einer vollständigen Abfragesprache:
+
+| Element | Beispiele |
+|---|---|
+| **Boolesche Operatoren** | `AND`, `OR`, `NOT` (auch `&&`, `\|\|`, `!` sowie deutsch `UND`, `ODER`, `NICHT`), `+muss`, `-darf_nicht`; Vorrang NOT > AND > OR |
+| **Klammern** | `(from:anna OR from:max) AND subject:angebot` |
+| **Felder** | `from:`, `to:`, `cc:`, `participant:`, `subject:`, `body:`, `attachment:` (Inhalt), `filename:`, `account:`, `folder:`/`in:`, `channel:`, `type:`, `category:`, `label:`, `header.X-Mailer:`, `lang:`; Feldgruppen `from:(anna OR max)` |
+| **Phrasen & Nähe** | `"rechnung april"`, `"vertrag kündigung"~5` (Wörter höchstens 5 Wörter auseinander) |
+| **Platzhalter & Unschärfe** | `rechn*`, `m?ier`, `meier~` (Tippfehler-tolerant), `/re[- ]?\d{6}/` (regulärer Ausdruck) |
+| **Bereiche & Vergleiche** | `date:[2025-01-01 TO 2025-06-30]`, `date:>now-7d`, `date:"letzte Woche"`, `size:>10MB`, `attachments:>2` |
+| **Zustände** | `is:unread`, `is:flagged`, `is:encrypted`, `is:signed`, `has:attachment`, `has:calendar`, `_exists_:attachment` |
+| **Gewichtung** | `vertrag^3 OR angebot` |
+
+**Weitere Merkmale**
+- **Facetten wie in Kibana:** Trefferzahlen nach Konto, Ordner, Absender/Domain, Kanal, Typ, Anhang und ein **Zeit-Histogramm** (Monate/Jahre) – Klick auf eine Facette fügt die passende Bedingung zur Abfrage hinzu.
+- **Sortierung:** Relevanz (BM25 mit einstellbarer Feldgewichtung, z. B. Betreff > Absender > Text > Anhang), Datum, Absender, Größe.
+- **Hervorhebung** der Treffer im Ausschnitt und in der geöffneten Mail.
+- **Syntaxhilfe:** Autovervollständigung für Felder, Werte (Konten, Ordner, bekannte Absender) und Operatoren; verständliche Fehlermeldungen mit Position; fehlerhafte Abfragen fallen automatisch auf die einfache Suche zurück.
+- **Gespeicherte Abfragen** als Suchprofile/virtuelle Ordner, **Suchverlauf**, Abfragen auch in **Workflows** als Bedingung nutzbar.
+- **Geschwindigkeit:** Ziel < 100 ms für typische Abfragen bei 100.000+ Mails. Umsetzung: eigener Parser → Syntaxbaum → **eine** optimierte SQL-Abfrage (FTS5-Volltext mit BM25 + indizierte Filter), zusätzlicher **Trigramm-Index** für Teilwort- und Tippfehlersuche, seitenweises Laden per Cursor, inkrementelle Indexierung im Hintergrund, Index-Optimierung und -Statistik in den Einstellungen.
+- Im **Server-Modus** läuft dieselbe Suche serverseitig; für sehr große Team-Installationen ist optional ein externer Index (OpenSearch/Elasticsearch-kompatibel oder Meilisearch) als austauschbares Such-Backend vorgesehen.
 
 ### 8.5 Workflow-System (Regeln & Automatisierung)
 Statt einer reinen Mail-Regel-Engine erhält TuxMail ein **allgemeines Workflow-System**, das über alle Bereiche hinweg arbeitet: Mail, Messenger, Kalender, Kontakte, Dateien/Cloud und KI. Klassische Mail-Regeln sind darin nur ein Spezialfall.
