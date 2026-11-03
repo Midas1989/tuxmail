@@ -10,6 +10,7 @@ require (
 	github.com/klauspost/compress v1.18.7
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.45.0
+	golang.org/x/net v0.47.0
 	modernc.org/sqlite v1.44.0
 )
 

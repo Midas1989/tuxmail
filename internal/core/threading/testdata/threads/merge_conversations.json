@@ -1,0 +1,13 @@
+{
+  "description": "Two independent threads exist; a later message references both (e.g. a summary mail with References to both), so the conversations are merged and the older ID survives.",
+  "messages": [
+    {"header": {"messageId": "<a1@example.com>", "subject": "Angebot Firma A", "date": "2024-02-01T09:00:00Z"}},
+    {"header": {"messageId": "<a2@example.com>", "inReplyTo": ["<a1@example.com>"], "subject": "AW: Angebot Firma A", "date": "2024-02-01T10:00:00Z"}},
+    {"header": {"messageId": "<b1@example.com>", "subject": "Angebot Firma B", "date": "2024-02-02T09:00:00Z"}},
+    {"header": {"messageId": "<b2@example.com>", "references": ["<b1@example.com>"], "subject": "Re: Angebot Firma B", "date": "2024-02-02T10:00:00Z"}},
+    {"header": {"messageId": "<c1@example.com>", "references": ["<a2@example.com>", "<b2@example.com>"], "subject": "Vergleich der Angebote", "date": "2024-02-03T09:00:00Z"}}
+  ],
+  "expect": [
+    ["a1@example.com", "a2@example.com", "b1@example.com", "b2@example.com", "c1@example.com"]
+  ]
+}

@@ -1,0 +1,9 @@
+FYI
+
+---------- Forwarded message ---------
+From: Jane Doe <jane@example.com>
+Date: Mon, Jan 15, 2024 at 10:30 AM
+Subject: Q1 numbers
+To: <bob@example.org>
+
+Numbers attached.

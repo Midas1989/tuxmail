@@ -1,0 +1,20 @@
+Hallo Erika,
+
+anbei die Rechnung zur Info.
+
+Viele Grüße
+Max
+
+---------- Weitergeleitete Nachricht ---------
+Von: Buchhaltung Beispiel GmbH <rechnung@beispiel-gmbh.de>
+Date: Mo., 15. Jan. 2024 um 10:30 Uhr
+Subject: Ihre Rechnung 2024-001
+To: <max.mustermann@beispiel.de>
+
+
+Sehr geehrter Herr Mustermann,
+
+im Anhang finden Sie Ihre Rechnung.
+
+Mit freundlichen Grüßen
+Ihre Buchhaltung

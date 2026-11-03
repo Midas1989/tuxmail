@@ -1,0 +1,64 @@
+{
+  "description": "Mixed Outlook/Gmail thread: Outlook replies keep only Thread-Index, Gmail replies use References; a German 'AW:' reply from a mobile client keeps In-Reply-To only.",
+  "messages": [
+    {
+      "header": {
+        "messageId": "<AM0PR01MB1234.EURPRD01.PROD.OUTLOOK.COM>",
+        "subject": "Projekt Phoenix: Kick-off",
+        "date": "2024-01-15T10:30:00Z",
+        "threadIndex": "AdpHncrgb5YZ/4uG0BG0LQDAT8lk/w=="
+      }
+    },
+    {
+      "header": {
+        "messageId": "<AM0PR01MB5678@EURPRD01.PROD.OUTLOOK.COM>",
+        "subject": "AW: Projekt Phoenix: Kick-off",
+        "date": "2024-01-15T11:02:00Z",
+        "threadIndex": "AdpHncrgb5YZ/4uG0BG0LQDAT8lk/wAAEjRW"
+      }
+    },
+    {
+      "header": {
+        "messageId": "<CAF=abc123+xyz@mail.gmail.com>",
+        "inReplyTo": ["<AM0PR01MB5678@eurprd01.prod.outlook.com>"],
+        "references": ["<AM0PR01MB1234.EURPRD01.PROD.OUTLOOK.COM>", "<AM0PR01MB5678@eurprd01.prod.outlook.com>"],
+        "subject": "Re: AW: Projekt Phoenix: Kick-off",
+        "date": "2024-01-15T12:15:00Z"
+      }
+    },
+    {
+      "header": {
+        "messageId": "<5F2B1C3D-AAAA-4BBB-8CCC-1234567890AB@icloud.com>",
+        "inReplyTo": ["<CAF=abc123+xyz@MAIL.GMAIL.COM>"],
+        "subject": "AW: Projekt Phoenix: Kick-off",
+        "date": "2024-01-15T13:40:00Z"
+      }
+    },
+    {
+      "header": {
+        "messageId": "<AM0PR01MB9999@EURPRD01.PROD.OUTLOOK.COM>",
+        "subject": "AW: Projekt Phoenix: Kick-off",
+        "date": "2024-01-15T14:00:00Z",
+        "threadIndex": "AdpHncrgb5YZ/4uG0BG0LQDAT8lk/wAAEjRWAAGrze8="
+      }
+    },
+    {
+      "header": {
+        "messageId": "<unrelated-1@example.org>",
+        "subject": "Projekt Phoenix: Kick-off",
+        "date": "2024-01-15T15:00:00Z",
+        "threadIndex": "AdpHncrgERERESIiMzNERFVVVVVVVQ=="
+      }
+    }
+  ],
+  "expect": [
+    [
+      "AM0PR01MB1234.EURPRD01.PROD.OUTLOOK.COM",
+      "AM0PR01MB5678@eurprd01.prod.outlook.com",
+      "CAF=abc123+xyz@mail.gmail.com",
+      "5F2B1C3D-AAAA-4BBB-8CCC-1234567890AB@icloud.com",
+      "AM0PR01MB9999@eurprd01.prod.outlook.com"
+    ],
+    ["unrelated-1@example.org"]
+  ]
+}
