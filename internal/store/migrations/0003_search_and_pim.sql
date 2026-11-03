@@ -12,8 +12,11 @@
 --     fts_docs, so that snippet() works and all item kinds (mail, chat, event,
 --     task, contact, file) share one index. The previous index was contentless
 --     and cannot be copied; mails must be re-indexed (Store.MessagesToIndex).
---   * search_settings, search_profiles and search_index_policy hold the
---     configurable search (KONZEPT 8.4).
+--   * fts_trigram: trigram index over the same documents (substring search);
+--     fts_vocab: vocabulary of fts_items (fuzzy/wildcard term expansion);
+--   * covering and expression indexes for structured filters and date order;
+--   * search_settings, search_profiles, search_index_policy and
+--     search_history hold the configurable search (KONZEPT 8.4).
 -- All timestamps are Unix seconds (UTC).
 
 -- ==== Messenger ===============================================================
@@ -82,20 +85,40 @@ CREATE INDEX ix_fts_docs_account ON fts_docs(account_id);
 CREATE VIRTUAL TABLE fts_items USING fts5(subject, body, addresses, attachments, attachment_content,
   content='fts_docs', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
 
+-- Trigram index over the same documents for substring, wildcard and fuzzy
+-- candidate search (attachment contents are not included to limit its size).
+CREATE VIRTUAL TABLE fts_trigram USING fts5(subject, body, addresses, attachments,
+  content='fts_docs', content_rowid='id', tokenize='trigram remove_diacritics 1');
+
 CREATE TRIGGER fts_docs_ai AFTER INSERT ON fts_docs BEGIN
   INSERT INTO fts_items(rowid, subject, body, addresses, attachments, attachment_content)
   VALUES (new.id, new.subject, new.body, new.addresses, new.attachments, new.attachment_content);
+  INSERT INTO fts_trigram(rowid, subject, body, addresses, attachments)
+  VALUES (new.id, new.subject, new.body, new.addresses, new.attachments);
 END;
 CREATE TRIGGER fts_docs_ad AFTER DELETE ON fts_docs BEGIN
   INSERT INTO fts_items(fts_items, rowid, subject, body, addresses, attachments, attachment_content)
   VALUES ('delete', old.id, old.subject, old.body, old.addresses, old.attachments, old.attachment_content);
+  INSERT INTO fts_trigram(fts_trigram, rowid, subject, body, addresses, attachments)
+  VALUES ('delete', old.id, old.subject, old.body, old.addresses, old.attachments);
 END;
 CREATE TRIGGER fts_docs_au AFTER UPDATE ON fts_docs BEGIN
   INSERT INTO fts_items(fts_items, rowid, subject, body, addresses, attachments, attachment_content)
   VALUES ('delete', old.id, old.subject, old.body, old.addresses, old.attachments, old.attachment_content);
   INSERT INTO fts_items(rowid, subject, body, addresses, attachments, attachment_content)
   VALUES (new.id, new.subject, new.body, new.addresses, new.attachments, new.attachment_content);
+  INSERT INTO fts_trigram(fts_trigram, rowid, subject, body, addresses, attachments)
+  VALUES ('delete', old.id, old.subject, old.body, old.addresses, old.attachments);
+  INSERT INTO fts_trigram(rowid, subject, body, addresses, attachments)
+  VALUES (new.id, new.subject, new.body, new.addresses, new.attachments);
 END;
+
+-- Covering indexes for common structured search filters.
+CREATE INDEX ix_msg_account_sent ON messages(account_id, sent_at);
+CREATE INDEX ix_msg_live_sent ON messages(state, sent_at);
+CREATE INDEX ix_loc_folder_msg ON message_locations(folder_id, message_id);
+CREATE INDEX ix_addr_msg_role ON message_addresses(message_id, role, email, name);
+CREATE INDEX ix_folders_role ON folders(role);
 
 -- ==== Search configuration ====================================================
 -- Defaults of the search UI (one row; the database belongs to one user).
@@ -110,6 +133,7 @@ CREATE TABLE search_profiles (
   id         INTEGER PRIMARY KEY,
   name       TEXT    NOT NULL UNIQUE,
   query_json TEXT    NOT NULL,
+  expert     TEXT    NOT NULL DEFAULT '', -- expert query text (KONZEPT 8.4)
   pinned     INTEGER NOT NULL DEFAULT 0,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
@@ -123,3 +147,20 @@ CREATE TABLE search_index_policy (
   index_attachment_content INTEGER NOT NULL DEFAULT 0,
   index_encrypted          INTEGER NOT NULL DEFAULT 0
 );
+
+-- Recently used search queries (most recent first; trimmed by the store).
+CREATE TABLE search_history (
+  id         INTEGER PRIMARY KEY,
+  query      TEXT    NOT NULL UNIQUE,
+  used_at    INTEGER NOT NULL
+);
+CREATE INDEX ix_search_history_used ON search_history(used_at);
+
+-- Vocabulary of the word index, used to expand fuzzy and wildcard terms into
+-- the indexed words they match.
+CREATE VIRTUAL TABLE fts_vocab USING fts5vocab(fts_items, 'row');
+
+-- Expression indexes matching the result time of the search, so that
+-- "newest first" listings can walk an index and stop after one page.
+CREATE INDEX ix_msg_time ON messages(COALESCE(sent_at, received_at, 0));
+CREATE INDEX ix_chatmsg_time ON chat_messages(COALESCE(sent_at, 0));
