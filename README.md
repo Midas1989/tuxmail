@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/branding/tuxmail-logo.png" alt="TuxMail" width="320"></p>
+
 # TuxMail
 
 Plattformübergreifender Kommunikations-Client für **Windows und Linux**:
