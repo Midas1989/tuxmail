@@ -644,7 +644,12 @@ Neben der einfachen Suche (Wörter + Filter-Chips) gibt es einen **Expertenmodus
 - **Facetten wie in Kibana:** Trefferzahlen nach Konto, Ordner, Absender/Domain, Kanal, Typ, Anhang und ein **Zeit-Histogramm** (Monate/Jahre) – Klick auf eine Facette fügt die passende Bedingung zur Abfrage hinzu.
 - **Sortierung:** Relevanz (BM25 mit einstellbarer Feldgewichtung, z. B. Betreff > Absender > Text > Anhang), Datum, Absender, Größe.
 - **Hervorhebung** der Treffer im Ausschnitt und in der geöffneten Mail.
-- **Syntaxhilfe:** Autovervollständigung für Felder, Werte (Konten, Ordner, bekannte Absender) und Operatoren; verständliche Fehlermeldungen mit Position; fehlerhafte Abfragen fallen automatisch auf die einfache Suche zurück.
+- **Objekt-Eingabe mit Autovervollständigung:** Während der Eingabe schlägt das Feld passend zur Cursorposition vor:
+  - am Anfang eines Begriffs **Felder** (`from:`, `subject:`, `date:` …) mit Symbol und Kurzbeschreibung sowie `(` und `NOT`;
+  - nach einem Feld passende **Werte** (Konten, Ordner, bekannte Absender mit Avatar, Kategorien, Kanäle, Datumsvorgaben wie „heute", „letzte Woche", Größen);
+  - nach einer vollständigen Bedingung die **Operatoren** `AND` / `OR` / `NOT` (bzw. `UND` / `ODER` / `NICHT`) und `)`, wenn eine Klammer offen ist.
+  
+  Fertige Bestandteile werden **als Objekte (Chips) dargestellt**: `Feld:Wert`-Chips farbig nach Feldtyp (entfernbar, per Klick bearbeitbar), Operator-Chips (Klick wechselt AND↔OR), **Klammern als zusammengehörige Objekte** (passendes Paar wird hervorgehoben, fehlende Klammer rot). Tastatur: ↑/↓, Enter/Tab übernehmen, Esc schließen, Rücktaste macht einen Chip wieder zu Text. Umschaltbar auf reine Textansicht. Verständliche Fehlermeldungen mit Position; fehlerhafte Abfragen fallen automatisch auf die einfache Suche zurück.
 - **Gespeicherte Abfragen** als Suchprofile/virtuelle Ordner, **Suchverlauf**, Abfragen auch in **Workflows** als Bedingung nutzbar.
 - **Geschwindigkeit:** Ziel < 100 ms für typische Abfragen bei 100.000+ Mails. Umsetzung: eigener Parser → Syntaxbaum → **eine** optimierte SQL-Abfrage (FTS5-Volltext mit BM25 + indizierte Filter), zusätzlicher **Trigramm-Index** für Teilwort- und Tippfehlersuche, seitenweises Laden per Cursor, inkrementelle Indexierung im Hintergrund, Index-Optimierung und -Statistik in den Einstellungen.
 - Im **Server-Modus** läuft dieselbe Suche serverseitig; für sehr große Team-Installationen ist optional ein externer Index (OpenSearch/Elasticsearch-kompatibel oder Meilisearch) als austauschbares Such-Backend vorgesehen.
