@@ -1,0 +1,63 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Legt beim ersten Lauf den ersten Administrator an. Eine Markierungsdatei
+# verhindert, dass dies bei späteren Läufen erneut versucht wird.
+
+- name: Prüfen, ob der erste Administrator bereits angelegt wurde
+  ansible.builtin.stat:
+    path: "{{ tuxmail_config_dir }}/.admin-initialized"
+  register: tuxmail_admin_marker
+
+- name: Ersten Administrator anlegen
+  when: not tuxmail_admin_marker.stat.exists
+  block:
+    - name: Admin-Passwort bestimmen (Vault-Variable oder generiert auf dem Steuerrechner)
+      ansible.builtin.set_fact:
+        tuxmail_admin_password_effective: >-
+          {{ tuxmail_admin_password if tuxmail_admin_password | length > 0
+             else lookup('ansible.builtin.password',
+                         tuxmail_credentials_dir ~ '/admin_password length=' ~ (tuxmail_admin_password_length | string)
+                         ~ ' chars=ascii_letters,digits') }}
+        tuxmail_admin_password_generated: "{{ tuxmail_admin_password | length == 0 }}"
+      no_log: true
+
+    - name: Administrator per "tuxmail user add" anlegen
+      ansible.builtin.command:
+        argv:
+          - runuser
+          - -u
+          - "{{ tuxmail_user }}"
+          - --
+          - "{{ tuxmail_binary }}"
+          - user
+          - add
+          - --config
+          - "{{ tuxmail_config_file }}"
+          - --username
+          - "{{ tuxmail_admin_username }}"
+          - --email
+          - "{{ tuxmail_admin_email }}"
+          - --admin
+          - --password-stdin
+          - --if-not-exists
+        stdin: "{{ tuxmail_admin_password_effective | trim }}"
+        stdin_add_newline: true
+      no_log: true
+      changed_when: true
+
+    - name: Markierung setzen
+      ansible.builtin.copy:
+        content: "Erster Administrator '{{ tuxmail_admin_username }}' wurde von Ansible angelegt.\n"
+        dest: "{{ tuxmail_config_dir }}/.admin-initialized"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Zugangsdaten anzeigen (nur einmal)
+      ansible.builtin.debug:
+        msg:
+          - "TuxMail-Administrator angelegt: {{ tuxmail_admin_username }} <{{ tuxmail_admin_email }}>"
+          - "Anmeldung: {{ tuxmail_public_url }}"
+          - "Passwort: {{ (tuxmail_admin_password_effective | trim) if tuxmail_admin_password_generated | bool else '(aus tuxmail_admin_password / Vault)' }}"
+          - "{{ ('Gespeichert auf dem Steuerrechner: ' ~ tuxmail_credentials_dir ~ '/admin_password') if tuxmail_admin_password_generated | bool else '' }}"
+          - "Bitte nach der ersten Anmeldung das Passwort ändern und TOTP einrichten."

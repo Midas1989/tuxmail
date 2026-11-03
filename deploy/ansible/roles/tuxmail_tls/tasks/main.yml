@@ -1,0 +1,18 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Let's Encrypt
+  ansible.builtin.import_tasks: letsencrypt.yml
+  when: tuxmail_tls_mode == 'letsencrypt'
+
+- name: Eigenes Zertifikat
+  ansible.builtin.import_tasks: custom.yml
+  when: tuxmail_tls_mode == 'custom'
+
+- name: Hinweis – kein TLS
+  ansible.builtin.debug:
+    msg: >-
+      tuxmail_tls_mode=none: Es wird kein Zertifikat verwaltet.
+      {{ 'Der vorhandene server-Block (Snippet-Modus) muss HTTPS bereitstellen.' if tuxmail_nginx_use_snippet | bool
+         else 'Ein vorgelagerter Proxy muss TLS terminieren und auf diesen Host (HTTP) weiterleiten; '
+              ~ 'seine Adresse ggf. in tuxmail_trusted_proxies_extra eintragen.' }}
+  when: tuxmail_tls_mode == 'none'

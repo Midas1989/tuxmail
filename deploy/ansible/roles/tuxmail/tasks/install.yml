@@ -1,0 +1,75 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Installiert die gewünschte Version nach /opt/tuxmail/versions/<version>/.
+# Der Symlink /opt/tuxmail/current wird erst in activate.yml umgestellt.
+
+- name: Versionsverzeichnis anlegen
+  ansible.builtin.file:
+    path: "{{ tuxmail_version_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Release herunterladen und Prüfsumme (sha256, checksums.txt) verifizieren
+  ansible.builtin.get_url:
+    url: "{{ tuxmail_archive_url }}"
+    dest: "{{ tuxmail_download_dir }}/{{ tuxmail_archive_name }}"
+    checksum: "sha256:{{ tuxmail_checksums_url }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: tuxmail_binary_src | length == 0
+
+- name: Release-Archiv entpacken
+  ansible.builtin.unarchive:
+    src: "{{ tuxmail_download_dir }}/{{ tuxmail_archive_name }}"
+    dest: "{{ tuxmail_version_dir }}"
+    remote_src: true
+    owner: root
+    group: root
+    creates: "{{ tuxmail_version_binary }}"
+  when: tuxmail_binary_src | length == 0
+
+- name: Lokales Archiv vom Steuerrechner entpacken
+  ansible.builtin.unarchive:
+    src: "{{ tuxmail_binary_src }}"
+    dest: "{{ tuxmail_version_dir }}"
+    owner: root
+    group: root
+    creates: "{{ tuxmail_version_binary }}"
+  when:
+    - tuxmail_binary_src | length > 0
+    - tuxmail_binary_src is search('\.(tar\.gz|tgz)$')
+
+- name: Lokales Binary vom Steuerrechner kopieren
+  ansible.builtin.copy:
+    src: "{{ tuxmail_binary_src }}"
+    dest: "{{ tuxmail_version_binary }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - tuxmail_binary_src | length > 0
+    - tuxmail_binary_src is not search('\.(tar\.gz|tgz)$')
+
+- name: Binary ist vorhanden und ausführbar
+  ansible.builtin.file:
+    path: "{{ tuxmail_version_binary }}"
+    state: file
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Binary läuft auf diesem System (tuxmail version)
+  ansible.builtin.command:
+    argv: ["{{ tuxmail_version_binary }}", "version"]
+  register: tuxmail_version_output
+  changed_when: false
+
+- name: Bequemer Aufruf über /usr/local/bin/tuxmail
+  ansible.builtin.file:
+    src: "{{ tuxmail_binary }}"
+    dest: /usr/local/bin/tuxmail
+    state: link
+    force: true

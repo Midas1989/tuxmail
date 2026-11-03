@@ -1,0 +1,63 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Rolle tuxmail_nginx – nginx als Reverse-Proxy vor TuxMail.
+# Betriebsart: tuxmail_nginx_mode (new | existing | none) und
+# tuxmail_nginx_existing_style (vhost | snippet), siehe tuxmail_common.
+
+# Hostnamen des vHosts.
+tuxmail_nginx_server_names: "{{ [tuxmail_domain] + tuxmail_domain_aliases }}"
+# Dateiname des vHosts (ohne .conf).
+tuxmail_nginx_vhost_name: "tuxmail"
+# Leer = Standard des Betriebssystems (Debian: sites-available, RHEL: conf.d).
+tuxmail_nginx_vhost_dir: ""
+tuxmail_nginx_enabled_dir: ""
+# Pfad des location-Snippets (nur existing/snippet).
+tuxmail_nginx_snippet_path: "/etc/nginx/snippets/tuxmail.conf"
+# Nur bei mode=new auf Debian/Ubuntu: Standard-Site "default" deaktivieren.
+tuxmail_nginx_disable_default_site: true
+
+tuxmail_nginx_http_port: 80
+tuxmail_nginx_https_port: 443
+# Zusätzlich auf IPv6 lauschen (Standard: nur wenn der Host IPv6-Adressen hat;
+# nginx -t schlägt sonst mit "Address family not supported" fehl).
+tuxmail_nginx_ipv6: "{{ ansible_facts['all_ipv6_addresses'] | default([]) | length > 0 }}"
+
+# Präfix beim Weiterreichen entfernen? false = TuxMail erhält den vollen Pfad
+# inkl. tuxmail_subpath (TuxMail leitet den Basispfad aus public_url ab).
+tuxmail_nginx_strip_subpath: false
+
+# Timeouts in Sekunden: normale Anfragen (inkl. Long-Polling) und WebSocket /api/events.
+tuxmail_nginx_proxy_timeout: 300
+tuxmail_nginx_websocket_timeout: 3600
+tuxmail_nginx_upstream_keepalive: 16
+
+# Sicherheits-Header
+tuxmail_nginx_hsts_max_age: 31536000
+tuxmail_nginx_hsts_include_subdomains: false
+tuxmail_nginx_hsts_preload: false
+# TuxMail setzt seine eigene, strikte CSP. Hier nur Einschränkungen, die die
+# Oberfläche nicht beeinträchtigen. Leer = nginx setzt keine CSP.
+tuxmail_nginx_csp: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+tuxmail_nginx_referrer_policy: "same-origin"
+# Weitere Header (Name: Wert).
+tuxmail_nginx_extra_headers: {}
+# Im Snippet-Modus HSTS mitsenden (der umgebende server-Block ist i. d. R. HTTPS).
+tuxmail_nginx_snippet_hsts: true
+
+# Freie Zusatzkonfiguration im TLS- bzw. HTTP-server-Block (roh, z. B. "set_real_ip_from ...;").
+tuxmail_nginx_extra_server_config: ""
+
+# RHEL/SELinux: httpd_can_network_connect setzen, damit nginx zu TuxMail verbinden darf.
+tuxmail_nginx_manage_selinux: true
+
+# nginx-Benutzer; leer = Standard des Betriebssystems (www-data bzw. nginx).
+tuxmail_nginx_user: ""
+
+# --- Intern -----------------------------------------------------------------------
+# Kennzeichnung der von dieser Rolle verwalteten Dateien. Dateien ohne diese
+# Kennzeichnung werden nie überschrieben.
+tuxmail_nginx_marker: "TUXMAIL-ANSIBLE-MANAGED"
+# Upstream-Server im vHost (benannter upstream "tuxmail_backend").
+tuxmail_nginx_upstream_server: >-
+  {{ ('unix:' ~ tuxmail_socket_path) if tuxmail_listen_is_socket | bool else tuxmail_listen }}

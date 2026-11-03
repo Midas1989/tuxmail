@@ -1,0 +1,31 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: UFW installieren
+  ansible.builtin.package:
+    name: ufw
+    state: present
+
+- name: Ports freigeben (SSH zuerst)
+  community.general.ufw:
+    rule: allow
+    port: "{{ item.split('/')[0] }}"
+    proto: "{{ item.split('/')[1] | default('tcp') }}"
+    comment: "tuxmail"
+  loop: "{{ tuxmail_firewall_ports }}"
+
+- name: UFW aktivieren (eingehend verweigern, ausgehend erlauben)
+  when: tuxmail_firewall_ufw_enable | bool
+  block:
+    - name: Standardregel eingehend
+      community.general.ufw:
+        direction: incoming
+        default: deny
+
+    - name: Standardregel ausgehend
+      community.general.ufw:
+        direction: outgoing
+        default: allow
+
+    - name: UFW einschalten
+      community.general.ufw:
+        state: enabled

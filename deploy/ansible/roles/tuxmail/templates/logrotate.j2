@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+{{ tuxmail_log_file }} {
+    daily
+    rotate {{ tuxmail_logrotate_keep | int }}
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+    su {{ tuxmail_user }} {{ tuxmail_group }}
+    create 0640 {{ tuxmail_user }} {{ tuxmail_group }}
+}

@@ -1,0 +1,30 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Nginx installieren (Debian/Ubuntu)
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Nginx installieren (RHEL-Familie)
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: Nginx aktivieren und starten
+  ansible.builtin.systemd_service:
+    name: nginx
+    enabled: true
+    state: started
+
+- name: Standard-Site deaktivieren (Debian/Ubuntu)
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - tuxmail_nginx_disable_default_site | bool
+  notify: tuxmail nginx reload

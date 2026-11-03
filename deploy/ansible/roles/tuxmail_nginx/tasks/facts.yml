@@ -1,0 +1,24 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Betriebssystem-spezifische nginx-Werte laden
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+- name: Nginx-Version ermitteln
+  ansible.builtin.command:
+    argv: [nginx, -v]
+  register: tuxmail_nginx_version_cmd
+  changed_when: false
+
+- name: Nginx-Fakten setzen
+  ansible.builtin.set_fact:
+    tuxmail_nginx_user_effective: "{{ tuxmail_nginx_user if tuxmail_nginx_user | length > 0 else tuxmail_nginx_os_user }}"
+    tuxmail_nginx_vhost_dir_effective: "{{ tuxmail_nginx_vhost_dir if tuxmail_nginx_vhost_dir | length > 0 else tuxmail_nginx_os_vhost_dir }}"
+    tuxmail_nginx_enabled_dir_effective: "{{ tuxmail_nginx_enabled_dir if tuxmail_nginx_enabled_dir | length > 0 else tuxmail_nginx_os_enabled_dir }}"
+    tuxmail_nginx_version: >-
+      {{ (tuxmail_nginx_version_cmd.stderr ~ tuxmail_nginx_version_cmd.stdout)
+         | regex_search('nginx/([0-9]+\.[0-9]+\.[0-9]+)', '\\1') | default(['0.0.0'], true) | first }}
+
+- name: HTTP/2-Syntax wählen ("http2 on;" ab nginx 1.25.1)
+  ansible.builtin.set_fact:
+    tuxmail_nginx_http2_directive: "{{ tuxmail_nginx_version is version('1.25.1', '>=') }}"
+    tuxmail_nginx_facts_done: true

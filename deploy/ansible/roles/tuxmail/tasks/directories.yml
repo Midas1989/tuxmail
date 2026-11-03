@@ -1,0 +1,53 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Hilfspakete installieren (tar, zstd, Prüfwerkzeuge)
+  ansible.builtin.package:
+    name:
+      - tar
+      - gzip
+      - zstd
+      - util-linux # runuser
+    state: present
+
+- name: Age für verschlüsselte Sicherungen installieren
+  ansible.builtin.include_tasks: age.yml
+  when: tuxmail_backup_age_recipients | length > 0
+
+- name: Programmverzeichnisse (root-eigen)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ tuxmail_install_dir }}"
+    - "{{ tuxmail_install_dir }}/versions"
+    - "{{ tuxmail_download_dir }}"
+
+- name: Konfigurationsverzeichnis
+  ansible.builtin.file:
+    path: "{{ tuxmail_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ tuxmail_group }}"
+    mode: "0750"
+
+- name: Daten- und Log-Verzeichnis (dem Dienst gehörend)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ tuxmail_user }}"
+    group: "{{ tuxmail_group }}"
+    mode: "0750"
+  loop:
+    - "{{ tuxmail_data_dir }}"
+    - "{{ tuxmail_log_dir }}"
+
+- name: Backup-Verzeichnis (nur root)
+  ansible.builtin.file:
+    path: "{{ tuxmail_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"

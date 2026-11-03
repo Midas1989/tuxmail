@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+# TuxMail-Serverkonfiguration – Änderungen bitte über Ansible-Variablen vornehmen.
+# Hinweis: "tuxmail check-config" lehnt unbekannte Schlüssel ab.
+
+# Adresse, auf der "tuxmail serve" lauscht: "host:port" oder "unix:/pfad/zum.sock".
+listen: {{ tuxmail_listen | to_json }}
+
+# Öffentliche Basis-URL (Links in Mails, OIDC-Redirects, WebAuthn-Origin).
+public_url: {{ tuxmail_public_url | to_json }}
+
+# Daten aller Benutzer (je Benutzer eigene Datenbank unter users/<id>/).
+data_dir: {{ tuxmail_data_dir | to_json }}
+
+log:
+  level: {{ tuxmail_log_level | to_json }}
+  format: {{ tuxmail_log_format | to_json }}
+  # Leer = stdout (journald)
+  file: {{ tuxmail_log_file | to_json }}
+
+tls:
+  # none = TLS terminiert nginx bzw. ein vorgelagerter Proxy; file = TuxMail selbst
+  mode: {{ tuxmail_server_tls_mode | to_json }}
+  cert_file: {{ (tuxmail_tls_effective_cert_path | trim if tuxmail_server_tls_mode == 'file' else '') | to_json }}
+  key_file: {{ (tuxmail_tls_key_path | trim if tuxmail_server_tls_mode == 'file' else '') | to_json }}
+
+# Proxys, deren X-Forwarded-For/-Proto-Headern vertraut wird.
+trusted_proxies:
+{% for proxy in tuxmail_trusted_proxies %}
+  - {{ proxy | to_json }}
+{% else %}
+  []
+{% endfor %}
+
+auth:
+  session_lifetime: {{ tuxmail_auth_session_lifetime | to_json }}
+  password_min_length: {{ tuxmail_auth_password_min_length | int }}
+  # disabled | invite
+  registration: {{ tuxmail_auth_registration | to_json }}
+  totp_required_for_admins: {{ tuxmail_auth_totp_required_for_admins | bool | to_json }}
+  oidc:
+    enabled: {{ tuxmail_oidc_enabled | bool | to_json }}
+    issuer: {{ tuxmail_oidc_issuer | to_json }}
+    client_id: {{ tuxmail_oidc_client_id | to_json }}
+    client_secret_file: {{ (tuxmail_oidc_client_secret_file if tuxmail_oidc_enabled | bool else '') | to_json }}
+    admin_group: {{ tuxmail_oidc_admin_group | to_json }}
+    user_group: {{ tuxmail_oidc_user_group | to_json }}
+    groups_claim: {{ tuxmail_oidc_groups_claim | to_json }}
+
+limits:
+  max_upload_mb: {{ tuxmail_max_upload_mb | int }}
+  login_rate_per_minute: {{ tuxmail_login_rate_per_minute | int }}

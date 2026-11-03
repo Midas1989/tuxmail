@@ -1,0 +1,7 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+tuxmail_nginx_os_user: "nginx"
+tuxmail_nginx_os_vhost_dir: "/etc/nginx/conf.d"
+# conf.d wird direkt eingebunden – kein separates "enabled"-Verzeichnis.
+tuxmail_nginx_os_enabled_dir: ""
+tuxmail_nginx_os_default_site: ""

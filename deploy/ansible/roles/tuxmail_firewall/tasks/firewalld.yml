@@ -1,0 +1,23 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Firewalld installieren
+  ansible.builtin.package:
+    name:
+      - firewalld
+      - python3-firewall
+    state: present
+
+- name: Firewalld aktivieren und starten
+  ansible.builtin.systemd_service:
+    name: firewalld
+    enabled: true
+    state: started
+
+- name: Ports freigeben
+  ansible.posix.firewalld:
+    zone: "{{ tuxmail_firewall_firewalld_zone }}"
+    port: "{{ item }}"
+    permanent: true
+    immediate: true
+    state: enabled
+  loop: "{{ tuxmail_firewall_ports }}"

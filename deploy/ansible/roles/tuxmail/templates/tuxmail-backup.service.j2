@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+[Unit]
+Description=TuxMail data backup
+Documentation=https://github.com/Midas1989/Mailclient/tree/main/deploy
+After={{ tuxmail_service_name }}.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/tuxmail-backup {{ '--stop ' if tuxmail_backup_stop_service | bool else '' }}scheduled {{ tuxmail_backup_keep_scheduled | int }}
+Nice=10
+IOSchedulingClass=idle
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+NoNewPrivileges=true
+ReadWritePaths={{ tuxmail_backup_dir }}

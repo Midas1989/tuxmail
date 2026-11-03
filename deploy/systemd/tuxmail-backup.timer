@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Beispiel (aus der Ansible-Rolle tuxmail erzeugt) – Pfade ggf. anpassen.
+[Unit]
+Description=Daily TuxMail data backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

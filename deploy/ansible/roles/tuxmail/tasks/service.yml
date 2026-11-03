@@ -1,0 +1,28 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Systemd-Unit installieren
+  ansible.builtin.template:
+    src: tuxmail.service.j2
+    dest: "/etc/systemd/system/{{ tuxmail_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: tuxmail restart
+
+- name: Dienst (neu) starten, falls Änderungen anstehen
+  ansible.builtin.meta: flush_handlers
+
+- name: Dienst aktivieren und starten
+  ansible.builtin.systemd_service:
+    name: "{{ tuxmail_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Dienst nach Zertifikatswechsel neu starten (TLS direkt in TuxMail)
+  ansible.builtin.systemd_service:
+    name: "{{ tuxmail_service_name }}"
+    state: restarted
+  when:
+    - tuxmail_tls_native | bool
+    - tuxmail_tls_files_changed | default(false) | bool

@@ -1,0 +1,25 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Gruppe für den TuxMail-Dienst
+  ansible.builtin.group:
+    name: "{{ tuxmail_group }}"
+    system: true
+    state: present
+
+- name: Gruppe für den Socket-Zugriff (nginx)
+  ansible.builtin.group:
+    name: "{{ tuxmail_socket_group }}"
+    system: true
+    state: present
+  when: tuxmail_listen_is_socket | bool
+
+- name: Systembenutzer ohne Login
+  ansible.builtin.user:
+    name: "{{ tuxmail_user }}"
+    group: "{{ tuxmail_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "{{ tuxmail_data_dir }}"
+    create_home: false
+    comment: "TuxMail server"
+    state: present

@@ -1,0 +1,75 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Betriebssystem wird unterstützt
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] in tuxmail_supported_systems
+      - ansible_facts['distribution_major_version'] in tuxmail_supported_systems[ansible_facts['distribution']]
+    fail_msg: >-
+      {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }} wird nicht unterstützt.
+      Unterstützt: Debian 12/13, Ubuntu 22.04/24.04, RHEL/Rocky/Alma 9.
+      (Überspringen mit tuxmail_skip_os_check=true auf eigene Gefahr.)
+    quiet: true
+  when: not (tuxmail_skip_os_check | bool)
+
+- name: Grundeinstellungen sind gültig
+  ansible.builtin.assert:
+    that:
+      - tuxmail_nginx_mode in ['new', 'existing', 'none']
+      - tuxmail_nginx_existing_style in ['vhost', 'snippet']
+      - tuxmail_tls_mode in ['letsencrypt', 'custom', 'none']
+      - tuxmail_version is match('^[0-9A-Za-z][0-9A-Za-z.+_-]*$')
+      - tuxmail_domain is match('^[A-Za-z0-9.-]+$')
+      - tuxmail_subpath == '' or tuxmail_subpath is match('^/[A-Za-z0-9._~/-]*[A-Za-z0-9._~-]$')
+      - tuxmail_listen is match('^unix:/') or tuxmail_listen is match('^.*:[0-9]+$')
+      - tuxmail_max_upload_mb | int > 0
+    fail_msg: >-
+      Ungültige Einstellung. Erlaubt: tuxmail_nginx_mode=new|existing|none,
+      tuxmail_nginx_existing_style=vhost|snippet, tuxmail_tls_mode=letsencrypt|custom|none,
+      tuxmail_version ohne "/" (z. B. 1.2.3), tuxmail_subpath leer oder "/pfad" ohne abschließenden Slash,
+      tuxmail_listen "host:port" oder "unix:/pfad".
+    quiet: true
+
+- name: Kombination nginx/TLS ist sinnvoll
+  ansible.builtin.assert:
+    that:
+      - not (tuxmail_tls_mode == 'letsencrypt' and tuxmail_nginx_mode == 'none')
+      - not (tuxmail_nginx_use_snippet | bool and tuxmail_tls_mode != 'none')
+      - not (tuxmail_nginx_use_snippet | bool and tuxmail_subpath == '')
+      - not (tuxmail_tls_native | bool and tuxmail_listen_is_socket | bool)
+    fail_msg: >-
+      Nicht unterstützte Kombination:
+      (a) Let's Encrypt benötigt nginx (tuxmail_nginx_mode=new oder existing);
+      (b) im Snippet-Modus übernimmt der vorhandene server-Block TLS – setze tuxmail_tls_mode=none;
+      (c) der Snippet-Modus benötigt einen Unterpfad (tuxmail_subpath, z. B. "/tuxmail");
+      (d) eigenes TLS ohne nginx erfordert einen TCP-Listener (tuxmail_listen).
+    quiet: true
+
+- name: Let's Encrypt benötigt eine echte Domain und E-Mail-Adresse
+  ansible.builtin.assert:
+    that:
+      - tuxmail_domain not in ['mail.example.org', 'example.org', 'localhost']
+      - tuxmail_tls_letsencrypt_email | default('') | length > 0
+    fail_msg: "Bitte tuxmail_domain auf die echte Domain und tuxmail_tls_letsencrypt_email setzen."
+    quiet: true
+  when: tuxmail_tls_mode == 'letsencrypt'
+
+- name: Hinweis – kein TLS durch dieses Playbook
+  ansible.builtin.debug:
+    msg: >-
+      WARNUNG: tuxmail_tls_mode=none – nginx/TuxMail sprechen nur HTTP. Das ist nur sinnvoll,
+      wenn ein vorgelagerter Proxy TLS terminiert (oder im Snippet-Modus der vorhandene
+      server-Block). Passwörter und Sitzungs-Cookies dürfen nie unverschlüsselt übertragen werden.
+  when:
+    - tuxmail_tls_mode == 'none'
+    - not (tuxmail_nginx_use_snippet | bool)
+
+- name: Hinweis – Unix-Socket unter SELinux
+  ansible.builtin.debug:
+    msg: >-
+      WARNUNG: Unix-Socket ({{ tuxmail_listen }}) mit aktivem SELinux: nginx (httpd_t) darf
+      ohne eigenes Policy-Modul nicht auf den Socket zugreifen. Empfehlung: tuxmail_listen=127.0.0.1:8080.
+  when:
+    - tuxmail_listen_is_socket | bool
+    - tuxmail_nginx_mode != 'none'
+    - ansible_facts['selinux']['status'] | default('disabled') == 'enabled'

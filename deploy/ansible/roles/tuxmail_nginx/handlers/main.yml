@@ -1,0 +1,17 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Reihenfolge wichtig: erst prüfen, dann neu laden. Schlägt "nginx -t" fehl,
+# bricht der Lauf für diesen Host ab und nginx läuft mit der alten Konfiguration weiter.
+- name: Validate nginx configuration
+  ansible.builtin.command:
+    argv: [nginx, -t]
+  changed_when: false
+  when: tuxmail_nginx_mode != 'none'
+  listen: tuxmail nginx reload
+
+- name: Reload nginx
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+  when: tuxmail_nginx_mode != 'none'
+  listen: tuxmail nginx reload

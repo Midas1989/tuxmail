@@ -1,0 +1,71 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Let's Encrypt per certbot im Webroot-Modus. nginx liefert zu diesem Zeitpunkt
+# bereits den HTTP-vHost mit /.well-known/acme-challenge/ aus (Rolle tuxmail_nginx).
+
+- name: EPEL bereitstellen (RHEL-Familie, für certbot)
+  ansible.builtin.include_role:
+    name: tuxmail_common
+    tasks_from: epel.yml
+
+- name: Certbot installieren
+  ansible.builtin.package:
+    name: certbot
+    state: present
+
+- name: ACME-Webroot anlegen
+  ansible.builtin.file:
+    path: "{{ tuxmail_acme_webroot }}/.well-known/acme-challenge"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Verzeichnis für certbot-Deploy-Hooks
+  ansible.builtin.file:
+    path: /etc/letsencrypt/renewal-hooks/deploy
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Deploy-Hook – nginx nach Erneuerung prüfen und neu laden
+  ansible.builtin.template:
+    src: certbot-deploy-hook.sh.j2
+    dest: /etc/letsencrypt/renewal-hooks/deploy/50-tuxmail-reload-nginx.sh
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Vorhandenes Zertifikat suchen
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ tuxmail_tls_letsencrypt_cert_name }}/fullchain.pem"
+  register: tuxmail_tls_le_cert
+
+- name: Zertifikat bei Let's Encrypt anfordern
+  ansible.builtin.command:
+    argv: >-
+      {{ ['certbot', 'certonly', '--non-interactive', '--agree-tos',
+          '--webroot', '--webroot-path', tuxmail_acme_webroot,
+          '--cert-name', tuxmail_tls_letsencrypt_cert_name,
+          '--email', tuxmail_tls_letsencrypt_email,
+          '--key-type', tuxmail_tls_letsencrypt_key_type,
+          '--keep-until-expiring']
+         + (['--staging'] if tuxmail_tls_letsencrypt_staging | bool else [])
+         + (['--force-renewal'] if tuxmail_tls_letsencrypt_force_renewal | bool else [])
+         + (tuxmail_tls_letsencrypt_domains | map('regex_replace', '^', '--domain=') | list) }}
+  register: tuxmail_tls_certbot
+  changed_when: true
+  when: not tuxmail_tls_le_cert.stat.exists or (tuxmail_tls_letsencrypt_force_renewal | bool)
+
+- name: Automatische Erneuerung – passenden systemd-Timer bestimmen
+  ansible.builtin.set_fact:
+    tuxmail_tls_certbot_timer_effective: >-
+      {{ tuxmail_tls_certbot_timer if tuxmail_tls_certbot_timer | length > 0
+         else ('certbot-renew.timer' if ansible_facts['os_family'] == 'RedHat' else 'certbot.timer') }}
+
+- name: Automatische Erneuerung aktivieren
+  ansible.builtin.systemd_service:
+    name: "{{ tuxmail_tls_certbot_timer_effective }}"
+    enabled: true
+    state: started

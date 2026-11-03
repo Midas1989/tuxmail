@@ -1,0 +1,17 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+galaxy_info:
+  role_name: tuxmail_tls
+  author: TuxMail contributors
+  description: TLS-Zertifikate für TuxMail (Let's Encrypt per certbot-Webroot oder eigenes Zertifikat)
+  license: AGPL-3.0-or-later
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions: [bookworm, trixie]
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: EL
+      versions: ["9"]
+# Erwartet tuxmail_common und (für letsencrypt) tuxmail_nginx vorher (siehe site.yml).
+dependencies: []

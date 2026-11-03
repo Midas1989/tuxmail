@@ -1,0 +1,96 @@
+{% from '_tuxmail_macros.j2' import locations with context %}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ tuxmail_nginx_marker }} – {{ ansible_managed }}
+# TuxMail Reverse-Proxy für {{ tuxmail_nginx_server_names | join(', ') }}
+# TLS: {{ tuxmail_tls_mode }}{{ '' if tuxmail_nginx_tls_ready | bool or tuxmail_tls_mode == 'none' else ' (Zertifikat noch nicht vorhanden – nur HTTP)' }}
+
+upstream tuxmail_backend {
+    server {{ tuxmail_nginx_upstream_server | trim }};
+    keepalive {{ tuxmail_nginx_upstream_keepalive | int }};
+}
+
+# WebSocket-Upgrade (eigener Variablenname, um Konflikte mit vorhandenen
+# Konfigurationen zu vermeiden, die bereits $connection_upgrade definieren)
+map $http_upgrade $tuxmail_connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen {{ tuxmail_nginx_http_port }};
+{% if tuxmail_nginx_ipv6 | bool %}
+    listen [::]:{{ tuxmail_nginx_http_port }};
+{% endif %}
+    server_name {{ tuxmail_nginx_server_names | join(' ') }};
+    server_tokens off;
+
+{% if tuxmail_tls_mode == 'letsencrypt' %}
+    # ACME HTTP-01 (Let's Encrypt, certbot --webroot)
+    location ^~ /.well-known/acme-challenge/ {
+        root {{ tuxmail_acme_webroot }};
+        default_type "text/plain";
+        try_files $uri =404;
+    }
+
+{% endif %}
+{% if tuxmail_nginx_tls_ready | bool %}
+    # HTTP -> HTTPS
+    location / {
+        return 301 https://$host{{ '' if tuxmail_nginx_https_port | int == 443 else ':' ~ tuxmail_nginx_https_port }}$request_uri;
+    }
+}
+
+server {
+{% if tuxmail_nginx_http2_directive | bool %}
+    listen {{ tuxmail_nginx_https_port }} ssl;
+{% if tuxmail_nginx_ipv6 | bool %}
+    listen [::]:{{ tuxmail_nginx_https_port }} ssl;
+{% endif %}
+    http2 on;
+{% else %}
+    listen {{ tuxmail_nginx_https_port }} ssl http2;
+{% if tuxmail_nginx_ipv6 | bool %}
+    listen [::]:{{ tuxmail_nginx_https_port }} ssl http2;
+{% endif %}
+{% endif %}
+    server_name {{ tuxmail_nginx_server_names | join(' ') }};
+    server_tokens off;
+
+    ssl_certificate {{ tuxmail_tls_effective_cert_path | trim }};
+    ssl_certificate_key {{ tuxmail_tls_key_path | trim }};
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
+    ssl_prefer_server_ciphers off;
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:TuxMailSSL:10m;
+    ssl_session_tickets off;
+
+{% if tuxmail_nginx_extra_server_config | length > 0 %}
+    # tuxmail_nginx_extra_server_config
+    {{ tuxmail_nginx_extra_server_config | indent(4) }}
+
+{% endif %}
+{% if tuxmail_subpath | length > 0 %}
+    location = / {
+        return 302 {{ tuxmail_subpath }}/;
+    }
+
+{% endif %}
+{{ locations(false, '$scheme', true) }}
+}
+{% else %}
+{% if tuxmail_nginx_extra_server_config | length > 0 %}
+    # tuxmail_nginx_extra_server_config
+    {{ tuxmail_nginx_extra_server_config | indent(4) }}
+
+{% endif %}
+{% if tuxmail_subpath | length > 0 %}
+    location = / {
+        return 302 {{ tuxmail_subpath }}/;
+    }
+
+{% endif %}
+{# Ohne TLS: entweder Bootstrap (Let's Encrypt folgt) oder TLS am vorgelagerten Proxy #}
+{{ locations(false, (tuxmail_public_scheme if tuxmail_tls_mode == 'none' else '$scheme'), false) }}
+}
+{% endif %}

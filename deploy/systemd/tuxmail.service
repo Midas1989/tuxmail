@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Beispiel (aus der Ansible-Rolle tuxmail erzeugt) – Pfade ggf. anpassen.
+[Unit]
+Description=TuxMail server (web mode)
+Documentation=https://github.com/Midas1989/Mailclient/tree/main/deploy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tuxmail
+Group=tuxmail
+WorkingDirectory=/var/lib/tuxmail
+Environment=HOME=/var/lib/tuxmail
+ExecStartPre=/opt/tuxmail/current/tuxmail check-config --config /etc/tuxmail/config.yaml
+UMask=0027
+ExecStart=/opt/tuxmail/current/tuxmail serve --config /etc/tuxmail/config.yaml
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+LimitNOFILE=65536
+
+# --- Härtung ---------------------------------------------------------------
+ProtectSystem=strict
+ReadWritePaths=/var/lib/tuxmail /var/log/tuxmail
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProcSubset=pid
+KeyringMode=private
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

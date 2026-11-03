@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Beispiel (aus der Ansible-Rolle tuxmail erzeugt) – Pfade ggf. anpassen.
+# TuxMail-Serverkonfiguration – Änderungen bitte über Ansible-Variablen vornehmen.
+# Hinweis: "tuxmail check-config" lehnt unbekannte Schlüssel ab.
+
+# Adresse, auf der "tuxmail serve" lauscht: "host:port" oder "unix:/pfad/zum.sock".
+listen: "127.0.0.1:8080"
+
+# Öffentliche Basis-URL (Links in Mails, OIDC-Redirects, WebAuthn-Origin).
+public_url: "https://mail.example.org"
+
+# Daten aller Benutzer (je Benutzer eigene Datenbank unter users/<id>/).
+data_dir: "/var/lib/tuxmail"
+
+log:
+  level: "info"
+  format: "json"
+  # Leer = stdout (journald)
+  file: ""
+
+tls:
+  # none = TLS terminiert nginx bzw. ein vorgelagerter Proxy; file = TuxMail selbst
+  mode: "none"
+  cert_file: ""
+  key_file: ""
+
+# Proxys, deren X-Forwarded-For/-Proto-Headern vertraut wird.
+trusted_proxies:
+  - "127.0.0.1/32"
+  - "::1/128"
+
+auth:
+  session_lifetime: "168h"
+  password_min_length: 12
+  # disabled | invite
+  registration: "disabled"
+  totp_required_for_admins: true
+  oidc:
+    enabled: false
+    issuer: ""
+    client_id: ""
+    client_secret_file: ""
+    admin_group: "tuxmail-admins"
+    user_group: ""
+    groups_claim: "groups"
+
+limits:
+  max_upload_mb: 50
+  login_rate_per_minute: 10

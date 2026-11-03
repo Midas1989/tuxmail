@@ -1,0 +1,160 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Eigenes Zertifikat (Firmen-CA, Wildcard, ...). Optional vom Steuerrechner kopieren,
+# danach Existenz, Gültigkeit und Zusammengehörigkeit von Schlüssel und Zertifikat prüfen.
+
+- name: OpenSSL installieren
+  ansible.builtin.package:
+    name: openssl
+    state: present
+
+- name: Zertifikatsdateien vom Steuerrechner kopieren
+  when: tuxmail_tls_copy_from_controller | bool
+  block:
+    - name: Quellen sind angegeben
+      ansible.builtin.assert:
+        that:
+          - tuxmail_tls_cert_src | length > 0
+          - tuxmail_tls_key_src | length > 0
+        fail_msg: "tuxmail_tls_copy_from_controller=true erfordert tuxmail_tls_cert_src und tuxmail_tls_key_src."
+        quiet: true
+
+    - name: Zielverzeichnisse anlegen
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      loop: "{{ ([tuxmail_tls_cert_path | trim | dirname, tuxmail_tls_key_path | trim | dirname]
+                 + ([tuxmail_tls_chain_path | dirname] if tuxmail_tls_chain_path | length > 0 else [])) | unique }}"
+
+    - name: Zertifikat kopieren
+      ansible.builtin.copy:
+        src: "{{ tuxmail_tls_cert_src }}"
+        dest: "{{ tuxmail_tls_cert_path | trim }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: tuxmail_tls_copy_cert
+      notify: tuxmail nginx reload
+
+    - name: Privaten Schlüssel kopieren (Vault-verschlüsselte Quellen werden entschlüsselt)
+      ansible.builtin.copy:
+        src: "{{ tuxmail_tls_key_src }}"
+        dest: "{{ tuxmail_tls_key_path | trim }}"
+        owner: root
+        # TuxMail liest den Schlüssel selbst, wenn es TLS ohne nginx terminiert.
+        group: "{{ tuxmail_group if tuxmail_tls_native | bool else 'root' }}"
+        mode: "{{ '0640' if tuxmail_tls_native | bool else '0600' }}"
+      register: tuxmail_tls_copy_key
+      no_log: true
+      notify: tuxmail nginx reload
+
+    - name: Zwischenzertifikate kopieren
+      ansible.builtin.copy:
+        src: "{{ tuxmail_tls_chain_src }}"
+        dest: "{{ tuxmail_tls_chain_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+      register: tuxmail_tls_copy_chain
+      when: tuxmail_tls_chain_src | length > 0
+      notify: tuxmail nginx reload
+
+- name: Zertifikatsdateien suchen
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ [tuxmail_tls_cert_path | trim, tuxmail_tls_key_path | trim] + ([tuxmail_tls_chain_path] if tuxmail_tls_chain_path | length > 0 else []) }}"
+  register: tuxmail_tls_files
+
+- name: Zertifikatsdateien sind vorhanden
+  ansible.builtin.assert:
+    that: item.stat.exists and item.stat.isreg
+    fail_msg: "Datei fehlt: {{ item.item }} (tuxmail_tls_cert_path / tuxmail_tls_key_path / tuxmail_tls_chain_path prüfen)"
+    quiet: true
+  loop: "{{ tuxmail_tls_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Öffentlichen Schlüssel aus dem Zertifikat lesen
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, "{{ tuxmail_tls_cert_path | trim }}", -noout, -pubkey]
+  register: tuxmail_tls_cert_pubkey
+  changed_when: false
+
+- name: Öffentlichen Schlüssel aus dem privaten Schlüssel ableiten
+  ansible.builtin.command:
+    argv: [openssl, pkey, -in, "{{ tuxmail_tls_key_path | trim }}", -pubout]
+  register: tuxmail_tls_key_pubkey
+  changed_when: false
+  no_log: true
+
+- name: Schlüssel passt zum Zertifikat
+  ansible.builtin.assert:
+    that: tuxmail_tls_cert_pubkey.stdout | trim == tuxmail_tls_key_pubkey.stdout | trim
+    fail_msg: "Der private Schlüssel {{ tuxmail_tls_key_path | trim }} gehört nicht zum Zertifikat {{ tuxmail_tls_cert_path | trim }}."
+    quiet: true
+
+- name: Zertifikat ist nicht abgelaufen
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, "{{ tuxmail_tls_cert_path | trim }}", -noout, -checkend, "0"]
+  changed_when: false
+
+- name: Restlaufzeit prüfen
+  ansible.builtin.command:
+    argv: [openssl, x509, -in, "{{ tuxmail_tls_cert_path | trim }}", -noout, -checkend, "{{ (tuxmail_tls_warn_days | int * 86400) | string }}"]
+  register: tuxmail_tls_checkend
+  changed_when: false
+  failed_when: false
+
+- name: Warnung – Zertifikat läuft bald ab
+  ansible.builtin.debug:
+    msg: "WARNUNG: Das Zertifikat {{ tuxmail_tls_cert_path | trim }} läuft in weniger als {{ tuxmail_tls_warn_days }} Tagen ab."
+  when: tuxmail_tls_checkend.rc != 0
+
+- name: Zertifikatskette lesen
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  loop:
+    - "{{ tuxmail_tls_cert_path | trim }}"
+    - "{{ tuxmail_tls_chain_path }}"
+  register: tuxmail_tls_chain_parts
+  when: tuxmail_tls_chain_path | length > 0
+
+- name: Fullchain (Zertifikat + Kette) erzeugen
+  ansible.builtin.copy:
+    content: >-
+      {{ (tuxmail_tls_chain_parts.results[0].content | b64decode | trim) ~ '\n'
+         ~ (tuxmail_tls_chain_parts.results[1].content | b64decode | trim) ~ '\n' }}
+    dest: "{{ tuxmail_tls_fullchain_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  register: tuxmail_tls_fullchain
+  when: tuxmail_tls_chain_path | length > 0
+  notify: tuxmail nginx reload
+
+- name: Schlüssel ist für TuxMail lesbar (TLS ohne nginx)
+  ansible.builtin.command:
+    argv: [runuser, -u, "{{ tuxmail_user }}", --, test, -r, "{{ tuxmail_tls_key_path | trim }}"]
+  changed_when: false
+  register: tuxmail_tls_key_readable
+  failed_when: false
+  when: tuxmail_tls_native | bool
+
+- name: Hinweis – Schlüssel nicht lesbar
+  ansible.builtin.fail:
+    msg: >-
+      TuxMail terminiert TLS selbst, kann aber {{ tuxmail_tls_key_path | trim }} nicht lesen.
+      Lösung: chgrp {{ tuxmail_group }} <schlüssel> && chmod 0640 <schlüssel> (auch das Verzeichnis
+      muss durchsuchbar sein) oder tuxmail_tls_copy_from_controller=true verwenden.
+  when:
+    - tuxmail_tls_native | bool
+    - tuxmail_tls_key_readable.rc != 0
+
+- name: Merken, ob sich Zertifikatsdateien geändert haben
+  ansible.builtin.set_fact:
+    tuxmail_tls_files_changed: >-
+      {{ (tuxmail_tls_copy_cert is changed) or (tuxmail_tls_copy_key is changed)
+         or (tuxmail_tls_copy_chain is changed) or (tuxmail_tls_fullchain is changed) }}

@@ -1,0 +1,17 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+galaxy_info:
+  role_name: tuxmail
+  author: TuxMail contributors
+  description: Installiert TuxMail im Server-Modus als gehärteten systemd-Dienst
+  license: AGPL-3.0-or-later
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions: [bookworm, trixie]
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: EL
+      versions: ["9"]
+# Erwartet, dass tuxmail_common vorher ausgeführt wurde (siehe site.yml).
+dependencies: []

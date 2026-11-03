@@ -1,0 +1,19 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Rolle tuxmail_firewall (optional) – öffnet HTTP/HTTPS mit ufw bzw. firewalld.
+
+tuxmail_firewall_enabled: false
+# auto = ufw auf Debian/Ubuntu, firewalld auf RHEL-Familie
+tuxmail_firewall_backend: "auto"
+# SSH wird immer freigegeben, damit man sich nicht aussperrt.
+tuxmail_firewall_ssh_port: 22
+# Ports 80/443 (nur sinnvoll mit nginx; bei tuxmail_nginx_mode=none ggf. extra_ports nutzen).
+tuxmail_firewall_allow_http: "{{ tuxmail_nginx_mode != 'none' }}"
+tuxmail_firewall_allow_https: "{{ tuxmail_nginx_mode != 'none' and tuxmail_tls_mode != 'none' }}"
+# Weitere Ports, z. B. ["8443/tcp"] wenn TuxMail ohne nginx direkt lauscht.
+tuxmail_firewall_extra_ports: []
+# ufw: Firewall aktivieren, falls inaktiv (Standard: eingehend verweigern, ausgehend erlauben).
+tuxmail_firewall_ufw_enable: true
+# firewalld: Zone
+tuxmail_firewall_firewalld_zone: "public"

@@ -1,0 +1,29 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Firewall konfigurieren
+  when: tuxmail_firewall_enabled | bool
+  block:
+    - name: Backend bestimmen
+      ansible.builtin.set_fact:
+        tuxmail_firewall_backend_effective: >-
+          {{ tuxmail_firewall_backend if tuxmail_firewall_backend != 'auto'
+             else ('firewalld' if ansible_facts['os_family'] == 'RedHat' else 'ufw') }}
+        tuxmail_firewall_ports: >-
+          {{ ([tuxmail_firewall_ssh_port | string ~ '/tcp'])
+             + (['80/tcp'] if tuxmail_firewall_allow_http | bool else [])
+             + (['443/tcp'] if tuxmail_firewall_allow_https | bool else [])
+             + tuxmail_firewall_extra_ports }}
+
+    - name: Backend ist gültig
+      ansible.builtin.assert:
+        that: tuxmail_firewall_backend_effective in ['ufw', 'firewalld']
+        fail_msg: "tuxmail_firewall_backend muss auto, ufw oder firewalld sein."
+        quiet: true
+
+    - name: UFW
+      ansible.builtin.import_tasks: ufw.yml
+      when: tuxmail_firewall_backend_effective == 'ufw'
+
+    - name: Firewalld
+      ansible.builtin.import_tasks: firewalld.yml
+      when: tuxmail_firewall_backend_effective == 'firewalld'

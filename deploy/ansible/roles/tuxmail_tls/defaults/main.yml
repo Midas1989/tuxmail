@@ -1,0 +1,30 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Rolle tuxmail_tls – Zertifikat für nginx bzw. TuxMail.
+# Modus: tuxmail_tls_mode (letsencrypt | custom | none), siehe tuxmail_common.
+# Pfade: tuxmail_tls_cert_path, tuxmail_tls_key_path, tuxmail_tls_chain_path (tuxmail_common).
+
+# --- Let's Encrypt -------------------------------------------------------------------
+# Pflicht: Kontaktadresse für Ablaufwarnungen.
+tuxmail_tls_letsencrypt_email: ""
+# Staging-Umgebung von Let's Encrypt (zum Testen, Zertifikate sind nicht vertrauenswürdig).
+tuxmail_tls_letsencrypt_staging: false
+# Zertifikat sofort neu ausstellen (z. B. nach Wechsel Staging -> Produktion).
+tuxmail_tls_letsencrypt_force_renewal: false
+# Schlüsseltyp: ecdsa oder rsa
+tuxmail_tls_letsencrypt_key_type: "ecdsa"
+# Domains im Zertifikat.
+tuxmail_tls_letsencrypt_domains: "{{ [tuxmail_domain] + tuxmail_domain_aliases }}"
+# Name des systemd-Timers für die automatische Erneuerung (leer = automatisch).
+tuxmail_tls_certbot_timer: ""
+
+# --- Eigenes Zertifikat (custom) -------------------------------------------------------
+# Dateien vom Steuerrechner kopieren? Sonst müssen sie bereits auf dem Server liegen.
+tuxmail_tls_copy_from_controller: false
+# Quellpfade auf dem Steuerrechner (Schlüssel gern mit ansible-vault verschlüsselt).
+tuxmail_tls_cert_src: ""
+tuxmail_tls_key_src: ""
+tuxmail_tls_chain_src: ""
+# Mindest-Restlaufzeit in Tagen; darunter nur Warnung, abgelaufen = Abbruch.
+tuxmail_tls_warn_days: 21

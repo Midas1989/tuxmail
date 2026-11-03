@@ -1,0 +1,87 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Nur ein location-Snippet für einen Unterpfad. Vorhandene server-Blöcke werden
+# nicht verändert; das Snippet muss manuell eingebunden werden.
+
+- name: Snippet-Verzeichnis prüfen
+  ansible.builtin.stat:
+    path: "{{ tuxmail_nginx_snippet_path | dirname }}"
+  register: tuxmail_nginx_snippet_dir
+
+- name: Snippet-Verzeichnis anlegen (nur falls nicht vorhanden)
+  ansible.builtin.file:
+    path: "{{ tuxmail_nginx_snippet_path | dirname }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not tuxmail_nginx_snippet_dir.stat.exists
+
+- name: Vorhandenes Snippet untersuchen
+  ansible.builtin.stat:
+    path: "{{ tuxmail_nginx_snippet_path }}"
+  register: tuxmail_nginx_snippet_stat
+
+- name: Inhalt eines vorhandenen Snippets lesen
+  ansible.builtin.slurp:
+    src: "{{ tuxmail_nginx_snippet_path }}"
+  register: tuxmail_nginx_snippet_existing
+  when: tuxmail_nginx_snippet_stat.stat.exists
+
+- name: Fremde Datei wird nicht überschrieben
+  ansible.builtin.assert:
+    that: tuxmail_nginx_marker in (tuxmail_nginx_snippet_existing.content | b64decode)
+    fail_msg: >-
+      {{ tuxmail_nginx_snippet_path }} existiert bereits und wurde nicht von diesem Playbook angelegt.
+      Bitte tuxmail_nginx_snippet_path ändern.
+    quiet: true
+  when: tuxmail_nginx_snippet_stat.stat.exists
+
+- name: Snippet bereitstellen und prüfen
+  block:
+    - name: Location-Snippet schreiben (isoliert geprüft mit nginx -t)
+      ansible.builtin.template:
+        src: snippet.conf.j2
+        dest: "{{ tuxmail_nginx_snippet_path }}"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+        validate: /usr/local/sbin/tuxmail-nginx-check server %s
+      register: tuxmail_nginx_snippet_result
+      notify: tuxmail nginx reload
+
+    - name: Gesamte nginx-Konfiguration prüfen (falls das Snippet bereits eingebunden ist)  # noqa: no-handler (muss im Block für rescue laufen)
+      ansible.builtin.command:
+        argv: [nginx, -t]
+      changed_when: false
+      when: tuxmail_nginx_snippet_result is changed
+
+  rescue:
+    - name: Vorheriges Snippet wiederherstellen
+      ansible.builtin.copy:
+        src: "{{ tuxmail_nginx_snippet_result.backup_file }}"
+        dest: "{{ tuxmail_nginx_snippet_path }}"
+        remote_src: true
+        mode: "0644"
+      when: tuxmail_nginx_snippet_result.backup_file is defined
+
+    - name: Neu angelegtes Snippet wieder entfernen
+      ansible.builtin.file:
+        path: "{{ tuxmail_nginx_snippet_path }}"
+        state: absent
+      when: not tuxmail_nginx_snippet_stat.stat.exists
+
+    - name: Abbruch
+      ansible.builtin.fail:
+        msg: "nginx -t schlug mit dem TuxMail-Snippet fehl; die vorherige Konfiguration wurde wiederhergestellt."
+
+- name: Anleitung zum Einbinden ausgeben
+  ansible.builtin.debug:
+    msg:
+      - "Das Snippet {{ tuxmail_nginx_snippet_path }} wurde angelegt, ist aber noch NICHT aktiv."
+      - "Bitte im vorhandenen HTTPS-server-Block für {{ tuxmail_domain }} (z. B. neben Nextcloud) einfügen:"
+      - "    include {{ tuxmail_nginx_snippet_path }};"
+      - "Danach: nginx -t && systemctl reload nginx"
+      - "TuxMail ist dann erreichbar unter {{ tuxmail_public_url }}/"
+      - "Achtung: Der server-Block darf keine eigene 'location {{ tuxmail_subpath }}' enthalten."

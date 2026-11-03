@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+[Unit]
+Description=Daily TuxMail data backup
+
+[Timer]
+OnCalendar={{ tuxmail_backup_timer_oncalendar }}
+RandomizedDelaySec=15min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
