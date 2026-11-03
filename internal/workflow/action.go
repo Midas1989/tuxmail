@@ -50,6 +50,10 @@ type ActionType struct {
 	Triggers []events.Type
 	// New decodes and validates parameters.
 	New func(params map[string]any) (Action, error)
+	// Params describes the parameters for editors (Describe, JSONSchema,
+	// rule syntax, completion). Built-in actions without Params use the
+	// table in describe.go.
+	Params []ParamInfo
 }
 
 // Registry maps action type names to implementations.
@@ -283,6 +287,13 @@ type Deps struct {
 	// HTTPClient is used by the webhook action (a client with a 30s timeout
 	// if nil). Tests inject a client pointing at httptest servers.
 	HTTPClient *http.Client
+
+	// Tags, projects, search folders and query conditions (organize.go,
+	// implemented by internal/project).
+	Tags          TagActions
+	Projects      ProjectActions
+	SearchFolders SearchFolderActions
+	Query         QueryChecker
 }
 
 // ==== Run context =============================================================
