@@ -345,3 +345,48 @@ export class EventHub {
     }
   }
 }
+
+// --- Cloud ---
+// Cloud files (KONZEPT 12). Declared as a second part of the Api interface
+// (declaration merging) so that parallel feature branches merge cleanly.
+
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
+} from '../types';
+
+
+export interface Api {
+  listCloudAccounts(): Promise<CloudAccount[]>;
+  /** Nextcloud/OpenCloud: a pending flow with loginUrl (open in the browser, then poll). Vaultwarden/WebDAV: done or two_factor. */
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow>;
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow>;
+  cancelCloudLogin(flowId: string): Promise<void>;
+  deleteCloudAccount(id: number): Promise<void>;
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing>;
+  cloudQuota(accountId: number): Promise<CloudQuota>;
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry>;
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void>;
+  deleteCloudFile(accountId: number, path: string): Promise<void>;
+  /** Upload a local file into dir (unique name on conflicts). */
+  uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry>;
+  downloadCloudFile(accountId: number, path: string): Promise<Blob>;
+  /** Copy a cloud file into an upload for the composer ("Attach from cloud"). */
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult>;
+  /** "Save to cloud" for attachments of mails and chats. */
+  saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry>;
+  createCloudShare(input: CloudShareInput): Promise<CloudShare>;
+  /** "My shares": all links, newest first. */
+  listCloudShares(): Promise<CloudShare[]>;
+  revokeCloudShare(id: number): Promise<CloudShare>;
+  cloudSharePassword(id: number): Promise<{ password: string }>;
+  generateCloudPassword(accountId: number): Promise<{ password: string }>;
+}

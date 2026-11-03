@@ -76,6 +76,20 @@ Account,
   UserPreferences,
 } from '../types';
 
+// --- Cloud ---
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
+} from '../types';
+
 type BoundFn = (...args: unknown[]) => Promise<unknown>;
 
 export interface WailsWindow {
@@ -450,5 +464,69 @@ export class WailsTransport implements Api {
         this.offRuntime = null;
       }
     };
+  }
+
+  // --- Cloud ---
+  listCloudAccounts(): Promise<CloudAccount[]> {
+    return this.call('ListCloudAccounts');
+  }
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow> {
+    return this.call('StartCloudLogin', input);
+  }
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow> {
+    return this.call('PollCloudLogin', flowId);
+  }
+  cancelCloudLogin(flowId: string): Promise<void> {
+    return this.call('CancelCloudLogin', flowId);
+  }
+  deleteCloudAccount(id: number): Promise<void> {
+    return this.call('DeleteCloudAccount', id);
+  }
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing> {
+    return this.call('ListCloudFiles', accountId, path);
+  }
+  cloudQuota(accountId: number): Promise<CloudQuota> {
+    return this.call('CloudQuota', accountId);
+  }
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry> {
+    return this.call('CreateCloudFolder', accountId, path);
+  }
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void> {
+    return this.call('MoveCloudFile', accountId, from, to);
+  }
+  deleteCloudFile(accountId: number, path: string): Promise<void> {
+    return this.call('DeleteCloudFile', accountId, path);
+  }
+  async uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry> {
+    const { uploadToken } = await this.uploadAttachment(file, filename);
+    return this.call('UploadCloudFile', accountId, dir, uploadToken);
+  }
+  async downloadCloudFile(accountId: number, path: string): Promise<Blob> {
+    const d = await this.call<{ filename: string; mimeType: string; data: string }>('DownloadCloudFile', accountId, path);
+    const bin = atob(d.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: d.mimeType || 'application/octet-stream' });
+  }
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult> {
+    return this.call('ImportCloudFile', accountId, path);
+  }
+  saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry> {
+    return this.call('SaveAttachmentToCloud', input);
+  }
+  createCloudShare(input: CloudShareInput): Promise<CloudShare> {
+    return this.call('CreateCloudShare', input);
+  }
+  listCloudShares(): Promise<CloudShare[]> {
+    return this.call('ListCloudShares');
+  }
+  revokeCloudShare(id: number): Promise<CloudShare> {
+    return this.call('RevokeCloudShare', id);
+  }
+  cloudSharePassword(id: number): Promise<{ password: string }> {
+    return this.call('CloudSharePassword', id);
+  }
+  generateCloudPassword(accountId: number): Promise<{ password: string }> {
+    return this.call('GenerateCloudPassword', accountId);
   }
 }

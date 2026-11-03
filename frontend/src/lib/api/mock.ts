@@ -140,6 +140,21 @@ function waveform(seed: number, n = 40): number[] {
   });
 }
 
+// --- Cloud ---
+import { MockCloud } from './mockCloud';
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
+} from '../types';
+
 export interface MockOptions {
   latencyMs?: number;
   now?: Date;
@@ -2058,5 +2073,81 @@ export class MockTransport implements Api {
         this.incomingTimer = null;
       }
     };
+  }
+
+  // --- Cloud ---
+  /** In-memory cloud accounts, files and shares (mockCloud.ts). */
+  readonly cloud = new MockCloud();
+
+  listCloudAccounts(): Promise<CloudAccount[]> {
+    return this.run(() => this.cloud.listAccounts());
+  }
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow> {
+    return this.run(() => this.cloud.startLogin(input));
+  }
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow> {
+    return this.run(() => this.cloud.pollLogin(flowId));
+  }
+  cancelCloudLogin(flowId: string): Promise<void> {
+    return this.run(() => this.cloud.cancelLogin(flowId));
+  }
+  deleteCloudAccount(id: number): Promise<void> {
+    return this.run(() => this.cloud.deleteAccount(id));
+  }
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing> {
+    return this.run(() => this.cloud.list(accountId, path));
+  }
+  cloudQuota(accountId: number): Promise<CloudQuota> {
+    return this.run(() => this.cloud.quota(accountId));
+  }
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry> {
+    return this.run(() => this.cloud.mkdir(accountId, path));
+  }
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void> {
+    return this.run(() => this.cloud.move(accountId, from, to));
+  }
+  deleteCloudFile(accountId: number, path: string): Promise<void> {
+    return this.run(() => this.cloud.remove(accountId, path));
+  }
+  uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry> {
+    return this.run(() => this.cloud.store(accountId, dir, filename, file.size, file.type || undefined));
+  }
+  async downloadCloudFile(accountId: number, path: string): Promise<Blob> {
+    const { entry, data } = await this.run(() => this.cloud.read(accountId, path));
+    return new Blob([data], { type: entry.contentType ?? 'application/octet-stream' });
+  }
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult> {
+    return this.run(() => this.cloud.importFile(accountId, path));
+  }
+  async saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry> {
+    let name = input.filename ?? 'Datei';
+    let size = 0;
+    let type: string | undefined;
+    if (input.messageId != null) {
+      const m = await this.getMessage(input.messageId);
+      const a = m.attachments.find((x) => x.id === input.index) ?? m.attachments[input.index ?? 0];
+      if (!a) throw new ApiError('Anhang nicht gefunden', 404, 'not_found');
+      name = input.filename ?? a.filename;
+      size = a.size;
+      type = a.mimeType;
+    }
+    return this.run(() => this.cloud.save(input, name, size, type));
+  }
+  createCloudShare(input: CloudShareInput): Promise<CloudShare> {
+    const m = input.uploadToken?.match(/^mock-upload-\d+-(.*)-(\d+)$/);
+    const file = m ? { name: decodeURIComponent(m[1]), size: Number(m[2]) } : input.uploadToken ? { name: input.name ?? 'Datei', size: 0 } : undefined;
+    return this.run(() => this.cloud.createShare(input, file));
+  }
+  listCloudShares(): Promise<CloudShare[]> {
+    return this.run(() => this.cloud.listShares());
+  }
+  revokeCloudShare(id: number): Promise<CloudShare> {
+    return this.run(() => this.cloud.revoke(id));
+  }
+  cloudSharePassword(id: number): Promise<{ password: string }> {
+    return this.run(() => this.cloud.password(id));
+  }
+  generateCloudPassword(accountId: number): Promise<{ password: string }> {
+    return this.run(() => this.cloud.generatePassword(accountId));
   }
 }
