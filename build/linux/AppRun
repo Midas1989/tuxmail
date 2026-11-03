@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Midas Wollinger and TuxMail contributors
+#
+# AppRun of the TuxMail AppImage (installed by build/linux/package-appimage.sh
+# via linuxdeploy --custom-apprun).
+#
+# - sources the hooks of the linuxdeploy plugins (GTK, GdkPixbuf, GSettings ...)
+# - portable mode: a file "portable" or a folder "data/" next to the .AppImage
+#   file, or --portable, keeps all data in that "data/" folder (the program
+#   itself lives in a read-only mount, so its own folder cannot hold data)
+# - desktop window: the bundled WebKitGTK was patched to start its helper
+#   processes from "././/lib/<triplet>/webkit2gtk-4.1" (relative path), so
+#   the working directory must be $APPDIR/usr for the window. Relative
+#   --data-dir values are made absolute first.
+set -e
+
+this_dir=$(readlink -f "$(dirname "$0")")
+export APPDIR=${APPDIR:-$this_dir}
+owd=${OWD:-$PWD}
+
+for hook in "$this_dir"/apprun-hooks/*.sh; do
+	# shellcheck disable=SC1090
+	[ -e "$hook" ] && source "$hook"
+done
+
+bin=$this_dir/usr/bin/tuxmail
+
+desktop=0
+case "${1:-}" in
+"" ) desktop=1 ;;
+-h | -help | --help | -v | --version) desktop=0 ;;
+desktop) desktop=1 ;;
+-*) desktop=1 ;;
+esac
+
+if [ "$desktop" = 1 ]; then
+	args=()
+	have_dir=0 portable=0
+	[ "${1:-}" = desktop ] && shift
+	while [ $# -gt 0 ]; do
+		case "$1" in
+		--portable | -portable) portable=1 ;;
+		--data-dir | -data-dir)
+			have_dir=1
+			d=${2:-}
+			case "$d" in /*) ;; *) d=$owd/$d ;; esac
+			args+=(--data-dir "$d")
+			shift
+			;;
+		--data-dir=* | -data-dir=*)
+			have_dir=1
+			d=${1#*=}
+			case "$d" in /*) ;; *) d=$owd/$d ;; esac
+			args+=(--data-dir "$d")
+			;;
+		*) args+=("$1") ;;
+		esac
+		shift
+	done
+	if [ "$have_dir" = 0 ] && [ -n "${APPIMAGE:-}" ]; then
+		img_dir=$(dirname "$APPIMAGE")
+		if [ "$portable" = 1 ] || [ -e "$img_dir/portable" ] || [ -d "$img_dir/data" ]; then
+			args+=(--data-dir "$img_dir/data")
+		fi
+	fi
+	cd "$APPDIR/usr"
+	exec "$bin" desktop "${args[@]}"
+fi
+
+exec "$bin" "$@"

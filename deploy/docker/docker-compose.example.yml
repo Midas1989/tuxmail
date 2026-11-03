@@ -1,0 +1,40 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# TuxMail server with Docker Compose - example (see deploy/README.md, "Docker").
+#
+#   cp deploy/docker/docker-compose.example.yml docker-compose.yml
+#   $EDITOR docker-compose.yml          # TUXMAIL_PUBLIC_URL, image tag
+#   docker compose up -d
+#   docker compose exec tuxmail tuxmail user add --username admin --admin
+#
+# TuxMail speaks plain HTTP on port 8080; put a TLS reverse proxy (nginx,
+# Caddy, Traefik) in front of it and set TUXMAIL_PUBLIC_URL to the external
+# https:// address. Port 8080 is published on localhost only.
+
+services:
+  tuxmail:
+    image: ghcr.io/midas1989/tuxmail:latest   # or a fixed version, e.g. :0.1.0; :edge = development builds
+    container_name: tuxmail
+    restart: unless-stopped
+    environment:
+      TUXMAIL_PUBLIC_URL: "https://mail.example.org"
+      TUXMAIL_LOG_LEVEL: "info"
+      TZ: "Europe/Berlin"
+      # Defaults of the image (only change together with the port mapping / volume):
+      # TUXMAIL_LISTEN: "0.0.0.0:8080"
+      # TUXMAIL_DATA_DIR: "/data"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - tuxmail-data:/data
+      # Own configuration (OIDC, limits, trusted proxies ...), read-only:
+      # - ./config.yaml:/etc/tuxmail/config.yaml:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+volumes:
+  tuxmail-data:

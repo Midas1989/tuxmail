@@ -9,6 +9,7 @@ Linux-Server zu betreiben (siehe [KONZEPT.md, Kap. 4.5, 15.5, 15.6](../docs/KONZ
 | `ansible/` | Ansible-Projekt (empfohlen): Installation, Updates, nginx, TLS, Backups, Firewall, optionale Bridges |
 | `systemd/` | Beispiel-Units und -Konfiguration für eine manuelle Installation (aus den Ansible-Templates erzeugt) |
 | `nginx/` | Beispiel-vHost (`tuxmail.conf`) und location-Snippet (`tuxmail-snippet.conf`) |
+| `docker/` | `docker-compose.example.yml` für das Container-Image `ghcr.io/midas1989/tuxmail` (Abschnitt 11) |
 
 ---
 
@@ -366,3 +367,66 @@ sudo install -m 0644 systemd/tuxmail.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail
 # nginx: nginx/tuxmail.conf nach sites-available/ bzw. conf.d/, Domain/Zertifikat anpassen, nginx -t
 ```
+
+## 11. Docker / Podman
+
+Für jede Version gibt es ein Multi-Arch-Image (linux/amd64, linux/arm64) im GitHub Container Registry:
+
+| Tag | Inhalt |
+|---|---|
+| `ghcr.io/midas1989/tuxmail:<version>` (z. B. `:0.1.0`) | feste Version (empfohlen) |
+| `ghcr.io/midas1989/tuxmail:latest` | neueste veröffentlichte Version |
+| `ghcr.io/midas1989/tuxmail:edge` | Entwicklungsstand (jeder Push auf `main`/`claude/**`), nicht für den Produktivbetrieb |
+
+Eigenschaften des Images (`build/docker/Dockerfile`):
+
+- Alpine-Basis, statisches Go-Binary `/usr/local/bin/tuxmail` mit eingebettetem Web-Frontend
+- läuft als **Nicht-root**-Benutzer `tuxmail` (UID/GID 10001), funktioniert mit `read_only: true` und `cap_drop: [ALL]`
+- Daten im Volume **`/data`** (Datenbanken, `master.key`, VAPID-Schlüssel, Benutzerdaten) – **dieses Volume sichern**
+- Port **8080** (HTTP), Healthcheck auf `/healthz`
+- Start: `tuxmail serve --config /etc/tuxmail/config.yaml`; die mitgelieferte Konfiguration
+  (`build/docker/config.yaml`) wird über Umgebungsvariablen angepasst:
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `TUXMAIL_PUBLIC_URL` | `http://localhost:8080` | externe Adresse, z. B. `https://mail.example.org` (Cookies, Links, Passkeys) |
+| `TUXMAIL_LISTEN` | `0.0.0.0:8080` | Adresse im Container |
+| `TUXMAIL_DATA_DIR` | `/data` | Datenverzeichnis |
+| `TUXMAIL_LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
+
+Weitere Einstellungen (OIDC, Limits, `trusted_proxies`) über eine eigene Datei:
+`-v ./config.yaml:/etc/tuxmail/config.yaml:ro` (alle Schlüssel: `systemd/config.example.yaml`).
+Die Standardkonfiguration vertraut `X-Forwarded-*`-Headern aus den privaten Netzen (Docker-Netzwerke);
+ist der Container aus solchen Netzen auch direkt erreichbar, `trusted_proxies` einschränken.
+
+**Schnellstart mit Compose**
+
+```bash
+cp deploy/docker/docker-compose.example.yml docker-compose.yml
+$EDITOR docker-compose.yml                       # TUXMAIL_PUBLIC_URL, Image-Tag
+docker compose up -d
+docker compose exec tuxmail tuxmail user add --username admin --admin   # Passwort wird ausgegeben
+docker compose ps                                # Status "healthy"
+```
+
+Ohne Compose:
+
+```bash
+docker run -d --name tuxmail --restart unless-stopped \
+  -p 127.0.0.1:8080:8080 -v tuxmail-data:/data \
+  -e TUXMAIL_PUBLIC_URL=https://mail.example.org \
+  ghcr.io/midas1989/tuxmail:0.1.0
+```
+
+TLS übernimmt ein Reverse-Proxy vor dem Container (z. B. `nginx/tuxmail.conf` mit
+`proxy_pass http://127.0.0.1:8080`, Caddy oder Traefik). **Update:** Tag ändern, `docker compose pull &&
+docker compose up -d` – Datenbank-Migrationen laufen beim Start; vorher das Volume sichern
+(`docker run --rm -v tuxmail-data:/data -v "$PWD":/backup alpine tar czf /backup/tuxmail-data.tgz -C /data .`).
+
+Image selbst bauen (aus dem Repository-Wurzelverzeichnis):
+
+```bash
+docker build -f build/docker/Dockerfile --build-arg VERSION=$(build/version.sh) -t tuxmail:local .
+docker buildx build -f build/docker/Dockerfile --platform linux/amd64,linux/arm64 -t tuxmail:local .
+```
+

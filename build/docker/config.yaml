@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Default configuration of the TuxMail container image (/etc/tuxmail/config.yaml).
+# Environment variables override these values:
+#   TUXMAIL_LISTEN (0.0.0.0:8080), TUXMAIL_DATA_DIR (/data),
+#   TUXMAIL_PUBLIC_URL (external URL, e.g. https://mail.example.org), TUXMAIL_LOG_LEVEL
+# For everything else (OIDC, limits, ...) mount your own file over this one;
+# all keys: deploy/systemd/config.example.yaml and internal/config.
+
+listen: "0.0.0.0:8080"
+public_url: "http://localhost:8080"
+data_dir: "/data"
+
+log:
+  level: info
+  format: json
+
+tls:
+  mode: none   # TLS is terminated by a reverse proxy in front of the container
+
+# Reverse proxies whose X-Forwarded-* headers are trusted: loopback and the
+# private ranges used by Docker/Podman networks. Narrow this down if the
+# container is reachable from other hosts in these networks.
+trusted_proxies:
+  - 127.0.0.1/32
+  - ::1/128
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
+  - fc00::/7
+
+auth:
+  session_lifetime: 720h
+  password_min_length: 12
+  registration: disabled
+  totp_required_for_admins: false
+
+limits:
+  max_upload_mb: 200
+  login_rate_per_minute: 10
