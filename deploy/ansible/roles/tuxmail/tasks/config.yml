@@ -1,0 +1,73 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: OIDC-Client-Secret ablegen
+  ansible.builtin.copy:
+    content: "{{ tuxmail_oidc_client_secret }}\n"
+    dest: "{{ tuxmail_oidc_client_secret_file }}"
+    owner: root
+    group: "{{ tuxmail_group }}"
+    mode: "0640"
+  no_log: true
+  notify: tuxmail restart
+  when:
+    - tuxmail_oidc_enabled | bool
+    - tuxmail_oidc_client_secret | length > 0
+
+- name: OIDC ist vollständig konfiguriert
+  ansible.builtin.assert:
+    that:
+      - tuxmail_oidc_issuer | length > 0
+      - tuxmail_oidc_client_id | length > 0
+      - tuxmail_oidc_client_secret | length > 0
+    fail_msg: "Für OIDC werden tuxmail_oidc_issuer, tuxmail_oidc_client_id und tuxmail_oidc_client_secret (Vault) benötigt."
+    quiet: true
+  when: tuxmail_oidc_enabled | bool
+
+- name: Logdatei anlegen (check-config prüft, ob sie beschreibbar ist)
+  ansible.builtin.file:
+    path: "{{ tuxmail_log_file }}"
+    state: touch
+    owner: "{{ tuxmail_user }}"
+    group: "{{ tuxmail_group }}"
+    mode: "0640"
+    access_time: preserve
+    modification_time: preserve
+  when: tuxmail_log_file | length > 0
+
+- name: Datei config.yaml erzeugen (geprüft mit "tuxmail check-config" der neuen Version)
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: "{{ tuxmail_config_file }}"
+    owner: root
+    group: "{{ tuxmail_group }}"
+    mode: "0640"
+    validate: "{{ tuxmail_version_binary }} check-config --config %s"
+  notify: tuxmail restart
+
+- name: Konfiguration als Dienstbenutzer prüfen (Leserechte, Version)
+  ansible.builtin.command:
+    argv:
+      - runuser
+      - -u
+      - "{{ tuxmail_user }}"
+      - --
+      - "{{ tuxmail_version_binary }}"
+      - check-config
+      - --config
+      - "{{ tuxmail_config_file }}"
+  changed_when: false
+
+- name: Logrotate-Regel für die Logdatei
+  ansible.builtin.template:
+    src: logrotate.j2
+    dest: /etc/logrotate.d/tuxmail
+    owner: root
+    group: root
+    mode: "0644"
+  when: tuxmail_log_file | length > 0
+
+- name: Logrotate-Regel entfernen, wenn nach journald geloggt wird
+  ansible.builtin.file:
+    path: /etc/logrotate.d/tuxmail
+    state: absent
+  when: tuxmail_log_file | length == 0

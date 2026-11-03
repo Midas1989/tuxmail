@@ -1,0 +1,113 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Eigener vHost für tuxmail_domain. Wird zweimal ausgeführt (vor und nach der
+# Zertifikatsbeschaffung); TLS wird nur eingeschaltet, wenn Zertifikat und
+# Schlüssel vorhanden sind. Bestehende fremde Dateien werden nie überschrieben.
+
+- name: Fakten zu nginx ermitteln (falls noch nicht geschehen)
+  ansible.builtin.include_tasks: facts.yml
+  when: tuxmail_nginx_facts_done is not defined
+
+- name: Pfade des vHosts festlegen
+  ansible.builtin.set_fact:
+    tuxmail_nginx_vhost_file: "{{ tuxmail_nginx_vhost_dir_effective }}/{{ tuxmail_nginx_vhost_name }}.conf"
+    tuxmail_nginx_vhost_link: >-
+      {{ (tuxmail_nginx_enabled_dir_effective ~ '/' ~ tuxmail_nginx_vhost_name ~ '.conf')
+         if tuxmail_nginx_enabled_dir_effective | length > 0 else '' }}
+
+- name: Zertifikat vorhanden?
+  ansible.builtin.stat:
+    path: "{{ tuxmail_tls_effective_cert_path | trim }}"
+  register: tuxmail_nginx_cert_stat
+  when: tuxmail_tls_mode != 'none'
+
+- name: Schlüssel vorhanden?
+  ansible.builtin.stat:
+    path: "{{ tuxmail_tls_key_path | trim }}"
+  register: tuxmail_nginx_key_stat
+  when: tuxmail_tls_mode != 'none'
+
+- name: TLS-Status festlegen
+  ansible.builtin.set_fact:
+    tuxmail_nginx_tls_ready: >-
+      {{ tuxmail_tls_mode != 'none'
+         and (tuxmail_nginx_cert_stat.stat.exists | default(false))
+         and (tuxmail_nginx_key_stat.stat.exists | default(false)) }}
+
+- name: Hinweis – vHost vorerst nur mit HTTP
+  ansible.builtin.debug:
+    msg: "Noch kein Zertifikat unter {{ tuxmail_tls_effective_cert_path | trim }} – vHost wird vorerst nur für HTTP (ACME) eingerichtet."
+  when:
+    - tuxmail_tls_mode != 'none'
+    - not (tuxmail_nginx_tls_ready | bool)
+
+- name: Vorhandene vHost-Datei untersuchen
+  ansible.builtin.stat:
+    path: "{{ tuxmail_nginx_vhost_file }}"
+  register: tuxmail_nginx_vhost_stat
+
+- name: Inhalt einer vorhandenen vHost-Datei lesen
+  ansible.builtin.slurp:
+    src: "{{ tuxmail_nginx_vhost_file }}"
+  register: tuxmail_nginx_vhost_existing
+  when: tuxmail_nginx_vhost_stat.stat.exists
+
+- name: Fremde Datei wird nicht überschrieben
+  ansible.builtin.assert:
+    that: tuxmail_nginx_marker in (tuxmail_nginx_vhost_existing.content | b64decode)
+    fail_msg: >-
+      {{ tuxmail_nginx_vhost_file }} existiert bereits und wurde nicht von diesem Playbook angelegt.
+      Bitte tuxmail_nginx_vhost_name ändern oder die Datei manuell entfernen.
+    quiet: true
+  when: tuxmail_nginx_vhost_stat.stat.exists
+
+- name: VHost bereitstellen und prüfen
+  block:
+    - name: VHost schreiben (isoliert geprüft mit nginx -t)
+      ansible.builtin.template:
+        src: vhost.conf.j2
+        dest: "{{ tuxmail_nginx_vhost_file }}"
+        owner: root
+        group: root
+        mode: "0644"
+        backup: true
+        validate: /usr/local/sbin/tuxmail-nginx-check http %s
+      register: tuxmail_nginx_vhost_result
+      notify: tuxmail nginx reload
+
+    - name: VHost aktivieren (sites-enabled)
+      ansible.builtin.file:
+        src: "{{ tuxmail_nginx_vhost_file }}"
+        dest: "{{ tuxmail_nginx_vhost_link }}"
+        state: link
+      register: tuxmail_nginx_link_result
+      when: tuxmail_nginx_vhost_link | length > 0
+      notify: tuxmail nginx reload
+
+    - name: Gesamte nginx-Konfiguration prüfen
+      ansible.builtin.command:
+        argv: [nginx, -t]
+      changed_when: false
+      when: tuxmail_nginx_vhost_result is changed or tuxmail_nginx_link_result is changed
+
+  rescue:
+    - name: Vorherigen vHost wiederherstellen
+      ansible.builtin.copy:
+        src: "{{ tuxmail_nginx_vhost_result.backup_file }}"
+        dest: "{{ tuxmail_nginx_vhost_file }}"
+        remote_src: true
+        mode: "0644"
+      when: tuxmail_nginx_vhost_result.backup_file is defined
+
+    - name: Neu angelegten vHost wieder entfernen
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ tuxmail_nginx_vhost_link if tuxmail_nginx_vhost_link | length > 0 else tuxmail_nginx_vhost_file }}"
+        - "{{ tuxmail_nginx_vhost_file }}"
+      when: not tuxmail_nginx_vhost_stat.stat.exists
+
+    - name: Abbruch
+      ansible.builtin.fail:
+        msg: "nginx -t schlug mit der TuxMail-Konfiguration fehl; die vorherige Konfiguration wurde wiederhergestellt."

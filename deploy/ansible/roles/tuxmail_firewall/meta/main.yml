@@ -1,0 +1,16 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+galaxy_info:
+  role_name: tuxmail_firewall
+  author: TuxMail contributors
+  description: Optional – HTTP/HTTPS (und SSH) mit ufw oder firewalld freigeben
+  license: AGPL-3.0-or-later
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions: [bookworm, trixie]
+    - name: Ubuntu
+      versions: [jammy, noble]
+    - name: EL
+      versions: ["9"]
+dependencies: []

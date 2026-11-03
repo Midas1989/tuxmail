@@ -1,0 +1,29 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Nginx als Reverse-Proxy
+  when: tuxmail_nginx_mode != 'none'
+  block:
+    - name: Nginx installieren (mode=new)
+      ansible.builtin.import_tasks: install.yml
+      when: tuxmail_nginx_mode == 'new'
+
+    - name: Vorhandenes nginx prüfen (mode=existing)
+      ansible.builtin.import_tasks: existing.yml
+      when: tuxmail_nginx_mode == 'existing'
+
+    - name: Fakten zu nginx ermitteln
+      ansible.builtin.import_tasks: facts.yml
+
+    - name: Zugriffsrechte, SELinux, ACME-Webroot, Prüfskript
+      ansible.builtin.import_tasks: access.yml
+
+    - name: Eigenen vHost bereitstellen
+      ansible.builtin.import_tasks: vhost.yml
+      when: not (tuxmail_nginx_use_snippet | bool)
+
+    - name: Location-Snippet bereitstellen
+      ansible.builtin.import_tasks: snippet.yml
+      when: tuxmail_nginx_use_snippet | bool
+
+    - name: Nginx sofort neu laden (z. B. für die ACME-Challenge)
+      ansible.builtin.meta: flush_handlers

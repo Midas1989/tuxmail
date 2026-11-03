@@ -1,0 +1,55 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Rolle tuxmail_bridges – OPTIONAL, standardmäßig AUS.
+# Container (podman oder docker compose) für:
+#   - Matrix-Homeserver (Synapse oder Continuwuity), nur lokal (127.0.0.1) erreichbar
+#   - mautrix-whatsapp und mautrix-signal (Bridge-Modus, KONZEPT Kap. 11.3)
+#   - Gotenberg (PDF-Erzeugung, KONZEPT Kap. 8.11)
+# Inoffizielle Messenger-Anbindungen: rechtliche Hinweise in KONZEPT Kap. 18.1 beachten.
+
+tuxmail_bridges_enabled: false
+
+# podman (mit podman-compose) oder docker (mit Compose-Plugin "docker compose")
+tuxmail_bridges_runtime: "podman"
+# Pakete, die installiert werden (leer bei docker: Docker CE bitte vorher installieren).
+tuxmail_bridges_packages: "{{ ['podman', 'podman-compose'] if tuxmail_bridges_runtime == 'podman' else [] }}"
+tuxmail_bridges_dir: "/opt/tuxmail-bridges"
+tuxmail_bridges_project: "tuxmail-bridges"
+
+# --- Matrix ------------------------------------------------------------------------------
+tuxmail_bridges_matrix_enabled: true
+# synapse (Registrierung der Bridges vollautomatisch) oder continuwuity
+# (Bridges müssen einmalig im Admin-Raum registriert werden, siehe README).
+tuxmail_bridges_homeserver: "synapse"
+tuxmail_bridges_matrix_server_name: "{{ tuxmail_domain }}"
+# Lokaler Port des Homeservers (nur 127.0.0.1).
+tuxmail_bridges_matrix_port: 8008
+# Matrix-ID mit Admin-Rechten in den Bridges.
+tuxmail_bridges_matrix_admin: "@admin:{{ tuxmail_bridges_matrix_server_name }}"
+
+tuxmail_bridges_whatsapp_enabled: true
+tuxmail_bridges_signal_enabled: true
+
+# Images – für den Produktivbetrieb auf feste Versionen setzen!
+tuxmail_bridges_synapse_image: "docker.io/matrixdotorg/synapse:latest"
+tuxmail_bridges_continuwuity_image: "forgejo.ellis.link/continuwuation/continuwuity:latest"
+tuxmail_bridges_whatsapp_image: "dock.mau.dev/mautrix/whatsapp:latest"
+tuxmail_bridges_signal_image: "dock.mau.dev/mautrix/signal:latest"
+
+# --- Gotenberg ---------------------------------------------------------------------------
+tuxmail_bridges_gotenberg_enabled: true
+tuxmail_bridges_gotenberg_image: "docker.io/gotenberg/gotenberg:8"
+tuxmail_bridges_gotenberg_port: 3000
+
+# --- Intern ------------------------------------------------------------------------------
+tuxmail_bridges_mautrix_all:
+  - name: whatsapp
+    image: "{{ tuxmail_bridges_whatsapp_image }}"
+    port: 29318
+    enabled: "{{ tuxmail_bridges_whatsapp_enabled }}"
+  - name: signal
+    image: "{{ tuxmail_bridges_signal_image }}"
+    port: 29328
+    enabled: "{{ tuxmail_bridges_signal_enabled }}"
+tuxmail_bridges_compose_cmd: "{{ ['podman-compose'] if tuxmail_bridges_runtime == 'podman' else ['docker', 'compose'] }}"

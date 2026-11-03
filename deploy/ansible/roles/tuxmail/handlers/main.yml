@@ -1,0 +1,13 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Reload systemd
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  listen: tuxmail daemon-reload
+
+- name: Restart TuxMail
+  ansible.builtin.systemd_service:
+    name: "{{ tuxmail_service_name }}"
+    state: restarted
+    daemon_reload: true
+  listen: tuxmail restart

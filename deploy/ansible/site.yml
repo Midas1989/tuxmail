@@ -1,0 +1,61 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# TuxMail Server-Deployment (Server-/Web-Modus, `tuxmail serve`).
+#
+#   ansible-playbook -i inventory/hosts.ini site.yml
+#
+# Reihenfolge (bewusst so gewählt):
+#   1. tuxmail_common   – Vorprüfungen, Systembenutzer/-gruppen
+#   2. tuxmail_firewall – optional: Ports 80/443 (vor Let's Encrypt!)
+#   3. tuxmail_nginx    – nginx installieren/einhängen; ohne vorhandenes Zertifikat
+#                         zunächst nur HTTP (für die ACME-Challenge)
+#   4. tuxmail_tls      – Zertifikat beschaffen/prüfen (letsencrypt | custom | none)
+#   5. tuxmail_nginx    – vHost erneut rendern, jetzt mit TLS (idempotent)
+#   6. tuxmail          – Binary, Konfiguration, systemd, Backup, Admin
+#   7. tuxmail_bridges  – optional: Matrix + mautrix-Bridges, Gotenberg
+- name: TuxMail Server bereitstellen
+  hosts: tuxmail
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Vorprüfungen und Systembenutzer
+      ansible.builtin.import_role:
+        name: tuxmail_common
+      tags: [always]
+
+    - name: Firewall (optional)
+      ansible.builtin.import_role:
+        name: tuxmail_firewall
+      tags: [firewall]
+
+    - name: Nginx Reverse-Proxy
+      ansible.builtin.import_role:
+        name: tuxmail_nginx
+      tags: [nginx]
+
+    - name: TLS-Zertifikat
+      ansible.builtin.import_role:
+        name: tuxmail_tls
+      tags: [tls, nginx]
+
+    - name: Nginx-vHost mit TLS finalisieren
+      ansible.builtin.import_role:
+        name: tuxmail_nginx
+        tasks_from: vhost.yml
+      when:
+        - tuxmail_nginx_mode != 'none'
+        - tuxmail_tls_mode != 'none'
+        - not (tuxmail_nginx_use_snippet | bool)
+      tags: [tls, nginx]
+
+    - name: TuxMail-Dienst
+      ansible.builtin.import_role:
+        name: tuxmail
+      tags: [tuxmail]
+
+    - name: Messenger-Bridges und Gotenberg (optional)
+      ansible.builtin.import_role:
+        name: tuxmail_bridges
+      tags: [bridges]

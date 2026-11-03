@@ -1,0 +1,94 @@
+{#- SPDX-License-Identifier: AGPL-3.0-or-later -#}
+{#-
+  Gemeinsame Bausteine für vHost und Snippet.
+  Hinweis: add_header in einem location-Block hebt alle geerbten add_header des
+  server-Blocks auf. Daher setzen wir sämtliche Header in jeder location selbst.
+-#}
+
+{%- macro security_headers(hsts, indent) -%}
+{{ indent }}add_header X-Content-Type-Options "nosniff" always;
+{{ indent }}add_header X-Frame-Options "SAMEORIGIN" always;
+{{ indent }}add_header Referrer-Policy "{{ tuxmail_nginx_referrer_policy }}" always;
+{% if tuxmail_nginx_csp | length > 0 %}
+{{ indent }}add_header Content-Security-Policy "{{ tuxmail_nginx_csp }}" always;
+{% endif %}
+{% if hsts %}
+{{ indent }}add_header Strict-Transport-Security "max-age={{ tuxmail_nginx_hsts_max_age | int }}{{ '; includeSubDomains' if tuxmail_nginx_hsts_include_subdomains | bool else '' }}{{ '; preload' if tuxmail_nginx_hsts_preload | bool else '' }}" always;
+{% endif %}
+{% for name, value in tuxmail_nginx_extra_headers.items() %}
+{{ indent }}add_header {{ name }} "{{ value }}" always;
+{% endfor %}
+{%- endmacro -%}
+
+{%- macro proxy_common(proto, hsts, indent) -%}
+{{ indent }}proxy_http_version 1.1;
+{{ indent }}proxy_set_header Host $host;
+{{ indent }}proxy_set_header X-Real-IP $remote_addr;
+{{ indent }}proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+{{ indent }}proxy_set_header X-Forwarded-Proto {{ proto }};
+{{ indent }}proxy_set_header X-Forwarded-Host $host;
+{% if tuxmail_subpath | length > 0 %}
+{{ indent }}proxy_set_header X-Forwarded-Prefix {{ tuxmail_subpath }};
+{% endif %}
+{{ indent }}proxy_hide_header X-Powered-By;
+{{ indent }}proxy_hide_header X-Content-Type-Options;
+{{ indent }}proxy_hide_header X-Frame-Options;
+{{ indent }}proxy_hide_header Referrer-Policy;
+{% if hsts %}
+{{ indent }}# TuxMail sendet selbst HSTS – nicht doppelt ausliefern
+{{ indent }}proxy_hide_header Strict-Transport-Security;
+{% endif %}
+{{ indent }}client_max_body_size {{ tuxmail_max_upload_mb | int }}m;
+{{ indent }}proxy_connect_timeout 10s;
+{%- endmacro -%}
+
+{#-
+  locations(snippet, proto, hsts)
+    snippet: true = Snippet-Modus (direkte Adresse, kein map/upstream möglich)
+    proto:   Wert für X-Forwarded-Proto ("$scheme" oder "https")
+    hsts:    Strict-Transport-Security senden
+-#}
+{%- macro locations(snippet, proto, hsts) -%}
+{%- set base = tuxmail_subpath -%}
+{%- set strip = (tuxmail_nginx_strip_subpath | bool) and base | length > 0 -%}
+{%- if snippet and tuxmail_listen_is_socket | bool -%}
+{%-   set addr = 'http://unix:' ~ tuxmail_socket_path -%}
+{%-   set sep = ':' -%}
+{%- elif snippet -%}
+{%-   set addr = 'http://' ~ tuxmail_listen -%}
+{%-   set sep = '' -%}
+{%- else -%}
+{%-   set addr = 'http://tuxmail_backend' -%}
+{%-   set sep = '' -%}
+{%- endif -%}
+{%- set pass_root = addr ~ ((sep ~ '/') if strip else '') -%}
+{%- set pass_events = addr ~ ((sep ~ '/api/events') if strip else '') -%}
+{%- set connection = '"upgrade"' if snippet else '$tuxmail_connection_upgrade' -%}
+{% if base | length > 0 %}
+    location = {{ base }} {
+        return 301 {{ base }}/;
+    }
+
+{% endif %}
+    # Live-Events per WebSocket
+    location {{ base }}/api/events {
+        proxy_pass {{ pass_events }};
+{{ proxy_common(proto, hsts, '        ') }}
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection {{ connection }};
+        proxy_read_timeout {{ tuxmail_nginx_websocket_timeout | int }}s;
+        proxy_send_timeout {{ tuxmail_nginx_websocket_timeout | int }}s;
+        proxy_buffering off;
+{{ security_headers(hsts, '        ') | regex_replace('\n$', '') }}
+    }
+
+    # Weboberfläche und API (inkl. Long-Polling)
+    location {{ base }}/ {
+        proxy_pass {{ pass_root }};
+{{ proxy_common(proto, hsts, '        ') }}
+        proxy_set_header Connection "";
+        proxy_read_timeout {{ tuxmail_nginx_proxy_timeout | int }}s;
+        proxy_send_timeout {{ tuxmail_nginx_proxy_timeout | int }}s;
+{{ security_headers(hsts, '        ') | regex_replace('\n$', '') }}
+    }
+{%- endmacro -%}

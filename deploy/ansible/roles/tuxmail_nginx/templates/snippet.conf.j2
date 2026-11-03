@@ -1,0 +1,14 @@
+{% from '_tuxmail_macros.j2' import locations with context %}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ tuxmail_nginx_marker }} – {{ ansible_managed }}
+#
+# TuxMail unter {{ tuxmail_subpath }}/ – zum Einbinden in einen VORHANDENEN
+# HTTPS-server-Block (z. B. den von Nextcloud):
+#
+#     server {
+#         ...
+#         include {{ tuxmail_nginx_snippet_path }};
+#     }
+#
+# Danach: nginx -t && systemctl reload nginx
+{{ locations(true, '$scheme', tuxmail_nginx_snippet_hsts | bool) }}

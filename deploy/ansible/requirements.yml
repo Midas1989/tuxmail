@@ -1,0 +1,9 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Benötigte Collections (zusätzlich zu ansible-core >= 2.15):
+#   ansible-galaxy collection install -r requirements.yml
+collections:
+  - name: ansible.posix # firewalld, seboolean
+    version: ">=1.5.0"
+  - name: community.general # ufw
+    version: ">=7.0.0"

@@ -1,0 +1,44 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Bridges und Gotenberg (optional)
+  when: tuxmail_bridges_enabled | bool
+  block:
+    - name: Einstellungen prüfen
+      ansible.builtin.assert:
+        that:
+          - tuxmail_bridges_runtime in ['podman', 'docker']
+          - tuxmail_bridges_homeserver in ['synapse', 'continuwuity']
+          - tuxmail_bridges_matrix_enabled | bool or tuxmail_bridges_gotenberg_enabled | bool
+        fail_msg: >-
+          tuxmail_bridges_runtime: podman|docker, tuxmail_bridges_homeserver: synapse|continuwuity;
+          mindestens Matrix oder Gotenberg muss aktiviert sein.
+        quiet: true
+
+    - name: Abgeleitete Werte setzen
+      ansible.builtin.set_fact:
+        tuxmail_bridges_mautrix: >-
+          {{ tuxmail_bridges_mautrix_all | selectattr('enabled', 'truthy', convert_bool=True) | list
+             if tuxmail_bridges_matrix_enabled | bool else [] }}
+        tuxmail_bridges_volume_opts: "{{ ':Z' if ansible_facts['selinux']['status'] | default('disabled') == 'enabled' else '' }}"
+        tuxmail_bridges_run_cmd: "{{ [tuxmail_bridges_runtime, 'run', '--rm'] }}"
+
+    - name: Container-Laufzeit installieren
+      ansible.builtin.import_tasks: runtime.yml
+
+    - name: Matrix-Homeserver vorbereiten
+      ansible.builtin.import_tasks: homeserver.yml
+      when: tuxmail_bridges_matrix_enabled | bool
+
+    - name: Mautrix-Bridges vorbereiten
+      ansible.builtin.include_tasks: mautrix.yml
+      loop: "{{ tuxmail_bridges_mautrix }}"
+      loop_control:
+        loop_var: tuxmail_bridge
+        label: "{{ tuxmail_bridge.name }}"
+
+    - name: Homeserver – Bridges registrieren
+      ansible.builtin.import_tasks: register.yml
+      when: tuxmail_bridges_matrix_enabled | bool
+
+    - name: Compose-Projekt starten
+      ansible.builtin.import_tasks: compose.yml

@@ -1,0 +1,57 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Stellt /opt/tuxmail/current auf die gewünschte Version um. Bei einem
+# Versionswechsel wird vorher der Dienst gestoppt und /var/lib/tuxmail gesichert.
+
+- name: Aktuell aktive Version ermitteln
+  ansible.builtin.stat:
+    path: "{{ tuxmail_install_dir }}/current"
+  register: tuxmail_current_link
+
+- name: Versionswechsel feststellen
+  ansible.builtin.set_fact:
+    tuxmail_previous_version: >-
+      {{ (tuxmail_current_link.stat.lnk_target | basename)
+         if (tuxmail_current_link.stat.exists and tuxmail_current_link.stat.islnk) else '' }}
+
+- name: Versionswechsel ausgeben
+  ansible.builtin.debug:
+    msg: "TuxMail-Versionswechsel: {{ tuxmail_previous_version }} -> {{ tuxmail_version }}"
+  when:
+    - tuxmail_previous_version | length > 0
+    - tuxmail_previous_version != tuxmail_version
+
+- name: Sicherung vor dem Versionswechsel
+  when:
+    - tuxmail_backup_before_upgrade | bool
+    - tuxmail_previous_version | length > 0
+    - tuxmail_previous_version != tuxmail_version
+  block:
+    - name: Dienst für eine konsistente Sicherung anhalten
+      ansible.builtin.systemd_service:
+        name: "{{ tuxmail_service_name }}"
+        state: stopped
+
+    - name: Datenverzeichnis sichern (tuxmail-backup pre-upgrade)
+      ansible.builtin.command:
+        argv:
+          - /usr/local/sbin/tuxmail-backup
+          - pre-upgrade
+          - "{{ tuxmail_backup_keep_upgrade | string }}"
+          - "{{ tuxmail_previous_version }}-to-{{ tuxmail_version }}"
+      register: tuxmail_pre_upgrade_backup
+      changed_when: true
+
+    - name: Sicherung ausgeben
+      ansible.builtin.debug:
+        msg: "{{ tuxmail_pre_upgrade_backup.stdout_lines }}"
+
+- name: Version aktivieren (Symlink current)
+  ansible.builtin.file:
+    src: "{{ tuxmail_version_dir }}"
+    dest: "{{ tuxmail_install_dir }}/current"
+    state: link
+    owner: root
+    group: root
+    force: true
+  notify: tuxmail restart

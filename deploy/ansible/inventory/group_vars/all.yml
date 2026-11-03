@@ -1,0 +1,126 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# TuxMail – Einstellungen für alle Hosts der Gruppe "tuxmail".
+#
+# Aktiv gesetzt sind nur die wichtigsten Werte. Alle weiteren Variablen sind
+# unten mit ihrem Standardwert auskommentiert aufgeführt; die vollständigen
+# Standardwerte stehen in roles/<rolle>/defaults/main.yml.
+#
+# Geheimnisse (Passwörter, OIDC-Secret) NIE im Klartext einchecken, sondern mit
+# ansible-vault verschlüsseln, z. B.:
+#   ansible-vault encrypt_string --name tuxmail_admin_password 'S3hr-geheim!'
+# und die Ausgabe hier oder in host_vars einfügen. Aufruf dann mit --ask-vault-pass.
+
+# ============================================================================
+# Grundeinstellungen
+# ============================================================================
+tuxmail_version: "1.0.0"
+tuxmail_domain: "mail.example.org"
+
+# nginx: new | existing | none
+tuxmail_nginx_mode: "new"
+# nur bei existing: vhost | snippet
+tuxmail_nginx_existing_style: "vhost"
+
+# TLS: letsencrypt | custom | none
+tuxmail_tls_mode: "letsencrypt"
+tuxmail_tls_letsencrypt_email: "admin@example.org"
+
+# ============================================================================
+# Weitere Einstellungen (Standardwerte, bei Bedarf einkommentieren)
+# ============================================================================
+
+# --- Domain & URL ---
+# tuxmail_domain_aliases: []
+# tuxmail_subpath: ""                       # z. B. "/tuxmail" (Pflicht im Snippet-Modus)
+# tuxmail_public_scheme: "https"
+# tuxmail_public_url: "https://{{ tuxmail_domain }}{{ tuxmail_subpath }}"
+# tuxmail_listen: "127.0.0.1:8080"          # oder "unix:/run/tuxmail/tuxmail.sock"
+
+# --- Binary ---
+# tuxmail_release_base_url: "https://github.com/Midas1989/Mailclient/releases/download/v{{ tuxmail_version }}/"
+# tuxmail_binary_src: ""                    # lokale Datei auf dem Steuerrechner (Binary oder .tar.gz)
+# tuxmail_keep_versions: 3
+
+# --- Pfade ---
+# tuxmail_install_dir: /opt/tuxmail
+# tuxmail_config_dir: /etc/tuxmail
+# tuxmail_data_dir: /var/lib/tuxmail
+# tuxmail_log_dir: /var/log/tuxmail
+# tuxmail_backup_dir: /var/backups/tuxmail
+
+# --- config.yaml ---
+# tuxmail_log_level: info
+# tuxmail_log_format: json
+# tuxmail_log_file: ""                      # leer = journald
+# tuxmail_trusted_proxies_extra: []         # z. B. ["10.0.0.5/32"] für einen vorgelagerten Proxy
+# tuxmail_max_upload_mb: 50
+# tuxmail_login_rate_per_minute: 10
+# tuxmail_auth_session_lifetime: "168h"
+# tuxmail_auth_password_min_length: 12
+# tuxmail_auth_registration: disabled       # disabled | invite
+# tuxmail_auth_totp_required_for_admins: true
+
+# --- OIDC (z. B. Nextcloud, OpenCloud, Authentik, Keycloak) ---
+# tuxmail_oidc_enabled: false
+# tuxmail_oidc_issuer: "https://auth.example.org/application/o/tuxmail/"
+# tuxmail_oidc_client_id: "tuxmail"
+# tuxmail_oidc_client_secret: !vault |
+#   $ANSIBLE_VAULT;1.1;AES256
+#   ...
+# tuxmail_oidc_admin_group: tuxmail-admins
+# tuxmail_oidc_user_group: ""
+# tuxmail_oidc_groups_claim: groups
+
+# --- Erster Administrator ---
+# tuxmail_admin_create: true
+# tuxmail_admin_username: admin
+# tuxmail_admin_email: "admin@{{ tuxmail_domain }}"
+# tuxmail_admin_password: ""                # leer = generieren (credentials/<host>/admin_password)
+
+# --- Backups ---
+# tuxmail_backup_compression: zstd          # zstd | gzip
+# tuxmail_backup_before_upgrade: true
+# tuxmail_backup_keep_upgrade: 5
+# tuxmail_backup_timer_enabled: false
+# tuxmail_backup_timer_oncalendar: "*-*-* 03:15:00"
+# tuxmail_backup_keep_scheduled: 14
+# tuxmail_backup_stop_service: true
+
+# --- nginx ---
+# tuxmail_nginx_vhost_name: tuxmail
+# tuxmail_nginx_snippet_path: /etc/nginx/snippets/tuxmail.conf
+# tuxmail_nginx_disable_default_site: true
+# tuxmail_nginx_ipv6: (auto)                # true/false; auto = falls IPv6 vorhanden
+# tuxmail_nginx_strip_subpath: false
+# tuxmail_nginx_proxy_timeout: 300
+# tuxmail_nginx_websocket_timeout: 3600
+# tuxmail_nginx_hsts_max_age: 31536000
+# tuxmail_nginx_csp: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+# tuxmail_nginx_extra_server_config: ""
+
+# --- TLS ---
+# tuxmail_tls_letsencrypt_staging: false
+# tuxmail_tls_letsencrypt_force_renewal: false
+# tuxmail_tls_cert_path: /etc/ssl/tuxmail/<domain>.crt     # custom
+# tuxmail_tls_key_path: /etc/ssl/tuxmail/<domain>.key      # custom
+# tuxmail_tls_chain_path: ""
+# tuxmail_tls_copy_from_controller: false
+# tuxmail_tls_cert_src: files/tuxmail.crt
+# tuxmail_tls_key_src: files/tuxmail.key                   # gern vault-verschlüsselt
+# tuxmail_tls_chain_src: ""
+
+# --- Firewall (optional) ---
+# tuxmail_firewall_enabled: false
+# tuxmail_firewall_backend: auto            # auto | ufw | firewalld
+# tuxmail_firewall_ssh_port: 22
+# tuxmail_firewall_extra_ports: []
+
+# --- Bridges & Gotenberg (optional) ---
+# tuxmail_bridges_enabled: false
+# tuxmail_bridges_runtime: podman           # podman | docker
+# tuxmail_bridges_homeserver: synapse       # synapse | continuwuity
+# tuxmail_bridges_whatsapp_enabled: true
+# tuxmail_bridges_signal_enabled: true
+# tuxmail_bridges_gotenberg_enabled: true

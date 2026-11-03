@@ -1,0 +1,55 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Backup-Skript installieren
+  ansible.builtin.template:
+    src: tuxmail-backup.sh.j2
+    dest: /usr/local/sbin/tuxmail-backup
+    owner: root
+    group: root
+    mode: "0750"
+
+- name: Backup-Service und -Timer installieren
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - tuxmail-backup.service
+    - tuxmail-backup.timer
+  register: tuxmail_backup_units
+  when: tuxmail_backup_timer_enabled | bool
+
+- name: Backup-Timer aktivieren
+  ansible.builtin.systemd_service:
+    name: tuxmail-backup.timer
+    enabled: true
+    state: started
+    daemon_reload: "{{ tuxmail_backup_units is changed }}"
+  when: tuxmail_backup_timer_enabled | bool
+
+- name: Prüfen, ob ein Backup-Timer existiert
+  ansible.builtin.stat:
+    path: /etc/systemd/system/tuxmail-backup.timer
+  register: tuxmail_backup_timer_file
+  when: not (tuxmail_backup_timer_enabled | bool)
+
+- name: Backup-Timer deaktivieren
+  ansible.builtin.systemd_service:
+    name: tuxmail-backup.timer
+    enabled: false
+    state: stopped
+  when:
+    - not (tuxmail_backup_timer_enabled | bool)
+    - tuxmail_backup_timer_file.stat.exists | default(false)
+
+- name: Backup-Units entfernen
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ item }}"
+    state: absent
+  loop:
+    - tuxmail-backup.service
+    - tuxmail-backup.timer
+  notify: tuxmail daemon-reload
+  when: not (tuxmail_backup_timer_enabled | bool)

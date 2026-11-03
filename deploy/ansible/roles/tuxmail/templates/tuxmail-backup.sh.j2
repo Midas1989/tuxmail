@@ -1,0 +1,92 @@
+#!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+#
+# Sichert {{ tuxmail_data_dir }} als komprimiertes tar-Archiv nach {{ tuxmail_backup_dir }}.
+#
+#   tuxmail-backup [--stop] LABEL KEEP [TAG]
+#
+#   --stop  Dienst {{ tuxmail_service_name }} während der Sicherung anhalten (konsistente SQLite-Dateien)
+#   LABEL   z. B. "scheduled", "pre-upgrade", "manual" (nur a-z, 0-9, -)
+#   KEEP    Anzahl der Archive dieses Labels, die behalten werden
+#   TAG     optionaler Zusatz im Dateinamen (z. B. Version)
+#
+# Ergebnis: {{ tuxmail_backup_dir }}/tuxmail-LABEL-JJJJMMTT-HHMMSS[-TAG].tar.{{ 'zst' if tuxmail_backup_compression == 'zstd' else 'gz' }}
+set -euo pipefail
+umask 077
+
+DATA_DIR={{ tuxmail_data_dir | quote }}
+BACKUP_DIR={{ tuxmail_backup_dir | quote }}
+SERVICE={{ (tuxmail_service_name ~ '.service') | quote }}
+{% if tuxmail_backup_compression == 'zstd' %}
+EXT=tar.zst
+COMPRESS_OPT=--zstd
+{% else %}
+EXT=tar.gz
+COMPRESS_OPT=--gzip
+{% endif %}
+{% if tuxmail_backup_age_recipients | length > 0 %}
+# Verschlüsselung mit age (Entschlüsseln: age -d -i schluessel.txt DATEI | tar ... -x)
+EXT="${EXT}.age"
+AGE_ARGS={{ tuxmail_backup_age_recipients | map('regex_replace', '^', '-r ') | join(' ') | quote }}
+{% else %}
+AGE_ARGS=""
+{% endif %}
+
+stop=0
+if [ "${1:-}" = "--stop" ]; then
+    stop=1
+    shift
+fi
+label=${1:-manual}
+keep=${2:-7}
+tag=${3:-}
+
+case "$label" in
+    ''|*[!a-z0-9-]*) echo "ungültiges Label: $label" >&2; exit 2 ;;
+esac
+case "$keep" in
+    ''|*[!0-9]*) echo "ungültige Anzahl: $keep" >&2; exit 2 ;;
+esac
+if [ "$keep" -lt 1 ]; then
+    keep=1
+fi
+tag=$(printf '%s' "$tag" | tr -c 'A-Za-z0-9._-' '_')
+
+ts=$(date +%Y%m%d-%H%M%S)
+name="tuxmail-${label}-${ts}${tag:+-$tag}.${EXT}"
+target="${BACKUP_DIR}/${name}"
+tmp="${BACKUP_DIR}/.${name}.partial"
+
+restart=0
+cleanup() {
+    rm -f "$tmp"
+    if [ "$restart" -eq 1 ]; then
+        systemctl start "$SERVICE" || echo "WARNUNG: $SERVICE konnte nicht gestartet werden" >&2
+    fi
+}
+trap cleanup EXIT
+trap 'exit 1' INT TERM HUP
+
+if [ "$stop" -eq 1 ] && systemctl is-active --quiet "$SERVICE"; then
+    systemctl stop "$SERVICE"
+    restart=1
+fi
+
+mkdir -p "$BACKUP_DIR"
+# Enthält master.key, vapid.json, server.db und users/<id>/ – Archiv nur für root lesbar (umask 077).
+if [ -n "$AGE_ARGS" ]; then
+    # shellcheck disable=SC2086
+    tar $COMPRESS_OPT -C "$(dirname "$DATA_DIR")" -cpf - "$(basename "$DATA_DIR")" | age $AGE_ARGS -o "$tmp"
+else
+    tar $COMPRESS_OPT -C "$(dirname "$DATA_DIR")" -cpf "$tmp" "$(basename "$DATA_DIR")"
+fi
+mv "$tmp" "$target"
+echo "Sicherung erstellt: $target"
+
+# Alte Sicherungen dieses Labels entfernen (Dateinamen enthalten keine Leerzeichen).
+# shellcheck disable=SC2012
+ls -1t "$BACKUP_DIR"/tuxmail-"$label"-*."$EXT" 2>/dev/null | tail -n +"$((keep + 1))" | while read -r old; do
+    rm -f -- "$old"
+    echo "Alte Sicherung entfernt: $old"
+done

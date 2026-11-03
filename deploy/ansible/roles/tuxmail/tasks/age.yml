@@ -1,0 +1,11 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: EPEL bereitstellen (RHEL-Familie, für age)
+  ansible.builtin.include_role:
+    name: tuxmail_common
+    tasks_from: epel.yml
+
+- name: Age installieren
+  ansible.builtin.package:
+    name: age
+    state: present

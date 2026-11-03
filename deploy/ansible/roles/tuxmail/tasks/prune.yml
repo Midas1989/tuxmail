@@ -1,0 +1,21 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Behält die aktive Version plus (tuxmail_keep_versions - 1) ältere für Rollbacks.
+
+- name: Installierte Versionen ermitteln
+  ansible.builtin.find:
+    paths: "{{ tuxmail_install_dir }}/versions"
+    file_type: directory
+    recurse: false
+  register: tuxmail_installed_versions
+
+- name: Überzählige alte Versionen entfernen
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ tuxmail_old_versions[: [(tuxmail_old_versions | length) - (tuxmail_old_keep | int), 0] | max] }}"
+  vars:
+    tuxmail_old_versions: >-
+      {{ tuxmail_installed_versions.files | sort(attribute='mtime') | map(attribute='path')
+         | reject('equalto', tuxmail_version_dir) | list }}
+    tuxmail_old_keep: "{{ [(tuxmail_keep_versions | int) - 1, 0] | max }}"

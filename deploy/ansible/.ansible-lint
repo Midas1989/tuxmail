@@ -1,0 +1,9 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+profile: production
+exclude_paths:
+  - credentials/
+skip_list:
+  # Alle Rollen teilen sich bewusst das Präfix "tuxmail_" (gemeinsame Variablen
+  # wie tuxmail_domain werden von mehreren Rollen gelesen).
+  - var-naming[no-role-prefix]

@@ -1,0 +1,36 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Architektur wird unterstützt
+  ansible.builtin.assert:
+    that: tuxmail_arch in ['amd64', 'arm64']
+    fail_msg: "Nicht unterstützte Architektur: {{ ansible_facts['architecture'] }} (nur amd64/arm64)."
+    quiet: true
+
+- name: Pakete und Verzeichnisse
+  ansible.builtin.import_tasks: directories.yml
+
+- name: Binary installieren (versioniert, noch nicht aktiviert)
+  ansible.builtin.import_tasks: install.yml
+
+- name: Konfiguration und Geheimnisse
+  ansible.builtin.import_tasks: config.yml
+
+- name: Backup-Skript und optionaler Timer
+  ansible.builtin.import_tasks: backup.yml
+
+- name: Version aktivieren (mit Sicherung bei Versionswechsel)
+  ansible.builtin.import_tasks: activate.yml
+
+- name: Systemd-Dienst
+  ansible.builtin.import_tasks: service.yml
+
+- name: Health-Check
+  ansible.builtin.import_tasks: healthcheck.yml
+  when: tuxmail_healthcheck_enabled | bool
+
+- name: Ersten Administrator anlegen
+  ansible.builtin.import_tasks: admin.yml
+  when: tuxmail_admin_create | bool
+
+- name: Alte Versionen aufräumen
+  ansible.builtin.import_tasks: prune.yml

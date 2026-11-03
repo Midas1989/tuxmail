@@ -1,0 +1,19 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Im Modus "existing" wird nginx weder installiert noch werden vorhandene
+# Dateien verändert. Es wird nur geprüft, ob nginx vorhanden ist.
+- name: Nginx-Binary suchen
+  ansible.builtin.stat:
+    path: /usr/sbin/nginx
+  register: tuxmail_nginx_binary
+
+- name: Nginx ist installiert
+  ansible.builtin.assert:
+    that: tuxmail_nginx_binary.stat.exists
+    fail_msg: "tuxmail_nginx_mode=existing, aber /usr/sbin/nginx fehlt. Verwende tuxmail_nginx_mode=new."
+    quiet: true
+
+- name: Vorhandene nginx-Konfiguration ist gültig (vor jeder Änderung)
+  ansible.builtin.command:
+    argv: [nginx, -t]
+  changed_when: false

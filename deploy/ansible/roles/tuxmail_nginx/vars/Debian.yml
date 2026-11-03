@@ -1,0 +1,6 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+tuxmail_nginx_os_user: "www-data"
+tuxmail_nginx_os_vhost_dir: "/etc/nginx/sites-available"
+tuxmail_nginx_os_enabled_dir: "/etc/nginx/sites-enabled"
+tuxmail_nginx_os_default_site: "/etc/nginx/sites-enabled/default"

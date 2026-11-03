@@ -1,0 +1,8 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+# Wird von certbot nach jeder erfolgreichen Erneuerung ausgeführt.
+set -eu
+if command -v nginx >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
+    nginx -t -q && systemctl reload nginx
+fi

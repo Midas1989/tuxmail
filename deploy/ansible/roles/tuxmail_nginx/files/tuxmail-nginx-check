@@ -1,0 +1,47 @@
+#!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Prüft eine einzelne nginx-Konfigurationsdatei isoliert mit "nginx -t",
+# bevor sie an ihren Zielort geschrieben wird (Ansible: template ... validate).
+#
+#   tuxmail-nginx-check http   DATEI   # Datei gehört in den http-Kontext (vHost)
+#   tuxmail-nginx-check server DATEI   # Datei gehört in einen server-Block (Snippet)
+#
+# Es wird eine minimale Test-Konfiguration in einem temporären Verzeichnis erzeugt;
+# die laufende nginx-Konfiguration wird weder gelesen noch verändert.
+set -eu
+
+if [ "$#" -ne 2 ]; then
+    echo "Aufruf: $0 http|server DATEI" >&2
+    exit 2
+fi
+ctx=$1
+file=$2
+
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/logs"
+
+case "$ctx" in
+    http)   body="include $file;" ;;
+    server) body="server { listen 127.0.0.1:65535; server_name tuxmail-config-check.invalid; include $file; }" ;;
+    *) echo "unbekannter Kontext: $ctx" >&2; exit 2 ;;
+esac
+
+mime=""
+if [ -f /etc/nginx/mime.types ]; then
+    mime="include /etc/nginx/mime.types;"
+fi
+
+cat > "$tmp/nginx.conf" <<EOF
+pid $tmp/nginx.pid;
+error_log $tmp/logs/error.log;
+events {}
+http {
+    $mime
+    access_log off;
+    $body
+}
+EOF
+
+nginx -t -q -p "$tmp/" -c "$tmp/nginx.conf"

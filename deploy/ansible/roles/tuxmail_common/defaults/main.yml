@@ -1,0 +1,93 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Gemeinsame Variablen, die von mehreren Rollen gelesen werden.
+# Überschreiben in inventory/group_vars/all.yml oder host_vars.
+
+# --- Version & Domain ---------------------------------------------------------
+# Zu installierende TuxMail-Version (ohne führendes "v").
+tuxmail_version: "1.0.0"
+# Öffentlicher Hostname, unter dem TuxMail erreichbar ist.
+tuxmail_domain: "mail.example.org"
+# Weitere Hostnamen (zusätzliche server_name-Einträge und Zertifikats-SANs).
+tuxmail_domain_aliases: []
+# Unterpfad, z. B. "/tuxmail" (ohne abschließenden Slash). Leer = Wurzel "/".
+# Pflicht im Modus tuxmail_nginx_existing_style=snippet.
+tuxmail_subpath: ""
+# Schema der öffentlichen URL. Auch bei tuxmail_tls_mode=none normalerweise
+# "https", weil dann ein vorgelagerter Proxy TLS terminiert.
+tuxmail_public_scheme: "https"
+tuxmail_public_url: "{{ tuxmail_public_scheme }}://{{ tuxmail_domain }}{{ tuxmail_subpath }}"
+
+# --- Netzwerk -----------------------------------------------------------------
+# "127.0.0.1:8080" (TCP) oder "unix:/run/tuxmail/tuxmail.sock" (Unix-Socket;
+# unter RHEL mit SELinux nicht empfohlen).
+tuxmail_listen: "127.0.0.1:8080"
+
+# --- Betriebsarten der Rollen --------------------------------------------------
+# new      = nginx installieren und eigenen vHost anlegen
+# existing = vorhandenes nginx nutzen, nichts Bestehendes verändern
+# none     = kein nginx (TuxMail lauscht direkt bzw. hinter fremdem Proxy)
+tuxmail_nginx_mode: "new"
+# Nur bei tuxmail_nginx_mode=existing:
+#   vhost   = eigene server-Datei für tuxmail_domain
+#   snippet = nur /etc/nginx/snippets/tuxmail.conf (location-Block) zum Einbinden
+tuxmail_nginx_existing_style: "vhost"
+# letsencrypt | custom | none
+tuxmail_tls_mode: "letsencrypt"
+
+# --- Systembenutzer & Pfade -----------------------------------------------------
+tuxmail_user: "tuxmail"
+tuxmail_group: "tuxmail"
+# Gruppe, die auf den Unix-Socket zugreifen darf (nginx wird Mitglied).
+tuxmail_socket_group: "tuxmail-web"
+tuxmail_install_dir: "/opt/tuxmail"
+tuxmail_config_dir: "/etc/tuxmail"
+tuxmail_config_file: "{{ tuxmail_config_dir }}/config.yaml"
+tuxmail_data_dir: "/var/lib/tuxmail"
+tuxmail_log_dir: "/var/log/tuxmail"
+tuxmail_backup_dir: "/var/backups/tuxmail"
+tuxmail_binary: "{{ tuxmail_install_dir }}/current/tuxmail"
+
+# --- Upload-Limit (TuxMail-Konfiguration und nginx client_max_body_size) -------
+tuxmail_max_upload_mb: 50
+
+# --- TLS-Pfade (von tuxmail_tls, tuxmail_nginx und tuxmail gelesen) ------------
+# Name des Let's-Encrypt-Zertifikats (Verzeichnis unter /etc/letsencrypt/live/).
+tuxmail_tls_letsencrypt_cert_name: "{{ tuxmail_domain }}"
+# Zertifikat (bei letsencrypt automatisch fullchain.pem) und privater Schlüssel.
+tuxmail_tls_cert_path: >-
+  {{ '/etc/letsencrypt/live/' ~ tuxmail_tls_letsencrypt_cert_name ~ '/fullchain.pem'
+     if tuxmail_tls_mode == 'letsencrypt' else '/etc/ssl/tuxmail/' ~ tuxmail_domain ~ '.crt' }}
+tuxmail_tls_key_path: >-
+  {{ '/etc/letsencrypt/live/' ~ tuxmail_tls_letsencrypt_cert_name ~ '/privkey.pem'
+     if tuxmail_tls_mode == 'letsencrypt' else '/etc/ssl/tuxmail/' ~ tuxmail_domain ~ '.key' }}
+# Optionale Zwischenzertifikate (nur custom). Ist sie gesetzt, wird daraus eine
+# Fullchain-Datei (Zertifikat + Kette) für nginx/TuxMail erzeugt.
+tuxmail_tls_chain_path: ""
+tuxmail_tls_fullchain_path: "/etc/ssl/tuxmail/{{ tuxmail_domain }}.fullchain.pem"
+# Webroot für ACME-HTTP-01-Challenges.
+tuxmail_acme_webroot: "/var/www/letsencrypt"
+
+# --- Interne, abgeleitete Werte (normalerweise nicht ändern) ------------------
+tuxmail_nginx_use_snippet: "{{ tuxmail_nginx_mode == 'existing' and tuxmail_nginx_existing_style == 'snippet' }}"
+tuxmail_listen_is_socket: "{{ tuxmail_listen is match('unix:') }}"
+tuxmail_socket_path: "{{ tuxmail_listen | regex_replace('^unix:', '') if tuxmail_listen_is_socket else '' }}"
+# Zertifikatsdatei, die nginx bzw. TuxMail tatsächlich verwenden.
+tuxmail_tls_effective_cert_path: >-
+  {{ tuxmail_tls_fullchain_path if (tuxmail_tls_mode == 'custom' and tuxmail_tls_chain_path | length > 0)
+     else tuxmail_tls_cert_path }}
+# TuxMail terminiert TLS selbst (eigenes Zertifikat, kein nginx).
+tuxmail_tls_native: "{{ tuxmail_nginx_mode == 'none' and tuxmail_tls_mode == 'custom' }}"
+
+# Unterstützte Systeme (Vorprüfung).
+tuxmail_supported_systems:
+  Debian: ["12", "13"]
+  Ubuntu: ["22", "24"]
+  RedHat: ["9"]
+  Rocky: ["9"]
+  AlmaLinux: ["9"]
+# Auf true setzen, um die Systemprüfung zu überspringen (auf eigene Gefahr).
+tuxmail_skip_os_check: false
+# EPEL auf RHEL-Systemen automatisch einrichten (für certbot, podman-compose).
+tuxmail_manage_epel: true
