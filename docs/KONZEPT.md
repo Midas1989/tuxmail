@@ -1166,12 +1166,22 @@ Ein Desktop-Client (Windows/Linux, portabel oder installiert) kann sich am eigen
 ---
 
 ### 16.4 Sprachen & Sprachdateien
-- **Deutsch und Englisch** von Anfang an vollständig; Deutsch ist die Referenzsprache.
+- **Englisch und Deutsch** von Anfang an vollständig; **Englisch ist die Standard- und Referenzsprache** (Rückfall bei fehlenden Übersetzungen). Ohne passende System-/Browsersprache startet TuxMail auf Englisch; deutsche Systeme erhalten automatisch Deutsch.
 - Alle Texte liegen in **Sprachdateien** im Repository unter `locales/` (`de.json`, `en.json`) – **eine gemeinsame Quelle** für Oberfläche (Desktop, Web, PWA) **und** Server-Texte (Push-Benachrichtigungen, Standardtexte der Abwesenheitsnotiz, Versand-Prüfungen, PDF-Kopfzeilen, Fehlermeldungen, E-Mails des Servers wie Einladungen/Passwort-Reset). Der Go-Kern bettet die Dateien ein (`internal/i18n`), das Frontend bindet dieselben Dateien beim Build ein.
 - Aufbau: verschachtelte Schlüssel nach Bereich (`mail.compose.send`), Platzhalter `{name}`, Mehrzahlformen nach Unicode-CLDR-Regeln, Metadaten (Name, Eigenname, Schreibrichtung). Datum, Uhrzeit, Zahlen, Währungen und relative Zeitangaben („vor 5 Minuten") werden über die Locale formatiert.
-- **Sprachwahl:** Deutsch / Englisch / Systemsprache – pro Benutzer; im Server-Modus erhalten Push-Benachrichtigungen und Server-Mails die Sprache des jeweiligen Benutzers.
+- **Sprachwahl:** Englisch / Deutsch / Systemsprache – pro Benutzer; im Server-Modus erhalten Push-Benachrichtigungen und Server-Mails die Sprache des jeweiligen Benutzers.
 - **Neue Sprache hinzufügen:** `en.json` kopieren, übersetzen, fertig – Anleitung in `locales/README.md`. Zusätzlich können Sprachdateien zur Laufzeit aus dem Datenverzeichnis (`<data>/locales/xx.json`) geladen werden, um Sprachen zu ergänzen oder einzelne Begriffe zu überschreiben (z. B. firmeneigene Bezeichnungen), ohne neu zu bauen.
-- **Qualitätssicherung:** automatischer Test, dass alle Sprachdateien dieselben Schlüssel und Platzhalter haben; Prüfung auf fest verdrahtete Texte im Code; fehlende Übersetzungen fallen auf Deutsch zurück und werden im Entwicklungsmodus gemeldet. Optional Anbindung an eine Übersetzungsplattform (z. B. Weblate) für Community-Übersetzungen.
+- **Qualitätssicherung:** automatischer Test, dass alle Sprachdateien dieselben Schlüssel und Platzhalter haben; Prüfung auf fest verdrahtete Texte im Code; fehlende Übersetzungen fallen auf Englisch zurück und werden im Entwicklungsmodus gemeldet. Optional Anbindung an eine Übersetzungsplattform (z. B. Weblate) für Community-Übersetzungen.
+
+### 16.5 Region: Zeitzone, Datums- und Zeitformate
+Unabhängig von der Sprache einstellbar unter *Einstellungen → Sprache & Region* (pro Benutzer, im Server-Modus serverseitig gespeichert):
+- **Zeitzone** (IANA-Liste mit Suche; Standard: System/Browser; Option „immer Systemzeitzone verwenden"); **zweite Zeitzone** im Kalender einblendbar; Termine aus anderen Zeitzonen werden umgerechnet und mit Hinweis angezeigt.
+- **Datumsformat:** Standard der Sprache, `TT.MM.JJJJ`, `JJJJ-MM-TT` (ISO 8601), `MM/TT/JJJJ`, `TT/MM/JJJJ`, ausgeschrieben („3. November 2026") oder eigenes Muster.
+- **Uhrzeitformat:** 24 Stunden / 12 Stunden (AM/PM) / Standard der Sprache.
+- **Erster Wochentag:** Montag / Sonntag / Samstag / Standard der Sprache; Kalenderwochen-Anzeige (ISO).
+- **Zahlenformat:** Dezimal- und Tausendertrennzeichen (z. B. `1.234,56` oder `1,234.56`).
+- **Relative Zeitangaben** („vor 5 Minuten") ein/aus.
+- Live-Vorschau in den Einstellungen; alle Datums-/Zeitanzeigen (Listen, Lesebereich, Chat-Blasen, Kalender, Suche, PDF-Export, Server-Benachrichtigungen) laufen über **ein zentrales Formatierungsmodul**. Intern werden Zeitpunkte immer in UTC gespeichert.
 
 ## 17. Sicherheit & Datenschutz
 
