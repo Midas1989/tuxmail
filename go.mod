@@ -3,6 +3,9 @@ module github.com/Midas1989/Mailclient
 go 1.24.0
 
 require (
+	github.com/emersion/go-imap/v2 v2.0.0-beta.8
+	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
+	github.com/emersion/go-smtp v0.25.0
 	github.com/klauspost/compress v1.18.7
 	github.com/zalando/go-keyring v0.2.8
 	golang.org/x/crypto v0.45.0
@@ -12,6 +15,7 @@ require (
 require (
 	github.com/danieljoos/wincred v1.2.3 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/emersion/go-message v0.18.2 // indirect
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
