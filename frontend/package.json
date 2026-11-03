@@ -13,6 +13,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@capacitor/core": "8.6.0",
     "@lucide/svelte": "1.67.0",
     "svelte": "5.57.3"
   },

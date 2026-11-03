@@ -1,0 +1,41 @@
+From: Organizer <org@example.com>
+To: anna@example.net
+Subject: Einladung: Projekt-Kickoff
+Date: Wed, 17 Jan 2024 08:00:00 +0000
+Message-ID: <invite-1@example.com>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="CAL"
+
+--CAL
+Content-Type: multipart/alternative; boundary="ALT"
+
+--ALT
+Content-Type: text/plain; charset=utf-8
+
+Sie wurden eingeladen.
+--ALT
+Content-Type: text/calendar; charset=utf-8; method=REQUEST
+Content-Transfer-Encoding: 7bit
+
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//EN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:kickoff-2024-
+ 0001@example.com
+SEQUENCE:0
+SUMMARY:Projekt-Kickoff\, Raum 1
+DTSTART:20240120T100000Z
+DTEND:20240120T110000Z
+END:VEVENT
+END:VCALENDAR
+--ALT--
+--CAL
+Content-Type: application/ics; name="invite.ics"
+Content-Disposition: attachment; filename="invite.ics"
+Content-Transfer-Encoding: base64
+
+QkVHSU46VkNBTEVOREFSDQpNRVRIT0Q6UkVRVUVTVA0KQkVHSU46VkVWRU5UDQpVSUQ6a2lja29m
+Zi0yMDI0LTAwMDFAZXhhbXBsZS5jb20NCkVORDpWRVZFTlQNCkVORDpWQ0FMRU5EQVINCg==
+--CAL--

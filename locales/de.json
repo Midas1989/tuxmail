@@ -1419,5 +1419,73 @@
     },
     "deleteTitle": "„{name}“ löschen?",
     "deleteText": "Das Projekt und seine Verknüpfungen werden entfernt. Mails, Chats, Termine und Dateien selbst bleiben erhalten."
+  },
+  "native": {
+    "connect": {
+      "browserHint": "Empfohlen: Bestätigung auf der Webseite des Servers – auch mit Zwei-Faktor-Anmeldung oder Single-Sign-On.",
+      "checking": "Server wird geprüft …",
+      "changeServer": "Anderen Server wählen",
+      "continue": "Weiter",
+      "expired": "Deine Sitzung auf {server} ist beendet (abgelaufen oder auf einem anderen Gerät abgemeldet). Bitte melde dich erneut an.",
+      "lead": "Gib die Adresse deines TuxMail-Servers ein. Die App bleibt mit ihm verbunden; Mails, Chats und Kalender synchronisiert der Server.",
+      "linkPrefilled": "Serveradresse aus dem Link übernommen – bitte prüfen.",
+      "openPage": "Anmeldeseite öffnen",
+      "placeholder": "mail.example.org",
+      "profiles": "Gespeicherte Server",
+      "removeProfile": "{server} entfernen",
+      "serverFound": "TuxMail {version} gefunden auf {server}",
+      "signInBrowser": "Im Browser anmelden",
+      "title": "Server verbinden",
+      "totpHint": "Dieses Konto nutzt Zwei-Faktor-Anmeldung. Gib den 6-stelligen Code aus deiner Authenticator-App ein.",
+      "useProfile": "Mit {server} verbinden"
+    },
+    "error": {
+      "access_denied": "Die Anmeldung wurde abgelehnt.",
+      "aborted": "Abgebrochen.",
+      "expired_token": "Die Anmeldeanfrage ist abgelaufen. Bitte neu starten.",
+      "invalid_code": "Der Code ist nicht korrekt.",
+      "invalid_credentials": "Benutzername oder Passwort ist falsch.",
+      "invalid_url": "Bitte eine gültige https-Adresse eingeben.",
+      "mfa_required": "Zwei-Faktor-Code erforderlich.",
+      "not_tuxmail": "Unter dieser Adresse antwortet kein TuxMail-Server.",
+      "server_error": "Der Server meldet einen Fehler: {message}",
+      "throttled": "Zu viele Versuche. Bitte kurz warten und erneut versuchen.",
+      "unhealthy": "Der Server ist erreichbar, meldet aber ein Problem.",
+      "unreachable": "Der Server ist nicht erreichbar. Prüfe die Adresse und deine Internetverbindung.",
+      "user_disabled": "Dieses Konto ist deaktiviert."
+    },
+    "lock": {
+      "failed": "Entsperren fehlgeschlagen. Bitte erneut versuchen.",
+      "prompt": "TuxMail entsperren",
+      "promptSubtitle": "Mit Fingerabdruck, Gesicht oder Displaysperre bestätigen",
+      "title": "TuxMail ist gesperrt",
+      "unlock": "Entsperren"
+    },
+    "settings": {
+      "appLock": "App-Sperre",
+      "appLockHint": "Beim Öffnen von TuxMail nach Fingerabdruck, Gesicht oder Displaysperre fragen.",
+      "appLockUnavailable": "Auf diesem Gerät ist weder Fingerabdruck, Gesicht noch eine Displaysperre eingerichtet.",
+      "lockAfter": "Sperren nach",
+      "lockAfterMinutes": "{count} Minuten im Hintergrund",
+      "lockAfterMinutes_one": "1 Minute im Hintergrund",
+      "lockImmediately": "Sofort",
+      "push": "Push-Benachrichtigungen",
+      "pushActive": "Benachrichtigungen sind aktiv.",
+      "pushDenied": "Benachrichtigungen sind für TuxMail in den Android-Einstellungen blockiert.",
+      "pushDistributor": "UnifiedPush-Verteiler",
+      "pushEnable": "Benachrichtigungen aktivieren",
+      "pushFailed": "Anmeldung für Benachrichtigungen fehlgeschlagen: {message}",
+      "pushNoDistributor": "Kein UnifiedPush-Verteiler installiert (zum Beispiel ntfy). Ohne Verteiler kann TuxMail neue Nachrichten nur anzeigen, solange die App geöffnet ist.",
+      "pushNotConfigured": "Diese Version enthält keine Firebase-Konfiguration – Benachrichtigungen sind nicht verfügbar.",
+      "pushProviderFcm": "Zustellung über Firebase Cloud Messaging (Google)",
+      "pushProviderUnifiedPush": "Zustellung über UnifiedPush – ohne Google-Dienste",
+      "pushServerUnsupported": "Dein TuxMail-Server unterstützt diesen Push-Dienst noch nicht.",
+      "server": "Server",
+      "signOut": "Von diesem Server abmelden",
+      "signedInAs": "Angemeldet bei {server} als {user}",
+      "switchServer": "Server wechseln oder hinzufügen",
+      "title": "App-Einstellungen",
+      "version": "App-Version {version}"
+    }
   }
 }

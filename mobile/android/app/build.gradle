@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (C) 2026 Midas Wollinger and TuxMail contributors
+//
+// TuxMail Android app (Capacitor thin client).
+//
+// Flavors (dimension "distribution"):
+//   foss - F-Droid / GitHub: UnifiedPush, no Google dependencies at all
+//   play - Google Play: Firebase Cloud Messaging; google-services.json is NOT
+//          committed (CI writes it from a secret). Without it the build still
+//          works and push reports "not configured" at runtime.
+//
+// Version: single source is mobile/package.json ("version"); versionCode is
+// derived as MAJOR*10000 + MINOR*100 + PATCH (override: TUXMAIL_VERSION_CODE).
+//
+// Release signing (all optional, unsigned release otherwise), from env or
+// mobile/android/keystore.properties (never committed):
+//   TUXMAIL_KEYSTORE_FILE, TUXMAIL_KEYSTORE_PASSWORD, TUXMAIL_KEY_ALIAS, TUXMAIL_KEY_PASSWORD
+
+import groovy.json.JsonSlurper
+
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+def pkg = new JsonSlurper().parse(file('../../package.json'))
+def appVersionName = (System.getenv('TUXMAIL_VERSION_NAME') ?: pkg.version) as String
+def versionParts = appVersionName.replaceFirst(/[-+].*$/, '').tokenize('.').collect { it as int } + [0, 0, 0]
+def appVersionCode = (System.getenv('TUXMAIL_VERSION_CODE') ?: (versionParts[0] * 10000 + versionParts[1] * 100 + versionParts[2]).toString()) as int
+def appId = System.getenv('TUXMAIL_APP_ID') ?: 'org.tuxmail.app'
+
+def signingProps = new Properties()
+def signingFile = rootProject.file('keystore.properties')
+if (signingFile.exists()) signingFile.withInputStream { signingProps.load(it) }
+def signingValue = { String key -> System.getenv(key) ?: signingProps.getProperty(key) }
+def hasReleaseSigning = signingValue('TUXMAIL_KEYSTORE_FILE') && file(signingValue('TUXMAIL_KEYSTORE_FILE')).exists()
+
+android {
+    namespace = "org.tuxmail.app"
+    compileSdk = rootProject.ext.compileSdkVersion
+    defaultConfig {
+        applicationId appId
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode appVersionCode
+        versionName appVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        androidResources {
+            // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+        }
+        // Only ship the languages TuxMail itself is translated to.
+        resourceConfigurations += ['en', 'de']
+    }
+
+    flavorDimensions = ['distribution']
+    productFlavors {
+        foss {
+            dimension 'distribution'
+            buildConfigField 'String', 'PUSH_PROVIDER', '"unifiedpush"'
+        }
+        play {
+            dimension 'distribution'
+            buildConfigField 'String', 'PUSH_PROVIDER', '"fcm"'
+        }
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile file(signingValue('TUXMAIL_KEYSTORE_FILE'))
+                storePassword signingValue('TUXMAIL_KEYSTORE_PASSWORD')
+                keyAlias signingValue('TUXMAIL_KEY_ALIAS')
+                keyPassword signingValue('TUXMAIL_KEY_PASSWORD')
+                enableV1Signing false
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            // No applicationIdSuffix: google-services.json then needs only one client entry.
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) signingConfig signingConfigs.release
+            // Reproducible builds: no VCS metadata in the APK.
+            vcsInfo {
+                include = false
+            }
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    // F-Droid: no encrypted Google "dependency metadata" block in APK/AAB.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    packaging {
+        resources {
+            excludes += ['META-INF/*.version', 'META-INF/*.kotlin_module', 'DebugProbesKt.bin', 'kotlin-tooling-metadata.json']
+        }
+    }
+
+    lint {
+        // The web assets are copied by `cap sync`; lint must not need network.
+        checkReleaseBuilds true
+        abortOnError false
+    }
+}
+
+kotlin {
+    jvmToolchain(21)
+}
+
+repositories {
+    flatDir {
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-ktx:$androidxCoreVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation "androidx.biometric:biometric:$androidxBiometricVersion"
+    implementation project(':capacitor-android')
+    implementation project(':capacitor-cordova-android-plugins')
+
+    // foss: UnifiedPush connector (Apache-2.0, Maven Central) - also decrypts RFC 8291 Web Push.
+    fossImplementation "org.unifiedpush.android:connector:$unifiedPushConnectorVersion"
+    // play: Firebase Cloud Messaging
+    playImplementation platform("com.google.firebase:firebase-bom:$firebaseBomVersion")
+    playImplementation 'com.google.firebase:firebase-messaging'
+
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+}
+
+apply from: 'capacitor.build.gradle'
+
+// google-services.json: app/src/play/google-services.json (CI: secret
+// GOOGLE_SERVICES_JSON). Only the play variants need it; the plugin is not
+// applied at all when the file is missing or -Ptuxmail.gms=false is set.
+def googleServicesJson = file('src/play/google-services.json')
+if (findProperty('tuxmail.gms') != 'false' && googleServicesJson.exists() && googleServicesJson.text.trim()) {
+    apply plugin: 'com.google.gms.google-services'
+    // The foss variants never have a configuration: skip their processing task.
+    tasks.configureEach { t ->
+        if (t.name ==~ /process(Foss)\w*GoogleServices/) t.enabled = false
+    }
+} else {
+    logger.lifecycle('TuxMail: no google-services.json for the play flavor - FCM push disabled in this build')
+}

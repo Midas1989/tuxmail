@@ -1,0 +1,40 @@
+From: weird@example.com
+To: anna@example.net
+Subject: =?utf-8?Q?Kaputt_und_?==?utf-8?Q?verschachtelt?=
+Date: garbage date
+Content-Type: multipart/mixed; boundary=OUTER
+Content-Transfer-Encoding: quoted-printable
+
+preamble text that must be ignored
+--OUTER
+Content-Type: multipart/alternative; boundary="MID"
+
+--MID
+Content-Type: multipart/related; boundary="DEEP"
+
+--DEEP
+Content-Type: text/html; charset="utf-8"
+Content-Transfer-Encoding: base64
+
+PGh0bWw+PGJvZHk+PHA+RGVlcCBIVE1MIGJvZHkgPGltZyBzcmM9ImNpZDpsb2dvIj48L3A+
+PC9ib2R5PjwvaHRtbD4=
+--DEEP
+Content-Type: image/gif
+Content-ID: <logo>
+Content-Transfer-Encoding: base64
+
+R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+--DEEP--
+--MID--
+--OUTER
+Content-Type: application/octet-stream
+Content-Disposition: attachment; filename*0*=iso-8859-1''Gr%FC;
+ filename*1*=%DFe.txt
+Content-Transfer-Encoding: base64
+
+SGFsbG8=!!garbage
+--OUTER
+Content-Type: text/plain
+Content-Disposition: attachment; filename="C:\\Users\\x\\notes.txt"
+
+no closing boundary follows

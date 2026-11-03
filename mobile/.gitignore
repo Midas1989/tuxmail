@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+node_modules/
+# Secrets - never commit (CI writes them from repository secrets)
+android/app/google-services.json
+android/app/src/play/google-services.json
+android/keystore.properties
+*.jks
+*.keystore
+# Build outputs
+android/app/build/
+android/build/
+android/.gradle/
+dist/

@@ -8,6 +8,19 @@ export function isWails(win: unknown = typeof window !== 'undefined' ? window : 
   return !!(win && typeof (win as WailsWindow).go === 'object' && (win as WailsWindow).go);
 }
 
+interface CapacitorWindow {
+  Capacitor?: { isNativePlatform?: () => boolean };
+}
+
+/** True inside the native mobile app (Capacitor WebView, see mobile/). */
+export function isNativeShell(win: unknown = typeof window !== 'undefined' ? window : undefined): boolean {
+  try {
+    return !!(win as CapacitorWindow | undefined)?.Capacitor?.isNativePlatform?.();
+  } catch {
+    return false;
+  }
+}
+
 /** Open a URL in the user's real browser (Wails) or a new tab. */
 export function openExternal(url: string): void {
   if (!/^https?:\/\//i.test(url)) return;
