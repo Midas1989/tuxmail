@@ -28,7 +28,9 @@
 
   const uid = `qb-${Math.random().toString(36).slice(2, 7)}`;
   let textView = $state(false);
-  let editStart = $state(0);
+  // A query passed in from outside (saved search folder, project rule) starts as chips.
+  // svelte-ignore state_referenced_locally
+  let editStart = $state(value.trim() && !tokenize(value).some((tk) => tk.unterminated) ? value.length : 0);
   let input = $state<HTMLInputElement>();
   let focused = $state(false);
   let open = $state(false);

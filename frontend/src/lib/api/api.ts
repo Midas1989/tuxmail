@@ -50,6 +50,24 @@ import type {
   Person,
   SendResult,
   Signature,
+  ItemRef,
+  Project,
+  ProjectInput,
+  ProjectStatus,
+  ProjectTemplate,
+  ProjectTimelineEntry,
+  SearchFolder,
+  SearchFolderInput,
+  Tag,
+  TagCount,
+  TagInput,
+  Workflow,
+  WorkflowCompletion,
+  WorkflowDryRunResult,
+  WorkflowRun,
+  WorkflowSchema,
+  WorkflowTemplate,
+  WorkflowValidation,
 } from '../types';
 
 export type TransportKind = 'wails' | 'http' | 'mock';
@@ -58,7 +76,11 @@ export type TransportKind = 'wails' | 'http' | 'mock';
 export type MessageScope =
   | { kind: 'folder'; folderId: number }
   /** Virtual folder across all mail accounts (e.g. unified inbox). */
-  | { kind: 'unified'; role: 'inbox' | 'sent' | 'drafts' | 'archive' | 'trash' | 'junk' | 'flagged' | 'unread' };
+  | { kind: 'unified'; role: 'inbox' | 'sent' | 'drafts' | 'archive' | 'trash' | 'junk' | 'flagged' | 'unread' }
+  /** Mails with this tag (or a descendant tag). */
+  | { kind: 'tag'; tagId: number }
+  /** Saved search shown as a virtual folder (read-only for moves). */
+  | { kind: 'searchFolder'; searchFolderId: number };
 
 export interface MessageQuery {
   scope: MessageScope;
@@ -70,7 +92,11 @@ export interface MessageQuery {
 export type ConversationScope =
   | { kind: 'all' }
   | { kind: 'account'; accountId: number }
-  | { kind: 'folder'; folderId: number };
+  | { kind: 'folder'; folderId: number }
+  /** Hybrid view: conversations with at least one mail in a unified folder (all inboxes ...). */
+  | { kind: 'unified'; role: 'inbox' | 'flagged' | 'unread' }
+  | { kind: 'tag'; tagId: number }
+  | { kind: 'searchFolder'; searchFolderId: number };
 
 export interface ConversationQuery {
   scope: ConversationScope;
@@ -88,12 +114,16 @@ export interface ConversationQuery {
   focus?: 'vip' | 'waiting';
   /** Include snoozed chats (normally hidden until they wake up). */
   includeSnoozed?: boolean;
+  /** Tag filter pill in the messenger view (conversations with a tagged item). */
+  tagId?: number;
 }
 
 export interface ItemsQuery {
   /** Return items older than this item id (paging backwards). */
   before?: string;
   limit?: number;
+  /** Hybrid view: mark items inside this scope (ConversationItem.inScope). */
+  scope?: ConversationScope;
 }
 
 export interface ConversationRef {
@@ -222,6 +252,54 @@ export interface Api {
   proposeMeeting(conversationId: number, proposal: { title: string; durationMin: number; slots: TimeSlot[]; channel: Channel; identityId?: number; accountId?: number }): Promise<SendResult>;
   /** The recipient chose a slot (in the demo: click on the slot in your own proposal). Creates the event. */
   acceptMeetingSlot(conversationId: number, proposalId: string, slotStart: string): Promise<void>;
+
+  // Tags (hierarchical "Kunde/Müller"; synced as IMAP keywords / labels / categories)
+  listTags(): Promise<TagCount[]>;
+  /** Create (no id) or update/rename (with id; a changed path moves the subtree). */
+  saveTag(tag: TagInput): Promise<Tag>;
+  /** Deletes the tag and its descendants; assignments are removed. */
+  deleteTag(id: number): Promise<void>;
+  /** Re-tag everything tagged with a source tag with the target, then delete the sources. */
+  mergeTags(sourceIds: number[], targetId: number): Promise<void>;
+  /** Bulk (un)assign tags to items (mails, chat messages, conversations, events ...). */
+  setItemTags(items: ItemRef[], add: number[], remove: number[]): Promise<void>;
+
+  // Projects
+  listProjects(query?: { status?: ProjectStatus[] }): Promise<Project[]>;
+  getProject(id: number): Promise<Project>;
+  /** Create (no id) or update. Creating from a template binds its workflows. */
+  saveProject(project: ProjectInput): Promise<Project>;
+  deleteProject(id: number): Promise<void>;
+  listProjectTemplates(): Promise<ProjectTemplate[]>;
+  addToProject(projectId: number, items: ItemRef[]): Promise<void>;
+  removeFromProject(projectId: number, items: ItemRef[]): Promise<void>;
+  /** All linked mails, chats, events, tasks and files, newest first. */
+  projectTimeline(projectId: number): Promise<ProjectTimelineEntry[]>;
+  /** Run the auto-assign rule now; returns the number of newly linked items. */
+  applyProjectRules(projectId: number): Promise<{ added: number }>;
+  setTaskDone(taskId: number, done: boolean): Promise<void>;
+
+  // Search folders
+  listSearchFolders(): Promise<SearchFolder[]>;
+  saveSearchFolder(folder: SearchFolderInput): Promise<SearchFolder>;
+  deleteSearchFolder(id: number): Promise<void>;
+
+  // Workflows (KONZEPT 8.5)
+  /** Triggers, fields, operators, actions and variables for the editors. */
+  describeWorkflows(): Promise<WorkflowSchema>;
+  listWorkflows(query?: { projectId?: number }): Promise<Workflow[]>;
+  getWorkflow(id: string): Promise<Workflow>;
+  saveWorkflow(workflow: Workflow): Promise<Workflow>;
+  deleteWorkflow(id: string): Promise<void>;
+  setWorkflowEnabled(id: string, enabled: boolean): Promise<Workflow>;
+  listWorkflowTemplates(): Promise<WorkflowTemplate[]>;
+  /** Evaluate against recent sample items without side effects. */
+  dryRunWorkflow(workflow: Workflow, options?: { limit?: number }): Promise<WorkflowDryRunResult>;
+  listWorkflowRuns(id: string, options?: { limit?: number }): Promise<WorkflowRun[]>;
+  /** Parse + check source text ("rule" one-line syntax or YAML); diagnostics carry line/col. */
+  validateWorkflow(src: string, mode: 'rule' | 'yaml'): Promise<WorkflowValidation>;
+  /** Context-aware completion at a 0-based offset. */
+  completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion>;
 
   // Live events
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe;

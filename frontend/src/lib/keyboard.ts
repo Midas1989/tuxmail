@@ -116,6 +116,10 @@ export function installShortcuts(app: AppState): () => void {
       case 'u':
         if (classic && msgId != null) void app.toggleRead(msgId);
         break;
+      case 't':
+        e.preventDefault();
+        app.tagSelection();
+        break;
     }
   };
   window.addEventListener('keydown', onKey);

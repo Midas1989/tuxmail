@@ -15,6 +15,8 @@
   import FilesScreen from './lib/screens/FilesScreen.svelte';
   import SettingsScreen from './lib/screens/SettingsScreen.svelte';
   import SearchScreen from './lib/screens/SearchScreen.svelte';
+  import ProjectsScreen from './lib/screens/ProjectsScreen.svelte';
+  import OrganizeDialogs from './lib/components/organize/OrganizeDialogs.svelte';
   import IosInstallHint from './lib/components/IosInstallHint.svelte';
   import { registerServiceWorker } from './lib/pwa';
 
@@ -29,7 +31,8 @@
     void app.init().then(() => {
       // PWA shortcuts: #/mail?compose=1, #/mail?view=chat
       const q = new URLSearchParams(location.hash.split('?')[1] ?? '');
-      if (q.get('view') === 'chat') void app.setViewMode('chat');
+      const v = q.get('view');
+      if (v === 'chat' || v === 'hybrid') void app.setViewMode(v);
       if (q.get('compose')) app.openCompose();
     });
     // Browser/PWA only (never inside Wails); notification clicks navigate here.
@@ -46,7 +49,7 @@
 </script>
 
 <a class="skip" href="#main">{t('common.a11y.skipToContent')}</a>
-<div class="app" class:chat-open={app.route === 'mail' && prefs.viewMode === 'chat' && app.selectedConversationId != null}>
+<div class="app" class:chat-open={app.route === 'mail' && prefs.viewMode !== 'classic' && app.selectedConversationId != null}>
   <ActivityBar />
   <main id="main" class="main" tabindex="-1">
     {#if app.loadError}
@@ -59,6 +62,8 @@
       <MailScreen />
     {:else if app.route === 'search'}
       <SearchScreen />
+    {:else if app.route === 'projects'}
+      <ProjectsScreen />
     {:else if app.route === 'calendar'}
       <CalendarScreen />
     {:else if app.route === 'contacts'}
@@ -77,6 +82,7 @@
 {#if app.composer}
   <Composer init={app.composer} onclose={() => (app.composer = null)} />
 {/if}
+<OrganizeDialogs />
 <Toasts />
 <IosInstallHint />
 

@@ -11,6 +11,11 @@
   import MailOpen from '@lucide/svelte/icons/mail-open';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import SquarePen from '@lucide/svelte/icons/square-pen';
+  import FolderSearch from '@lucide/svelte/icons/folder-search';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import Plus from '@lucide/svelte/icons/plus';
+  import TagIcon from './common/TagIcon.svelte';
+  import type { SearchFolder } from '../types';
   import { app } from '../state';
   import type { SidebarSel } from '../state';
   import { messengerChannel, type Account, type Folder, type FolderRole } from '../types';
@@ -53,7 +58,49 @@
     if (s.kind === 'unified' && c.kind === 'unified') return s.role === c.role;
     if (s.kind === 'folder' && c.kind === 'folder') return s.folderId === c.folderId;
     if (s.kind === 'account' && c.kind === 'account') return s.accountId === c.accountId;
+    if (s.kind === 'tag' && c.kind === 'tag') return s.tagId === c.tagId;
+    if (s.kind === 'searchFolder' && c.kind === 'searchFolder') return s.searchFolderId === c.searchFolderId;
     return false;
+  }
+
+  // Tags as a tree (paths "Kunde/Müller").
+  const tagNodes = $derived.by(() => {
+    const out: { id: number; depth: number; hasChildren: boolean; key: string }[] = [];
+    const list = app.tags;
+    const walk = (parentId: number | undefined, depth: number) => {
+      for (const x of list.filter((y) => (y.tag.parentId ?? undefined) === parentId)) {
+        const hasChildren = list.some((y) => y.tag.parentId === x.tag.id);
+        out.push({ id: x.tag.id, depth, hasChildren, key: 't' + x.tag.id });
+        if (hasChildren && !collapsed['t' + x.tag.id]) walk(x.tag.id, depth + 1);
+      }
+    };
+    walk(undefined, 0);
+    return out;
+  });
+
+  const globalSearchFolders = $derived(app.searchFolders.filter((f) => !f.accountId && !f.projectId));
+  const activeProjects = $derived(app.projects.filter((p) => p.status === 'active' || p.status === 'planned' || p.status === 'paused'));
+
+  // Hybrid view: drop a bubble (mail) onto a folder to move it.
+  const DRAG_TYPE = 'application/x-tuxmail-message';
+  let dropTarget = $state<number | null>(null);
+  function onDragOver(e: DragEvent, folderId: number) {
+    if (!e.dataTransfer?.types.includes(DRAG_TYPE)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    dropTarget = folderId;
+  }
+  function onDrop(e: DragEvent, folderId: number) {
+    const id = Number(e.dataTransfer?.getData(DRAG_TYPE));
+    dropTarget = null;
+    if (!id) return;
+    e.preventDefault();
+    void app.moveItemToFolder(id, folderId);
+  }
+
+  function editSearchFolder(e: Event, f: SearchFolder) {
+    e.stopPropagation();
+    app.organizeDialog = { kind: 'searchFolder', folder: f };
   }
 
   function folderLabel(f: Folder): string {
@@ -105,6 +152,19 @@
     }
   }
 </script>
+
+{#snippet searchFolderRow(sf: SearchFolder, depth: number)}
+  {@const s = { kind: 'searchFolder', searchFolderId: sf.id } as SidebarSel}
+  <div class="sf-wrap">
+    <button role="treeitem" aria-selected={isSel(s)} tabindex={isSel(s) ? 0 : -1} class="row sf" style:--depth={depth} onclick={() => app.select(s)} oncontextmenu={(e) => (e.preventDefault(), editSearchFolder(e, sf))} title={sf.query}>
+      <span class="twisty"></span>
+      <FolderSearch size={16} aria-hidden="true" />
+      <span class="name">{sf.name}</span>
+      {#if sf.unread > 0}<span class="count">{sf.unread}</span>{:else if sf.total > 0}<span class="count muted">{sf.total}</span>{/if}
+    </button>
+    <button class="sf-edit" aria-label={t('organize.searchFolder.editNamed', { name: sf.name })} onclick={(e) => editSearchFolder(e, sf)}><Pencil size={12} /></button>
+  </div>
+{/snippet}
 
 <aside class="sidebar" aria-label={t('mail.sidebar.label')}>
   <div class="head">
@@ -167,8 +227,12 @@
                   data-key={node.hasChildren ? fkey : undefined}
                   tabindex={isSel(s) ? 0 : -1}
                   class="row"
+                  class:drop={dropTarget === f.id}
                   style:--depth={node.depth}
                   onclick={() => app.select(s)}
+                  ondragover={(e) => onDragOver(e, f.id)}
+                  ondragleave={() => (dropTarget = dropTarget === f.id ? null : dropTarget)}
+                  ondrop={(e) => onDrop(e, f.id)}
                 >
                   {#if node.hasChildren}
                     <span
@@ -194,10 +258,85 @@
                 </button>
               </li>
             {/each}
+            {#each app.searchFolders.filter((x) => x.accountId === acc.id) as sf (sf.id)}
+              <li role="none">{@render searchFolderRow(sf, 0)}</li>
+            {/each}
           </ul>
         {/if}
       </li>
     {/each}
+
+    <li role="none" class="section">
+      <span class="section-title with-action">{t('organize.searchFolder.section')}
+        <button class="sec-btn" aria-label={t('organize.searchFolder.newTitle')} title={t('organize.searchFolder.newTitle')} onclick={() => (app.organizeDialog = { kind: 'searchFolder' })}><Plus size={13} /></button>
+      </span>
+    </li>
+    {#each globalSearchFolders as sf (sf.id)}
+      <li role="none">{@render searchFolderRow(sf, 0)}</li>
+    {/each}
+
+    {#if activeProjects.length}
+      <li role="none" class="section">
+        <span class="section-title with-action">{t('nav.projects')}
+          <button class="sec-btn" aria-label={t('projects.new')} title={t('projects.new')} onclick={() => (app.organizeDialog = { kind: 'newProject' })}><Plus size={13} /></button>
+        </span>
+      </li>
+      {#each activeProjects as p (p.id)}
+        <li role="none">
+          <button role="treeitem" aria-selected="false" tabindex="-1" class="row" style:--depth={0} onclick={() => app.openProject(p.id)}>
+            <span class="twisty"></span>
+            <span class="pdot" style:background={p.color}></span>
+            <span class="name">{p.name}</span>
+            <span class="pbar" title={Math.round(p.progress * 100) + '%'}><span style:width="{p.progress * 100}%" style:background={p.color}></span></span>
+          </button>
+        </li>
+        {#each app.searchFolders.filter((x) => x.projectId === p.id) as sf (sf.id)}
+          <li role="none">{@render searchFolderRow(sf, 1)}</li>
+        {/each}
+      {/each}
+    {/if}
+
+    {#if tagNodes.length}
+      <li role="none" class="section">
+        <span class="section-title with-action">{t('organize.tags.section')}
+          <button class="sec-btn" aria-label={t('organize.tags.manage')} title={t('organize.tags.manage')} onclick={() => ((app.settingsAnchor = 'set-tags'), app.navigate('settings'))}><Pencil size={12} /></button>
+        </span>
+      </li>
+      {#each tagNodes as node (node.id)}
+        {@const x = app.tags.find((y) => y.tag.id === node.id)!}
+        {@const s = { kind: 'tag', tagId: node.id } as SidebarSel}
+        <li role="none">
+          <button
+            role="treeitem"
+            aria-selected={isSel(s)}
+            aria-expanded={node.hasChildren ? !collapsed[node.key] : undefined}
+            data-key={node.hasChildren ? node.key : undefined}
+            tabindex={isSel(s) ? 0 : -1}
+            class="row"
+            style:--depth={node.depth}
+            onclick={() => app.select(s)}
+          >
+            {#if node.hasChildren}
+              <span
+                class="twisty"
+                role="presentation"
+                onclick={(e) => {
+                  e.stopPropagation();
+                  collapsed[node.key] = !collapsed[node.key];
+                }}
+              >
+                <ChevronRight size={13} class="chev {collapsed[node.key] ? '' : 'open'}" />
+              </span>
+            {:else}
+              <span class="twisty"></span>
+            {/if}
+            <TagIcon icon={x.tag.icon} size={15} color={x.tag.color} />
+            <span class="name">{x.tag.name}</span>
+            {#if x.unread > 0}<span class="count">{x.unread}</span>{:else if x.total > 0}<span class="count muted">{x.total}</span>{/if}
+          </button>
+        </li>
+      {/each}
+    {/if}
 
     {#if app.messengerAccounts.length}
       <li role="none" class="section">
@@ -318,6 +457,67 @@
   }
   .row[aria-selected='true'] .name {
     color: inherit;
+  }
+  .row.drop {
+    background: var(--tm-accent-soft);
+    box-shadow: inset 0 0 0 2px var(--tm-accent);
+  }
+  .with-action {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sec-btn {
+    display: inline-flex;
+    border: none;
+    background: transparent;
+    color: var(--tm-faint);
+    padding: 2px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .sec-btn:hover {
+    color: var(--tm-fg);
+    background: color-mix(in srgb, var(--tm-fg) 8%, transparent);
+  }
+  .sf-wrap {
+    position: relative;
+  }
+  .sf-edit {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: none;
+    border: none;
+    background: var(--tm-sidebar);
+    color: var(--tm-muted);
+    padding: 3px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .sf-wrap:hover .sf-edit,
+  .sf-edit:focus-visible {
+    display: inline-flex;
+  }
+  .pdot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    flex: none;
+    margin: 0 3px;
+  }
+  .pbar {
+    width: 34px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--tm-line);
+    overflow: hidden;
+    flex: none;
+  }
+  .pbar span {
+    display: block;
+    height: 100%;
   }
   .addr {
     font-size: 11px;

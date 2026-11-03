@@ -96,7 +96,8 @@ describe('MockTransport chat features', () => {
   it('chat folders filter lists and count unread', async () => {
     const api = new MockTransport({ latencyMs: 0 });
     const folders = await api.listChatFolders();
-    expect(folders.map((f) => f.name)).toEqual(['Arbeit', 'Familie', 'Kunden']);
+    expect(folders.map((f) => f.name)).toEqual(['Arbeit', 'Familie', 'Kunden', 'Ungelesen & wichtig']);
+    expect(folders.at(-1)?.searchFolderId).toBe(2);
     const fam = await api.listConversations({ ...base, folderId: 'family' });
     expect(fam.items.map((c) => c.title)).toEqual(expect.arrayContaining(['Familie Becker', 'Sabine Becker', 'Lena Becker']));
     expect(fam.items.every((c) => ['Familie Becker', 'Sabine Becker', 'Lena Becker'].includes(c.title))).toBe(true);

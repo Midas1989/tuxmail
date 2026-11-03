@@ -48,7 +48,15 @@
     const conv = t('common.palette.section.conversations');
     const list: Command[] = [
       { id: 'compose', label: t('common.action.compose'), section: act, hint: 'C', run: () => app.openCompose() },
-      { id: 'view.toggle', label: prefs.viewMode === 'classic' ? t('common.palette.toChat') : t('common.palette.toClassic'), section: view, hint: 'Ctrl+Shift+V', run: () => app.toggleViewMode() },
+      { id: 'view.toggle', label: t('common.palette.nextView'), section: view, hint: 'Ctrl+Shift+V', run: () => (app.navigate('mail'), app.toggleViewMode()) },
+      { id: 'view.classic', label: t('common.palette.toClassic'), section: view, run: () => (app.navigate('mail'), app.setViewMode('classic')) },
+      { id: 'view.hybrid', label: t('common.palette.toHybrid'), section: view, run: () => (app.navigate('mail'), app.setViewMode('hybrid')) },
+      { id: 'view.chat', label: t('common.palette.toChat'), section: view, run: () => (app.navigate('mail'), app.setViewMode('chat')) },
+      { id: 'nav.projects', label: t('nav.projects'), section: nav, run: () => app.openProject(null) },
+      { id: 'project.new', label: t('projects.new'), section: act, run: () => void (app.organizeDialog = { kind: 'newProject' }) },
+      { id: 'nav.workflows', label: t('settings.workflows.title'), section: nav, run: () => ((app.settingsAnchor = 'set-workflows'), app.navigate('settings')) },
+      { id: 'nav.tags', label: t('organize.tags.manage'), section: nav, run: () => ((app.settingsAnchor = 'set-tags'), app.navigate('settings')) },
+      ...app.projects.filter((p) => p.status === 'active').map((p) => ({ id: 'project.' + p.id, label: p.name, section: t('nav.projects'), run: () => app.openProject(p.id) })),
       { id: 'nav.mail', label: t('nav.mail'), section: nav, run: () => (app.navigate('mail'), app.setViewMode('classic')) },
       { id: 'nav.chats', label: t('nav.chats'), section: nav, run: () => (app.navigate('mail'), app.setViewMode('chat')) },
       { id: 'nav.calendar', label: t('nav.calendar'), section: nav, run: () => app.navigate('calendar') },

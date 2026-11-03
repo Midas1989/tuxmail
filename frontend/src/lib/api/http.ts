@@ -58,6 +58,28 @@
 //   PUT  /api/preferences                       UserPreferences -> UserPreferences
 //   GET  /api/locales                           -> LocaleInfo[]
 //   GET  /api/locales/{code}                    -> nested JSON (same shape as locales/en.json)
+//   GET  /api/tags                              -> TagCount[]
+//   POST /api/tags  PUT/DELETE /api/tags/{id}   TagInput -> Tag
+//   POST /api/tags/merge                        {sourceIds, targetId}
+//   POST /api/items/tags                        {items: ItemRef[], add, remove}
+//   GET  /api/projects?status=a,b               -> Project[]
+//   GET/PUT/DELETE /api/projects/{id}; POST /api/projects   ProjectInput -> Project
+//   GET  /api/project-templates                 -> ProjectTemplate[]
+//   POST /api/projects/{id}/items               {items}      POST /api/projects/{id}/items/remove {items}
+//   GET  /api/projects/{id}/timeline            -> ProjectTimelineEntry[]
+//   POST /api/projects/{id}/apply-rules         -> {added}
+//   PUT  /api/tasks/{id}/done                   {done}
+//   GET  /api/search-folders; POST /api/search-folders; PUT/DELETE /api/search-folders/{id}
+//   GET  /api/messages?scope=tag&tagId= | scope=searchFolder&searchFolderId=
+//   GET  /api/workflows/schema                  -> WorkflowSchema
+//   GET  /api/workflows?projectId=              -> Workflow[]
+//   POST /api/workflows; GET/PUT/DELETE /api/workflows/{id}
+//   PUT  /api/workflows/{id}/enabled            {enabled} -> Workflow
+//   GET  /api/workflow-templates                -> WorkflowTemplate[]
+//   POST /api/workflows/dry-run                 {workflow, limit} -> WorkflowDryRunResult
+//   GET  /api/workflows/{id}/runs?limit=        -> WorkflowRun[]
+//   POST /api/workflows/validate                {src, mode} -> WorkflowValidation
+//   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`):
@@ -69,7 +91,26 @@
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
+import type { ConversationScope } from './api';
 import type {
+  ItemRef,
+  Project,
+  ProjectInput,
+  ProjectStatus,
+  ProjectTemplate,
+  ProjectTimelineEntry,
+  SearchFolder,
+  SearchFolderInput,
+  Tag,
+  TagCount,
+  TagInput,
+  Workflow,
+  WorkflowCompletion,
+  WorkflowDryRunResult,
+  WorkflowRun,
+  WorkflowSchema,
+  WorkflowTemplate,
+  WorkflowValidation,
 Account,
   ApiEvent,
   Channel,
@@ -221,6 +262,8 @@ export class HttpTransport implements Api {
       scope: scope.kind,
       folderId: scope.kind === 'folder' ? scope.folderId : undefined,
       role: scope.kind === 'unified' ? scope.role : undefined,
+      tagId: scope.kind === 'tag' ? scope.tagId : undefined,
+      searchFolderId: scope.kind === 'searchFolder' ? scope.searchFolderId : undefined,
       offset: q.offset,
       limit: q.limit,
       q: q.search,
@@ -231,11 +274,12 @@ export class HttpTransport implements Api {
     return this.request('GET', `/api/messages/${id}`);
   }
   listConversations(q: ConversationQuery): Promise<Page<Conversation>> {
-    const s = q.scope;
     const qs = buildQuery({
-      scope: s.kind,
-      accountId: s.kind === 'account' ? s.accountId : undefined,
-      folderId: s.kind === 'folder' ? s.folderId : undefined,
+      ...scopeParams(q.scope),
+      chatFolder: q.folderId,
+      focus: q.focus,
+      tag: q.tagId,
+      includeSnoozed: q.includeSnoozed ? 1 : undefined,
       grouping: q.grouping,
       filter: q.filter,
       archived: q.archived ? 1 : undefined,
@@ -249,7 +293,7 @@ export class HttpTransport implements Api {
     return this.request('GET', `/api/conversations/${id}`);
   }
   listConversationItems(conversationId: number, query: ItemsQuery = {}): Promise<ConversationItem[]> {
-    return this.request('GET', `/api/conversations/${conversationId}/items${buildQuery({ before: query.before, limit: query.limit })}`);
+    return this.request('GET', `/api/conversations/${conversationId}/items${buildQuery({ before: query.before, limit: query.limit, ...(query.scope ? scopeParams(query.scope) : {}) })}`);
   }
   conversationForMessage(messageId: number, grouping: ConversationGrouping): Promise<ConversationRef> {
     return this.request('GET', `/api/messages/${messageId}/conversation${buildQuery({ grouping })}`);
@@ -448,6 +492,93 @@ export class HttpTransport implements Api {
   acceptMeetingSlot(conversationId: number, proposalId: string, slotStart: string): Promise<void> {
     return this.request('POST', `/api/conversations/${conversationId}/meeting-proposals/${encodeURIComponent(proposalId)}/accept`, { slotStart });
   }
+  listTags(): Promise<TagCount[]> {
+    return this.request('GET', '/api/tags');
+  }
+  saveTag(tag: TagInput): Promise<Tag> {
+    return tag.id ? this.request('PUT', `/api/tags/${tag.id}`, tag) : this.request('POST', '/api/tags', tag);
+  }
+  deleteTag(id: number): Promise<void> {
+    return this.request('DELETE', `/api/tags/${id}`);
+  }
+  mergeTags(sourceIds: number[], targetId: number): Promise<void> {
+    return this.request('POST', '/api/tags/merge', { sourceIds, targetId });
+  }
+  setItemTags(items: ItemRef[], add: number[], remove: number[]): Promise<void> {
+    return this.request('POST', '/api/items/tags', { items, add, remove });
+  }
+  listProjects(query: { status?: ProjectStatus[] } = {}): Promise<Project[]> {
+    return this.request('GET', `/api/projects${buildQuery({ status: query.status?.join(',') })}`);
+  }
+  getProject(id: number): Promise<Project> {
+    return this.request('GET', `/api/projects/${id}`);
+  }
+  saveProject(project: ProjectInput): Promise<Project> {
+    return project.id ? this.request('PUT', `/api/projects/${project.id}`, project) : this.request('POST', '/api/projects', project);
+  }
+  deleteProject(id: number): Promise<void> {
+    return this.request('DELETE', `/api/projects/${id}`);
+  }
+  listProjectTemplates(): Promise<ProjectTemplate[]> {
+    return this.request('GET', '/api/project-templates');
+  }
+  addToProject(projectId: number, items: ItemRef[]): Promise<void> {
+    return this.request('POST', `/api/projects/${projectId}/items`, { items });
+  }
+  removeFromProject(projectId: number, items: ItemRef[]): Promise<void> {
+    return this.request('POST', `/api/projects/${projectId}/items/remove`, { items });
+  }
+  projectTimeline(projectId: number): Promise<ProjectTimelineEntry[]> {
+    return this.request('GET', `/api/projects/${projectId}/timeline`);
+  }
+  applyProjectRules(projectId: number): Promise<{ added: number }> {
+    return this.request('POST', `/api/projects/${projectId}/apply-rules`);
+  }
+  setTaskDone(taskId: number, done: boolean): Promise<void> {
+    return this.request('PUT', `/api/tasks/${taskId}/done`, { done });
+  }
+  listSearchFolders(): Promise<SearchFolder[]> {
+    return this.request('GET', '/api/search-folders');
+  }
+  saveSearchFolder(folder: SearchFolderInput): Promise<SearchFolder> {
+    return folder.id ? this.request('PUT', `/api/search-folders/${folder.id}`, folder) : this.request('POST', '/api/search-folders', folder);
+  }
+  deleteSearchFolder(id: number): Promise<void> {
+    return this.request('DELETE', `/api/search-folders/${id}`);
+  }
+  describeWorkflows(): Promise<WorkflowSchema> {
+    return this.request('GET', '/api/workflows/schema');
+  }
+  listWorkflows(query: { projectId?: number } = {}): Promise<Workflow[]> {
+    return this.request('GET', `/api/workflows${buildQuery({ projectId: query.projectId })}`);
+  }
+  getWorkflow(id: string): Promise<Workflow> {
+    return this.request('GET', `/api/workflows/${encodeURIComponent(id)}`);
+  }
+  saveWorkflow(workflow: Workflow): Promise<Workflow> {
+    return workflow.id ? this.request('PUT', `/api/workflows/${encodeURIComponent(workflow.id)}`, workflow) : this.request('POST', '/api/workflows', workflow);
+  }
+  deleteWorkflow(id: string): Promise<void> {
+    return this.request('DELETE', `/api/workflows/${encodeURIComponent(id)}`);
+  }
+  setWorkflowEnabled(id: string, enabled: boolean): Promise<Workflow> {
+    return this.request('PUT', `/api/workflows/${encodeURIComponent(id)}/enabled`, { enabled });
+  }
+  listWorkflowTemplates(): Promise<WorkflowTemplate[]> {
+    return this.request('GET', '/api/workflow-templates');
+  }
+  dryRunWorkflow(workflow: Workflow, options: { limit?: number } = {}): Promise<WorkflowDryRunResult> {
+    return this.request('POST', '/api/workflows/dry-run', { workflow, limit: options.limit });
+  }
+  listWorkflowRuns(id: string, options: { limit?: number } = {}): Promise<WorkflowRun[]> {
+    return this.request('GET', `/api/workflows/${encodeURIComponent(id)}/runs${buildQuery({ limit: options.limit })}`);
+  }
+  validateWorkflow(src: string, mode: 'rule' | 'yaml'): Promise<WorkflowValidation> {
+    return this.request('POST', '/api/workflows/validate', { src, mode });
+  }
+  completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
+    return this.request('POST', '/api/workflows/complete', { src, offset, mode });
+  }
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     this.connect();
@@ -516,4 +647,15 @@ export class HttpTransport implements Api {
       s.close();
     }
   }
+}
+
+function scopeParams(s: ConversationScope): Record<string, string | number | undefined> {
+  return {
+    scope: s.kind,
+    accountId: s.kind === 'account' ? s.accountId : undefined,
+    folderId: s.kind === 'folder' ? s.folderId : undefined,
+    role: s.kind === 'unified' ? s.role : undefined,
+    tagId: s.kind === 'tag' ? s.tagId : undefined,
+    searchFolderId: s.kind === 'searchFolder' ? s.searchFolderId : undefined,
+  };
 }

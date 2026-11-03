@@ -11,6 +11,9 @@
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import ImageOff from '@lucide/svelte/icons/image-off';
   import MailOpen from '@lucide/svelte/icons/mail-open';
+  import Tags from '@lucide/svelte/icons/tags';
+  import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+  import TagChips from '../common/TagChips.svelte';
   import { app, prefs } from '../../state';
   import { FLAG_FLAGGED, type Address } from '../../types';
   import { formatFullDate, t } from '../../i18n/index.svelte';
@@ -51,6 +54,8 @@
       <MoveMenu messageId={m.id} accountId={m.accountId} currentFolderIds={m.folderIds} />
       <button class="icon-btn" title={t('common.action.flag')} aria-label={t('common.action.flag')} aria-pressed={flagged} onclick={() => app.toggleFlag(m.id)}><Star size={17} class={flagged ? 'starred' : ''} /></button>
       <button class="icon-btn" title={t('common.action.markUnread')} aria-label={t('common.action.markUnread')} onclick={() => app.toggleRead(m.id)}><Mail size={17} /></button>
+      <button class="icon-btn" title={t('organize.tags.menu') + ' (T)'} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker([{ kind: 'message', id: m.id }], m.tagIds ?? [])}><Tags size={17} /></button>
+      <button class="icon-btn" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker([{ kind: 'message', id: m.id }])}><FolderKanban size={17} /></button>
       <span class="grow"></span>
       <button class="btn btn-ghost conv" onclick={() => app.setViewMode('chat')} title={t('mail.view.showAsConversation') + ' (Ctrl+Shift+V)'}>
         <MessagesSquare size={16} /> <span class="hide-sm">{t('mail.view.showAsConversation')}</span>
@@ -60,6 +65,15 @@
     <div class="scroll">
       <header class="head">
         <h2 class="subject">{m.subject || t('mail.list.noSubject')}</h2>
+        {#if m.tagIds?.length || m.projectIds?.length}
+          <div class="org">
+            <TagChips ids={m.tagIds} max={6} onclick={(id) => app.select({ kind: 'tag', tagId: id })} />
+            {#each m.projectIds ?? [] as pid (pid)}
+              {@const p = app.project(pid)}
+              {#if p}<button class="proj" style:--c={p.color} onclick={() => app.openProject(pid)}><FolderKanban size={11} aria-hidden="true" /> {p.name}</button>{/if}
+            {/each}
+          </div>
+        {/if}
         <div class="sender">
           <Avatar name={m.from[0]?.name || m.from[0]?.email || '?'} seed={m.from[0]?.email} size={40} />
           <div class="who">
@@ -276,7 +290,7 @@
     margin: 0;
     font-size: 13px;
   }
-  @media (max-width: 1279px) {
+  @media (max-width: 1439px) {
     .hide-sm {
       display: none;
     }
@@ -288,5 +302,27 @@
     .head {
       padding: 14px 16px 10px;
     }
+  }
+  .org {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin: -4px 0 10px;
+  }
+  .proj {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 8px;
+    border: 1px solid color-mix(in srgb, var(--c) 40%, transparent);
+    border-radius: 6px;
+    background: transparent;
+    color: color-mix(in srgb, var(--c) 70%, var(--tm-fg));
+    font: inherit;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 16px;
+    cursor: pointer;
   }
 </style>

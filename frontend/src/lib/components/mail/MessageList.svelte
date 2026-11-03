@@ -9,6 +9,13 @@
   import MailOpen from '@lucide/svelte/icons/mail-open';
   import Mail from '@lucide/svelte/icons/mail';
   import Inbox from '@lucide/svelte/icons/inbox';
+  import Tags from '@lucide/svelte/icons/tags';
+  import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+  import X from '@lucide/svelte/icons/x';
+  import FolderSearch from '@lucide/svelte/icons/folder-search';
+  import Pencil from '@lucide/svelte/icons/pencil';
+  import TagChips from '../common/TagChips.svelte';
+  import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
   import { app, prefs } from '../../state';
   import { FLAG_ANSWERED, FLAG_FLAGGED, FLAG_FORWARDED, FLAG_SEEN, type MessageSummary } from '../../types';
   import { formatListDate, t } from '../../i18n/index.svelte';
@@ -59,6 +66,44 @@
     if (scrollTop + height > total * rowH - rowH * 10) void app.loadMoreMessages();
   }
 
+  let menu = $state<{ x: number; y: number; m: MessageSummary } | null>(null);
+  let anchor: number | null = null;
+
+  function rowClick(e: MouseEvent, m: MessageSummary, index: number) {
+    if (e.shiftKey && anchor != null) {
+      const a = app.messages.findIndex((x) => x.id === anchor);
+      const [from, to] = a < index ? [a, index] : [index, a];
+      for (const x of app.messages.slice(from, to + 1)) app.toggleChecked(x.id, true);
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      app.toggleChecked(m.id);
+      anchor = m.id;
+      return;
+    }
+    anchor = m.id;
+    void app.selectMessage(m.id);
+  }
+
+  function refs(ids: number[]) {
+    return ids.map((id) => ({ kind: 'message' as const, id }));
+  }
+
+  function menuItems(m: MessageSummary): MenuItem[] {
+    const ids = app.checked.includes(m.id) && app.checked.length > 1 ? app.checked : [m.id];
+    const unread = !m.flags.includes(FLAG_SEEN);
+    return [
+      { id: 'tags', label: t('organize.tags.menu'), icon: Tags, run: () => app.openTagPicker(refs(ids), ids.length === 1 ? (m.tagIds ?? []) : []) },
+      { id: 'project', label: t('organize.project.menu'), icon: FolderKanban, run: () => app.openProjectPicker(refs(ids)) },
+      { id: 'read', label: unread ? t('common.action.markRead') : t('common.action.markUnread'), icon: unread ? MailOpen : Mail, run: () => app.toggleRead(m.id) },
+      { id: 'flag', label: t('common.action.flag'), icon: Star, run: () => app.toggleFlag(m.id) },
+      { id: 'archive', label: t('common.action.archive'), icon: Archive, run: () => app.moveToRole(m.id, 'archive') },
+      { id: 'delete', label: t('common.action.delete'), icon: Trash, danger: true, run: () => app.moveToRole(m.id, 'trash') },
+    ];
+  }
+
+  const sf = $derived(app.sel.kind === 'searchFolder' ? app.searchFolder(app.sel.searchFolderId) : undefined);
+
   function who(m: MessageSummary): string {
     if (showRecipients) return t('mail.list.toPrefix', { names: m.to.map((a) => a.name || a.email).join(', ') });
     const f = m.from[0];
@@ -88,18 +133,39 @@
       const f = app.folder(s.folderId);
       return f ? (f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name) : '';
     }
+    if (s.kind === 'tag') return app.tag(s.tagId)?.path ?? '';
+    if (s.kind === 'searchFolder') return app.searchFolder(s.searchFolderId)?.name ?? '';
     return '';
   });
-  const scopeAccount = $derived(app.sel.kind === 'folder' ? app.account(app.sel.accountId)?.displayName : t('mail.sidebar.allAccounts'));
+  const scopeAccount = $derived(
+    app.sel.kind === 'folder' ? app.account(app.sel.accountId)?.displayName : app.sel.kind === 'tag' ? t('organize.tags.label') : app.sel.kind === 'searchFolder' ? t('organize.searchFolder.label') : t('mail.sidebar.allAccounts'),
+  );
 </script>
 
 <section class="list" aria-label={t('mail.list.label')}>
-  <header class="list-head">
-    <div class="ttl">
-      <h1>{scopeLabel}</h1>
-      <span class="sub">{scopeAccount} · {t('mail.list.count', { count: app.messagesTotal })}</span>
-    </div>
-  </header>
+  {#if app.checked.length}
+    <header class="list-head bulk" role="toolbar" aria-label={t('organize.bulk.label')}>
+      <button class="icon-btn" aria-label={t('organize.bulk.clear')} onclick={() => (app.checked = [])}><X size={16} /></button>
+      <span class="bulk-n">{t('organize.bulk.selected', { count: app.checked.length })}</span>
+      <span class="grow"></span>
+      <button class="icon-btn" title={t('organize.tags.menu')} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker(refs(app.checked))}><Tags size={16} /></button>
+      <button class="icon-btn" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker(refs(app.checked))}><FolderKanban size={16} /></button>
+      <button class="icon-btn" title={t('common.action.markRead')} aria-label={t('common.action.markRead')} onclick={() => app.bulk('read')}><MailOpen size={16} /></button>
+      <button class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.bulk('archive')}><Archive size={16} /></button>
+      <button class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.bulk('trash')}><Trash size={16} /></button>
+    </header>
+  {:else}
+    <header class="list-head">
+      <div class="ttl">
+        <h1>{#if sf}<FolderSearch size={16} class="sf-ic" aria-hidden="true" /> {/if}{scopeLabel}</h1>
+        <span class="sub">{scopeAccount} · {t('mail.list.count', { count: app.messagesTotal })}</span>
+      </div>
+      {#if sf}
+        <button class="icon-btn" title={t('organize.searchFolder.editTitle')} aria-label={t('organize.searchFolder.editTitle')} onclick={() => (app.organizeDialog = { kind: 'searchFolder', folder: sf })}><Pencil size={15} /></button>
+      {/if}
+    </header>
+    {#if sf}<div class="sf-query" title={sf.query}><code>{sf.query}</code></div>{/if}
+  {/if}
   <div
     class="viewport"
     bind:this={viewport}
@@ -124,23 +190,41 @@
         {@const unread = !m.flags.includes(FLAG_SEEN)}
         {@const flagged = m.flags.includes(FLAG_FLAGGED)}
         {@const selected = m.id === app.selectedMessageId}
+        {@const isChecked = app.checked.includes(m.id)}
         {@const acc = app.account(m.accountId)}
         <div
           id="msg-{m.id}"
           class="row"
           class:unread
           class:selected
+          class:checked={isChecked}
           role="option"
           aria-selected={selected}
           aria-posinset={index + 1}
           aria-setsize={total}
           style:transform="translateY({index * rowH}px)"
           style:height="{rowH}px"
-          onclick={() => app.selectMessage(m.id)}
+          onclick={(e) => rowClick(e, m, index)}
+          oncontextmenu={(e) => {
+            e.preventDefault();
+            menu = { x: e.clientX, y: e.clientY, m };
+          }}
           onkeydown={() => {}}
           tabindex="-1"
         >
           <span class="acc-bar" style:background={acc?.color} title={acc?.displayName}></span>
+          <input
+            type="checkbox"
+            class="check"
+            class:show={app.checked.length > 0}
+            checked={isChecked}
+            aria-label={t('organize.bulk.select', { subject: m.subject })}
+            onclick={(e) => e.stopPropagation()}
+            onchange={(e) => {
+              app.toggleChecked(m.id, (e.currentTarget as HTMLInputElement).checked);
+              anchor = m.id;
+            }}
+          />
           <span class="unread-dot" aria-hidden="true"></span>
           {#if prefs.density !== 'compact'}
             <Avatar name={showRecipients ? (m.to[0]?.name ?? m.to[0]?.email ?? '?') : who(m)} seed={showRecipients ? m.to[0]?.email : m.from[0]?.email} size={34} />
@@ -158,6 +242,7 @@
             </div>
             <div class="l2">
               <span class="subject">{m.subject || t('mail.list.noSubject')}</span>
+              {#if m.tagIds?.length}<TagChips ids={m.tagIds} size="xs" max={2} />{/if}
               {#if prefs.density === 'compact'}<span class="preview-inline">— {m.preview}</span>{/if}
             </div>
             {#if prefs.density !== 'compact'}
@@ -177,6 +262,10 @@
     </div>
   </div>
 </section>
+{#if menu}
+  {@const m = menu.m}
+  <ContextMenu x={menu.x} y={menu.y} items={menuItems(m)} label={t('mail.list.menu')} onclose={() => (menu = null)} />
+{/if}
 
 <style>
   .list {
@@ -192,6 +281,59 @@
     justify-content: space-between;
     padding: 12px var(--tm-pad-x) 10px;
     border-bottom: 1px solid var(--tm-line);
+  }
+  .bulk {
+    gap: 4px;
+    background: var(--tm-accent-soft);
+    min-height: 58px;
+    box-sizing: border-box;
+  }
+  .bulk-n {
+    font-weight: 650;
+    font-size: 14px;
+    color: var(--tm-accent-text);
+  }
+  .grow {
+    flex: 1;
+  }
+  .sf-query {
+    padding: 4px var(--tm-pad-x) 6px;
+    border-bottom: 1px solid var(--tm-line);
+    font-size: 11.5px;
+    color: var(--tm-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .sf-query code {
+    font-family: var(--tm-mono);
+  }
+  :global(.sf-ic) {
+    display: inline-block;
+    vertical-align: -2px;
+    color: var(--tm-muted);
+  }
+  .check {
+    position: absolute;
+    left: 6px;
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    opacity: 0;
+    accent-color: var(--tm-accent);
+    z-index: 2;
+  }
+  .row:hover .check,
+  .check.show,
+  .check:focus-visible {
+    opacity: 1;
+  }
+  .row:hover .unread-dot,
+  .row.checked .unread-dot {
+    opacity: 0;
+  }
+  .row.checked {
+    background: color-mix(in srgb, var(--tm-accent) 8%, transparent);
   }
   h1 {
     margin: 0;

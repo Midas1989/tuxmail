@@ -20,6 +20,7 @@
   import { fmt, formatListDate, formatSize, t } from '../i18n/index.svelte';
   import type { FacetBucket, Folder, SearchFacets, SearchHit, SearchScope, SearchSort } from '../types';
   import type { SuggestData } from '../search/suggest';
+  import FolderSearch from '@lucide/svelte/icons/folder-search';
   import QueryBar from '../components/search/QueryBar.svelte';
   import Popover from '../components/common/Popover.svelte';
   import ChannelIcon from '../components/common/ChannelIcon.svelte';
@@ -32,11 +33,7 @@
 
   const r = $derived(search.result);
 
-  const suggestData = $derived<SuggestData>({
-    accounts: app.accounts.map((a) => ({ id: a.id, name: a.displayName, address: a.extra?.address })),
-    folders: app.allFolders.map((f) => ({ id: f.id, name: folderName(f), account: app.account(f.accountId)?.displayName ?? '' })),
-    people: app.persons.filter((p) => !p.isMe).flatMap((p) => p.handles.filter((h) => h.kind === 'email').map((h) => ({ name: p.displayName, email: h.value }))),
-  });
+  const suggestData = $derived<SuggestData>(app.suggestData);
 
   function folderName(f: Folder): string {
     return f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name;
@@ -141,6 +138,9 @@
         </div>
       {/if}
       <button class="btn btn-primary go" onclick={() => search.run()} disabled={search.loading}><Search size={15} /> {t('search.run')}</button>
+      <button class="btn save-sf" onclick={() => (app.organizeDialog = { kind: 'searchFolder', query: search.text.trim() })} disabled={!search.text.trim()} title={t('organize.searchFolder.saveAs')}>
+        <FolderSearch size={15} /> <span class="hide-sm">{t('organize.searchFolder.saveAs')}</span>
+      </button>
 
       <Popover label={t('search.history')} chip={false} align="right" width="320px">
         {#snippet icon()}<History size={15} />{/snippet}
@@ -786,6 +786,11 @@
     }
     .loc {
       margin-left: 0;
+    }
+  }
+  @media (max-width: 1199px) {
+    .hide-sm {
+      display: none;
     }
   }
 </style>

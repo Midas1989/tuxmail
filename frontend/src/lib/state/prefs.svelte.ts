@@ -21,7 +21,9 @@ interface Stored {
   locale: string;
   region: RegionSettings;
   grouping: ConversationGrouping;
-  viewMode: 'classic' | 'chat';
+  viewMode: 'classic' | 'hybrid' | 'chat';
+  folderViewModes?: Record<string, 'classic' | 'hybrid' | 'chat'>;
+  hybridOnlyFolder?: boolean;
   chatEnterSends: boolean;
   chatSignatures: 'collapsed' | 'shown';
 }
@@ -44,7 +46,11 @@ class Prefs {
   locale = $state<string>('system');
   region = $state<RegionSettings>({ ...DEFAULT_REGION });
   grouping = $state<ConversationGrouping>('person');
-  viewMode = $state<'classic' | 'chat'>('classic');
+  viewMode = $state<'classic' | 'hybrid' | 'chat'>('classic');
+  /** Per-folder default view (key: SidebarSel key such as "f:17", "u:inbox", "t:3"). */
+  folderViewModes = $state<Record<string, 'classic' | 'hybrid' | 'chat'>>({});
+  /** Hybrid view: show only the messages of the selected folder. */
+  hybridOnlyFolder = $state(false);
   /** Messenger composer: Enter sends (Shift+Enter = newline); off = Ctrl+Enter sends. */
   chatEnterSends = $state(true);
   /** Signatures in the chat view: collapsed (default, chevron per bubble) or shown. */
@@ -61,6 +67,8 @@ class Prefs {
     this.region = { ...DEFAULT_REGION, ...(s.region ?? {}) };
     this.grouping = s.grouping ?? 'person';
     this.viewMode = s.viewMode ?? 'classic';
+    this.folderViewModes = s.folderViewModes ?? {};
+    this.hybridOnlyFolder = s.hybridOnlyFolder ?? false;
     this.chatEnterSends = s.chatEnterSends ?? true;
     this.chatSignatures = s.chatSignatures ?? 'collapsed';
     this.applyI18n();
@@ -127,6 +135,8 @@ class Prefs {
         region: $state.snapshot(this.region) as RegionSettings,
         grouping: this.grouping,
         viewMode: this.viewMode,
+        folderViewModes: $state.snapshot(this.folderViewModes),
+        hybridOnlyFolder: this.hybridOnlyFolder,
         chatEnterSends: this.chatEnterSends,
         chatSignatures: this.chatSignatures,
       };

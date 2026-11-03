@@ -165,12 +165,13 @@
           class:drop={dropTarget === f.id}
           aria-selected={app.activeFolderId === f.id}
           onclick={() => app.setActiveFolder(f.id)}
-          ondblclick={() => (app.chatDialog = { kind: 'folder', folder: f })}
+          ondblclick={() => (f.searchFolderId ? (app.organizeDialog = { kind: 'searchFolder', folder: app.searchFolder(f.searchFolderId) }) : (app.chatDialog = { kind: 'folder', folder: f }))}
           oncontextmenu={(e) => {
             e.preventDefault();
             tabMenu = { x: e.clientX, y: e.clientY, id: f.id };
           }}
           ondragover={(e) => {
+            if (f.searchFolderId) return; // search folders are read-only
             e.preventDefault();
             dropTarget = f.id;
           }}
@@ -192,6 +193,15 @@
         <button class="pill" role="radio" aria-checked={app.chatFilter === f} onclick={() => app.setChatFilter(f)}>{t(`chat.filter.${f}`)}</button>
       {/each}
     </div>
+    {#if app.tags.length}
+      <div class="pills tag-pills" role="group" aria-label={t('organize.tags.filter')}>
+        {#each app.tags.filter((x) => x.total > 0) as x (x.tag.id)}
+          <button class="pill tag-pill" style:--c={x.tag.color} aria-pressed={app.chatTagId === x.tag.id} onclick={() => app.setChatTag(app.chatTagId === x.tag.id ? null : x.tag.id)} title={x.tag.path}>
+            <span class="tdot"></span>{x.tag.name}
+          </button>
+        {/each}
+      </div>
+    {/if}
   {/if}
 
   <div
@@ -310,10 +320,12 @@
       y={tabMenu.y}
       label={f.name}
       onclose={() => (tabMenu = null)}
-      items={[
-        { id: 'edit', label: t('chat.folders.edit'), icon: FolderPlus, run: () => void (app.chatDialog = { kind: 'folder', folder: f }) },
-        { id: 'del', label: t('chat.folders.delete'), icon: Trash, danger: true, run: () => app.deleteChatFolder(f.id) },
-      ]}
+      items={f.searchFolderId
+        ? [{ id: 'edit', label: t('organize.searchFolder.editTitle'), icon: FolderPlus, run: () => void (app.organizeDialog = { kind: 'searchFolder', folder: app.searchFolder(f.searchFolderId!) }) }]
+        : [
+            { id: 'edit', label: t('chat.folders.edit'), icon: FolderPlus, run: () => void (app.chatDialog = { kind: 'folder', folder: f }) },
+            { id: 'del', label: t('chat.folders.delete'), icon: Trash, danger: true, run: () => app.deleteChatFolder(f.id) },
+          ]}
     />
   {/if}
 {/if}
@@ -526,6 +538,29 @@
   }
   .pill:hover {
     background: var(--tm-surface-2);
+  }
+  .tag-pills {
+    margin-top: -2px;
+  }
+  .tag-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 9px;
+    font-size: 12px;
+  }
+  .tag-pill[aria-pressed='true'] {
+    background: color-mix(in srgb, var(--c) 16%, transparent);
+    border-color: var(--c);
+    color: color-mix(in srgb, var(--c) 70%, var(--tm-fg));
+    font-weight: 650;
+  }
+  .tdot {
+    width: 7px;
+    height: 7px;
+    border-radius: 99px;
+    background: var(--c);
   }
   .pill[aria-checked='true'] {
     background: var(--tm-accent-soft);
