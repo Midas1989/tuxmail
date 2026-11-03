@@ -16,4 +16,11 @@ jederzeit umschaltbar.
 **Geplanter Stack:** Go (Kern & Protokolle) · Wails + Svelte 5/TypeScript (Oberfläche) · SQLite (Daten) ·
 Messenger als separate Plugin-Prozesse (gRPC) · portabel lauffähig (Windows-ZIP, Linux-AppImage) oder installierbar.
 
-**Lizenz:** AGPL-3.0-or-later
+## Lizenz / License
+
+TuxMail ist freie Software unter der **GNU Affero General Public License v3.0 (AGPLv3)** – siehe [LICENSE](LICENSE).
+Du darfst TuxMail nutzen, verändern und weitergeben. Wer eine veränderte Version weitergibt **oder als Netzwerkdienst (z. B. Server-Modus) für andere betreibt**, muss den Quellcode dieser Version unter derselben Lizenz zugänglich machen.
+
+TuxMail is free software licensed under the **GNU Affero General Public License v3.0 or later** (`SPDX-License-Identifier: AGPL-3.0-or-later`).
+
+Copyright (C) 2026 TuxMail contributors
