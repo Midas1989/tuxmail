@@ -28,15 +28,17 @@ const (
 
 // Pairing is the state of a running account link (shown live in the wizard).
 type Pairing struct {
-	ID        string    `json:"id"`
-	Plugin    string    `json:"plugin"`
-	Method    string    `json:"method"`
-	Network   string    `json:"network,omitempty"`
-	State     string    `json:"state"`
-	QR        string    `json:"qr,omitempty"`
-	Code      string    `json:"code,omitempty"`
-	Field     string    `json:"field,omitempty"`
-	Message   string    `json:"message,omitempty"`
+	ID      string `json:"id"`
+	Plugin  string `json:"plugin"`
+	Method  string `json:"method"`
+	Network string `json:"network,omitempty"`
+	State   string `json:"state"`
+	QR      string `json:"qr,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Field   string `json:"field,omitempty"`
+	Message string `json:"message,omitempty"`
+	// Reason classifies an error (ReasonComponentMissing ...).
+	Reason    string    `json:"reason,omitempty"`
 	ExpiresAt time.Time `json:"expiresAt,omitzero"`
 	AccountID int64     `json:"accountId,omitempty"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -190,7 +192,9 @@ func (s *Service) handlePairing(ctx context.Context, plugin string, pe *wire.Pai
 	case wire.PairEventInfo:
 		s.updatePairing(pe.PairingID, func(p *Pairing) { p.Message = pe.Message })
 	case wire.PairEventError:
-		s.updatePairing(pe.PairingID, func(p *Pairing) { p.State, p.Message, p.QR, p.Code = PairError, pe.Message, "", "" })
+		s.updatePairing(pe.PairingID, func(p *Pairing) {
+			p.State, p.Message, p.QR, p.Code, p.Reason = PairError, pe.Message, "", "", ReasonFor(pe.ErrorCode)
+		})
 	case wire.PairEventSuccess:
 		if cur.bridge {
 			s.updatePairing(pe.PairingID, func(p *Pairing) { p.State, p.QR, p.Code, p.Message = PairSuccess, "", "", pe.Message })

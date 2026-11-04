@@ -62,6 +62,10 @@ export class MockMessenger {
           capabilities: [...caps, 'e2ee'], startedAt: '2026-11-03T07:58:00Z' } }),
       plugin({ name: 'signal', displayName: 'Signal (signal-cli)', channel: 'signal', pairingMethods: ['qr'], settingKeys: ['signal_cli_path'],
         enabled: has('signal') > 0, accounts: has('signal'),
+        // Like a development build: signal-cli not bundled, installable on demand.
+        component: has('signal')
+          ? { name: 'signal-cli', state: 'ready', source: 'bundled', version: '0.13.18', installable: true, installVersion: '0.13.18' }
+          : { name: 'signal-cli', state: 'missing', installable: true, installVersion: '0.13.18', error: 'signal-cli not found' },
         status: { state: 'crashed', version: '0.1.0', restarts: 2, lastError: 'signal-cli exited: exit status 1', lastCrash: '2026-11-03T08:12:00Z',
           nextRetry: '2026-11-03T08:12:04Z', capabilities: [...caps, 'e2ee'] } }),
       plugin({ name: 'telegram', displayName: 'Telegram', channel: 'telegram', official: true, pairingMethods: ['qr', 'phone'],
@@ -113,6 +117,28 @@ export class MockMessenger {
     this.host.emit({ type: 'messenger.plugin', name });
   }
 
+  /** Simulated on-demand install of signal-cli (download progress, verify, unpack). */
+  installComponent(name: string): void {
+    const p = this.find(name);
+    const c = p.component;
+    if (!c) throw new ApiError('messenger: plugin has no installable component', 404, 'not_found');
+    if (c.state === 'installing') throw new ApiError('messenger: component install already running', 409, 'conflict');
+    if (!c.installable) throw new ApiError('signal-cli: no bundled build for this platform', 501, 'not_supported');
+    const total = 40_000_000;
+    p.component = { ...c, state: 'installing', error: undefined, progress: { stage: 'download', done: 0, total, step: 1, steps: 1 } };
+    this.host.emit({ type: 'messenger.plugin', name });
+    for (let i = 1; i <= 4; i++) {
+      this.later(60 * i, () => {
+        p.component = { ...p.component!, progress: { stage: i < 4 ? 'download' : 'unpack', done: (total * i) / 4, total, step: 1, steps: 1 } };
+        this.host.emit({ type: 'messenger.plugin', name });
+      });
+    }
+    this.later(300, () => {
+      p.component = { name: c.name, state: 'ready', source: 'installed', version: c.installVersion, installable: true, installVersion: c.installVersion };
+      this.host.emit({ type: 'messenger.plugin', name });
+    });
+  }
+
   private later(ms: number, f: () => void): void {
     this.timers.push(setTimeout(f, ms));
   }
@@ -133,6 +159,11 @@ export class MockMessenger {
     const pr = { id, plugin: p.name, method: input.method, network: input.network, state: 'waiting' as const, input };
     this.pairings.set(id, pr);
     const step = 250;
+    if (p.component && p.component.state !== 'ready') {
+      this.later(step, () => this.set(id, { state: 'error', reason: 'component_missing', message: 'the Signal component (signal-cli) is not installed' }));
+      const { input: _x, ...early } = pr;
+      return early;
+    }
     switch (input.method) {
       case 'qr':
       case 'bridge':

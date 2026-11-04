@@ -2313,6 +2313,9 @@ export class MockTransport implements Api {
   restartMessengerPlugin(name: string): Promise<void> {
     return this.run(() => this.messenger.restart(name));
   }
+  installMessengerComponent(name: string): Promise<void> {
+    return this.run(() => this.messenger.installComponent(name));
+  }
   startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
     return this.run(() => this.messenger.start(input));
   }

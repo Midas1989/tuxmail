@@ -13,6 +13,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/messenger"
 	"github.com/Midas1989/Mailclient/internal/messenger/host"
+	"github.com/Midas1989/Mailclient/internal/messenger/signalcli"
 	"github.com/Midas1989/Mailclient/internal/messenger/wire"
 	"github.com/Midas1989/Mailclient/internal/store"
 )
@@ -37,6 +38,7 @@ const (
 	CodeMessengerNotLinked = "messenger_not_linked"
 	CodePluginOutdated     = "plugin_outdated"
 	CodeRateLimited        = "rate_limited"
+	CodeComponentMissing   = "component_missing"
 )
 
 // Messenger ApiEvent types.
@@ -93,6 +95,12 @@ func msgrErr(err error) error {
 		return &Error{Code: CodeNotFound, Status: http.StatusNotFound, Message: err.Error(), Err: err}
 	case errors.Is(err, messenger.ErrNoChat):
 		return &Error{Code: CodeInvalidInput, Status: http.StatusBadRequest, Message: err.Error(), Err: err}
+	case errors.Is(err, messenger.ErrNoComponent):
+		return &Error{Code: CodeNotFound, Status: http.StatusNotFound, Message: err.Error(), Err: err}
+	case errors.Is(err, messenger.ErrInstallRunning):
+		return &Error{Code: CodeConflict, Status: http.StatusConflict, Message: err.Error(), Err: err}
+	case errors.Is(err, signalcli.ErrUnsupported), errors.Is(err, signalcli.ErrNotPinned):
+		return &Error{Code: CodeNotSupported, Status: http.StatusNotImplemented, Message: err.Error(), Err: err}
 	case errors.Is(err, host.ErrUnavailable):
 		return &Error{Code: CodePluginUnavailable, Status: http.StatusServiceUnavailable, Message: err.Error(), Err: err}
 	}
@@ -109,6 +117,8 @@ func msgrErr(err error) error {
 		return &Error{Code: CodeNotFound, Status: http.StatusNotFound, Message: err.Error(), Err: err}
 	case wire.CodeOutdated:
 		return &Error{Code: CodePluginOutdated, Status: http.StatusServiceUnavailable, Message: err.Error(), Err: err}
+	case wire.CodeComponentMissing:
+		return &Error{Code: CodeComponentMissing, Status: http.StatusServiceUnavailable, Message: err.Error(), Err: err}
 	case wire.CodeUnavailable:
 		return &Error{Code: CodePluginUnavailable, Status: http.StatusServiceUnavailable, Message: err.Error(), Err: err}
 	}

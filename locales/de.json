@@ -2813,7 +2813,37 @@
       "back": "Zurück",
       "done": "Fertig",
       "cancel": "Abbrechen",
-      "qrLabel": "QR-Code zum Koppeln"
+      "qrLabel": "QR-Code zum Koppeln",
+      "reason": {
+        "component_missing": "Die Signal-Komponente (signal-cli) fehlt.",
+        "unavailable": "Der Dienst ist gerade nicht erreichbar: {message}",
+        "outdated": "Das Netzwerk lehnt diese Version ab: {message}"
+      }
+    },
+    "component": {
+      "title": "Signal-Komponente (signal-cli)",
+      "missing": "Signal-Komponente fehlt – jetzt installieren",
+      "missingText": "Signal braucht das Hilfsprogramm signal-cli. TuxMail lädt Version {version} von der offiziellen Release-Seite, prüft die Prüfsumme und installiert es in seinen Datenordner. Sonst muss nichts installiert werden.",
+      "install": "Signal-Komponente installieren",
+      "installing": "Signal-Komponente wird installiert …",
+      "stage": {
+        "download": "Lade {file} … {percent} %",
+        "verify": "Prüfe Prüfsumme …",
+        "unpack": "Entpacke …",
+        "done": "Schließe ab …"
+      },
+      "ready": "signal-cli {version} bereit",
+      "readyNoVersion": "signal-cli bereit",
+      "source": {
+        "bundled": "mit TuxMail ausgeliefert",
+        "setting": "aus dem eingestellten Pfad",
+        "path": "aus dem System-PATH",
+        "installed": "von TuxMail heruntergeladen"
+      },
+      "failed": "Installation der Signal-Komponente fehlgeschlagen: {error}",
+      "manual": "Dieser Build kann signal-cli für diese Plattform nicht herunterladen. Installiere signal-cli (Java 21+) und trage den Pfad in den Signal-Einstellungen ein.",
+      "retryNote": "Die Kopplung startet nach der Installation automatisch neu.",
+      "note": "Hinweis: {note}"
     }
   },
   "team": {

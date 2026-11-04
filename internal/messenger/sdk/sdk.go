@@ -486,12 +486,15 @@ func (s *Server) startPairing(req wire.PairRequest) error {
 		acc, err := s.p.Pair(ctx, req, p)
 		if err != nil {
 			msg := err.Error()
+			var we *wire.Error
 			if errors.Is(err, context.Canceled) {
 				msg = "cancelled"
 			} else if errors.Is(err, context.DeadlineExceeded) {
 				msg = "timed out"
+			} else if errors.As(err, &we) {
+				msg = we.Message // without the " (code N)" suffix: ErrorCode carries it
 			}
-			p.Emit(wire.PairEvent{Kind: wire.PairEventError, Message: msg})
+			p.Emit(wire.PairEvent{Kind: wire.PairEventError, Message: msg, ErrorCode: wire.ErrorCode(err)})
 			return
 		}
 		if acc.ID == "" {

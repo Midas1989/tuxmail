@@ -97,6 +97,9 @@ type Options struct {
 	HistoryMessages int
 	// HostOptions may adjust the plugin host (timeouts, backoff).
 	HostOptions func(*host.Options)
+	// Components configures the on-demand install of external programs
+	// (signal-cli); the zero value uses the pinned downloads.
+	Components ComponentOptions
 }
 
 // Service is the messenger integration of one user.
@@ -119,6 +122,8 @@ type Service struct {
 	states   map[int64]wire.AccountStatus
 	syncing  map[int64]bool
 	pending  map[pendingKey]pendingReceipt
+
+	installs map[string]*install // plugin -> running or failed install
 }
 
 // New creates the service; plugins start when they are needed (Start

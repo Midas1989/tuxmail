@@ -20,10 +20,27 @@ export STAGE VERSION
 export ARCH="$arch"
 export NFPM_SIGNING_KEY_FILE="${NFPM_SIGNING_KEY_FILE:-}"
 
+# signal-cli (build/signal-cli.sh) is only in the stage when it was bundled:
+# add it to a copy of the config then (/usr/lib/tuxmail/plugins/signal-cli,
+# found by the Signal plugin next to itself).
+cfg=$ROOT/build/linux/nfpm.yaml
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+if [ -f "$STAGE/usr/lib/tuxmail/plugins/signal-cli/VERSION" ]; then
+	cfg=$work/nfpm.yaml
+	awk '{ print } /^contents:$/ {
+		print "  - src: ${STAGE}/usr/lib/tuxmail/plugins/signal-cli"
+		print "    dst: /usr/lib/tuxmail/plugins/signal-cli"
+		print "    type: tree"
+		print "    expand: true"
+	}' "$ROOT/build/linux/nfpm.yaml" > "$cfg"
+	log "including signal-cli $(cat "$STAGE/usr/lib/tuxmail/plugins/signal-cli/VERSION")"
+fi
+
 mkdir -p "$DIST"
 for packager in deb rpm; do
 	log "nfpm $packager ($arch, $VERSION)"
-	nfpm package --config "$ROOT/build/linux/nfpm.yaml" --packager "$packager" --target "$DIST/"
+	nfpm package --config "$cfg" --packager "$packager" --target "$DIST/"
 done
 
 if command -v dpkg-deb > /dev/null 2>&1; then
