@@ -40,7 +40,7 @@ const (
 var ErrNotFound = errors.New("signal-cli not found")
 
 // ErrNoJava: a JVM build of signal-cli was found but no Java runtime.
-var ErrNoJava = errors.New("signal-cli needs Java 21 or newer, none found")
+var ErrNoJava = errors.New("signal-cli needs Java " + LoadPins()["SIGNAL_CLI_JAVA"] + " or newer, none found")
 
 // FS is the part of the file system Locate reads (tests use a fake).
 type FS interface {

@@ -25,6 +25,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -218,10 +219,19 @@ func Hint(stderr string) string {
 	case strings.Contains(stderr, "UnsatisfiedLinkError") || strings.Contains(stderr, "signal_jni"):
 		return "signal-cli could not load libsignal for this platform (on Windows on ARM use the bundled x64 Java runtime)"
 	case strings.Contains(stderr, "UnsupportedClassVersionError"):
-		return "signal-cli needs Java 21 or newer"
+		// "... compiled by a more recent version of the Java Runtime (class
+		// file version 69.0) ..." - class file version minus 44 is the release.
+		if m := classVersionRe.FindStringSubmatch(stderr); m != nil {
+			if v, err := strconv.Atoi(m[1]); err == nil && v > 44 {
+				return fmt.Sprintf("signal-cli needs Java %d or newer", v-44)
+			}
+		}
+		return "signal-cli needs a newer Java runtime"
 	}
 	return ""
 }
+
+var classVersionRe = regexp.MustCompile(`class file version (\d+)`)
 
 type execCLI struct {
 	io.Reader

@@ -6,7 +6,7 @@
 //
 //	go run ./build/signalcli bundle -os linux -arch amd64 -out DIR [-cache DIR]
 //	go run ./build/signalcli plan   -os windows -arch arm64
-//	go run ./build/signalcli pin    [-signal-cli VERSION|latest] [-temurin VERSION] [-file pins.env]
+//	go run ./build/signalcli pin    [-signal-cli VERSION|latest] [-temurin VERSION|latest] [-file pins.env]
 //	go run ./build/signalcli smoke  -dir DIR [-link]
 //
 // smoke locates signal-cli in DIR exactly like the Signal plugin does
@@ -42,6 +42,7 @@ import (
 	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -301,7 +302,7 @@ func fetch(ctx context.Context, u string) ([]byte, string, error) {
 func pin(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("pin", flag.ExitOnError)
 	scVersion := fs.String("signal-cli", "latest", "signal-cli version (e.g. 0.13.18) or latest")
-	temurin := fs.String("temurin", "", "Temurin JRE version, e.g. 21.0.8+9 (default: keep the pinned one)")
+	temurin := fs.String("temurin", "", "Temurin JRE version (e.g. 25.0.1+8) or latest (default: keep the pinned one if new enough)")
 	file := fs.String("file", "internal/messenger/signalcli/pins.env", "pins file to rewrite")
 	if err := fs.Parse(args); err != nil {
 		return err
@@ -355,6 +356,12 @@ func pin(ctx context.Context, args []string) error {
 			fmt.Fprintf(os.Stderr, "%s  %s (%.1f MB, matches GitHub digest)\n", sum, name, float64(len(body))/(1<<20))
 			if key == "SIGNAL_CLI_JVM" {
 				reportNatives(body)
+				java, err := requiredJava(body, ver)
+				if err != nil {
+					return err
+				}
+				set["SIGNAL_CLI_JAVA"] = strconv.Itoa(java)
+				fmt.Fprintf(os.Stderr, "signal-cli %s needs Java %d\n", ver, java)
 			}
 		}
 		if !found {
@@ -362,14 +369,30 @@ func pin(ctx context.Context, args []string) error {
 		}
 	}
 
-	// Temurin JRE: Adoptium's .sha256.txt next to every file.
+	// Temurin JRE: Adoptium's .sha256.txt next to every file. Without
+	// -temurin the pinned version is kept unless it is too old for
+	// signal-cli; then the latest Temurin of the needed release is taken.
+	java, _ := strconv.Atoi(set["SIGNAL_CLI_JAVA"])
 	tv := *temurin
-	if tv == "" {
-		tv = old["TEMURIN_VERSION"]
+	if tv == "" || tv == "latest" {
+		if tv == "" {
+			tv = old["TEMURIN_VERSION"]
+		}
+		if tv == "latest" || signalcli.JavaFeature(tv) < java {
+			r, err := githubRelease(ctx, fmt.Sprintf("adoptium/temurin%d-binaries", java), "latest")
+			if err != nil {
+				return err
+			}
+			tv = strings.TrimPrefix(r.TagName, "jdk-")
+			fmt.Fprintf(os.Stderr, "Temurin (pinned %s): using the latest Temurin %d, %s\n", old["TEMURIN_VERSION"], java, tv)
+		}
 	}
-	m := regexp.MustCompile(`^(\d+)\.\d+\.\d+(\.\d+)?\+\d+$`).FindStringSubmatch(tv)
+	m := regexp.MustCompile(`^(\d+)(\.\d+\.\d+(\.\d+)?)?\+\d+$`).FindStringSubmatch(tv)
 	if m == nil {
-		return fmt.Errorf("bad Temurin version %q (want e.g. 21.0.8+9)", tv)
+		return fmt.Errorf("bad Temurin version %q (want e.g. 25.0.1+8)", tv)
+	}
+	if f := signalcli.JavaFeature(tv); f < java {
+		return fmt.Errorf("Temurin %s is Java %d, signal-cli %s needs Java %d", tv, f, ver, java)
 	}
 	set["TEMURIN_VERSION"] = tv
 	major := m[1]
@@ -425,6 +448,60 @@ func rewrite(s string, set map[string]string) string {
 		lines = append(lines, k+"="+set[k])
 	}
 	return strings.Join(lines, "\n")
+}
+
+// requiredJava returns the Java feature release the JVM build of signal-cli
+// is compiled for: the class file version of org/asamk/signal/Main in
+// lib/signal-cli-VERSION.jar minus 44 (class file 65 = Java 21, 69 = Java 25).
+func requiredJava(tgz []byte, version string) (int, error) {
+	gz, err := gzip.NewReader(bytes.NewReader(tgz))
+	if err != nil {
+		return 0, err
+	}
+	tr := tar.NewReader(gz)
+	jar := "signal-cli-" + version + ".jar"
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			return 0, fmt.Errorf("signal-cli %s: lib/%s not found in the JVM build", version, jar)
+		}
+		if err != nil {
+			return 0, err
+		}
+		if path.Base(h.Name) != jar {
+			continue
+		}
+		b, err := io.ReadAll(io.LimitReader(tr, 256<<20))
+		if err != nil {
+			return 0, err
+		}
+		return classJava(b, "org/asamk/signal/Main.class")
+	}
+}
+
+// classJava reads the class file version of class in the jar.
+func classJava(jar []byte, class string) (int, error) {
+	zr, err := zip.NewReader(bytes.NewReader(jar), int64(len(jar)))
+	if err != nil {
+		return 0, err
+	}
+	f, err := zr.Open(class)
+	if err != nil {
+		return 0, err
+	}
+	defer f.Close()
+	var hdr [8]byte // magic, minor, major
+	if _, err := io.ReadFull(f, hdr[:]); err != nil {
+		return 0, err
+	}
+	if !bytes.Equal(hdr[:4], []byte{0xca, 0xfe, 0xba, 0xbe}) {
+		return 0, fmt.Errorf("%s: not a class file", class)
+	}
+	major := int(hdr[6])<<8 | int(hdr[7])
+	if major < 52 { // Java 8
+		return 0, fmt.Errorf("%s: unexpected class file version %d", class, major)
+	}
+	return major - 44, nil
 }
 
 // reportNatives lists the native libsignal libraries of the JVM build

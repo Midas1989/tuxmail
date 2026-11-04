@@ -51,7 +51,7 @@ checksums: `internal/messenger/signalcli/pins.env`.
 |---|---|---|---|
 | signal-cli (JVM build, or GraalVM native build on Linux x86_64) | `plugins/signal-cli/` (`signal-cli` or `bin/`, `lib/`) | https://github.com/AsamK/signal-cli (release archives) | GPL-3.0-or-later; text shipped as `plugins/signal-cli/LICENSE-signal-cli.txt` (from `internal/messenger/signalcli/licenses/GPL-3.0.txt`), sources and checksums in `plugins/signal-cli/NOTICE.txt` |
 | libsignal-client and the other libraries bundled by signal-cli | inside `lib/` resp. the native binary | https://github.com/signalapp/libsignal and the signal-cli distribution | AGPL-3.0-only (libsignal) and the licenses listed in the signal-cli distribution |
-| Eclipse Temurin JRE 21 (Linux ARM64, Windows x64/ARM64 packages) | `plugins/signal-cli/jre/` | https://adoptium.net, https://github.com/adoptium/temurin21-binaries (release archives, unmodified) | GPL-2.0-only WITH Classpath-exception-2.0, plus the third-party notices in `jre/legal/` and `jre/NOTICE` (shipped with the runtime) |
+| Eclipse Temurin JRE 25 (Linux ARM64, Windows x64/ARM64 packages) | `plugins/signal-cli/jre/` | https://adoptium.net, https://github.com/adoptium/temurin25-binaries (release archives, unmodified) | GPL-2.0-only WITH Classpath-exception-2.0, plus the third-party notices in `jre/legal/` and `jre/NOTICE` (shipped with the runtime) |
 
 Windows on ARM64 uses the x64 runtime under the x64 emulation of Windows 11,
 because libsignal-client ships no native Windows ARM64 library. The complete

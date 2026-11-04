@@ -67,7 +67,7 @@ neben dem Programm (Windows, portable und Server-Archive) und in `../lib/tuxmail
 
 **signal-cli (Signal-Plugin):** Jedes Paket enthält zusätzlich `plugins/signal-cli/` (`build/signal-cli.sh`,
 aufgerufen von `stage_plugins`): Linux x86_64 den GraalVM-Native-Build (kein Java nötig), Linux ARM64 und
-Windows x64 den JVM-Build mit Eclipse-Temurin-JRE 21 (`jre/`), Windows ARM64 denselben x64-Build (läuft unter
+Windows x64 den JVM-Build mit Eclipse-Temurin-JRE 25 (`jre/`, mindestens die Java-Version `SIGNAL_CLI_JAVA` aus `pins.env`), Windows ARM64 denselben x64-Build (läuft unter
 der x64-Emulation von Windows 11 on ARM, weil libsignal-client keine Windows-ARM64-Bibliothek mitliefert),
 das Docker-Image (jetzt auf `debian:trixie-slim`, signal-cli braucht glibc) je nach Architektur eines davon.
 Versionen, URLs und SHA-256 stehen an **einer** Stelle: `internal/messenger/signalcli/pins.env` (auch in die App

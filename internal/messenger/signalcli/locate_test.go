@@ -318,3 +318,52 @@ func TestPlanFor(t *testing.T) {
 		t.Fatal("bad pins accepted")
 	}
 }
+
+// The pinned Temurin must be at least the Java release signal-cli is compiled
+// for: signal-cli 0.14 needs Java 25 (class file 69); a Java 21 runtime fails
+// with UnsupportedClassVersionError (Windows and Linux arm64 smoke tests of
+// the release workflow).
+func TestEmbeddedPinsJava(t *testing.T) {
+	p := LoadPins()
+	if JavaFeature(p["SIGNAL_CLI_JAVA"]) == 0 {
+		t.Fatalf("pins.env: SIGNAL_CLI_JAVA missing or invalid (%q)", p["SIGNAL_CLI_JAVA"])
+	}
+	for _, pf := range [][2]string{{"linux", "arm64"}, {"windows", "amd64"}, {"windows", "arm64"}} {
+		pl, err := p.PlanFor(pf[0], pf[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := pl.Pinned(); errors.Is(err, ErrJavaTooOld) {
+			t.Errorf("%s/%s: %v", pf[0], pf[1], err)
+		}
+	}
+}
+
+func TestPinnedJavaTooOld(t *testing.T) {
+	sum := strings.Repeat("a", 64)
+	pins := Pins{
+		"SIGNAL_CLI_VERSION": "0.14.9", "SIGNAL_CLI_JAVA": "25",
+		"SIGNAL_CLI_JVM_URL": "https://example.org/signal-cli-0.14.9.tar.gz", "SIGNAL_CLI_JVM_SHA256": sum,
+		"TEMURIN_VERSION": "21.0.8+9", "TEMURIN_WINDOWS_X64_URL": "https://example.org/jre.zip", "TEMURIN_WINDOWS_X64_SHA256": sum,
+	}
+	pl, err := pins.PlanFor("windows", "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pl.Pinned(); !errors.Is(err, ErrJavaTooOld) || !errors.Is(err, ErrNotPinned) {
+		t.Fatalf("Java 21 for signal-cli needing 25: %v", err)
+	}
+	pins["TEMURIN_VERSION"] = "25.0.1+8"
+	if pl, _ = pins.PlanFor("windows", "amd64"); pl.Pinned() != nil {
+		t.Fatalf("Java 25: %v", pl.Pinned())
+	}
+	pins["SIGNAL_CLI_JAVA"] = "x"
+	if _, err := pins.PlanFor("windows", "amd64"); err == nil {
+		t.Fatal("bad SIGNAL_CLI_JAVA accepted")
+	}
+	for v, want := range map[string]int{"25.0.1+8": 25, "21": 21, "25+36": 25, "": 0, "abc": 0} {
+		if got := JavaFeature(v); got != want {
+			t.Errorf("JavaFeature(%q) = %d, want %d", v, got, want)
+		}
+	}
+}

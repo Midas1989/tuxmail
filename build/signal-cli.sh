@@ -8,7 +8,7 @@
 #
 #   build/signal-cli.sh bundle OS ARCH DIR   # DIR = <plugins dir>/signal-cli
 #   build/signal-cli.sh plan OS ARCH         # print the pinned downloads
-#   build/signal-cli.sh pin [VERSION|latest] [TEMURIN_VERSION]
+#   build/signal-cli.sh pin [VERSION|latest] [TEMURIN_VERSION|latest]
 #
 # Per platform (signalcli.PlanFor):
 #   linux/amd64    GraalVM native signal-cli (no Java)
@@ -38,7 +38,7 @@ pin)
 	exec go run ./build/signalcli pin -signal-cli "${2:-latest}" ${3:+-temurin "$3"}
 	;;
 *)
-	echo "usage: $0 bundle OS ARCH DIR | plan OS ARCH | pin [VERSION|latest] [TEMURIN_VERSION]" >&2
+	echo "usage: $0 bundle OS ARCH DIR | plan OS ARCH | pin [VERSION|latest] [TEMURIN_VERSION|latest]" >&2
 	exit 2
 	;;
 esac

@@ -3086,7 +3086,7 @@
         "installed": "von TuxMail heruntergeladen"
       },
       "failed": "Installation der Signal-Komponente fehlgeschlagen: {error}",
-      "manual": "Dieser Build kann signal-cli für diese Plattform nicht herunterladen. Installiere signal-cli (Java 21+) und trage den Pfad in den Signal-Einstellungen ein.",
+      "manual": "Dieser Build kann signal-cli für diese Plattform nicht herunterladen. Installiere signal-cli (Java 25+) und trage den Pfad in den Signal-Einstellungen ein.",
       "retryNote": "Die Kopplung startet nach der Installation automatisch neu.",
       "note": "Hinweis: {note}"
     }

@@ -16,7 +16,7 @@ on:
         default: latest
         required: true
       temurin:
-        description: Temurin JRE version (e.g. 21.0.8+9); empty keeps the pinned one
+        description: Temurin JRE version (e.g. 25.0.1+8) or "latest"; empty keeps the pinned one if signal-cli can run on it
         default: ''
         required: false
 

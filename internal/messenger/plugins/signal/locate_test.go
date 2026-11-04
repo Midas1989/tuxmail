@@ -148,7 +148,8 @@ func TestHint(t *testing.T) {
 	if !strings.Contains(Hint("java.lang.UnsatisfiedLinkError: no signal_jni"), "libsignal") {
 		t.Fatal("libsignal hint")
 	}
-	if !strings.Contains(Hint("UnsupportedClassVersionError"), "Java 21") || Hint("ok") != "" {
+	const old = "java.lang.UnsupportedClassVersionError: org/asamk/signal/Main has been compiled by a more recent version of the Java Runtime (class file version 69.0), this version of the Java Runtime only recognizes class file versions up to 65.0"
+	if !strings.Contains(Hint(old), "Java 25") || !strings.Contains(Hint("UnsupportedClassVersionError"), "newer Java") || Hint("ok") != "" {
 		t.Fatal("java hint")
 	}
 }
