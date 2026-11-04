@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# osv-scanner exceptions (security.yml, job osv-scanner; passed with --config).
+# Every entry needs a reason and an expiry date: after ignoreUntil the finding
+# fails the job again and has to be reviewed (docs/security/README.md).
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2027-02-01
+reason = """
+golang.org/x/crypto/openpgp is unmaintained (module-level advisory). TuxMail
+does not import golang.org/x/crypto/openpgp (go mod why: not needed; OpenPGP
+uses github.com/ProtonMail/go-crypto) and govulncheck reports it as not called.
+The only fix is the untagged x/crypto commit that deletes the package
+(v0.58.1-0.20261009181718-2f1f834330b2); take the next tagged x/crypto release.
+"""
+
+[[IgnoredVulns]]
+id = "GHSA-gcqx-w48m-w2h4"
+ignoreUntil = 2027-02-01
+reason = """
+deepmerge 4.3.1 prototype poisoning, no fixed version published. Dev dependency
+only (@sveltejs/vite-plugin-svelte merges its own build configuration at build
+time); it is not part of the shipped frontend bundle. npm audit rates it low.
+"""

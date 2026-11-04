@@ -25,10 +25,10 @@ Workflow [`.github/workflows/security.yml`](../../.github/workflows/security.yml
 | gosec + staticcheck | gosec (SARIF), staticcheck | staticcheck `SA*` (ohne SA1019/SA4006); gosec nur Bericht |
 | CodeQL | Go, JavaScript/TypeScript (`security-extended`) | Bericht (Code Scanning) |
 | npm audit | `frontend/`, `mobile/` | Runtime-Abhängigkeiten: jede Meldung; alle: ab *moderate* |
-| osv-scanner | `go.mod`, `package-lock.json` | bekannten Schwachstellen |
+| osv-scanner | `go.mod`, `package-lock.json`; geprüfte Ausnahmen mit Begründung und Ablaufdatum in [`osv-scanner.toml`](../../osv-scanner.toml) | bekannten Schwachstellen |
 | gitleaks | ganze Git-Historie, Allowlist [`.gitleaks.toml`](../../.gitleaks.toml) | Geheimnissen |
 | Trivy | Dateisystem (vuln, misconfig, secret) + gebautes Image `build/docker/Dockerfile`, SBOM (SPDX) | HIGH/CRITICAL mit Fix |
-| licenses | go-licenses (AGPL-Kompatibilität) | nur Bericht / report only |
+| licenses | go-licenses (AGPL-Kompatibilität; `forbidden`/`unknown` schlagen an, TuxMail selbst und `segmentio/asm` (MIT-0) ausgenommen) | nur Bericht / report only |
 | fuzz | alle `func Fuzz*` (automatisch ermittelt), je 60 s | Absturz (Eingabe als Artefakt) |
 | pentest | [`security/pentest/harness.py`](../../security/pentest/harness.py) gegen frisch gestarteten Server | informativ / informational |
 

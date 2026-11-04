@@ -88,6 +88,9 @@ jobs:
     name: CodeQL (${{ matrix.language }})
     runs-on: ubuntu-24.04
     permissions:
+      # actions: read is required on private repositories: the analyze step
+      # reads the workflow run (also with upload: never).
+      actions: read
       contents: read
       security-events: write
     strategy:
@@ -152,6 +155,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
+      # Go toolchain for osv-scanner's call analysis of go.mod (govulncheck).
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
       - name: Install osv-scanner
         env:
           OSV_VERSION: v2.7.0
@@ -159,9 +166,10 @@ jobs:
           curl -fsSL -o "$RUNNER_TEMP/osv-scanner" \
             "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
           chmod +x "$RUNNER_TEMP/osv-scanner"
+      # Reviewed exceptions (reason and expiry date): osv-scanner.toml.
       - name: Scan lockfiles
         run: |
-          "$RUNNER_TEMP/osv-scanner" scan source \
+          "$RUNNER_TEMP/osv-scanner" scan source --config=osv-scanner.toml \
             -L go.mod -L frontend/package-lock.json -L mobile/package-lock.json
 
   gitleaks:
@@ -264,9 +272,16 @@ jobs:
       - name: License report
         run: go-licenses report ./... 2>/dev/null | sort > go-licenses.csv
       - name: Check AGPL-3.0-compatible licenses
-        # notice: permissive (MIT, BSD, Apache-2.0, ISC, ...); reciprocal: MPL-2.0;
-        # restricted: GPL/LGPL/AGPL. "forbidden" and "unknown" need a manual review.
-        run: go-licenses check ./... --allowed_licenses_categories=notice,permissive,reciprocal,restricted,unencumbered
+        # Allowed: notice (MIT, BSD, Apache-2.0, ISC, ...), reciprocal (MPL-2.0),
+        # restricted (GPL-3.0, LGPL; compatible with AGPL-3.0-or-later) and
+        # unencumbered. "forbidden" and "unknown" fail and need a manual review.
+        # Ignored (their dependencies are still checked):
+        #   github.com/Midas1989/Mailclient  TuxMail itself (AGPL-3.0, classified "forbidden")
+        #   github.com/segmentio/asm         MIT-0 (MIT No Attribution), not recognised by the classifier
+        run: >-
+          go-licenses check ./... --disallowed_types=forbidden,unknown
+          --ignore github.com/Midas1989/Mailclient
+          --ignore github.com/segmentio/asm
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
