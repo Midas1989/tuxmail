@@ -287,7 +287,7 @@ jobs:
           retention-days: 1
       - name: Sign TuxMail.exe and plugins (SignPath)
         if: env.SIGNPATH_ENABLED == 'true'
-        uses: signpath/github-action-submit-signing-request@v2.2
+        uses: signpath/github-action-submit-signing-request@v3.0
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -366,7 +366,7 @@ jobs:
           retention-days: 1
       - name: Sign setup programs (SignPath)
         if: env.SIGNPATH_ENABLED == 'true'
-        uses: signpath/github-action-submit-signing-request@v2.2
+        uses: signpath/github-action-submit-signing-request@v3.0
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
