@@ -12,8 +12,13 @@
     app.signatures = await app.api.listSignatures();
   }
   async function save(sig: Signature) {
-    // The HTML version is regenerated from the plain text.
-    await app.api.saveSignature({ ...sig, html: '' });
+    // The server sanitizes the HTML, stores its images and regenerates
+    // the plain text unless plainOverride is set.
+    try {
+      await app.api.saveSignature(sig);
+    } catch (err) {
+      app.toast(t('settings.signatures.saveFailed', { error: err instanceof Error ? err.message : String(err) }), undefined, 'error');
+    }
     await reload();
   }
   async function add() {

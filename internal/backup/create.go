@@ -397,7 +397,8 @@ func prune(ctx context.Context, path string, sc Scope, m *Manifest) ([]string, m
 	hr, err := db.QueryContext(ctx, `SELECT blob_hash FROM messages WHERE blob_hash IS NOT NULL
 		UNION SELECT blob_hash FROM attachments WHERE blob_hash IS NOT NULL
 		UNION SELECT media_blob FROM chat_messages WHERE media_blob IS NOT NULL
-		UNION SELECT avatar_blob FROM persons WHERE avatar_blob IS NOT NULL`)
+		UNION SELECT avatar_blob FROM persons WHERE avatar_blob IS NOT NULL
+		UNION SELECT blob_hash FROM signature_images`)
 	if err != nil {
 		return nil, nil, err
 	}

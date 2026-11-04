@@ -23,6 +23,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/app"
 	"github.com/Midas1989/Mailclient/internal/auth"
 	"github.com/Midas1989/Mailclient/internal/config"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 	"github.com/Midas1989/Mailclient/internal/server/api"
 	"github.com/Midas1989/Mailclient/internal/server/push"
 )
@@ -87,6 +88,13 @@ func New(cfg *config.Config, svc *auth.Service, opts Options) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	// SSRF protection for every user-configured outbound connection
+	// (internal/netguard; config security:).
+	policy, err := cfg.NetPolicy()
+	if err != nil {
+		return nil, err
+	}
+	netguard.SetPolicy(policy)
 	s := &Server{
 		cfg: cfg, auth: svc, log: opts.Logger, version: opts.Version, static: opts.Static,
 		trusted: trusted, mailData: opts.MailData, locales: opts.Locales, appOptions: opts.AppOptions,
@@ -320,6 +328,7 @@ func (s *Server) routes() http.Handler {
 	s.mux = mux
 	var h http.Handler = mux
 	h = s.csrf(h)
+	h = s.limitBody(h)
 	h = s.securityHeaders(h)
 	h = s.logRequests(h)
 	h = s.clientInfo(h)

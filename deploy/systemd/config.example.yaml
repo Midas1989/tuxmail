@@ -51,3 +51,15 @@ limits:
   # for users who are not logged in (users with at least one enabled account).
   background_sync: true
   background_sync_max_users: 500
+
+# Outbound connections (SSRF protection). Users can only make the server
+# connect to public addresses; loopback, private networks, link-local and
+# cloud metadata addresses are refused for every user-configured destination.
+security:
+  # true = also allow private networks (RFC 1918, fc00::/7) and loopback for
+  # ALL users, e.g. for a mail server in the same LAN.
+  allow_private_networks: false
+  # Always reachable: IP or CIDR, optionally with a port.
+  allowed_networks: []
+  #  - "192.168.10.5:993"
+  #  - "127.0.0.1:8008"   # local Matrix homeserver

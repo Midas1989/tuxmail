@@ -20,6 +20,17 @@ type DirUser struct {
 	DisplayName string
 	Admin       bool
 	Disabled    bool
+	// ReadOnly users (server role readonly, "guest") never get more than
+	// RoleRead, whatever their grants say.
+	ReadOnly bool
+}
+
+// capRole limits the role of read-only users to RoleRead.
+func (u DirUser) capRole(r Role) Role {
+	if u.ReadOnly && r.Level() > RoleRead.Level() {
+		return RoleRead
+	}
+	return r
 }
 
 // Name returns the display name or the username.
@@ -154,16 +165,34 @@ func (s *Service) CreateMailbox(ctx context.Context, a Actor, in MailboxInput) (
 		by = a.UserID
 	}
 	now := s.unix()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO team_mailboxes(name, address, description, kind, shared_drafts, disabled,
-		created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)`,
-		in.Name, in.Address, in.Description, in.Kind, in.SharedDrafts, in.Disabled, by, now, now)
+	// Ids are never reused (id_highwater): a new mailbox must not inherit
+	// data_dir/teams/<id> or caches of a deleted one (audit A-01).
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Mailbox{}, err
+	}
+	defer tx.Rollback()
+	var id int64
+	if err := tx.QueryRowContext(ctx, `SELECT MAX(COALESCE((SELECT value FROM id_highwater WHERE name = 'team_mailboxes'), 0),
+		COALESCE((SELECT MAX(id) FROM team_mailboxes), 0)) + 1`).Scan(&id); err != nil {
+		return Mailbox{}, err
+	}
+	_, err = tx.ExecContext(ctx, `INSERT INTO team_mailboxes(id, name, address, description, kind, shared_drafts, disabled,
+		created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		id, in.Name, in.Address, in.Description, in.Kind, in.SharedDrafts, in.Disabled, by, now, now)
 	if isUnique(err) {
 		return Mailbox{}, fmt.Errorf("%w: mailbox %q", ErrExists, in.Name)
 	}
 	if err != nil {
 		return Mailbox{}, err
 	}
-	id, _ := res.LastInsertId()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO id_highwater(name, value) VALUES ('team_mailboxes', ?)
+		ON CONFLICT(name) DO UPDATE SET value = excluded.value`, id); err != nil {
+		return Mailbox{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return Mailbox{}, err
+	}
 	s.auditf(ctx, a, "team.mailbox.create", id, 0, in.Name)
 	s.emit(Event{Kind: EventMailbox, MailboxID: id, ActorID: a.UserID})
 	return s.GetMailbox(ctx, id)
@@ -331,7 +360,7 @@ func (s *Service) RoleOf(ctx context.Context, userID, mailboxID int64) (Role, er
 	if err != nil {
 		return RoleNone, err
 	}
-	return roles[mailboxID], nil
+	return u.capRole(roles[mailboxID]), nil
 }
 
 // userRoles returns the effective role per mailbox from grants (no admin rule).
@@ -403,6 +432,7 @@ func (s *Service) Accessible(ctx context.Context, userID int64) ([]Access, error
 		} else if m.Disabled {
 			r = RoleNone
 		}
+		r = u.capRole(r)
 		if r == RoleNone {
 			continue
 		}

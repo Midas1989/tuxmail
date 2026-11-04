@@ -3,7 +3,11 @@
 package compose
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
 	"html"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,6 +17,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/mime/parse"
 	"github.com/Midas1989/Mailclient/internal/mime/sanitize"
+	"github.com/Midas1989/Mailclient/internal/mime/signature"
 )
 
 // SignatureDelimiter is the standard plain-text signature separator.
@@ -31,6 +36,10 @@ type bodies struct {
 	html string // "" for plain-text mails
 	// cids are inline parts of the original referenced by the quoted HTML.
 	cids []string
+	// sigImages are the stored images of the signature (cid: references).
+	sigImages []domain.SignatureImage
+	// dataImages are data: URI images of the HTML converted to inline parts.
+	dataImages []Attachment
 }
 
 func formatAddr(a domain.Address) string {
@@ -121,9 +130,11 @@ func signatureTexts(d *Draft) (plain, htmlSig string, placement string) {
 		placement = PlacementAboveQuote
 	}
 	plain = strings.TrimSpace(strings.ReplaceAll(d.Signature.Plain, "\r\n", "\n"))
-	htmlSig = strings.TrimSpace(d.Signature.HTML)
+	// Signatures are sanitized when saved and again here: stored content
+	// may predate the sanitizer or come from an import or provisioning.
+	htmlSig = signature.Sanitize(d.Signature.HTML)
 	if plain == "" && htmlSig != "" {
-		plain = sanitize.ToText(htmlSig)
+		plain = signature.ToPlain(htmlSig)
 	}
 	if htmlSig == "" && plain != "" {
 		htmlSig = textToHTML(plain)
@@ -205,7 +216,9 @@ func buildBodies(d *Draft) bodies {
 	newText := strings.ReplaceAll(d.TextBody, "\r\n", "\n")
 	newHTML := ""
 	if wantHTML {
-		newHTML = bodyInner(d.HTMLBody)
+		// A signature block placed by the composer is sanitized like a
+		// stored signature (it may have been edited in the mail).
+		newHTML = signature.SanitizeBlocks(bodyInner(d.HTMLBody))
 		if strings.TrimSpace(newText) == "" {
 			newText = sanitize.ToText(newHTML)
 		}
@@ -279,7 +292,76 @@ func buildBodies(d *Draft) bodies {
 		}
 	}
 	if wantHTML {
+		if d.SignatureMode == SignatureFull && d.Signature != nil && sigHTMLBlock != "" {
+			out.sigImages = d.Signature.Images
+		}
+		out.html, out.dataImages = inlineDataImages(out.html)
 		out.html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>` + out.html + `</body></html>`
 	}
 	return out
+}
+
+// inlineDataImages replaces data: URI images by cid: references to inline
+// parts (many clients, e.g. Gmail and Outlook, do not show data: images).
+func inlineDataImages(src string) (string, []Attachment) {
+	if !strings.Contains(src, "data:") || !strings.Contains(strings.ToLower(src), "<img") {
+		return src, nil
+	}
+	var parts []Attachment
+	seen := map[string]bool{}
+	out := signature.RewriteImages(src, func(s string) (string, bool) {
+		if !strings.HasPrefix(strings.ToLower(s), "data:image/") {
+			return s, true
+		}
+		mt, data, ok := decodeDataImage(s)
+		if !ok {
+			return s, true
+		}
+		sum := sha256.Sum256(data)
+		cid := "img-" + hex.EncodeToString(sum[:16]) + "@tuxmail"
+		if !seen[cid] {
+			seen[cid] = true
+			ext := strings.TrimPrefix(strings.TrimSuffix(strings.TrimPrefix(mt, "image/"), "+xml"), "x-")
+			if ext == "jpeg" {
+				ext = "jpg"
+			}
+			parts = append(parts, Attachment{Filename: "image-" + strconv.Itoa(len(parts)+1) + "." + ext, ContentType: mt, ContentID: cid, Inline: true, Data: data})
+		}
+		return "cid:" + cid, true
+	})
+	return out, parts
+}
+
+// decodeDataImage decodes a base64 data:image URI of a raster format.
+func decodeDataImage(uri string) (string, []byte, bool) {
+	head, payload, ok := strings.Cut(uri, ",")
+	if !ok {
+		return "", nil, false
+	}
+	head = strings.ToLower(strings.TrimPrefix(strings.ToLower(head), "data:"))
+	mt, params, _ := strings.Cut(head, ";")
+	if !strings.Contains(params, "base64") {
+		return "", nil, false
+	}
+	switch mt {
+	case "image/png", "image/gif", "image/jpeg", "image/jpg", "image/webp", "image/bmp":
+	default:
+		return "", nil, false // svg and others may carry scripts
+	}
+	payload = strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\n' || r == '\r' || r == '\t' {
+			return -1
+		}
+		return r
+	}, payload)
+	data, err := base64.StdEncoding.DecodeString(payload)
+	if err != nil {
+		if data, err = base64.RawStdEncoding.DecodeString(strings.TrimRight(payload, "=")); err != nil {
+			return "", nil, false
+		}
+	}
+	if mt == "image/jpg" {
+		mt = "image/jpeg"
+	}
+	return mt, data, true
 }
