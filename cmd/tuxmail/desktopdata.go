@@ -163,7 +163,7 @@ func openDesktopApp(ctx context.Context, loc dataLocation, log *slog.Logger) (*a
 		return nil, nil, err
 	}
 	opts := app.Options{Store: st, DataDir: loc.Dir, Mode: app.ModeDesktop, Version: version, Logger: log,
-		Locales: locales.FS, LocaleDir: filepath.Join(loc.Dir, "locales"), Sync: &app.SyncOptions{}, Send: &app.SendOptions{}}
+		Locales: locales.FS, LocaleDir: filepath.Join(loc.Dir, "locales"), Sync: &app.SyncOptions{}, Send: &app.SendOptions{}, Messenger: &app.MessengerOptions{}}
 	kr := secrets.NewKeyring()
 	switch {
 	case !loc.Portable && kr.Available():

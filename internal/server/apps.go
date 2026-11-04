@@ -64,7 +64,7 @@ func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
 	}
 	opts := app.Options{Store: st, DataDir: dir, Mode: app.ModeServer, Version: p.s.version, Secrets: secrets,
 		Logger: p.s.log.With("user", userID), Locales: p.s.locales, LocaleDir: filepath.Join(p.s.cfg.DataDir, "locales"),
-		Push: &pushBackend{s: p.s, userID: userID}, Sync: &app.SyncOptions{}, Send: &app.SendOptions{}}
+		Push: &pushBackend{s: p.s, userID: userID}, Sync: &app.SyncOptions{}, Send: &app.SendOptions{}, Messenger: &app.MessengerOptions{}}
 	if p.s.appOptions != nil {
 		p.s.appOptions(userID, &opts)
 	}

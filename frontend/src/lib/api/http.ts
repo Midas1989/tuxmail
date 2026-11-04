@@ -85,6 +85,18 @@
 //   POST /api/workflows/validate                {src, mode} -> WorkflowValidation
 //   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
+//   Messenger (internal/server/api/messenger_routes.go):
+//   GET  /api/messenger/plugins                 -> MessengerPlugin[]
+//   PATCH /api/messenger/plugins/{name}         MessengerPluginPatch -> MessengerPlugin
+//   POST /api/messenger/plugins/{name}/restart
+//   POST /api/messenger/pairings                MessengerPairingInput -> MessengerPairing
+//   GET/DELETE /api/messenger/pairings/{id}     -> MessengerPairing (DELETE cancels)
+//   POST /api/messenger/pairings/{id}/input     {field, value}
+//   GET  /api/messenger/accounts                -> MessengerAccountState[]
+//   DELETE /api/messenger/accounts/{id}         unlink and delete the account
+//   POST /api/messenger/accounts/{id}/sync
+//   POST /api/conversations/{id}/typing         {active}
+//   GET  /api/messenger/media/{id}              media of a chat message (downloaded through the plugin)
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
 // snake_case as in internal/server/api_device.go (see native/server.ts):
@@ -744,7 +756,44 @@ export class HttpTransport implements Api {
       s.close();
     }
   }
+
+  // --- Messenger ---
+  listMessengerPlugins(): Promise<MessengerPlugin[]> {
+    return this.request('GET', '/api/messenger/plugins');
+  }
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin> {
+    return this.request('PATCH', `/api/messenger/plugins/${encodeURIComponent(name)}`, patch);
+  }
+  async restartMessengerPlugin(name: string): Promise<void> {
+    await this.request('POST', `/api/messenger/plugins/${encodeURIComponent(name)}/restart`);
+  }
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
+    return this.request('POST', '/api/messenger/pairings', input);
+  }
+  getMessengerPairing(id: string): Promise<MessengerPairing> {
+    return this.request('GET', `/api/messenger/pairings/${encodeURIComponent(id)}`);
+  }
+  async submitMessengerPairingInput(id: string, field: string, value: string): Promise<void> {
+    await this.request('POST', `/api/messenger/pairings/${encodeURIComponent(id)}/input`, { field, value });
+  }
+  async cancelMessengerPairing(id: string): Promise<void> {
+    await this.request('DELETE', `/api/messenger/pairings/${encodeURIComponent(id)}`);
+  }
+  listMessengerAccounts(): Promise<MessengerAccountState[]> {
+    return this.request('GET', '/api/messenger/accounts');
+  }
+  async removeMessengerAccount(accountId: number): Promise<void> {
+    await this.request('DELETE', `/api/messenger/accounts/${accountId}`);
+  }
+  async syncMessengerAccount(accountId: number): Promise<void> {
+    await this.request('POST', `/api/messenger/accounts/${accountId}/sync`);
+  }
+  async setMessengerTyping(conversationId: number, active: boolean): Promise<void> {
+    await this.request('POST', `/api/conversations/${conversationId}/typing`, { active });
+  }
 }
+
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
 
 function scopeParams(s: ConversationScope): Record<string, string | number | undefined> {
   return {

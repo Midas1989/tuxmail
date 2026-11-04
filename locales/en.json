@@ -33,7 +33,8 @@
       "email": "Email",
       "signal": "Signal",
       "whatsapp": "WhatsApp",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "matrix": "Matrix"
     },
     "conn": {
       "offline": "Offline",
@@ -205,7 +206,8 @@
       "signal": "Signal",
       "telegram": "Telegram",
       "groups": "Groups",
-      "favorites": "Favorites"
+      "favorites": "Favorites",
+      "matrix": "Matrix"
     },
     "chatMenu": "Chat options for {name}",
     "muted": "Muted",
@@ -527,7 +529,8 @@
       "smtp": "SMTP",
       "vaultwarden": "Vaultwarden",
       "whatsapp": "WhatsApp",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "matrix": "Matrix"
     },
     "region": {
       "custom": "Custom pattern",
@@ -1487,6 +1490,121 @@
       "switchServer": "Switch or add server",
       "title": "App settings",
       "version": "App version {version}"
+    }
+  },
+  "messenger": {
+    "title": "Messenger",
+    "intro": "Messenger plugins run as separate programs next to TuxMail. Every plugin is off until you enable it.",
+    "add": "Add messenger account",
+    "risk": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
+    "official": "Official API",
+    "experimental": "Experimental",
+    "state": {
+      "missing": "Not installed",
+      "stopped": "Stopped",
+      "starting": "Starting",
+      "running": "Running",
+      "crashed": "Crashed – restarting",
+      "failed": "Failed"
+    },
+    "enabled": "Enabled",
+    "enable": "Enable",
+    "disable": "Disable",
+    "restart": "Restart",
+    "version": "Version {version}",
+    "pid": "PID {pid}",
+    "restarts": "{count} restarts",
+    "restarts_one": "{count} restart",
+    "lastError": "Last error: {error}",
+    "nextRetry": "Next attempt {time}",
+    "updateHint": "Update needed: {hint}",
+    "notInstalled": "The plugin file {file} was not found in the plugins folder.",
+    "accounts": "{count} accounts",
+    "accounts_one": "{count} account",
+    "settingsTitle": "Settings",
+    "setting": {
+      "signal_cli_path": "Path to signal-cli",
+      "api_id": "Telegram api_id",
+      "api_hash": "Telegram api_hash",
+      "default_homeserver": "Default homeserver"
+    },
+    "save": "Save",
+    "saved": "Saved",
+    "riskTitle": "Before you enable {name}",
+    "riskText": {
+      "whatsapp": "WhatsApp does not allow unofficial clients. TuxMail links itself as a device of your account like WhatsApp Web, but WhatsApp may block accounts that use unofficial clients. TuxMail sends conservatively (no bulk messages, rate limited). Use it at your own risk.",
+      "generic": "This plugin uses an unofficial connection. The service may block accounts that use unofficial clients. Use it at your own risk."
+    },
+    "riskAccept": "I understand the risk and want to enable {name}.",
+    "riskConfirm": "Enable {name}",
+    "accountState": {
+      "connected": "Connected",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "logged_out": "Logged out on the phone",
+      "error": "Error"
+    },
+    "unlink": "Unlink",
+    "unlinkConfirm": "Unlink {name}? Its chats are removed from TuxMail; the phone keeps them.",
+    "sync": "Sync now",
+    "typing": "{name} is typing …",
+    "media": "Media",
+    "wizard": {
+      "title": "Add messenger account",
+      "chooseService": "Which messenger do you want to add?",
+      "sameChats": "TuxMail becomes a linked device of your existing account: you keep using your phone, and the same chats appear here.",
+      "signalHistory": "Signal does not copy older messages to linked devices; contacts and groups are synced, new messages appear from now on.",
+      "telegramCredentials": "The Telegram API credentials of this installation are missing (TUXMAIL_TELEGRAM_API_ID / TUXMAIL_TELEGRAM_API_HASH).",
+      "disabledNote": "This plugin is disabled.",
+      "method": {
+        "qr": "Scan QR code",
+        "phone": "Phone number and code",
+        "password": "User name and password",
+        "token": "Single sign-on",
+        "bridge": "Through a Matrix bridge"
+      },
+      "displayName": "Name in TuxMail (optional)",
+      "phone": "Phone number (international, e.g. +49 170 1234567)",
+      "homeserver": "Homeserver",
+      "username": "User",
+      "password": "Password",
+      "network": "Network",
+      "bridgeAccount": "Matrix account with the bridges",
+      "noBridgeAccount": "Add a Matrix account first; its homeserver must run the bridge.",
+      "start": "Start linking",
+      "waiting": "Connecting to {name} …",
+      "scan": "Scan this code with {name} on your phone",
+      "scanHint": {
+        "whatsapp": "WhatsApp → Settings → Linked devices → Link a device",
+        "signal": "Signal → Settings → Linked devices → Link new device",
+        "telegram": "Telegram → Settings → Devices → Link desktop device",
+        "bridge": "Scan with the {network} app on your phone (the bridge logs in for you)."
+      },
+      "code": "Enter this code on your phone",
+      "codeHint": "WhatsApp → Linked devices → Link a device → Link with phone number instead",
+      "expires": "Code renews in {seconds} s",
+      "input": {
+        "code": "Login code",
+        "password": "Password (two-step verification)",
+        "phone": "Phone number",
+        "homeserver": "Homeserver",
+        "username": "User",
+        "token": "Login token",
+        "confirm": "Confirmation"
+      },
+      "submit": "Continue",
+      "success": "{name} is linked. Your chats are being loaded.",
+      "error": "Linking failed: {message}",
+      "cancelled": "Linking was cancelled.",
+      "retry": "Try again",
+      "back": "Back",
+      "done": "Done",
+      "cancel": "Cancel",
+      "qrLabel": "QR code for linking"
     }
   }
 }

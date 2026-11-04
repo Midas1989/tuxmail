@@ -54,7 +54,12 @@
 // bubbles use internal/mime/quote. BasicRenderer is a dependency-free
 // fallback that never returns HTML.
 //
-// Messenger plugins: chats and chat messages are read from the store;
-// sending to messenger channels returns not_supported until a plugin
-// Sender exists.
+// Messenger plugins (internal/messenger, KONZEPT 11): Options.Messenger
+// creates a messenger.Service with its plugin host (messenger_wiring.go,
+// messenger_api.go). Plugin events are stored as chats/chat_messages and
+// show up in the chat services like before; chat-mode sends on messenger
+// channels, reactions, deletes and read markers of messenger chats go
+// through the plugin; share passwords can be delivered by messenger
+// (send.MessengerSender). Without Options.Messenger messenger channels
+// return not_supported.
 package app

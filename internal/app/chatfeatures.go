@@ -213,6 +213,9 @@ func (a *App) Send(ctx context.Context, msg OutgoingMessage) (SendResult, error)
 }
 
 func (a *App) sendNow(ctx context.Context, msg OutgoingMessage) (SendResult, error) {
+	if msg.Channel != "email" && a.msgr != nil {
+		return a.sendMessenger(ctx, msg) // messenger_wiring.go
+	}
 	sender, err := a.senderOrError()
 	if err != nil {
 		return SendResult{}, err

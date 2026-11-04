@@ -4,6 +4,7 @@
   import MessageCircle from '@lucide/svelte/icons/message-circle';
   import Shield from '@lucide/svelte/icons/shield';
   import Send from '@lucide/svelte/icons/send';
+  import Hash from '@lucide/svelte/icons/hash';
   import type { Channel } from '../../types';
   import { t } from '../../i18n/index.svelte';
 
@@ -25,6 +26,8 @@
     <MessageCircle size={badge ? size - 4 : size} aria-hidden="true" />
   {:else if channel === 'telegram'}
     <Send size={badge ? size - 4 : size} aria-hidden="true" />
+  {:else if channel === 'matrix'}
+    <Hash size={badge ? size - 4 : size} aria-hidden="true" />
   {:else}
     <Shield size={badge ? size - 4 : size} aria-hidden="true" />
   {/if}
@@ -67,6 +70,13 @@
   }
   .badge.ch-signal {
     background: var(--tm-signal);
+  }
+  .ch-matrix {
+    color: var(--tm-matrix, #0dbd8b);
+  }
+  .badge.ch-matrix {
+    background: var(--tm-matrix, #0dbd8b);
+    color: white;
   }
   .lbl {
     font-size: 11.5px;

@@ -20,6 +20,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/ai"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
+	"github.com/Midas1989/Mailclient/internal/messenger"
 	"github.com/Midas1989/Mailclient/internal/project"
 	"github.com/Midas1989/Mailclient/internal/send"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -57,6 +58,8 @@ type Options struct {
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
+	// Messenger enables the messenger plugins (messenger_wiring.go).
+	Messenger *MessengerOptions
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -92,6 +95,7 @@ type App struct {
 	mgr     *tsync.Manager
 	render  MessageRenderer
 	log     *slog.Logger
+	msgr    *messenger.Service
 
 	idxMu      sync.Mutex
 	idxDirty   bool
@@ -202,6 +206,9 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if err := a.wf.Load(ctx); err != nil {
 		a.log.Warn("app: some workflows could not be loaded", "err", err)
 	}
+	if err := a.initMessenger(); err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -225,6 +232,9 @@ func (a *App) Start() {
 			}
 		}()
 		go func() { defer a.wg.Done(); a.timers(ctx) }()
+		if a.msgr != nil {
+			a.msgr.Start()
+		}
 	})
 }
 
@@ -234,6 +244,9 @@ func (a *App) Close() error {
 		a.cancel()
 	}
 	a.wg.Wait()
+	if a.msgr != nil {
+		a.msgr.Close()
+	}
 	if a.mgr != nil {
 		a.mgr.Stop()
 	}

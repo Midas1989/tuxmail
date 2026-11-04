@@ -229,7 +229,11 @@ func (a *App) chatItem(ctx context.Context, ic *itemCtx, convID int64, c store.C
 		it.Status = ""
 	}
 	if m.MediaBlob != "" || m.MediaName != "" {
-		it.Attachments = append(it.Attachments, Attachment{ID: m.ID, Filename: m.MediaName, MIMEType: m.MediaMime})
+		att := Attachment{ID: m.ID, Filename: m.MediaName, MIMEType: m.MediaMime, URL: chatMediaURL(m.ID)}
+		if strings.HasPrefix(m.MediaMime, "image/") {
+			att.PreviewURL = att.URL
+		}
+		it.Attachments = append(it.Attachments, att)
 	}
 	if m.ReplyToRemoteID != "" {
 		if orig, ok := byRemote[m.ReplyToRemoteID]; ok {
@@ -466,8 +470,12 @@ func (a *App) ReactToItem(ctx context.Context, convID int64, itemID, emoji strin
 	if _, _, err := parseItemID(itemID); err != nil {
 		return ReactionResult{}, err
 	}
-	if _, err := a.st.ToggleItemReaction(ctx, itemID, emoji); err != nil {
+	if handled, err := a.reactMessenger(ctx, itemID, emoji); err != nil {
 		return ReactionResult{}, err
+	} else if !handled {
+		if _, err := a.st.ToggleItemReaction(ctx, itemID, emoji); err != nil {
+			return ReactionResult{}, err
+		}
 	}
 	it, err := a.findItem(ctx, convID, itemID)
 	if err != nil {
@@ -499,8 +507,12 @@ func (a *App) DeleteItem(ctx context.Context, convID int64, itemID string) error
 		}
 		a.hub.Publish(Event{Type: EventMessageRemoved, MessageID: id})
 	case "c":
-		if err := a.st.MarkChatMessageDeleted(ctx, id); err != nil {
+		if handled, err := a.deleteMessenger(ctx, id); err != nil {
 			return err
+		} else if !handled {
+			if err := a.st.MarkChatMessageDeleted(ctx, id); err != nil {
+				return err
+			}
 		}
 	}
 	a.invalidateViews()

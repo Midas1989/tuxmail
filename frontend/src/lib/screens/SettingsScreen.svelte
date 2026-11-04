@@ -21,6 +21,11 @@
   import ScreenShell from './ScreenShell.svelte';
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
+  import MessengerSettings from '../components/settings/MessengerSettings.svelte';
+  import MessengerWizard from '../components/settings/MessengerWizard.svelte';
+  import MessageCircle from '@lucide/svelte/icons/message-circle';
+
+  let messengerWizardOpen = $state(false);
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
   $effect(() => {
@@ -69,7 +74,10 @@
     <section class="card" aria-labelledby="set-accounts">
       <div class="card-head">
         <h2 id="set-accounts">{t('settings.accounts')}</h2>
-        <button class="btn btn-primary" onclick={() => (wizardOpen = true)}><Plus size={15} /> {t('settings.addAccount')}</button>
+        <span class="acc-actions">
+          <button class="btn" onclick={() => (messengerWizardOpen = true)}><MessageCircle size={15} /> {t('messenger.add')}</button>
+          <button class="btn btn-primary" onclick={() => (wizardOpen = true)}><Plus size={15} /> {t('settings.addAccount')}</button>
+        </span>
       </div>
       <ul class="accounts">
         {#each app.accounts as a (a.id)}
@@ -94,6 +102,8 @@
       <p class="about">{t('onboarding.connect.cardText')}</p>
       <button class="btn btn-primary" onclick={() => (connectOpen = true)}><Server size={15} /> {t('onboarding.connect.title')}</button>
     </section>
+
+    <MessengerSettings />
 
     <NotificationSettings />
 
@@ -164,6 +174,9 @@
 {#if wizardOpen}
   <AccountWizard onclose={() => (wizardOpen = false)} />
 {/if}
+{#if messengerWizardOpen}
+  <MessengerWizard onclose={() => (messengerWizardOpen = false)} />
+{/if}
 {#if connectOpen}
   <ServerConnectWizard onclose={() => (connectOpen = false)} />
 {/if}
@@ -190,6 +203,11 @@
     justify-content: space-between;
     gap: 8px;
     margin-bottom: 8px;
+  }
+  .acc-actions {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
   h2 {
     margin: 0 0 10px;
