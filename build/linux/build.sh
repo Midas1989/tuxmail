@@ -6,6 +6,7 @@
 # architecture and stages the FHS tree used by all Linux packages:
 #
 #   build/out/linux-<arch>/root/usr/bin/tuxmail
+#   build/out/linux-<arch>/root/usr/lib/tuxmail/plugins/tuxmail-plugin-*   (messenger plugins)
 #   build/out/linux-<arch>/root/usr/share/applications/org.tuxmail.TuxMail.desktop
 #   build/out/linux-<arch>/root/usr/share/metainfo/org.tuxmail.TuxMail.metainfo.xml
 #   build/out/linux-<arch>/root/usr/share/icons/hicolor/<size>/apps/org.tuxmail.TuxMail.png
@@ -37,6 +38,9 @@ fi
 log "staging $stage"
 rm -rf "$stage"
 install -Dm0755 "$bin" "$stage/usr/bin/tuxmail"
+# Messenger plugins (static, CGO_ENABLED=0): /usr/lib/tuxmail/plugins is
+# <exe dir>/../lib/tuxmail/plugins for the plugin host (internal/messenger/host).
+stage_plugins linux "$arch" "$stage/usr/lib/tuxmail/plugins"
 install -Dm0644 "$ROOT/build/linux/org.tuxmail.TuxMail.desktop" \
 	"$stage/usr/share/applications/org.tuxmail.TuxMail.desktop"
 date=$(date -u -d "@$SOURCE_DATE_EPOCH" +%Y-%m-%d 2>/dev/null || date -u +%Y-%m-%d)

@@ -48,6 +48,36 @@ check_frontend() {
 	fi
 }
 
+# Messenger plugins shipped with every package (build/plugins.sh).
+PLUGIN_NAMES="whatsapp telegram matrix signal"
+
+# stage_plugins OS ARCH DEST: builds the messenger plugins for OS/ARCH
+# (build/plugins.sh; the Go build cache makes repeated calls cheap) and
+# copies them into DEST. TUXMAIL_PLUGINS_DIR=<dir> uses prebuilt (e.g.
+# signed) binaries instead; TUXMAIL_SKIP_PLUGINS=1 packages without them.
+stage_plugins() {
+	_sp_os=$1 _sp_arch=$2 _sp_dest=$3 _sp_ext=""
+	if [ "${TUXMAIL_SKIP_PLUGINS:-}" = 1 ]; then
+		log "WARNING: TUXMAIL_SKIP_PLUGINS=1 - packaging without messenger plugins"
+		return 0
+	fi
+	[ "$_sp_os" = windows ] && _sp_ext=.exe
+	_sp_src=${TUXMAIL_PLUGINS_DIR:-}
+	if [ -z "$_sp_src" ]; then
+		_sp_src=$ROOT/build/out/plugins/$_sp_os-$_sp_arch
+		log "building messenger plugins $_sp_os/$_sp_arch"
+		sh "$ROOT/build/plugins.sh" target "$_sp_os" "$_sp_arch" "$_sp_src"
+	fi
+	mkdir -p "$_sp_dest"
+	for _sp_n in $PLUGIN_NAMES; do
+		_sp_f=$_sp_src/tuxmail-plugin-$_sp_n$_sp_ext
+		[ -f "$_sp_f" ] || die "missing plugin $_sp_f"
+		cp "$_sp_f" "$_sp_dest/"
+		chmod 0755 "$_sp_dest/tuxmail-plugin-$_sp_n$_sp_ext"
+	done
+	log "staged plugins ($PLUGIN_NAMES) in $_sp_dest"
+}
+
 # mktar OUT.tar.gz DIR ENTRY...: deterministic gzip tarball of ENTRYs relative to DIR.
 mktar() {
 	out=$1 dir=$2

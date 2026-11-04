@@ -12,6 +12,10 @@
 # Jobs: version -> frontend -> server (4x), linux-desktop (amd64/arm64),
 #       windows-desktop (amd64/arm64), docker -> publish
 #
+# Every desktop and server package (and the Docker image) contains the
+# messenger plugins (build/plugins.sh): plugins/ next to the executable, or
+# /usr/lib/tuxmail/plugins in .deb/.rpm/AppImage.
+#
 # Optional secrets (steps are skipped when missing):
 #   GPG_PRIVATE_KEY, GPG_PASSPHRASE        signed .deb/.rpm + checksums.txt.asc
 #   SIGNPATH_API_TOKEN (+ variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
@@ -122,6 +126,7 @@ jobs:
         run: |
           tar -xzf "dist/tuxmail_${TUXMAIL_VERSION}_linux_amd64.tar.gz" -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/tuxmail" version | grep -F "$TUXMAIL_VERSION"
+          for p in whatsapp telegram matrix signal; do test -x "$RUNNER_TEMP/plugins/tuxmail-plugin-$p"; done
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: server-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -185,6 +190,8 @@ jobs:
         run: |
           sudo apt-get install -y ./dist/tuxmail_*_${{ matrix.arch }}.deb
           tuxmail version | grep -F "$TUXMAIL_VERSION"
+          ls -l /usr/lib/tuxmail/plugins
+          for p in whatsapp telegram matrix signal; do test -x "/usr/lib/tuxmail/plugins/tuxmail-plugin-$p"; done
           sudo apt-get remove -y tuxmail
 
       - name: Portable tar.gz
@@ -247,31 +254,38 @@ jobs:
             choco install nsis -y --no-progress
           fi
 
-      - name: Build TuxMail.exe
+      - name: Build TuxMail.exe and the messenger plugins
         run: build/windows/build.sh "${{ matrix.arch }}"
 
       - name: Smoke test
         if: matrix.arch == 'amd64'
-        run: build/out/windows-amd64/TuxMail.exe version
+        run: |
+          build/out/windows-amd64/TuxMail.exe version
+          ls -l build/out/windows-amd64/plugins
 
       # ------------------------------------------------------------------
       # Code signing (SignPath Foundation / SignPath.io) - PLACEHOLDER.
       # Disabled until the secret SIGNPATH_API_TOKEN and the repository
       # variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG and
       # SIGNPATH_SIGNING_POLICY_SLUG exist. The SignPath project needs an
-      # artifact configuration "exe" that signs the PE file in the zip that
-      # upload-artifact creates. Signed files land in build/out/signed-<arch>/
-      # and replace the unsigned ones for packaging (TUXMAIL_EXE).
+      # artifact configuration "exe" that signs every PE file (**/*.exe) in
+      # the zip that upload-artifact creates: TuxMail.exe + plugins\*.exe
+      # here, the setup programs below. Signed files land in
+      # build/out/signed-<arch>/ (same layout) and replace the unsigned ones
+      # for packaging (TUXMAIL_EXE; plugins\ next to it). The setup embeds
+      # the signed files and is signed itself afterwards.
       # ------------------------------------------------------------------
-      - name: Upload unsigned TuxMail.exe for signing
+      - name: Upload unsigned TuxMail.exe and plugins for signing
         id: unsigned-exe
         if: env.SIGNPATH_ENABLED == 'true'
         uses: actions/upload-artifact@v7.0.2
         with:
           name: unsigned-exe-${{ matrix.arch }}
-          path: build/out/windows-${{ matrix.arch }}/TuxMail.exe
+          path: |
+            build/out/windows-${{ matrix.arch }}/TuxMail.exe
+            build/out/windows-${{ matrix.arch }}/plugins/*.exe
           retention-days: 1
-      - name: Sign TuxMail.exe (SignPath)
+      - name: Sign TuxMail.exe and plugins (SignPath)
         if: env.SIGNPATH_ENABLED == 'true'
         uses: signpath/github-action-submit-signing-request@v2.2
         with:
@@ -290,20 +304,67 @@ jobs:
       - name: Portable zip
         run: build/windows/package-portable.sh "${{ matrix.arch }}"
 
-      - name: NSIS installer
+      - name: Setup program (TuxMail-<version>-windows-<arch>-setup.exe)
+        env:
+          WEBVIEW2_BOOTSTRAPPER: download
+        run: build/windows/package-setup.sh "${{ matrix.arch }}"
+
+      - name: Classic NSIS installer (fallback, ...-setup-classic.exe)
         env:
           WEBVIEW2_BOOTSTRAPPER: download
         run: build/windows/package-installer.sh "${{ matrix.arch }}"
 
-      - name: Upload unsigned installer for signing
+      # Real Windows run of the setup: silent per-user install, update,
+      # portable extraction and uninstall from the installed copy.
+      - name: Setup smoke test (silent install, update, portable, uninstall)
+        if: matrix.arch == 'amd64'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = (Get-ChildItem dist -Filter 'TuxMail-*-windows-amd64-setup.exe').FullName
+          $dir = Join-Path $env:RUNNER_TEMP 'TuxMailSmoke'
+          $portable = Join-Path $env:RUNNER_TEMP 'TuxMailPortable'
+          $log = Join-Path $env:RUNNER_TEMP 'tuxmail-setup.log'
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\TuxMail'
+          $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'TuxMail.lnk'
+          function Run($exe, $argv) {
+            $p = Start-Process -FilePath $exe -ArgumentList $argv -Wait -PassThru
+            if ($p.ExitCode -ne 0) { throw "$exe $argv exited with $($p.ExitCode)" }
+          }
+          try {
+            Run $setup @('/S', '--scope=user', "--dir=$dir", '--desktop-shortcut', "--log=$log")
+            foreach ($f in 'TuxMail.exe', 'TuxMail-Setup.exe', 'tuxmail-install.json', 'LICENSE.txt',
+                           'plugins\tuxmail-plugin-whatsapp.exe', 'plugins\tuxmail-plugin-telegram.exe',
+                           'plugins\tuxmail-plugin-matrix.exe', 'plugins\tuxmail-plugin-signal.exe') {
+              if (-not (Test-Path (Join-Path $dir $f))) { throw "missing $f" }
+            }
+            $entry = Get-ItemProperty $key
+            if ($entry.DisplayVersion -ne $env:TUXMAIL_VERSION -or $entry.Publisher -ne 'TuxMail') { throw "bad uninstall entry: $($entry | Out-String)" }
+            if (-not (Test-Path $lnk)) { throw 'start menu shortcut missing' }
+            Run $setup @('--silent', "--log=$log")   # update/reinstall into the registered folder
+            Run (Join-Path $dir 'TuxMail-Setup.exe') @('--uninstall', '--silent', "--log=$log")
+            Start-Sleep -Seconds 8
+            if (Test-Path $dir) { throw "installation folder left: $(Get-ChildItem -Recurse $dir | Out-String)" }
+            if (Test-Path $key) { throw 'uninstall entry left' }
+            if (Test-Path $lnk) { throw 'start menu shortcut left' }
+            Run $setup @('/S', '--scope=portable', "--dir=$portable", "--log=$log")
+            foreach ($f in 'TuxMail.exe', 'portable', 'data', 'plugins\tuxmail-plugin-matrix.exe') {
+              if (-not (Test-Path (Join-Path $portable $f))) { throw "portable: missing $f" }
+            }
+            if (Test-Path $key) { throw 'portable extraction registered itself' }
+          } finally {
+            if (Test-Path $log) { Get-Content $log }
+          }
+
+      - name: Upload unsigned setup programs for signing
         id: unsigned-setup
         if: env.SIGNPATH_ENABLED == 'true'
         uses: actions/upload-artifact@v7.0.2
         with:
           name: unsigned-setup-${{ matrix.arch }}
-          path: dist/TuxMail-*-setup.exe
+          path: dist/TuxMail-*-setup*.exe
           retention-days: 1
-      - name: Sign installer (SignPath)
+      - name: Sign setup programs (SignPath)
         if: env.SIGNPATH_ENABLED == 'true'
         uses: signpath/github-action-submit-signing-request@v2.2
         with:

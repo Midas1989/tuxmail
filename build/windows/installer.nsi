@@ -1,9 +1,12 @@
 ; SPDX-License-Identifier: AGPL-3.0-or-later
 ; Copyright (C) 2026 Midas Wollinger and TuxMail contributors
 ;
-; NSIS installer for TuxMail (Windows desktop), built by build/windows/package-installer.sh:
+; Classic NSIS installer for TuxMail (Windows desktop), built by
+; build/windows/package-installer.sh. The primary installer is the TuxMail
+; setup program (cmd/tuxmail-setup, build/windows/package-setup.sh); this one
+; is kept as fallback artifact "...-setup-classic.exe".
 ;   makensis -DVERSION=0.1.0 -DVERSION_NUMERIC=0.1.0.0 -DARCH=amd64 -DEXE=...\TuxMail.exe
-;            -DROOT=<repo> -DOUTFILE=...\TuxMail-0.1.0-windows-amd64-setup.exe
+;            [-DPLUGINS=...\plugins] -DROOT=<repo> -DOUTFILE=...\TuxMail-0.1.0-windows-amd64-setup-classic.exe
 ;            [-DWEBVIEW2_BOOTSTRAPPER=...\MicrosoftEdgeWebview2Setup.exe] installer.nsi
 ;
 ; - Default: installation for the current user only, no administrator rights
@@ -38,7 +41,7 @@ RequestExecutionLevel user
   !define EXE "${ROOT}\build\out\windows-${ARCH}\TuxMail.exe"
 !endif
 !ifndef OUTFILE
-  !define OUTFILE "${ROOT}\dist\TuxMail-${VERSION}-windows-${ARCH}-setup.exe"
+  !define OUTFILE "${ROOT}\dist\TuxMail-${VERSION}-windows-${ARCH}-setup-classic.exe"
 !endif
 
 !define APPNAME "TuxMail"
@@ -308,6 +311,12 @@ Section "$(SecApp)" SecApp
     Abort
     File "${EXE}"
   ${EndIf}
+  !ifdef PLUGINS
+    ; Messenger plugins (plugins\ next to TuxMail.exe).
+    SetOutPath "$INSTDIR\plugins"
+    File "${PLUGINS}\tuxmail-plugin-*.exe"
+    SetOutPath "$INSTDIR"
+  !endif
   File "/oname=LICENSE.txt" "${ROOT}\LICENSE"
   File "/oname=NOTICE.txt" "${ROOT}\NOTICE"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -390,6 +399,8 @@ Section "Uninstall"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\NOTICE.txt"
   Delete "$INSTDIR\Uninstall.exe"
+  Delete "$INSTDIR\plugins\tuxmail-plugin-*.exe"
+  RMDir "$INSTDIR\plugins"
   RMDir "$INSTDIR"
 
   DeleteRegKey SHCTX "Software\Classes\TuxMail.mailto"

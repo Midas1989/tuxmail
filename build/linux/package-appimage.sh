@@ -61,6 +61,9 @@ appdir=$ROOT/build/out/linux-$goarch/TuxMail.AppDir
 rm -rf "$appdir"
 mkdir -p "$appdir"
 cp -a "$stage/." "$appdir/"
+# The messenger plugins are static binaries: keep them away from linuxdeploy
+# (dependency deployment / RPATH patching) and add them afterwards.
+rm -rf "$appdir/usr/lib/tuxmail"
 
 # WebKitGTK helper processes and injected bundle.
 wk_src=/usr/lib/$triplet/webkit2gtk-4.1
@@ -79,6 +82,11 @@ DEPLOY_GTK_VERSION=3 "$LINUXDEPLOY" \
 	--deploy-deps-only "$wk_dst/injected-bundle" \
 	--custom-apprun "$ROOT/build/linux/AppRun" \
 	--plugin gtk
+
+if [ -d "$stage/usr/lib/tuxmail" ]; then
+	cp -a "$stage/usr/lib/tuxmail" "$appdir/usr/lib/"
+	log "added messenger plugins: $(find "$appdir/usr/lib/tuxmail/plugins" -type f -printf '%f ')"
+fi
 
 # Point the bundled WebKit to the bundled helpers (same-length replacement).
 lib=$(find "$appdir/usr/lib" -maxdepth 1 -name 'libwebkit2gtk-4.1.so.0*' -type f | head -n 1)

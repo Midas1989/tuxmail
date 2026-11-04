@@ -3,10 +3,12 @@
 # Copyright (C) 2026 Midas Wollinger and TuxMail contributors
 #
 # dist/TuxMail-<version>-windows-<arch>-portable.zip
-#   TuxMail/TuxMail.exe, TuxMail/portable (empty marker), TuxMail/data/.keep,
+#   TuxMail/TuxMail.exe, TuxMail/plugins/tuxmail-plugin-*.exe,
+#   TuxMail/portable (empty marker), TuxMail/data/.keep,
 #   TuxMail/README-portable.txt (de+en), TuxMail/LICENSE.txt, TuxMail/NOTICE.txt
 # Needs build/windows/build.sh <arch> first (TUXMAIL_EXE overrides the input,
-# e.g. a signed copy).
+# e.g. a signed copy; the plugins are taken from plugins/ next to it or
+# TUXMAIL_PLUGINS_DIR).
 #
 # Usage: build/windows/package-portable.sh amd64|arm64
 set -eu
@@ -24,6 +26,7 @@ trap 'rm -rf "$work"' EXIT
 d=$work/TuxMail
 mkdir -p "$d/data"
 cp "$exe" "$d/TuxMail.exe"
+TUXMAIL_PLUGINS_DIR=${TUXMAIL_PLUGINS_DIR:-$(dirname "$exe")/plugins} stage_plugins windows "$goarch" "$d/plugins"
 : > "$d/portable"
 : > "$d/data/.keep"
 sed -e "s/@VERSION@/$VERSION/g" -e "s/@ARCH@/$goarch/g" "$ROOT/build/windows/README-portable.txt" | crlf > "$d/README-portable.txt"

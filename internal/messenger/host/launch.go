@@ -90,8 +90,10 @@ func isExecutable(path string) bool {
 
 // DefaultDirs returns the plugin directories of an installation: an
 // explicit development directory (TUXMAIL_PLUGIN_DIR), plugins/ next to the
-// executable, the executable's directory and bin/plugins of a source
-// checkout (build/plugins.sh output).
+// executable (Windows, portable and server archives), ../lib/tuxmail/plugins
+// relative to it (FHS packages: /usr/bin/tuxmail -> /usr/lib/tuxmail/plugins,
+// AppImage, Docker /usr/local/lib/tuxmail/plugins), the executable's
+// directory and bin/plugins of a source checkout (build/plugins.sh output).
 func DefaultDirs() []string {
 	var dirs []string
 	if d := os.Getenv("TUXMAIL_PLUGIN_DIR"); d != "" {
@@ -101,13 +103,22 @@ func DefaultDirs() []string {
 		if real, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = real
 		}
-		dir := filepath.Dir(exe)
-		dirs = append(dirs, filepath.Join(dir, "plugins"), dir)
+		dirs = append(dirs, installDirs(filepath.Dir(exe))...)
 	}
 	if wd, err := os.Getwd(); err == nil {
 		dirs = append(dirs, filepath.Join(wd, "bin", "plugins"))
 	}
 	return dirs
+}
+
+// installDirs are the plugin directories of an installation whose
+// executable lives in exeDir.
+func installDirs(exeDir string) []string {
+	return []string{
+		filepath.Join(exeDir, "plugins"),
+		filepath.Join(filepath.Dir(exeDir), "lib", "tuxmail", "plugins"),
+		exeDir,
+	}
 }
 
 // Proc is a running plugin.

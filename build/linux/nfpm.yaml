@@ -50,6 +50,18 @@ contents:
     expand: true
     dst: /usr/bin/tuxmail
     file_info: { mode: 0755 }
+  # Messenger plugins (build/plugins.sh), found by the plugin host as
+  # <exe dir>/../lib/tuxmail/plugins.
+  - dst: /usr/lib/tuxmail
+    type: dir
+    file_info: { mode: 0755 }
+  - dst: /usr/lib/tuxmail/plugins
+    type: dir
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/lib/tuxmail/plugins/tuxmail-plugin-*
+    expand: true
+    dst: /usr/lib/tuxmail/plugins/
+    file_info: { mode: 0755 }
   - src: ${STAGE}/usr/share/applications/org.tuxmail.TuxMail.desktop
     expand: true
     dst: /usr/share/applications/org.tuxmail.TuxMail.desktop

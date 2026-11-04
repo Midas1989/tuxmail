@@ -44,18 +44,26 @@ ggf. das angelegte Release löschen und neu taggen. Ein Tag, der nicht zu `VERSI
 
 | Datei | Inhalt | Skript / Job |
 |---|---|---|
-| `tuxmail_<v>_linux_amd64.tar.gz`, `…_linux_arm64.tar.gz` | Server/CLI (reines Go, `CGO_ENABLED=0`): `tuxmail` + LICENSE, NOTICE, README.md – **Format für Ansible** (`deploy/ansible`) | `build/package-server.sh` / *server* |
-| `tuxmail_<v>_windows_amd64.zip`, `…_windows_arm64.zip` | Server/CLI für Windows (Konsolenprogramm `tuxmail.exe`) | `build/package-server.sh` / *server* |
-| `TuxMail-<v>-linux-<arch>.AppImage` | Desktop, enthält GTK 3 + WebKitGTK 4.1 (amd64, arm64) | `build/linux/package-appimage.sh` / *linux-desktop* |
-| `tuxmail_<v>-1_<arch>.deb`, `tuxmail-<v>-1.<x86_64\|aarch64>.rpm` | Desktop-Pakete (`/usr/bin/tuxmail`, Desktop-Datei, Icons, AppStream) | `build/linux/package-nfpm.sh` (nfpm) |
-| `TuxMail-<v>-linux-<arch>-portable.tar.gz` | Desktop portabel (Binary + Datei `portable` + `data/`), braucht GTK/WebKitGTK vom System | `build/linux/package-portable.sh` |
-| `TuxMail-<v>-windows-<arch>-portable.zip` | `TuxMail/TuxMail.exe` + leere Datei `portable` + `data/` + README-portable.txt (de/en) | `build/windows/package-portable.sh` / *windows-desktop* |
-| `TuxMail-<v>-windows-<arch>-setup.exe` | NSIS-Installer (amd64, arm64) | `build/windows/package-installer.sh` + `installer.nsi` |
+| `tuxmail_<v>_linux_amd64.tar.gz`, `…_linux_arm64.tar.gz` | Server/CLI (reines Go, `CGO_ENABLED=0`): `tuxmail` + `plugins/` + LICENSE, NOTICE, README.md – **Format für Ansible** (`deploy/ansible`) | `build/package-server.sh` / *server* |
+| `tuxmail_<v>_windows_amd64.zip`, `…_windows_arm64.zip` | Server/CLI für Windows (Konsolenprogramm `tuxmail.exe` + `plugins\`) | `build/package-server.sh` / *server* |
+| `TuxMail-<v>-linux-<arch>.AppImage` | Desktop, enthält GTK 3 + WebKitGTK 4.1 (amd64, arm64) und die Messenger-Plugins (`usr/lib/tuxmail/plugins`) | `build/linux/package-appimage.sh` / *linux-desktop* |
+| `tuxmail_<v>-1_<arch>.deb`, `tuxmail-<v>-1.<x86_64\|aarch64>.rpm` | Desktop-Pakete (`/usr/bin/tuxmail`, `/usr/lib/tuxmail/plugins/`, Desktop-Datei, Icons, AppStream) | `build/linux/package-nfpm.sh` (nfpm) |
+| `TuxMail-<v>-linux-<arch>-portable.tar.gz` | Desktop portabel (Binary + `plugins/` + Datei `portable` + `data/`), braucht GTK/WebKitGTK vom System | `build/linux/package-portable.sh` |
+| `TuxMail-<v>-windows-<arch>-portable.zip` | `TuxMail/TuxMail.exe` + `plugins\` + leere Datei `portable` + `data/` + README-portable.txt (de/en) | `build/windows/package-portable.sh` / *windows-desktop* |
+| `TuxMail-<v>-windows-<arch>-setup.exe` | **TuxMail-Setup** (eigenes Setup-Programm im TuxMail-Design, amd64, arm64) | `build/windows/package-setup.sh` + `cmd/tuxmail-setup` |
+| `TuxMail-<v>-windows-<arch>-setup-classic.exe` | klassischer NSIS-Installer (Rückfallebene, vorerst weiter gebaut) | `build/windows/package-installer.sh` + `installer.nsi` |
 | `tuxmail_<v>_sbom.spdx.json` | Software-Stückliste (SPDX, Go-Module und npm-Pakete), optional | *publish* (anchore/sbom-action) |
 | `checksums.txt` | SHA-256 aller Dateien oben (`sha256sum -c checksums.txt --ignore-missing`) | `build/checksums.sh` / *publish* |
 | `checksums.txt.asc`, `tuxmail-release-key.asc` | GPG-Signatur + öffentlicher Schlüssel (nur mit Secret `GPG_PRIVATE_KEY`) | `build/sign-gpg.sh` |
 | `TuxMail-<v>-foss.apk`, `…-play.apk/.aab`, `SHA256SUMS` | Android (eigene Prüfsummendatei) | `android.yml` |
 | `ghcr.io/midas1989/tuxmail:<v>` und `:latest` | Docker-Image linux/amd64 + linux/arm64 | `build/docker/Dockerfile` / *docker* |
+
+**Messenger-Plugins:** Alle Desktop- und Server-Pakete sowie das Docker-Image enthalten
+`tuxmail-plugin-{whatsapp,telegram,matrix,signal}` (`build/plugins.sh`, reines Go, Matrix mit `-tags goolm`;
+`build/lib.sh` → `stage_plugins`). Der Plugin-Host (`internal/messenger/host.DefaultDirs`) sucht in `plugins/`
+neben dem Programm (Windows, portable und Server-Archive) und in `../lib/tuxmail/plugins` relativ dazu
+(`/usr/lib/tuxmail/plugins` bei `.deb`/`.rpm`/AppImage, `/usr/local/lib/tuxmail/plugins` im Docker-Image).
+`TUXMAIL_PLUGINS_DIR=<dir>` verwendet fertige (z. B. signierte) Plugins, `TUXMAIL_SKIP_PLUGINS=1` packt ohne.
 
 **Ablauf in `release.yml`:** *version* (Version bestimmen, Tag prüfen) → *frontend* (einmal `npm ci && npm run build`,
 Artefakt `frontend-dist`, von allen Jobs nach `web/dist` geladen) → parallel *server* (4×), *linux-desktop*
@@ -75,10 +83,11 @@ das Docker-Image wird als `:edge` veröffentlicht.
   Ansible und das Docker-Image verwenden diese.
 - Unter Windows ist `TuxMail.exe` ein Fensterprogramm (`-H windowsgui`, kein Konsolenfenster) – Ausgaben der
   Kommandozeile sind dort nicht sichtbar. Für die Kommandozeile das Server-ZIP (`tuxmail.exe`) verwenden.
-- `mailto:`: Desktop-Datei und Installer registrieren TuxMail als Mailprogramm (Windows: optional, standardmäßig
+- `mailto:`: Desktop-Datei und Setup registrieren TuxMail als Mailprogramm (Windows: optional, standardmäßig
   aus), übergeben die Adresse aber noch nicht, weil die Kommandozeile dafür noch keine Option hat – ein Klick auf
   einen `mailto:`-Link öffnet TuxMail. Sobald `tuxmail` eine `mailto:`-URL annimmt, in
-  `build/linux/org.tuxmail.TuxMail.desktop` `Exec=tuxmail %u` und in `installer.nsi` `"%1"` ergänzen.
+  `build/linux/org.tuxmail.TuxMail.desktop` `Exec=tuxmail %u`, in `internal/winsetup/registry.go` (`MailOps`) und in
+  `installer.nsi` `"%1"` ergänzen.
 
 ### Linux-Details
 
@@ -98,14 +107,48 @@ das Docker-Image wird als `:edge` veröffentlicht.
 - Icon, Manifest (Per-Monitor-DPI v2) und Versionsinfo (CompanyName/ProductName „TuxMail“, Copyright) kommen aus
   `build/windows/winres.json` (+ `assets/branding/icons/tuxmail.ico`); go-winres erzeugt beim Build
   `cmd/tuxmail/rsrc_windows_<arch>.syso` (nicht eingecheckt, wird danach gelöscht).
-- **Installer:** standardmäßig nur für den aktuellen Benutzer (`%LOCALAPPDATA%\Programs\TuxMail`, keine
-  Administratorrechte), optional für alle Benutzer (`%ProgramFiles%\TuxMail`, Neustart mit UAC);
-  Startmenü-Eintrag, optional Desktop-Verknüpfung und `mailto:`-Registrierung, Deinstallation über „Apps“.
-  Fehlt die WebView2-Runtime, installiert der mitgelieferte Microsoft-Bootstrapper sie (sonst Link zur
-  Download-Seite). Stille Installation: `TuxMail-…-setup.exe /S [/ALLUSERS] [/D=C:\Pfad]`.
+- **Setup (`TuxMail-<v>-windows-<arch>-setup.exe`, `cmd/tuxmail-setup`):** eigenes Setup-Programm mit Wails/WebView2
+  im TuxMail-Design (rahmenloses Fenster mit eigener Titelleiste, Mica unter Windows 11, hell/dunkel nach
+  Windows-Einstellung, Deutsch/Englisch). Seiten: Willkommen (Sprache) → Installationsart → Zielordner →
+  Optionen → Fortschritt → Fertig („TuxMail starten“). Screenshots: `frontend/docs/screenshots/setup-*.jpg`.
+  - **Nur für mich:** `%LOCALAPPDATA%\Programs\TuxMail`, HKCU, keine Administratorrechte.
+    **Für alle Benutzer:** `%ProgramFiles%\TuxMail`, HKLM; das Fenster bleibt ohne Rechte, die eigentliche
+    Installation läuft in einer per UAC (`runas`) gestarteten Kopie des Setups, deren Fortschritt das Fenster anzeigt.
+    **Portabel entpacken:** beliebiger Ordner (Vorschlag: neben dem Setup, z. B. USB-Stick) mit Datei `portable`
+    und `data\`, ohne Registry-Einträge und Verknüpfungen.
+  - Optionen: Startmenü (an), Desktop-Verknüpfung, als E-Mail-Programm registrieren (ProgID `TuxMail.mailto`,
+    `Clients\Mail\TuxMail` mit Capabilities, `RegisteredApplications`; danach öffnet sich „Standard-Apps“),
+    Autostart (`…\CurrentVersion\Run`) – alles aus, wenn nicht gewählt (KONZEPT 15.2).
+  - „Apps & Features“: Eintrag `…\Uninstall\TuxMail` (DisplayIcon, DisplayVersion, Publisher „TuxMail“,
+    EstimatedSize, `UninstallString` = `"<Ordner>\TuxMail-Setup.exe" --uninstall`). Das Setup kopiert sich dazu als
+    `TuxMail-Setup.exe` in den Programmordner (Deinstallieren, Ändern, Reparieren). Die Deinstallation läuft aus
+    einer Kopie in `%TEMP%`, zeigt dasselbe Design und bietet „Benutzerdaten behalten“ (Standard: an;
+    sonst wird `%APPDATA%\TuxMail` gelöscht). Entfernt werden nur die in `tuxmail-install.json` aufgeführten Dateien.
+  - **Update:** erkennt eine bestehende Installation (auch des klassischen NSIS-Installers), übernimmt Art, Ordner
+    und Optionen, beendet ein laufendes TuxMail nach Rückfrage (WM_CLOSE, nach 15 s hart) und ersetzt die Dateien
+    über `*.tuxmail-new` + Umbenennen; nicht mehr enthaltene Dateien (z. B. ein entferntes Plugin) werden gelöscht.
+  - **WebView2:** fehlt die Runtime, installiert das Setup den Evergreen-Bootstrapper (mitgeliefert mit
+    `WEBVIEW2_BOOTSTRAPPER=download|<Datei>`, sonst Download), sonst Hinweis mit Link auf die Download-Seite.
+  - **Still (Administratoren):** `TuxMail-…-setup.exe /S [--scope=user|machine|portable] [--dir=C:\Pfad | /D=C:\Pfad]
+    [--desktop-shortcut] [--no-start-menu] [--default-mail] [--autostart] [--options=startmenu,desktop,mail,autostart]
+    [--no-close-apps] [--log=Datei]`; `/ALLUSERS` und `/CURRENTUSER` wie beim NSIS-Installer. Deinstallation:
+    `"…\TuxMail-Setup.exe" --uninstall --silent [--remove-data]`. Exit-Codes: 0 OK, 1 Fehler, 2 ungültige
+    Argumente, 740 Administratorrechte verweigert. Protokoll: `%TEMP%\TuxMail-Setup.log`.
+  - Aufbau: die Programmdateien (TuxMail.exe, `plugins\`, LICENSE/NOTICE) werden beim Build als zstd-Zip
+    (`cmd/tuxmail-setup/mkpayload`) per `go:embed` eingebettet – eine einzige, selbständige Datei. Logik und Tests
+    in `internal/winsetup` (Pfade, Registry-Plan mit Fake-Registry, Payload, Update-Erkennung, Kommandozeile);
+    Oberfläche statisch in `cmd/tuxmail-setup/ui/` (kein Build-Schritt), Browser-Mock in `ui-dev/mock.js`,
+    Screenshots mit `NODE_PATH=$(npm root -g) node frontend/scripts/setup-screenshots.cjs frontend/docs/screenshots`.
+    Manifest `asInvoker` (`build/windows/setup-winres.json`), damit Windows „*setup*.exe“ nicht pauschal mit UAC startet.
+  - CI (`windows-desktop`, amd64) testet das Setup auf dem Windows-Runner: stille Installation, Update,
+    portables Entpacken und Deinstallation aus der installierten Kopie.
+- **Klassischer Installer (`…-setup-classic.exe`, NSIS):** bleibt vorerst als Rückfallebene. Standardmäßig nur für den
+  aktuellen Benutzer, optional für alle Benutzer (Neustart mit UAC); Startmenü-Eintrag, optional Desktop-Verknüpfung
+  und `mailto:`-Registrierung, Deinstallation über „Apps“. Stille Installation: `… /S [/ALLUSERS] [/D=C:\Pfad]`.
   Benutzerdaten (`%APPDATA%\TuxMail`) bleiben bei der Deinstallation erhalten.
-- Lokaler Test unter Linux: `apt install nsis` und `build/windows/build.sh amd64 && build/windows/package-installer.sh amd64`
-  (Windows-Builds sind reines Go und lassen sich überall cross-kompilieren).
+- Lokaler Test unter Linux (Windows-Builds sind reines Go und lassen sich überall cross-kompilieren):
+  `build/windows/build.sh amd64 && build/windows/package-setup.sh amd64` (go-winres), klassisch zusätzlich
+  `apt install nsis` und `build/windows/package-installer.sh amd64`.
 
 ## 4. Lokal bauen
 
@@ -116,9 +159,10 @@ build/linux/build.sh                       # Desktop-Binary (braucht libwebkit2g
 build/linux/package-nfpm.sh                # .deb/.rpm (go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.43.0)
 build/linux/package-portable.sh
 build/linux/package-appimage.sh            # lädt linuxdeploy/appimagetool herunter
-build/windows/build.sh amd64               # go install github.com/tc-hib/go-winres@v0.3.3
+build/windows/build.sh amd64               # TuxMail.exe + plugins; go install github.com/tc-hib/go-winres@v0.3.3
 build/windows/package-portable.sh amd64
-build/windows/package-installer.sh amd64   # makensis
+build/windows/package-setup.sh amd64       # TuxMail-Setup (…-setup.exe)
+build/windows/package-installer.sh amd64   # makensis (…-setup-classic.exe)
 build/checksums.sh                         # dist/checksums.txt
 docker build -f build/docker/Dockerfile -t tuxmail:local .
 ```
@@ -133,7 +177,7 @@ Alle Signaturschritte sind vorbereitet und werden übersprungen, solange die Sec
 
 | Zweck | Secrets / Variablen | Wirkung |
 |---|---|---|
-| **Windows Authenticode** über [SignPath](https://signpath.org) (für Open-Source-Projekte kostenlos über die SignPath Foundation) | Secret `SIGNPATH_API_TOKEN`; Variablen `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`; im SignPath-Projekt eine Artifact-Configuration `exe` | `TuxMail.exe` (vor dem Packen von ZIP und Installer) und `…-setup.exe` werden signiert → keine SmartScreen-Warnung „Unbekannter Herausgeber“. Ohne Signatur erklären die README-Dateien, wie man die Warnung übergeht. |
+| **Windows Authenticode** über [SignPath](https://signpath.org) (für Open-Source-Projekte kostenlos über die SignPath Foundation) | Secret `SIGNPATH_API_TOKEN`; Variablen `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`; im SignPath-Projekt eine Artifact-Configuration `exe`, die alle PE-Dateien (`**/*.exe`) im ZIP signiert | `TuxMail.exe` und `plugins\*.exe` (vor dem Packen von ZIP und Setup, das die signierten Dateien einbettet) sowie `…-setup.exe`/`…-setup-classic.exe` werden signiert → keine SmartScreen-Warnung „Unbekannter Herausgeber“. Ohne Signatur erklären die README-Dateien, wie man die Warnung übergeht. |
 | **Android** (bereits in `android.yml`) | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, optional `GOOGLE_SERVICES_JSON` | signierte APK/AAB im Release |
 | **GPG** für Linux-Pakete (optional) | `GPG_PRIVATE_KEY` (ASCII-armored, `gpg --armor --export-secret-keys KEYID`), `GPG_PASSPHRASE` | eingebettete Signaturen in `.deb` (`_gpgorigin`) und `.rpm`, dazu `checksums.txt.asc` und `tuxmail-release-key.asc` im Release |
 | Docker | – (`GITHUB_TOKEN` mit `packages: write`) | Push nach `ghcr.io/midas1989/tuxmail`; nach dem ersten Push das Paket unter *Packages* auf „public“ stellen |
