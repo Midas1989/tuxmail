@@ -4,6 +4,8 @@ package app
 
 import (
 	"context"
+	"net/netip"
+	"net/url"
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/categorize"
@@ -35,16 +37,22 @@ func (r aiRefiner) Refine(ctx context.Context, m categorize.Mail, res categorize
 	return res, nil
 }
 
-// isLocalAI reports whether the provider runs locally or in the LAN.
+// isLocalAI reports whether the provider runs locally or in the LAN. The
+// host of the base URL is checked (not a substring of the URL, which
+// "https://10.evil.example" or "https://x.example/?://localhost" would
+// pass); Ollama without a base URL uses its local default (AUDIT-C).
 func isLocalAI(s AiSettings) bool {
-	if s.Provider == "ollama" {
+	if s.BaseURL == "" {
+		return s.Provider == "ollama"
+	}
+	u, err := url.Parse(s.BaseURL)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 		return true
 	}
-	u := strings.ToLower(s.BaseURL)
-	for _, p := range []string{"://localhost", "://127.", "://[::1]", "://192.168.", "://10."} {
-		if strings.Contains(u, p) {
-			return true
-		}
-	}
-	return false
+	a, err := netip.ParseAddr(host)
+	return err == nil && (a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast())
 }

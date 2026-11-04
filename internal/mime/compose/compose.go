@@ -21,7 +21,16 @@ var (
 	ErrNoSender      = errors.New("compose: no sender address")
 	ErrNoOriginal    = errors.New("compose: reply/forward without original message")
 	ErrBadHeaderName = errors.New("compose: invalid header name")
+	// ErrBadAddress is returned for envelope addresses with whitespace or
+	// control characters (CR/LF would inject SMTP commands, AUDIT-C).
+	ErrBadAddress = errors.New("compose: invalid e-mail address")
 )
+
+// badEnvelopeAddress reports whether an envelope address contains
+// whitespace or control characters.
+func badEnvelopeAddress(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return r <= ' ' || r == 0x7f }) >= 0
+}
 
 // reservedHeaders may not be set through Draft.Headers.
 var reservedHeaders = map[string]bool{
@@ -72,6 +81,9 @@ func Compose(ctx context.Context, d *Draft, opts Options) (*Message, error) {
 	m.EnvelopeFrom = m.From.Email
 	if m.Sender != nil {
 		m.EnvelopeFrom = m.Sender.Email
+	}
+	if e := strings.TrimSpace(m.EnvelopeFrom); badEnvelopeAddress(e) {
+		return nil, fmt.Errorf("%w %q", ErrBadAddress, e)
 	}
 
 	// ---- Threading ----
@@ -193,13 +205,16 @@ func Compose(ctx context.Context, d *Draft, opts Options) (*Message, error) {
 	for _, list := range [][]domain.Address{d.To, d.Cc, d.Bcc} {
 		for _, a := range list {
 			e := strings.TrimSpace(a.Email)
+			if badEnvelopeAddress(e) {
+				return nil, fmt.Errorf("%w %q", ErrBadAddress, e)
+			}
 			if e != "" && !seen[strings.ToLower(e)] {
 				seen[strings.ToLower(e)] = true
 				m.Recipients = append(m.Recipients, e)
 			}
 		}
 	}
-	if d.Identity.BccSelf && d.Identity.Email != "" && !seen[strings.ToLower(d.Identity.Email)] {
+	if d.Identity.BccSelf && d.Identity.Email != "" && !badEnvelopeAddress(d.Identity.Email) && !seen[strings.ToLower(d.Identity.Email)] {
 		m.Recipients = append(m.Recipients, d.Identity.Email)
 	}
 	return m, nil

@@ -4,6 +4,7 @@ package oauth
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"strings"
 
@@ -49,10 +50,10 @@ func (s StaticClients) Client(_ context.Context, provider string) (Client, error
 // Environment variables with client registrations.
 const (
 	EnvMSClientID         = "TUXMAIL_MS_CLIENT_ID"
-	EnvMSClientSecret     = "TUXMAIL_MS_CLIENT_SECRET"
+	EnvMSClientSecret     = "TUXMAIL_MS_CLIENT_SECRET" // #nosec G101 -- environment variable name, not a credential
 	EnvMSTenant           = "TUXMAIL_MS_TENANT"
 	EnvGoogleClientID     = "TUXMAIL_GOOGLE_CLIENT_ID"
-	EnvGoogleClientSecret = "TUXMAIL_GOOGLE_CLIENT_SECRET"
+	EnvGoogleClientSecret = "TUXMAIL_GOOGLE_CLIENT_SECRET" // #nosec G101 -- environment variable name, not a credential
 )
 
 // BuiltinClients are compiled-in registrations of the TuxMail project. They
@@ -128,6 +129,7 @@ type Endpoint struct {
 
 // Endpoints of the supported providers. Tests replace the URLs.
 var Endpoints = map[string]Endpoint{
+	// #nosec G101 -- public OAuth endpoint/client metadata, not a credential
 	Microsoft: {
 		ID: Microsoft, DisplayName: "Microsoft",
 		AuthURL:       "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize",
@@ -163,6 +165,7 @@ var Endpoints = map[string]Endpoint{
 		AuthParams:    map[string]string{"prompt": "select_account"},
 		MultiResource: true,
 	},
+	// #nosec G101 -- public OAuth endpoint/client metadata, not a credential
 	Google: {
 		ID: Google, DisplayName: "Google",
 		AuthURL:     "https://accounts.google.com/o/oauth2/v2/auth",
@@ -192,9 +195,26 @@ func endpoint(provider, tenant string) (Endpoint, error) {
 	if tenant == "" {
 		tenant = ep.DefaultTenant
 	}
+	// The tenant is inserted into URL paths: only a GUID, a domain or one
+	// of the well-known names is accepted (no '/', '?', '#', '@', AUDIT-C).
+	if !validTenant(tenant) {
+		return Endpoint{}, fmt.Errorf("oauth: invalid tenant %q", tenant)
+	}
 	r := strings.NewReplacer("{tenant}", tenant)
 	ep.AuthURL, ep.TokenURL, ep.DeviceURL = r.Replace(ep.AuthURL), r.Replace(ep.TokenURL), r.Replace(ep.DeviceURL)
 	return ep, nil
+}
+
+func validTenant(t string) bool {
+	if len(t) > 253 {
+		return false
+	}
+	for _, r := range t {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '.' || r == '_') {
+			return false
+		}
+	}
+	return !strings.Contains(t, "..")
 }
 
 // ScopesFor returns the scopes of the given resources plus the base scopes.

@@ -834,7 +834,14 @@ func (a *webhookAction) Execute(ctx context.Context, rc *RunContext) (Output, er
 		if err != nil {
 			return nil, Permanent(err)
 		}
-		req.Header.Set(k, s)
+		// Rendered values may contain mail content: never let CR/LF or
+		// other control characters reach the header (AUDIT-C).
+		req.Header.Set(k, strings.Map(func(r rune) rune {
+			if r < 0x20 || r == 0x7f {
+				return ' '
+			}
+			return r
+		}, s))
 	}
 	client := http.DefaultClient
 	if rc.Deps != nil && rc.Deps.HTTPClient != nil {

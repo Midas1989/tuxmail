@@ -41,6 +41,7 @@ func GenerateSetupCode(r io.Reader) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		// #nosec G115 -- n is a random digit 0..9
 		digits.WriteByte(byte('0' + n.Int64()))
 	}
 	return formatSetupCode(digits.String()), nil

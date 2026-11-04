@@ -52,6 +52,7 @@ func defaultCalMeta(id int64) CalendarMeta {
 // ListCalendarsWithMeta returns all calendars with their meta data, in
 // display order.
 func (s *Store) ListCalendarsWithMeta(ctx context.Context) ([]CalendarWithMeta, error) {
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("c.", calendarCols)+`, m.calendar_id, m.kind, m.url, m.ctag, m.visible,
 		m.is_default, m.sort_order, m.components, m.refresh_min, m.server_scheduling, m.description, m.last_sync_at, m.last_error
 		FROM calendars c LEFT JOIN calendar_meta m ON m.calendar_id = c.id
@@ -255,6 +256,7 @@ func (s *Store) ListKeyedInstances(ctx context.Context, kind string, from, to ti
 			args = append(args, id)
 		}
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("o.", calObjectCols)+`, i.start_at, i.end_at, i.rid, i.all_day
 		FROM cal_instances i JOIN cal_objects o ON o.id = i.object_id
 		WHERE o.kind = ?3 AND `+fmt.Sprintf(overlapCond, "i.start_at", "i.end_at")+filter+` ORDER BY i.start_at, o.id`, args...)

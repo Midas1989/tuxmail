@@ -9,6 +9,7 @@ package wkd
 
 import (
 	"context"
+	// #nosec G505 -- SHA-1 of the local part is mandated by the WKD draft (not a security use)
 	"crypto/sha1"
 	"errors"
 	"fmt"
@@ -47,6 +48,7 @@ func ZBase32(b []byte) string {
 // HashLocalPart returns the z-base-32 encoded SHA-1 of the lower-cased
 // local part, as used in WKD URLs.
 func HashLocalPart(local string) string {
+	// #nosec G401 -- SHA-1 of the local part is mandated by the WKD draft (not a security use)
 	sum := sha1.Sum([]byte(strings.ToLower(local)))
 	return ZBase32(sum[:])
 }

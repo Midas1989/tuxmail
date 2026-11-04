@@ -39,22 +39,59 @@ type KDFParams struct {
 	Parallelism int `json:"kdfParallelism,omitempty"` // Argon2id
 }
 
+// KDF bounds, as enforced by the official Bitwarden clients. The KDF
+// parameters come from the (possibly malicious or compromised) server's
+// prelogin response: without a lower bound a server could request
+// PBKDF2 with 1 iteration and receive a master password hash that is
+// trivial to brute-force; without an upper bound it could make the client
+// allocate gigabytes (AUDIT-C).
+const (
+	MinPBKDF2Iterations  = 5000
+	MaxPBKDF2Iterations  = 2_000_000
+	MinArgon2Iterations  = 2
+	MaxArgon2Iterations  = 10
+	MinArgon2MemoryMiB   = 16
+	MaxArgon2MemoryMiB   = 1024
+	MinArgon2Parallelism = 1
+	MaxArgon2Parallelism = 16
+)
+
+// ErrWeakKDF is returned for KDF parameters outside the accepted bounds.
+var ErrWeakKDF = errors.New("vaultwarden: KDF parameters from the server are outside the accepted range")
+
+// Validate checks k against the bounds above.
+func (k KDFParams) Validate() error {
+	switch k.Type {
+	case KDFPBKDF2:
+		if k.Iterations < MinPBKDF2Iterations || k.Iterations > MaxPBKDF2Iterations {
+			return fmt.Errorf("%w: PBKDF2 iterations %d (allowed %d..%d)", ErrWeakKDF, k.Iterations, MinPBKDF2Iterations, MaxPBKDF2Iterations)
+		}
+	case KDFArgon2id:
+		if k.Iterations < MinArgon2Iterations || k.Iterations > MaxArgon2Iterations ||
+			k.Memory < MinArgon2MemoryMiB || k.Memory > MaxArgon2MemoryMiB ||
+			k.Parallelism < MinArgon2Parallelism || k.Parallelism > MaxArgon2Parallelism {
+			return fmt.Errorf("%w: Argon2id t=%d m=%d MiB p=%d", ErrWeakKDF, k.Iterations, k.Memory, k.Parallelism)
+		}
+	default:
+		return fmt.Errorf("vaultwarden: unsupported KDF type %d", k.Type)
+	}
+	return nil
+}
+
 // MasterKey derives the 32-byte master key from the master password. The
 // salt is the lower-cased, trimmed e-mail address (Argon2id: its SHA-256).
+// Parameters outside the bounds of Validate are rejected.
 func MasterKey(password, email string, k KDFParams) ([]byte, error) {
+	if err := k.Validate(); err != nil {
+		return nil, err
+	}
 	salt := []byte(strings.ToLower(strings.TrimSpace(email)))
 	switch k.Type {
 	case KDFPBKDF2:
-		if k.Iterations < 1 {
-			return nil, errors.New("vaultwarden: invalid PBKDF2 iteration count")
-		}
 		return pbkdf2.Key([]byte(password), salt, k.Iterations, 32, sha256.New), nil
 	case KDFArgon2id:
-		if k.Iterations < 1 || k.Memory < 1 || k.Parallelism < 1 || k.Parallelism > 255 {
-			return nil, errors.New("vaultwarden: invalid Argon2id parameters")
-		}
 		h := sha256.Sum256(salt)
-		return argon2.IDKey([]byte(password), h[:], uint32(k.Iterations), uint32(k.Memory)*1024, uint8(k.Parallelism), 32), nil
+		return argon2.IDKey([]byte(password), h[:], uint32(k.Iterations), uint32(k.Memory)*1024, uint8(k.Parallelism), 32), nil // #nosec G115 -- bounded by Validate
 	}
 	return nil, fmt.Errorf("vaultwarden: unsupported KDF type %d", k.Type)
 }

@@ -213,6 +213,7 @@ const chatStatusRank = `CASE %s WHEN 'failed' THEN 0 WHEN 'sent' THEN 1 WHEN 'de
 func (s *Store) UpgradeChatStatus(ctx context.Context, chatID int64, remoteIDs []string, upTo time.Time, status string) (int, error) {
 	newRank := fmt.Sprintf(chatStatusRank, "?")
 	oldRank := fmt.Sprintf(chatStatusRank, "COALESCE(status, '')")
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	q := `UPDATE chat_messages SET status = ? WHERE chat_id = ? AND from_me = 1 AND ` + oldRank + ` < ` + newRank
 	args := []any{status, chatID, status}
 	if len(remoteIDs) > 0 {

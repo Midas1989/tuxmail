@@ -155,8 +155,10 @@ func VerifyPassword(password, phc string, want ArgonParams) (ok, needsRehash boo
 	if err != nil || len(want2) < 16 || len(want2) > 128 {
 		return false, false, errors.New("auth: bad argon2 hash")
 	}
+	// #nosec G115 -- len(want2) is checked to be 16..128 above
 	got := argonKey([]byte(password), salt, p, uint32(len(want2)))
 	ok = subtle.ConstantTimeCompare(got, want2) == 1
+	// #nosec G115 -- len(want2) is checked to be 16..128 above
 	needsRehash = p.Time != want.Time || p.MemoryKiB != want.MemoryKiB || p.Threads != want.Threads || uint32(len(want2)) != want.KeyLen
 	return ok, needsRehash, nil
 }

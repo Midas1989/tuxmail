@@ -314,6 +314,7 @@ func (s *Store) SearchAdvanced(ctx context.Context, req SearchRequest) (SearchRe
 		args = append(args, limit+offset)
 		parts = append(parts, part)
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	q := `SELECT kind, id, title, snippet, time, account, score, sender, size, channel, hasatt, docid FROM (` +
 		strings.Join(parts, "\nUNION ALL\n") + `) ORDER BY ` + orderBy(spec.keys) + ` LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
@@ -431,6 +432,7 @@ func (s *Store) facets(ctx context.Context, c *compiler, root query.Node, size i
 		sqls = append(sqls, a.sql)
 		args = append(args, a.args...)
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	q := `WITH r AS MATERIALIZED (` + strings.Join(sqls, "\nUNION ALL\n") + `)
 		SELECT 'type', kind, '', COUNT(*) FROM r GROUP BY kind
 		UNION ALL SELECT 'account', CAST(r.account AS TEXT), COALESCE(a.display_name, ''), COUNT(*)
@@ -1416,6 +1418,7 @@ func (s *Store) fillHighlights(ctx context.Context, arms []compiledArm, docIDs m
 		if a.match == "" || len(ids) == 0 {
 			continue
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err := s.db.QueryContext(ctx, `SELECT rowid, highlight(fts_items, 0, char(2), char(3)),
 				snippet(fts_items, -1, char(2), char(3), '…', 12)
 			FROM fts_items WHERE fts_items MATCH ? AND rowid IN (`+placeholders(len(ids))+`)`,
@@ -1503,6 +1506,7 @@ func (s *Store) expandTerms(ctx context.Context, c *compiler, root query.Node) e
 			return true
 		}
 		var rows *sql.Rows
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err = s.db.QueryContext(ctx, `SELECT term FROM fts_vocab WHERE term >= ? AND term < ? AND `+filter+`
 			ORDER BY doc DESC LIMIT ?`, append(append([]any{lo, hi}, fargs...), maxExpansions+1)...)
 		if err != nil {

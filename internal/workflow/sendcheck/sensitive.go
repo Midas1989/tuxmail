@@ -57,6 +57,7 @@ func mod97(s string) int {
 }
 
 func itoa(n int) string {
+	// #nosec G115 -- n is 0..99 (two digits)
 	return string([]byte{byte('0' + n/10), byte('0' + n%10)})
 }
 

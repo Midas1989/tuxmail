@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode/utf8"
 )
 
 // ==== Preferences ==============================================================
@@ -284,6 +285,9 @@ func (a *App) VaultStatus(context.Context) (VaultStatus, error) {
 	return VaultStatus{Kind: "keyring", Initialized: true}, nil
 }
 
+// MinVaultPasswordLen is the minimum length of a new master password.
+const MinVaultPasswordLen = 8
+
 // UnlockVault unlocks the portable vault with the master password.
 func (a *App) UnlockVault(ctx context.Context, password string) error {
 	if a.opts.Vault == nil {
@@ -291,6 +295,12 @@ func (a *App) UnlockVault(ctx context.Context, password string) error {
 	}
 	if password == "" {
 		return invalid("password required")
+	}
+	// A new vault (portable mode, e.g. on a USB stick that can be copied
+	// and attacked offline) needs a master password of at least
+	// MinVaultPasswordLen characters; the UI checks the same (AUDIT-C).
+	if !a.opts.Vault.Status().Initialized && utf8.RuneCountInString(password) < MinVaultPasswordLen {
+		return invalid("the master password must have at least %d characters", MinVaultPasswordLen)
 	}
 	pw := []byte(password)
 	defer clear(pw)

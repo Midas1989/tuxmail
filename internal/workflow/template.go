@@ -9,6 +9,7 @@ import (
 	"path"
 	"strings"
 	"text/template"
+	"text/template/parse"
 	"time"
 	"unicode"
 	"unicode/utf8"
@@ -156,6 +157,7 @@ func (c *templateCtx) funcs(isPath bool) template.FuncMap {
 		return s
 	}
 	fm["sanitize"] = SanitizeFilename
+	fm["__segment"] = func(v any) string { return SanitizeFilename(fmt.Sprint(v)) }
 	return fm
 }
 
@@ -177,6 +179,11 @@ func render(tc *templateCtx, tpl string, isPath bool) (string, error) {
 	limit := maxTextOutput
 	if isPath {
 		limit = maxPathOutput
+		// Field access ({{.Mail.Subject}}) and helpers such as replace or
+		// lower bypass the per-placeholder sanitizing; pipe every action
+		// through sanitize so mail content can never add path separators
+		// or a leading "/" (AUDIT-C).
+		sanitizeActions(t.Tree.Root)
 	}
 	w := &limitedBuffer{max: limit}
 	if err := t.Execute(w, tc.env); err != nil {
@@ -186,6 +193,33 @@ func render(tc *templateCtx, tpl string, isPath bool) (string, error) {
 		return "", err
 	}
 	return w.buf.String(), nil
+}
+
+// sanitizeActions appends "| __segment" (SanitizeFilename of any value) to every action of a parse tree.
+func sanitizeActions(n parse.Node) {
+	switch x := n.(type) {
+	case *parse.ListNode:
+		if x == nil {
+			return
+		}
+		for _, c := range x.Nodes {
+			sanitizeActions(c)
+		}
+	case *parse.ActionNode:
+		if len(x.Pipe.Decl) == 0 {
+			x.Pipe.Cmds = append(x.Pipe.Cmds, &parse.CommandNode{NodeType: parse.NodeCommand, Pos: x.Pos,
+				Args: []parse.Node{&parse.IdentifierNode{NodeType: parse.NodeIdentifier, Pos: x.Pos, Ident: "__segment"}}})
+		}
+	case *parse.IfNode:
+		sanitizeActions(x.List)
+		sanitizeActions(x.ElseList)
+	case *parse.RangeNode:
+		sanitizeActions(x.List)
+		sanitizeActions(x.ElseList)
+	case *parse.WithNode:
+		sanitizeActions(x.List)
+		sanitizeActions(x.ElseList)
+	}
 }
 
 // RenderText renders a text template for the given environment.

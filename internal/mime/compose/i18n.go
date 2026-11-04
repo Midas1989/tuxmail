@@ -44,6 +44,7 @@ var localeTexts = map[string]texts{
 		ReplyPrefix:               "Re:",
 		ForwardPrefix:             "Fwd:",
 	},
+	// #nosec G101 -- UI strings, not credentials
 	"de": {
 		Attribution:   "Am {date} schrieb {from}:",
 		DateLayout:    "02.01.2006 um 15:04",

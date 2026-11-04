@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -45,6 +46,14 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		return nil, fmt.Errorf("store: database path must not contain '?': %q", path)
 	}
 	dsn := path + "?" + q.Encode()
+	// SQLite creates the database (and its -wal/-shm files, which inherit
+	// the mode) with 0644 minus umask; the database holds all mail and
+	// wrapped keys, so it is created owner-only (AUDIT-C).
+	if path != "" && !strings.HasPrefix(path, ":memory:") && !strings.HasPrefix(path, "file:") {
+		if f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_EXCL, 0o600); err == nil {
+			f.Close()
+		}
+	}
 
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {

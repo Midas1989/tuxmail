@@ -33,9 +33,11 @@ func indexDoc(ctx context.Context, tx *sql.Tx, k docKind, itemID, accountID int6
 	}
 	d = pol.apply(d)
 	// Deleting the old row fires the trigger that removes the old FTS entry.
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	if _, err := tx.ExecContext(ctx, `DELETE FROM fts_docs WHERE `+k.idCol+` = ?`, itemID); err != nil {
 		return err
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	_, err = tx.ExecContext(ctx, `INSERT INTO fts_docs(kind, `+k.idCol+`, account_id, encrypted, subject, body, addresses,
 		attachments, attachment_content) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		k.kind, itemID, nullID(accountID), boolInt(d.Encrypted), d.Subject, d.Body, d.Addresses, d.Attachments,
@@ -58,6 +60,7 @@ func (s *Store) indexItem(ctx context.Context, k docKind, itemID int64, accountQ
 }
 
 func (s *Store) unindex(ctx context.Context, k docKind, itemID int64) error {
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	_, err := s.db.ExecContext(ctx, `DELETE FROM fts_docs WHERE `+k.idCol+` = ?`, itemID)
 	return err
 }
@@ -219,6 +222,7 @@ func (s *Store) SetIndexPolicy(ctx context.Context, p IndexPolicy) error {
 			return fmt.Errorf("store: set index policy: %w", err)
 		}
 		purge := func(set, where string) error {
+			// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 			_, err := tx.ExecContext(ctx, `UPDATE fts_docs SET `+set+` WHERE account_id = ? AND `+where, p.AccountID)
 			return err
 		}

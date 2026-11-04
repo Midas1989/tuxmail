@@ -387,6 +387,7 @@ func (a *App) cloudClient(ctx context.Context, id int64) (*cloudClient, error) {
 		vw.SetSession(s)
 		ref := acc.SecretRef
 		vw.OnSession = func(s vaultwarden.Session) {
+			// #nosec G117 -- serialized only into the secret store (keyring/vault)
 			if b, err := json.Marshal(s); err == nil {
 				_ = a.opts.Secrets.Set(ref, b)
 			}

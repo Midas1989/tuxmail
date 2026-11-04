@@ -376,6 +376,27 @@ func setOnce(v map[Field]string, f Field, s string) {
 	}
 }
 
+// SafeCell neutralizes spreadsheet formulas (CSV/formula injection,
+// AUDIT-C): contact data can come from received mail (collected
+// addresses) or a CardDAV server, and a display name such as
+// "=HYPERLINK(...)" would be evaluated when the export is opened in Excel
+// or LibreOffice. Such cells get a leading apostrophe. Phone numbers like
+// "+49 30 1234" or "-1" are kept as they are.
+func SafeCell(s string) string {
+	if s == "" {
+		return s
+	}
+	switch s[0] {
+	case '=', '@', '\t', '\r', '|':
+		return "'" + s
+	case '+', '-':
+		if strings.TrimLeft(s[1:], "0123456789 ()/.-") != "" {
+			return "'" + s
+		}
+	}
+	return s
+}
+
 // Write exports cards in the layout of a preset (outlook or google).
 func Write(w io.Writer, cards []vcard.Card, p Preset) error {
 	cw := stdcsv.NewWriter(w)
@@ -390,7 +411,7 @@ func Write(w io.Writer, cards []vcard.Card, p Preset) error {
 		v := ToFields(card)
 		row := make([]string, len(p.Columns))
 		for i, c := range p.Columns {
-			row[i] = v[c.Field]
+			row[i] = SafeCell(v[c.Field])
 		}
 		if err := cw.Write(row); err != nil {
 			return err

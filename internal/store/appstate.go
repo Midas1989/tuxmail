@@ -364,6 +364,7 @@ func (s *Store) ItemReactions(ctx context.Context, itemIDs []string) (map[string
 		for i, v := range chunk {
 			args[i] = v
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err := s.db.QueryContext(ctx, `SELECT item_id, emoji FROM item_reactions WHERE item_id IN (`+placeholders(len(chunk))+`)
 			ORDER BY created_at, emoji`, args...)
 		if err != nil {

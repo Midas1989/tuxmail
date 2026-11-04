@@ -192,11 +192,12 @@ func verify(p7 *pkcs7.PKCS7, o ReadOptions, res *Result) {
 		res.Signature, res.Error = SigInvalid, err.Error()
 		return
 	}
-	if signer == nil && len(p7.Certificates) > 0 {
-		signer = p7.Certificates[0]
-	}
-	if signer == nil {
-		res.Signature = SigInvalid
+	// Exactly one signer: with several SignerInfos the certificate bag
+	// does not say who signed, and taking any certificate from it let an
+	// attacker present someone else's (trusted) certificate as the signer
+	// (AUDIT-C).
+	if signer == nil || len(p7.Signers) != 1 {
+		res.Signature, res.Error = SigInvalid, "smime: exactly one signer is supported"
 		return
 	}
 	res.Signer = signer
