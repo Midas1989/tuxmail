@@ -7,14 +7,12 @@ Meldung von Schwachstellen: [SECURITY.md](../../SECURITY.md) (GitHub Private Vul
 
 | Audit | Bereich / Scope | Bericht / Report |
 |---|---|---|
-| A | Server, Authentifizierung, Sitzungen, API-Autorisierung / server, auth, sessions, API authorization | `AUDIT-A-*.md` |
-| B | Inhalte: HTML-Mails, XSS, Sanitizer, Remote-Inhalte / content, XSS, sanitizer | `AUDIT-B-*.md` |
-| C | Speicher, Kryptografie, Injection (SQL, IMAP, Sieve, …) / storage, crypto, injection | `AUDIT-C-*.md` |
-| D | Desktop, Installer, Android, Messenger-Plugins / desktop, installer, Android, plugins | `AUDIT-D-*.md` |
+| A | Server, Authentifizierung, Sitzungen, API-Autorisierung / server, auth, sessions, API authorization | [AUDIT-A-server.md](AUDIT-A-server.md) |
+| B | Inhalte: HTML-Mails, XSS, Sanitizer, Remote-Inhalte / content, XSS, sanitizer | [AUDIT-B-content.md](AUDIT-B-content.md) |
+| C | Speicher, Kryptografie, Injection (SQL, IMAP, Sieve, …) / storage, crypto, injection | [AUDIT-C-storage-crypto.md](AUDIT-C-storage-crypto.md) |
+| D | Desktop, Installer, Android, Messenger-Plugins / desktop, installer, Android, plugins | [AUDIT-D-endpoint.md](AUDIT-D-endpoint.md) |
 | E | CI-Sicherheitsscans und dynamischer Black-Box-Pentest / CI scanning and dynamic pentest | [PENTEST-E-dynamic.md](PENTEST-E-dynamic.md) |
 
-Die Berichte A–D werden von den jeweiligen Audits in diesem Verzeichnis abgelegt.
-Reports A–D are added to this directory by the respective audits.
 
 ## Kontinuierliche Prüfungen / Continuous checks
 
