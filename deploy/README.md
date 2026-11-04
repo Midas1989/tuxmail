@@ -381,6 +381,8 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_auth_password_min_length` | `12` | Passwort-Mindestlänge |
 | `tuxmail_auth_session_lifetime` | `168h` | Sitzungsdauer |
 | `tuxmail_login_rate_per_minute` | `10` | Login-Ratenbegrenzung |
+| `tuxmail_security_allow_private_networks` | `false` | SSRF-Schutz: `true` erlaubt Benutzern Verbindungen in private Netze/zu Loopback (z. B. Mailserver im LAN) – gilt für alle Benutzer (`security.allow_private_networks`) |
+| `tuxmail_security_allowed_networks_extra` | `[]` | immer erlaubte Ziele, IP/CIDR optional mit Port, z. B. `["192.168.10.5:993"]`; der lokale Matrix-Homeserver der Bridges wird automatisch ergänzt (`security.allowed_networks`) |
 | `tuxmail_background_sync` | `true` | Hintergrund-Sync (Mail, Workflows, Abwesenheit, Push) für nicht angemeldete Benutzer mit aktivem Konto (`limits.background_sync`) |
 | `tuxmail_oidc_enabled` | `false` | OIDC-Anmeldung |
 | `tuxmail_oidc_issuer` / `_client_id` | `""` | OIDC-Provider |
@@ -556,6 +558,7 @@ Die alten Werte `tuxmail_bridges_runtime: podman|docker` werden noch als Contain
 | certbot scheitert | DNS zeigt auf den Server? Port 80 offen (Firewall, Cloud-Security-Group)? `curl http://<domain>/.well-known/acme-challenge/test` muss 404 von nginx liefern. Logs: `/var/log/letsencrypt/letsencrypt.log`. Rate-Limits: mit `tuxmail_tls_letsencrypt_staging=true` testen. |
 | 502 Bad Gateway | TuxMail läuft nicht (`systemctl status tuxmail`) oder RHEL/SELinux: `getsebool httpd_can_network_connect`, `ausearch -m avc -ts recent`. Unix-Socket: nginx Mitglied von `tuxmail-web`? |
 | WebSocket/Live-Updates fehlen | Vorgelagerter Proxy muss `Upgrade`/`Connection` durchreichen; Timeouts ≥ `tuxmail_nginx_websocket_timeout`. |
+| Konto im LAN/auf dem Server nicht erreichbar: „destination address not allowed in server mode“ | SSRF-Schutz: Ziel in `tuxmail_security_allowed_networks_extra` eintragen (z. B. `"192.168.10.5:993"`) oder `tuxmail_security_allow_private_networks=true`. |
 | 413 Request Entity Too Large | `tuxmail_max_upload_mb` erhöhen (wirkt auf TuxMail und nginx); vorgelagerte Proxys ebenfalls anpassen. |
 | Anmeldung klappt nicht hinter Proxy / Cookies fehlen | `tuxmail_public_url` muss die tatsächliche HTTPS-URL sein (Cookies mit `__Host-`-Präfix und `Secure`); Proxy-Adresse in `tuxmail_trusted_proxies_extra`. |
 | Doppelte HSTS-Header | nginx blendet den HSTS-Header von TuxMail aus (`proxy_hide_header`), wenn es selbst HSTS sendet; ohne TLS in nginx bleibt der von TuxMail erhalten. |

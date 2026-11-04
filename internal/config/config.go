@@ -55,8 +55,9 @@ type Config struct {
 	TrustedProxies []string `yaml:"trusted_proxies"`
 	Auth           Auth     `yaml:"auth"`
 	Limits         Limits   `yaml:"limits"`
-	OAuth          OAuth    `yaml:"oauth"` // oauth.go
-	Push           Push     `yaml:"push"`  // push.go
+	OAuth          OAuth    `yaml:"oauth"`    // oauth.go
+	Push           Push     `yaml:"push"`     // push.go
+	Security       Security `yaml:"security"` // security.go
 }
 
 // Log configures logging.
@@ -258,6 +259,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Limits.BackgroundSyncMaxUsers < 1 {
 		add("limits.background_sync_max_users: must be at least 1")
+	}
+	if _, err := c.NetPolicy(); err != nil {
+		add("security.allowed_networks: %v", err)
 	}
 	return errors.Join(errs...)
 }

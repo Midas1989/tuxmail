@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"strings"
 	"sync"
@@ -159,10 +160,20 @@ func (l *rateLimiter) pruneLocked(now time.Time) {
 	}
 }
 
+// limiterKey groups IPv6 clients by /64: a single host usually controls a
+// whole /64, so per-address buckets would not limit it at all (A-06).
+func limiterKey(ip string) string {
+	a, err := netip.ParseAddr(ip)
+	if err != nil || !a.Is6() || a.Is4In6() {
+		return ip
+	}
+	return netip.PrefixFrom(a, 64).Masked().String()
+}
+
 // limitLogin applies the per-IP and per-IP+username login rate limits and
 // writes a 429 response if exceeded.
 func (s *Server) limitLogin(w http.ResponseWriter, r *http.Request, username string) bool {
-	ip := clientFrom(r).IP
+	ip := limiterKey(clientFrom(r).IP)
 	ok, wait := s.ipLimiter.allow(ip)
 	if ok {
 		ok, wait = s.userLimiter.allow(ip + "|" + strings.ToLower(strings.TrimSpace(username)))

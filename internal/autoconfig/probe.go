@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // ProbeConnect verifies that cfg is reachable: it connects, performs the TLS
@@ -25,7 +26,7 @@ func (d *Discoverer) ProbeConnect(ctx context.Context, kind domain.AccountKind, 
 
 	dial := d.DialContext
 	if dial == nil {
-		dial = (&net.Dialer{}).DialContext
+		dial = netguard.Dialer(&net.Dialer{}).DialContext
 	}
 	conn, err := dial(ctx, "tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
 	if err != nil {

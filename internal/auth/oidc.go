@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Midas1989/Mailclient/internal/netguard"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"golang.org/x/oauth2"
 )
@@ -23,6 +24,15 @@ var (
 )
 
 const oidcStateTTL = 10 * time.Minute
+
+// oidcHTTPClient talks to the administrator-configured identity provider,
+// which often runs in the internal network: it is exempt from the
+// server-mode SSRF policy (internal/netguard) that applies to user input.
+var oidcHTTPClient = netguard.TrustedClient(30 * time.Second)
+
+func oidcHTTP(ctx context.Context) context.Context {
+	return context.WithValue(oidc.ClientContext(ctx, oidcHTTPClient), oauth2.HTTPClient, oidcHTTPClient)
+}
 
 // OIDCCallbackPath is the redirect path registered at the identity provider.
 const OIDCCallbackPath = "/api/auth/oidc/callback"
@@ -45,7 +55,7 @@ func (s *Service) oidcClient(ctx context.Context) (*oidcClient, error) {
 	if s.oidc != nil {
 		return s.oidc, nil
 	}
-	p, err := oidc.NewProvider(ctx, oc.Issuer)
+	p, err := oidc.NewProvider(oidcHTTP(ctx), oc.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("auth: OIDC discovery: %w", err)
 	}
@@ -123,7 +133,7 @@ func (s *Service) OIDCCallback(ctx context.Context, state, code string, ci Clien
 	if s.now().Unix() >= exp {
 		return nil, "", ErrOIDCState
 	}
-	tok, err := c.oauth.Exchange(ctx, code, oauth2.VerifierOption(verifier))
+	tok, err := c.oauth.Exchange(oidcHTTP(ctx), code, oauth2.VerifierOption(verifier))
 	if err != nil {
 		return nil, "", fmt.Errorf("auth: OIDC code exchange: %w", err)
 	}
@@ -131,7 +141,7 @@ func (s *Service) OIDCCallback(ctx context.Context, state, code string, ci Clien
 	if !ok {
 		return nil, "", errors.New("auth: OIDC response without id_token")
 	}
-	idt, err := c.verifier.Verify(ctx, raw)
+	idt, err := c.verifier.Verify(oidcHTTP(ctx), raw)
 	if err != nil {
 		return nil, "", fmt.Errorf("auth: OIDC id_token: %w", err)
 	}
@@ -200,10 +210,15 @@ func (s *Service) provisionOIDCUser(ctx context.Context, issuer string, cl oidcC
 	}
 	ctx = WithActor(ctx, Actor{Name: "oidc"})
 	var id int64
+	verified := cl.EmailVerified != nil && *cl.EmailVerified
 	err := s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE oidc_issuer = ? AND oidc_subject = ?`, issuer, cl.Subject).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) && cl.Email != "" && cl.EmailVerified != nil && *cl.EmailVerified {
-		// Link an existing local account with the same, IdP-verified address.
-		err = s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE email = ? AND oidc_subject IS NULL`, cl.Email).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) && cl.Email != "" && verified {
+		// Link an existing local account with the same, IdP-verified address
+		// if that address was verified on our side too (set by an admin), so
+		// nobody can pre-register a victim's address and capture the
+		// victim's first OIDC login (A-05).
+		err = s.db.QueryRowContext(ctx, `SELECT id FROM users WHERE email = ? AND oidc_subject IS NULL AND email_verified = 1`,
+			cl.Email).Scan(&id)
 		if err == nil {
 			_, err = s.db.ExecContext(ctx, `UPDATE users SET oidc_issuer = ?, oidc_subject = ? WHERE id = ?`, issuer, cl.Subject, id)
 			s.auditUser(ctx, "user.oidc_link", id, err, "")
@@ -229,7 +244,7 @@ func (s *Service) provisionOIDCUser(ctx context.Context, issuer string, cl oidcC
 		name = u.DisplayName
 	}
 	s.db.ExecContext(ctx, `UPDATE users SET display_name = ? WHERE id = ?`, name, id)
-	if cl.Email != "" && !strings.EqualFold(cl.Email, u.Email) {
+	if cl.Email != "" && verified && !strings.EqualFold(cl.Email, u.Email) {
 		e := cl.Email
 		s.UpdateUser(ctx, id, UserUpdate{Email: &e}) // ignore conflicts with other users
 	}
@@ -248,13 +263,14 @@ func (s *Service) createOIDCUser(ctx context.Context, issuer string, cl oidcClai
 	if _, err := normalizeEmail(email); err != nil {
 		email = ""
 	}
+	unverified := cl.EmailVerified == nil || !*cl.EmailVerified
 	for i := 0; i < 50; i++ {
 		name := base
 		if i > 0 {
 			name = fmt.Sprintf("%s-%d", truncate(base, 58), i+1)
 		}
 		u, err := s.CreateUser(ctx, NewUser{Username: name, Email: email, DisplayName: cl.Name, Role: role,
-			oidcIssuer: issuer, oidcSubject: cl.Subject})
+			oidcIssuer: issuer, oidcSubject: cl.Subject, emailUnverified: unverified})
 		if errors.Is(err, ErrExists) {
 			if _, e := s.GetUserByName(ctx, name); e == nil {
 				continue // username taken

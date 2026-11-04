@@ -65,6 +65,16 @@ tuxmail_oidc_groups_claim: "groups"
 
 tuxmail_login_rate_per_minute: 10
 
+# SSRF-Schutz (security: in config.yaml). Standard: nur öffentliche Ziele.
+# true erlaubt Benutzern Verbindungen in private Netze und zu Loopback
+# (z. B. Mailserver im LAN) – nur setzen, wenn alle Benutzer vertrauenswürdig sind.
+tuxmail_security_allow_private_networks: false
+# Zusätzlich immer erlaubte Ziele (IP/CIDR, optional :Port), z. B. ["192.168.10.5:993"].
+tuxmail_security_allowed_networks_extra: []
+# Der lokale Matrix-Homeserver der Bridges (nur 127.0.0.1:Port) wird automatisch erlaubt.
+tuxmail_security_allowed_networks: >-
+  {{ (['127.0.0.1:' ~ (tuxmail_matrix_port | string)] if tuxmail_bridges_enabled | bool else []) + tuxmail_security_allowed_networks_extra }}
+
 # --- Android-Push über Firebase Cloud Messaging (optional, KONZEPT 15.9) ---------
 # JSON-Schlüssel eines Firebase-Dienstkontos (Rolle "Firebase Cloud Messaging API Admin")
 # auf dem Steuerrechner, gern mit "ansible-vault encrypt" verschlüsselt. Leer = FCM aus.
