@@ -142,6 +142,7 @@ type App struct {
 	pimOnce   sync.Once
 	pim       *pimService
 	comfort   *comfortState // comfort_state.go (spam, categories, S/MIME, PDF, ...)
+	diag      diagState     // diagnostics.go
 }
 
 // New creates the application layer.
@@ -265,6 +266,11 @@ func (a *App) Start() {
 	a.runOnce.Do(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		a.cancel = cancel
+		if n, err := a.st.PurgeSystemKeywordTags(ctx); err != nil {
+			a.log.Warn("app: purging system keyword tags", "err", err)
+		} else if n > 0 {
+			a.log.Info("app: removed tags made from system keywords", "count", n)
+		}
 		if a.mgr != nil {
 			if err := a.mgr.Start(ctx); err != nil {
 				a.log.Warn("app: starting sync failed", "err", err)

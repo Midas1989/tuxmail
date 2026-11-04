@@ -532,6 +532,24 @@ export interface Api {
   generateCloudPassword(accountId: number): Promise<{ password: string }>;
 }
 
+// --- Diagnostics ---
+// Sync status and Settings → Info & Diagnose (declaration merging, see Cloud).
+
+import type { AccountSyncStatus, DiagnosticsInfo } from '../types';
+
+export interface Api {
+  /** Sync status of all mail accounts (updates arrive as sync.status events). */
+  syncStatus(): Promise<AccountSyncStatus[]>;
+  /** Sync an account now (also cuts the retry wait after an error short). */
+  syncNow(accountId: number): Promise<void>;
+  diagnostics(): Promise<DiagnosticsInfo>;
+  /** Raw RFC 5322 source of a mail (mail window "Quelltext"). */
+  messageSource(id: number): Promise<string>;
+  /** Zip with logs and the redacted configuration (no secrets, no mail content). */
+  /** savedPath: desktop, where the archive was written (data_dir/diagnostics). */
+  exportDiagnostics(): Promise<{ filename: string; blob: Blob; savedPath?: string }>;
+}
+
 // --- Mail protocols ---
 // Remote content and server rules (KONZEPT 8.3, 8.5), another part of the
 // Api interface (declaration merging).

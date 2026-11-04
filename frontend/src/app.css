@@ -339,3 +339,17 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Frameless desktop window on Windows 11 with Mica (cmd/tuxmail desktop):
+   the backdrop shows through the title bar and the navigation rail; the
+   content keeps opaque surfaces. */
+html.tm-backdrop,
+html.tm-backdrop body {
+  background: transparent;
+}
+html.tm-backdrop .rail {
+  background: color-mix(in srgb, var(--tm-rail) 78%, transparent);
+}
+html.tm-backdrop #main {
+  background: var(--tm-bg);
+}

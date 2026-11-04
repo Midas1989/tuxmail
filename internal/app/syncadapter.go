@@ -35,9 +35,24 @@ func (s managerSyncer) Status(context.Context) ([]AccountStatus, error) {
 	sts := s.m.Statuses()
 	out := make([]AccountStatus, 0, len(sts))
 	for _, st := range sts {
-		out = append(out, AccountStatus{AccountID: st.AccountID, State: string(st.State), Error: st.LastError, LastSync: st.LastSync})
+		out = append(out, statusDTO(st))
 	}
 	return out, nil
+}
+
+func statusDTO(st tsync.AccountStatus) AccountStatus {
+	return AccountStatus{AccountID: st.AccountID, State: string(st.State), Error: st.LastError, ErrorAt: st.LastErrorAt,
+		NextRetry: st.NextRetry, LastSync: st.LastSync, Folder: st.Folder, FolderID: st.FolderID, Done: st.Done,
+		Total: st.Total, Initial: st.Initial}
+}
+
+// SyncStatus returns the sync status of all mail accounts.
+func (a *App) SyncStatus(ctx context.Context) ([]AccountStatus, error) {
+	out, err := a.sync.Status(ctx)
+	if out == nil {
+		out = []AccountStatus{}
+	}
+	return out, err
 }
 
 func (s managerSyncer) Move(ctx context.Context, ids []int64, to int64) error {
@@ -76,7 +91,13 @@ func dataID(ev events.Event, key string) int64 {
 // publishSyncEvent maps the UI topics of internal/sync to ApiEvents.
 func (a *App) publishSyncEvent(ctx context.Context, ev events.Event) {
 	switch ev.Type {
-	case tsync.EventAccountStatus, tsync.EventFoldersChanged:
+	case tsync.EventAccountStatus:
+		if id := dataID(ev, "accountId"); id != 0 && a.mgr != nil {
+			st, _ := a.mgr.Status(id)
+			dto := statusDTO(st)
+			a.hub.Publish(Event{Type: EventSyncStatus, AccountID: id, Sync: &dto})
+		}
+	case tsync.EventFoldersChanged:
 		if id := dataID(ev, "accountId"); id != 0 {
 			a.hub.Publish(Event{Type: EventAccountUpdated, AccountID: id})
 		}

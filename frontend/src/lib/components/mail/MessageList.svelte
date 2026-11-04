@@ -22,6 +22,7 @@
   import { FLAG_ANSWERED, FLAG_FLAGGED, FLAG_FORWARDED, FLAG_SEEN, type MessageSummary } from '../../types';
   import { formatListDate, t } from '../../i18n/index.svelte';
   import Avatar from '../common/Avatar.svelte';
+  import ListSyncState from './ListSyncState.svelte';
 
   const OVERSCAN = 6;
 
@@ -115,6 +116,12 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && e.shiftKey && app.selectedMessageId != null) {
+      // Shift+Enter: the selected mail in its own mail window.
+      e.preventDefault();
+      void app.openMailWindow(app.selectedMessageId);
+      return;
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       app.moveSelection(1);
@@ -183,7 +190,9 @@
     {onkeydown}
     data-list="messages"
   >
-    {#if total === 0 && !app.messagesLoading}
+    {#if total === 0 && !app.search && app.listSync}
+      <ListSyncState status={app.listSync} />
+    {:else if total === 0 && !app.messagesLoading}
       <div class="empty">
         <Inbox size={36} strokeWidth={1.4} aria-hidden="true" />
         <p class="e1">{app.search ? t('mail.list.noResults') : t('mail.list.empty')}</p>
@@ -199,6 +208,7 @@
         {@const acc = app.account(m.accountId)}
         <div
           id="msg-{m.id}"
+          ondblclick={() => app.openMailWindow(m.id)}
           class="row"
           class:unread
           class:selected

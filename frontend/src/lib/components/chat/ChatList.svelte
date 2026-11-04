@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Messenger-style chat list: search, filter pills, archived row, pinned on top. -->
 <script lang="ts">
+  import ViewSwitcher from '../ViewSwitcher.svelte';
   import { comfort } from '../../state';
   import CategoryTabs from '../comfort/CategoryTabs.svelte';
   import TeamSection from '../team/TeamSection.svelte';
@@ -8,7 +9,6 @@
   import Search from '@lucide/svelte/icons/search';
   import X from '@lucide/svelte/icons/x';
   import SquarePen from '@lucide/svelte/icons/square-pen';
-  import Rows3 from '@lucide/svelte/icons/rows-3';
   import Archive from '@lucide/svelte/icons/archive';
   import ArchiveRestore from '@lucide/svelte/icons/archive-arrow-up';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
@@ -83,11 +83,6 @@
     else if (top + el.offsetHeight > listEl.scrollTop + listEl.clientHeight) listEl.scrollTop = top + el.offsetHeight - listEl.clientHeight;
   });
 
-  function avatarSeed(c: Conversation): string {
-    if (c.kind === 'chat' && c.isGroup) return c.title;
-    return app.person(c.participantIds[0])?.handles[0]?.value ?? c.title;
-  }
-
   function preview(c: Conversation): string {
     if (c.snippet) return c.snippet;
     if (c.lastMedia === 'photo') return '📷 ' + t('chat.media.photo');
@@ -148,7 +143,7 @@
       <span class="grow"></span>
       <button class="icon-btn" class:focus-on={app.focusActive} title={t('chat.focus.toggle')} aria-label={t('chat.focus.toggle')} aria-pressed={app.focus.enabled} onclick={() => app.toggleFocus()}><Target size={18} /></button>
       <button class="icon-btn" title={t('chat.newChat')} aria-label={t('chat.newChat')} onclick={() => app.openCompose()}><SquarePen size={18} /></button>
-      <button class="icon-btn" title={t('mail.view.classic') + ' (Ctrl+Shift+V)'} aria-label={t('mail.view.classic')} onclick={() => app.setViewMode('classic')}><Rows3 size={18} /></button>
+      <ViewSwitcher variant="menu" />
       <button class="icon-btn" title={t('chat.moreActions')} aria-label={t('chat.moreActions')} aria-haspopup="menu" onclick={(e) => (headerMenu = { x: e.clientX - 220, y: e.clientY + 12 })}><EllipsisVertical size={18} /></button>
     {/if}
   </header>
@@ -273,7 +268,7 @@
         ondragstart={(e) => ondragstart(e, c)}
         use:swipe={{ left: () => app.updateConversation(c.id, { archived: !c.archived }, c.archived ? 'chat.toast.unarchived' : 'chat.toast.archived'), right: () => app.updateConversation(c.id, { markedUnread: !unread }) }}
       >
-        <ChatAvatar name={c.title} seed={avatarSeed(c)} size={48} group={c.isGroup && c.kind === 'chat'} url={c.avatarUrl} channel={c.lastChannel ?? c.channels[0]} />
+        <ChatAvatar name={app.convAvatar(c).name} seed={app.convAvatar(c).seed} size={48} group={app.convAvatar(c).group} url={c.avatarUrl} channel={c.lastChannel ?? c.channels[0]} />
         <div class="body">
           <div class="l1">
             <span class="title">{c.title}</span>
@@ -616,7 +611,10 @@
     font-size: 12px;
     color: var(--tm-muted);
   }
+  /* Off-screen rows are skipped by layout and paint (long chat lists). */
   .item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 72px;
     position: relative;
     display: flex;
     gap: 12px;

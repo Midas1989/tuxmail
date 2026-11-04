@@ -16,7 +16,9 @@ import (
 // not workflow triggers. Their payload is Event.Data with the keys listed.
 const (
 	// EventAccountStatus: accountId, state, error, nextRetry (RFC 3339),
-	// lastSync (RFC 3339), folder (folder being synced).
+	// lastSync (RFC 3339), folder (folder being synced), folderId, done,
+	// total (progress of that folder), initial ("1" during its first sync).
+	// Progress updates are throttled (ProgressInterval).
 	EventAccountStatus events.Type = "account.status"
 	// EventConversationUpdated: conversationId.
 	EventConversationUpdated events.Type = "conversation.updated"
@@ -82,6 +84,15 @@ func folderListEvent(accountID int64) events.Event {
 func (m *Manager) publishStatus(st AccountStatus) {
 	data := map[string]string{"accountId": id(st.AccountID), "state": string(st.State), "error": st.LastError,
 		"folder": st.Folder}
+	if st.FolderID != 0 {
+		data["folderId"] = id(st.FolderID)
+	}
+	if st.Total > 0 || st.Done > 0 {
+		data["done"], data["total"] = strconv.Itoa(st.Done), strconv.Itoa(st.Total)
+	}
+	if st.Initial {
+		data["initial"] = "1"
+	}
 	if !st.NextRetry.IsZero() {
 		data["nextRetry"] = st.NextRetry.UTC().Format(time.RFC3339)
 	}

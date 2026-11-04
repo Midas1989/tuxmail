@@ -59,7 +59,11 @@ type Config struct {
 	Users  []User
 	// Folders are created for every user (default DefaultFolders).
 	Folders []string
-	Logger  *slog.Logger
+	// SpecialUse announces RFC 6154 attributes for folders (e.g.
+	// "Archive": \Archive), like Dovecot does; the server then also
+	// advertises SPECIAL-USE.
+	SpecialUse map[string]imap.MailboxAttr
+	Logger     *slog.Logger
 
 	// External switches to a real mail server (e.g. Dovecot + Postfix from
 	// scripts/dovecot-dev.sh): no IMAP/SMTP listeners are started, the
@@ -98,7 +102,8 @@ type Server struct {
 
 type account struct {
 	User
-	mem *imapmemserver.User
+	mem  *imapmemserver.User
+	book *mailboxBook
 }
 
 // Delivery records one message accepted by the SMTP server.
@@ -144,7 +149,11 @@ func Start(cfg Config) (*Server, error) {
 			_ = mu.Subscribe(f)
 		}
 		s.mem.AddUser(mu)
-		s.users[strings.ToLower(u.Email)] = &account{User: u, mem: mu}
+		su := map[string]imap.MailboxAttr{}
+		for k, v := range cfg.SpecialUse {
+			su[k] = v
+		}
+		s.users[strings.ToLower(u.Email)] = &account{User: u, mem: mu, book: newMailboxBook(cfg.Folders, su)}
 	}
 	if cfg.External != nil {
 		var err error
@@ -174,14 +183,22 @@ func (s *Server) listen() error {
 	if s.httpLn, err = net.Listen("tcp", s.cfg.HTTPAddr); err != nil {
 		return fmt.Errorf("devserver: http: %w", err)
 	}
+	caps := imap.CapSet{
+		imap.CapIMAP4rev1: {}, imap.CapUIDPlus: {}, imap.CapMove: {}, imap.CapESearch: {},
+		imap.CapListExtended: {}, imap.CapListStatus: {}, imap.CapNamespace: {}, imap.CapChildren: {},
+	}
+	if len(s.cfg.SpecialUse) > 0 {
+		caps[imap.CapSpecialUse] = struct{}{}
+		caps[imap.CapCreateSpecialUse] = struct{}{}
+	}
 	s.imapSrv = imapserver.New(&imapserver.Options{
 		NewSession: func(*imapserver.Conn) (imapserver.Session, *imapserver.GreetingData, error) {
+			if len(s.cfg.SpecialUse) > 0 {
+				return &specialUseSession{s: s}, &imapserver.GreetingData{PreAuth: false}, nil
+			}
 			return s.mem.NewSession(), &imapserver.GreetingData{PreAuth: false}, nil
 		},
-		Caps: imap.CapSet{
-			imap.CapIMAP4rev1: {}, imap.CapUIDPlus: {}, imap.CapMove: {}, imap.CapESearch: {},
-			imap.CapListExtended: {}, imap.CapListStatus: {}, imap.CapNamespace: {}, imap.CapChildren: {},
-		},
+		Caps:         caps,
 		InsecureAuth: true,
 		Logger:       slogPrintf{s.log.With("proto", "imap")},
 	})

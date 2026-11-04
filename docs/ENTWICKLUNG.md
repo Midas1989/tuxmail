@@ -34,7 +34,17 @@ CI – **nicht für den Produktivbetrieb**:
 bin/tuxmail devserver                 # Benutzer anna@ und ben@tuxmail.test, Passwort "tuxmail-dev"
 bin/tuxmail devserver --user max@firma.test:geheim:"Max Muster" --no-seed
 bin/tuxmail devserver --verbose       # Protokollfehler und Zustellungen loggen
+bin/tuxmail devserver --profile german --bulk 2500   # großes Postfach, deutsche Dovecot-Ordner
 ```
+
+**Große Postfächer:** `--bulk N` legt pro Benutzer N generierte Mails im
+Posteingang an (realistische Größen: Text 1–8 KB, jede 7. ein HTML-Newsletter,
+jede 23. mit PDF-Anhang, jede 5. eine Antwort; Papierkorb/Archive je N/4,
+übrige Ordner N/20). `--profile german` erzeugt die Ordner eines deutschen
+Dovecot-Postfachs (`Entwürfe`, `Gesendet`, `Spam`, `Papierkorb`, `Templates`,
+`Archive` mit `\Archive` **und** ein Benutzerordner `Archiv` mit `2024`/`2025`)
+und meldet SPECIAL-USE (RFC 6154). Messung „Zeit bis zu den ersten Zeilen“:
+`TUXMAIL_LARGE_N=2500 go test ./internal/app -run TestLiveLargeMailbox -v`.
 
 Beim Start werden realistische Mails eingespielt (`internal/devserver/seed.go`):
 Threads mit Antworten über Posteingang/Gesendet/Archiv, eine weitergeleitete
@@ -156,6 +166,24 @@ WEBKIT_DISABLE_COMPOSITING_MODE=1 /tmp/tm/tuxmail &
 xdotool search --name TuxMail | while read w; do xdotool windowsize $w 1440 900; done   # ohne Fenstermanager
 import -window root /tmp/desktop.jpg
 ```
+
+**Logdatei:** Der Desktop-Client schreibt immer nach
+`<data_dir>/logs/tuxmail.log` (rotierend, 5 MB, drei ältere Dateien
+`tuxmail.log.1` … `.3`; `TUXMAIL_LOG_LEVEL=debug` für mehr Details) –
+portabel also `data/logs/tuxmail.log` neben dem Programm, installiert
+`%APPDATA%\TuxMail\logs\tuxmail.log` (Windows) bzw.
+`~/.local/share/tuxmail/logs/tuxmail.log` (Linux). **Einstellungen → Info &
+Diagnose** zeigt Version, Datenverzeichnis, Logdatei und den Sync-Status jedes
+Kontos; „Diagnosedaten exportieren“ erstellt ein ZIP mit den Logs und der
+Konfiguration ohne Passwörter, Tokens und Mailinhalte (E-Mail-Adressen
+maskiert), auf dem Desktop zusätzlich in `<data_dir>/diagnostics/`.
+
+**Fenster:** Unter Windows ist das Fenster rahmenlos mit eigener Titelleiste
+(Ziehen, Doppelklick maximiert, Minimieren/Maximieren/Schließen; unter
+Windows 11 22H2+ mit Mica-Hintergrund), unter Linux bleibt die
+Systemtitelleiste Standard. Umschalten unter **Einstellungen → Info &
+Diagnose → Fenster → „Systemtitelleiste verwenden“** (gespeichert in
+`<data_dir>/desktop.json`, wirkt nach einem Neustart).
 
 **Test-Hook:** Für automatisierte Tests des nativen Builds kann die Desktop-API
 (dieselben Handler, die das Fenster nutzt) zusätzlich auf Loopback angeboten

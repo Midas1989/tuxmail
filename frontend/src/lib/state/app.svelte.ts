@@ -46,6 +46,8 @@ import {
 import { prefs } from './prefs.svelte';
 import { ApiError } from '../api/api';
 import { isFocusActive } from '../chatfeatures';
+import { folderViews, type FolderView } from '../folders';
+import type { AccountSyncStatus } from '../types';
 import type { SuggestData } from '../search/suggest';
 import type { WorkflowContext } from '../workflow/schema';
 
@@ -102,6 +104,18 @@ export interface ComposerInit {
   forwardAttachments?: Attachment[];
 }
 
+/** An in-app mail window (MailWindows.svelte). */
+export interface MailWindow {
+  key: number;
+  messageId: number;
+  message: MessageDetail | null;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  z: number;
+}
+
 export interface Toast {
   id: number;
   text: string;
@@ -112,14 +126,25 @@ export interface Toast {
 
 const PAGE = 200;
 
-function debounce<A extends unknown[]>(fn: (...a: A) => void, ms: number) {
+/**
+ * Trailing debounce with an upper bound: a steady stream of calls (e.g. the
+ * events of a large initial sync) still runs fn at least every maxWait ms.
+ * Without the bound the list never reloaded while a sync was running and
+ * showed "Dieser Ordner ist leer" for minutes.
+ */
+export function debounce<A extends unknown[]>(fn: (...a: A) => void, ms: number, maxWait = Math.max(ms * 6, 600)) {
   let h: ReturnType<typeof setTimeout> | null = null;
+  let first = 0;
   return (...a: A) => {
     if (h) clearTimeout(h);
+    const now = Date.now();
+    if (!first) first = now;
+    const wait = Math.max(0, Math.min(ms, first + maxWait - now));
     h = setTimeout(() => {
       h = null;
+      first = 0;
       fn(...a);
-    }, ms);
+    }, wait);
   };
 }
 
@@ -143,6 +168,10 @@ export class AppState {
 
   accounts = $state<Account[]>([]);
   folders = $state<Record<number, Folder[]>>({});
+  /** Sync status per mail account (sync.status events). */
+  syncStatus = $state<Record<number, AccountSyncStatus>>({});
+  /** Accounts whose initial sync was seen in this session (for the "Synchronisiert" toast). */
+  private syncSeenInitial = new Set<number>();
   identities = $state<Identity[]>([]);
   signatures = $state<Signature[]>([]);
   persons = $state<Person[]>([]);
@@ -272,11 +301,87 @@ export class AppState {
   }
 
   /** "Gesendet", "Archiv/2026": localized role name plus sub path. */
+  /** Display data of the folders of an account (labels, effective roles; folders.ts). */
+  folderViewsOf(accountId: number): Map<number, FolderView> {
+    return folderViews(this.folders[accountId] ?? [], (r) => t(`mail.folder.role.${r}` as 'mail.folder.role.inbox'));
+  }
+
+  /** Display name of a folder (role name, or "Archiv (Archive)" on collisions). */
+  folderLabel(id: number): string {
+    const f = this.folder(id);
+    if (!f) return '';
+    return this.folderViewsOf(f.accountId).get(id)?.label ?? f.name;
+  }
+
   folderPath(id: number): string {
     const f = this.folder(id);
     if (!f) return '';
-    const own = f.role ? t(`mail.folder.role.${f.role}` as 'mail.folder.role.inbox') : f.name;
-    return f.parentId != null ? `${this.folderPath(f.parentId)}/${own}` : own;
+    const own = this.folderLabel(id);
+    return f.parentId ? `${this.folderPath(f.parentId)}/${own}` : own;
+  }
+
+  // -------------------------------------------------------------------------
+  // Sync status (top bar indicator, folder tree, empty list)
+  // -------------------------------------------------------------------------
+
+  async loadSyncStatus(): Promise<void> {
+    try {
+      const list = await this.api.syncStatus();
+      const next: Record<number, AccountSyncStatus> = {};
+      for (const s of list) next[s.accountId] = s;
+      this.syncStatus = next;
+    } catch {
+      /* older servers: no sync status */
+    }
+  }
+
+  private onSyncStatus(s: AccountSyncStatus): void {
+    const prev = this.syncStatus[s.accountId];
+    this.syncStatus = { ...this.syncStatus, [s.accountId]: s };
+    if (s.initial) this.syncSeenInitial.add(s.accountId);
+    if (prev && prev.state === 'syncing' && s.state === 'idle' && this.syncSeenInitial.has(s.accountId)) {
+      this.syncSeenInitial.delete(s.accountId);
+      this.toast(t('sync.done', { account: this.account(s.accountId)?.displayName ?? '' }));
+      this.reloadListDebounced();
+    }
+  }
+
+  /** Busy accounts (connecting or syncing), for the top bar indicator. */
+  get syncActive(): AccountSyncStatus[] {
+    return this.mailAccounts.map((a) => this.syncStatus[a.id]).filter((s): s is AccountSyncStatus => !!s && (s.state === 'syncing' || s.state === 'connecting'));
+  }
+
+  get syncErrors(): AccountSyncStatus[] {
+    return this.mailAccounts.map((a) => this.syncStatus[a.id]).filter((s): s is AccountSyncStatus => !!s && s.state === 'error');
+  }
+
+  /** Human readable "Synchronisiere <Konto> · <Ordner> 450 / 2036". */
+  syncLabel(s: AccountSyncStatus): string {
+    const acc = this.account(s.accountId)?.displayName ?? '';
+    if (s.state === 'connecting') return t('sync.connecting', { account: acc });
+    const folder = s.folderId ? this.folderLabel(s.folderId) : s.folder ?? '';
+    if (folder && s.total) return t('sync.progress', { account: acc, folder, done: Math.min(s.done ?? 0, s.total), total: s.total });
+    if (folder) return t('sync.folder', { account: acc, folder });
+    return t('sync.syncing', { account: acc });
+  }
+
+  /** Is folder id (or, with folderId 0, any folder of the account) being synced right now? */
+  folderSyncing(folderId: number): boolean {
+    return Object.values(this.syncStatus).some((s) => s.state === 'syncing' && s.folderId === folderId);
+  }
+
+  /**
+   * Sync state relevant for the current list: progress of the selected
+   * folder, or of any account still in its first sync (unified views). Used
+   * instead of "Dieser Ordner ist leer" while mail is still arriving.
+   */
+  get listSync(): AccountSyncStatus | null {
+    const s = this.sel;
+    const active = Object.values(this.syncStatus).filter((x) => x.state === 'syncing' || x.state === 'connecting');
+    if (s.kind === 'folder') {
+      return active.find((x) => x.folderId === s.folderId) ?? active.find((x) => x.accountId === s.accountId && !x.lastSync) ?? null;
+    }
+    return active.find((x) => x.initial || !x.lastSync) ?? null;
   }
 
   /** Names the workflow editors resolve values against. */
@@ -308,6 +413,28 @@ export class AppState {
 
   person(id: number): Person | undefined {
     return this.persons.find((p) => p.id === id);
+  }
+
+  /**
+   * Avatar of a conversation: mail threads are titled by their subject, so
+   * their avatar shows the counterpart (initials of the sender), never the
+   * subject ("R4" for "Rechnung Nr. 4683"); the group icon only for threads
+   * with several participants.
+   */
+  convAvatar(c: Conversation): { name: string; seed: string; group: boolean } {
+    const first = c.participantIds[0];
+    const seed = this.person(first)?.handles[0]?.value ?? String(first ?? c.id);
+    if (c.kind === 'chat') return { name: c.title, seed: c.isGroup ? c.title : seed, group: !!c.isGroup };
+    if (c.kind === 'email_thread') return { name: this.personName(first) ?? '', seed, group: c.participantIds.length > 1 };
+    return { name: c.title, seed, group: false };
+  }
+
+  /** Display name of a person; schedules a reload when the sync created persons the UI does not know yet. */
+  personName(id: number | undefined): string | undefined {
+    if (id == null) return undefined;
+    const p = this.person(id);
+    if (!p) this.reloadPersonsDebounced();
+    return p?.displayName;
   }
 
   account(id: number): Account | undefined {
@@ -363,6 +490,7 @@ export class AppState {
       this.persons = persons;
       await Promise.all([...this.mailAccounts.map((a) => this.reloadFolders(a.id)), this.loadTags(), this.loadProjects(), this.loadSearchFolders()]);
       this.unsubscribe = this.api.subscribe((e) => this.onEvent(e));
+      void this.loadSyncStatus();
       await this.reloadList();
       this.ready = true;
     } catch (err) {
@@ -415,6 +543,12 @@ export class AppState {
         this.pendingFolderAccounts.push(e.accountId);
         this.reloadFoldersDebounced([...this.pendingFolderAccounts]);
         this.pendingFolderAccounts = [];
+        // The initial sync announces new mail per batch with folder.updated
+        // (no message.added per mail): refresh the list as it fills.
+        this.reloadListDebounced();
+        break;
+      case 'sync.status':
+        this.onSyncStatus(e.status);
         break;
       case 'account.updated':
         // accountId 0: settings shared by all accounts changed (e.g. signatures).
@@ -582,11 +716,78 @@ export class AppState {
     const detail = await this.api.getMessage(id);
     if (this.selectedMessageId !== id) return;
     this.message = detail;
+    this.prefetchNeighbours(id);
     if (!detail.flags.includes(FLAG_SEEN)) {
       this.seenTimer = setTimeout(() => {
         if (this.selectedMessageId === id) void this.api.setFlags([id], [FLAG_SEEN], []);
       }, 700);
     }
+  }
+
+  /**
+   * Warm the next and previous mail of the list (backend render cache and
+   * on-demand body download) so that J/K is instant.
+   */
+  private prefetchNeighbours(id: number): void {
+    const i = this.messages.findIndex((m) => m.id === id);
+    if (i < 0) return;
+    for (const n of [this.messages[i + 1], this.messages[i - 1]]) {
+      if (n && !this.prefetched.has(n.id)) {
+        this.prefetched.add(n.id);
+        void this.api.getMessage(n.id).catch(() => this.prefetched.delete(n.id));
+      }
+    }
+  }
+  private prefetched = new Set<number>();
+
+  // -------------------------------------------------------------------------
+  // Mail windows: detachable, movable, resizable in-app windows with the
+  // full mail (Wails v2 has a single native window; web/PWA can also open
+  // #/mail/<id> in a real browser window).
+  // -------------------------------------------------------------------------
+
+  mailWindows = $state<MailWindow[]>([]);
+  private mailWindowSeq = 0;
+
+  async openMailWindow(messageId: number): Promise<void> {
+    const open = this.mailWindows.find((w) => w.messageId === messageId);
+    if (open) {
+      this.focusMailWindow(open.key);
+      return;
+    }
+    const n = this.mailWindows.length;
+    const vw = typeof innerWidth === 'number' ? innerWidth : 1280;
+    const vh = typeof innerHeight === 'number' ? innerHeight : 800;
+    const w = Math.min(820, vw - 40);
+    const h = Math.min(640, vh - 60);
+    const key = ++this.mailWindowSeq;
+    const z = Math.max(0, ...this.mailWindows.map((x) => x.z)) + 1;
+    this.mailWindows = [...this.mailWindows, { key, messageId, message: null, x: Math.max(8, (vw - w) / 2 + n * 28), y: Math.max(8, 60 + n * 28), w, h, z }];
+    try {
+      const m = await this.api.getMessage(messageId);
+      this.mailWindows = this.mailWindows.map((x) => (x.key === key ? { ...x, message: m } : x));
+    } catch (err) {
+      this.closeMailWindow(key);
+      this.toast(err instanceof Error ? err.message : String(err), undefined, 'error');
+    }
+  }
+
+  focusMailWindow(key: number): void {
+    const z = Math.max(0, ...this.mailWindows.map((x) => x.z)) + 1;
+    this.mailWindows = this.mailWindows.map((x) => (x.key === key ? { ...x, z } : x));
+  }
+
+  moveMailWindow(key: number, patch: Partial<Pick<MailWindow, 'x' | 'y' | 'w' | 'h'>>): void {
+    this.mailWindows = this.mailWindows.map((x) => (x.key === key ? { ...x, ...patch } : x));
+  }
+
+  closeMailWindow(key: number): void {
+    this.mailWindows = this.mailWindows.filter((x) => x.key !== key);
+  }
+
+  /** Reply/forward from a mail window (or any loaded mail). */
+  replyToMessage(m: MessageDetail, mode: Exclude<ComposeMode, 'new'>): void {
+    this.openCompose(this.replyInit(m, mode));
   }
 
   private async refreshMessage(): Promise<void> {

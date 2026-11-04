@@ -156,8 +156,8 @@ func (s *Store) AssignConversation(ctx context.Context, messageID, conversationI
 // email conversation from its live messages.
 func (s *Store) RefreshConversationStats(ctx context.Context, id int64) error {
 	return checkAffected(s.db.ExecContext(ctx, `UPDATE conversations SET
-			last_activity = (SELECT MAX(COALESCE(sent_at, received_at)) FROM messages WHERE conversation_id = ?1 AND state = 'live'),
-			unread_count  = (SELECT COUNT(*) FROM messages WHERE conversation_id = ?1 AND state = 'live' AND flags & ?2 = 0)
+			last_activity = (SELECT MAX(COALESCE(sent_at, received_at)) FROM messages WHERE conversation_id = ?1 AND +state = 'live'),
+			unread_count  = (SELECT COUNT(*) FROM messages WHERE conversation_id = ?1 AND +state = 'live' AND flags & ?2 = 0)
 		WHERE id = ?1`, id, FlagSeen))
 }
 

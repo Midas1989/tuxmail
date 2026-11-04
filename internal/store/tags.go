@@ -990,3 +990,35 @@ const tagFacetSQL = `SELECT 'tag', CAST(t.id AS TEXT), t.path, COUNT(*) FROM r
 func tagFacetClause(path string) query.Node {
 	return &query.Term{Field: "label", Value: path, Kind: query.Phrase}
 }
+
+// PurgeSystemKeywordTags deletes tags that were created from system IMAP
+// keywords (IsSystemKeyword: JunkRecorded, NonJunk, $MDNSent, ...) by
+// earlier versions, as long as they are only assigned from IMAP keywords
+// (a tag the user also uses is kept). Nothing is queued for the server: the
+// keywords stay where they are, they are just not tags. It returns the
+// number of deleted tags.
+func (s *Store) PurgeSystemKeywordTags(ctx context.Context) (int, error) {
+	tags, err := s.ListTags(ctx)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, t := range tags {
+		if t.ParentID != 0 || !IsSystemKeyword(t.Path) {
+			continue
+		}
+		var other int
+		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_tags WHERE tag_id = ? AND source <> ?`, t.ID,
+			string(TagSourceIMAPKeyword)).Scan(&other); err != nil {
+			return n, err
+		}
+		if other > 0 {
+			continue
+		}
+		if _, err := s.db.ExecContext(ctx, `DELETE FROM tags WHERE id = ?`, t.ID); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, nil
+}

@@ -22,6 +22,7 @@
   import SignatureSettings from '../components/settings/SignatureSettings.svelte';
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
+  import DiagnosticsSettings from '../components/settings/DiagnosticsSettings.svelte';
   import MessengerSettings from '../components/settings/MessengerSettings.svelte';
   import MessengerWizard from '../components/settings/MessengerWizard.svelte';
   import MessageCircle from '@lucide/svelte/icons/message-circle';
@@ -194,6 +195,8 @@
         {/each}
       </dl>
     </section>
+
+    <DiagnosticsSettings />
 
     <section class="card" aria-labelledby="set-about">
       <h2 id="set-about">{t('settings.about')}</h2>

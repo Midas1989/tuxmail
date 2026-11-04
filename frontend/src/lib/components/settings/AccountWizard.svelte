@@ -21,7 +21,9 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
-  import type { AccountKind, AuthMethod, DiscoveryResult, Pop3Options, ServerConfig } from '../../types';
+  import type { AccountKind, AuthMethod, DiscoveryCandidate, DiscoveryCheck, DiscoveryResult, Pop3Options, ServerConfig } from '../../types';
+  import CircleX from '@lucide/svelte/icons/circle-x';
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Modal from '../common/Modal.svelte';
   import logoUrl from '$branding/tuxmail-logo.png';
   import CloudConnectForm, { CLOUD_PROVIDERS } from '../cloud/CloudConnectForm.svelte';
@@ -53,6 +55,33 @@
   let jmapUrl = $state('');
   let pop3 = $state<Pop3Options>({ leaveOnServer: true, deleteAfterDays: 0, deleteOnLocalDelete: false });
   let usePassword = $state(false); // OAuth/Cloud accounts: skip the sign-in step
+  /** Index of the chosen candidate in discovery.candidates. */
+  let chosen = $state(0);
+  let othersOpen = $state(false);
+
+  function useCandidate(i: number) {
+    const c = discovery?.candidates?.[i];
+    if (!c) return;
+    chosen = i;
+    protocol = c.kind;
+    if (c.incoming) incoming = { ...c.incoming };
+    if (c.outgoing) outgoing = { ...c.outgoing };
+    easUrl = c.easUrl ?? '';
+  }
+
+  function checkText(c: DiscoveryCheck, srv?: ServerConfig): string {
+    if (!srv) return t('onboarding.account.check.unknown');
+    if (!c.reachable) return t('onboarding.account.check.unreachable', { error: c.error ?? '' });
+    if (c.login === 'ok') return t('onboarding.account.check.loginOk');
+    if (c.login === 'failed') return t('onboarding.account.check.loginFailed');
+    return t('onboarding.account.check.reachable');
+  }
+  function candOk(c: DiscoveryCandidate): boolean {
+    return c.kind === 'eas' || (c.in.reachable && c.in.login !== 'failed' && (!c.outgoing || (c.out.reachable && c.out.login !== 'failed')));
+  }
+  function srvLine(kind: string, s?: ServerConfig): string {
+    return s ? `${kind.toUpperCase()} · ${s.host}:${s.port} · ${t(`settings.tls.${s.tls}`)}` : '';
+  }
 
   const needsOutgoing = $derived(protocol === 'imap' || protocol === 'pop3');
   const insecure = $derived(incoming.tls === 'none' || (needsOutgoing && outgoing.tls === 'none'));
@@ -77,6 +106,8 @@
       if (discovery.outgoing) outgoing = { ...discovery.outgoing };
       protocol = discovery.kind;
       easUrl = discovery.easUrl ?? '';
+      chosen = 0;
+      othersOpen = false;
       step = discovery.source === 'none' ? 'manual' : 'discovered';
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -195,7 +226,11 @@
     />
   {:else if step === 'discovered' && discovery}
     <div class="found">
-      <p class="ok"><CircleCheck size={18} /> {t(`onboarding.account.source.${discovery.source}`)}</p>
+      {#if discovery.candidates?.length && !candOk(discovery.candidates[chosen])}
+        <p class="warn-line"><TriangleAlert size={18} /> {t('onboarding.account.check.noneWorking')}</p>
+      {:else}
+        <p class="ok"><CircleCheck size={18} /> {t(`onboarding.account.source.${discovery.source}`)}{discovery.verified ? ' · ' + t('onboarding.account.check.verified') : ''}</p>
+      {/if}
       <dl>
         <dt>{t('onboarding.account.incoming')}</dt>
         <dd><Server size={14} /> {discovery.kind.toUpperCase()} · {incoming.host}:{incoming.port} · {t(`settings.tls.${incoming.tls}`)}</dd>
@@ -206,6 +241,33 @@
         <dt>{t('onboarding.account.username')}</dt>
         <dd>{incoming.username}</dd>
       </dl>
+      {#if discovery.candidates?.[chosen]}
+        {@const cur = discovery.candidates[chosen]}
+        <ul class="checks">
+          <li class:bad={!cur.in.reachable || cur.in.login === 'failed'}>{t('onboarding.account.incoming')}: {checkText(cur.in, cur.incoming)}</li>
+          {#if cur.outgoing}<li class:bad={!cur.out.reachable || cur.out.login === 'failed'}>{t('onboarding.account.outgoing')}: {checkText(cur.out, cur.outgoing)}</li>{/if}
+        </ul>
+      {/if}
+      {#if (discovery.candidates?.length ?? 0) > 1}
+        <button class="others-toggle" aria-expanded={othersOpen} onclick={() => (othersOpen = !othersOpen)} data-testid="wizard-others">
+          <ChevronRight size={14} class={othersOpen ? 'rot' : ''} /> {t('onboarding.account.others', { count: discovery.candidates!.length - 1 })}
+        </button>
+        {#if othersOpen}
+          <ul class="cands">
+            {#each discovery.candidates! as c, i (i)}
+              <li class:sel={i === chosen}>
+                <span class="ci">{#if candOk(c)}<CircleCheck size={15} />{:else}<CircleX size={15} />{/if}</span>
+                <span class="cb">
+                  <span class="cl">{c.kind === 'eas' ? `ActiveSync · ${c.easUrl ?? ''}` : srvLine(c.kind, c.incoming)}</span>
+                  {#if c.outgoing}<span class="cl">{srvLine('smtp', c.outgoing)}</span>{/if}
+                  <span class="cs">{t(`onboarding.account.source.${c.source}` as 'onboarding.account.source.autoconfig')}{c.kind !== 'eas' ? ' · ' + checkText(c.in, c.incoming) : ''}{c.outgoing && c.kind !== 'eas' ? ' · ' + checkText(c.out, c.outgoing) : ''}</span>
+                </span>
+                {#if i !== chosen}<button class="btn btn-ghost" onclick={() => useCandidate(i)}>{t('onboarding.account.useThis')}</button>{/if}
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      {/if}
       {#if discovery.oauthAvailable}<p class="hint">{t('onboarding.account.oauthHint')}</p>{/if}
       {@render insecureWarning()}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
@@ -312,6 +374,77 @@
 </Modal>
 
 <style>
+  .warn-line {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    color: var(--tm-warn);
+    font-weight: 600;
+  }
+  .checks {
+    list-style: none;
+    padding: 0;
+    margin: 6px 0;
+    font-size: 12.5px;
+    color: var(--tm-ok, #15803d);
+  }
+  .checks li.bad {
+    color: var(--tm-danger);
+  }
+  .others-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    border: none;
+    background: none;
+    color: var(--tm-accent);
+    font: inherit;
+    font-size: 13px;
+    padding: 4px 0;
+    cursor: pointer;
+  }
+  .others-toggle :global(.rot) {
+    transform: rotate(90deg);
+  }
+  .cands {
+    list-style: none;
+    margin: 4px 0 8px;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 260px;
+    overflow: auto;
+  }
+  .cands li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--tm-line);
+    border-radius: var(--tm-radius);
+    font-size: 12.5px;
+  }
+  .cands li.sel {
+    border-color: var(--tm-accent);
+  }
+  .ci {
+    display: inline-flex;
+    color: var(--tm-muted);
+  }
+  .cb {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .cl {
+    overflow-wrap: anywhere;
+  }
+  .cs {
+    color: var(--tm-muted);
+    overflow-wrap: anywhere;
+  }
   .check {
     display: flex;
     align-items: center;

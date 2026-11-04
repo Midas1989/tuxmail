@@ -22,6 +22,9 @@
   import VaultUnlock from './lib/components/settings/VaultUnlock.svelte';
   import { registerServiceWorker } from './lib/pwa';
   import CloudDialogs from './lib/components/cloud/CloudDialogs.svelte';
+  import TitleBar from './lib/components/TitleBar.svelte';
+  import MailWindows from './lib/components/mail/MailWindows.svelte';
+  import { desktopWindow } from './lib/native/window.svelte';
 
   // Theme + density tokens on <html>.
   $effect(() => {
@@ -31,6 +34,7 @@
   onMount(() => {
     const stopRouter = startRouter((r) => (app.route = r));
     const stopKeys = installShortcuts(app);
+    void desktopWindow.init();
     void app.init().then(() => {
       // PWA shortcuts: #/mail?compose=1, #/mail?view=chat
       const q = new URLSearchParams(location.hash.split('?')[1] ?? '');
@@ -53,7 +57,10 @@
 </script>
 
 <a class="skip" href="#main">{t('common.a11y.skipToContent')}</a>
-<div class="app" class:chat-open={app.route === 'mail' && prefs.viewMode !== 'classic' && app.selectedConversationId != null}>
+{#if desktopWindow.custom}
+  <TitleBar />
+{/if}
+<div class="app" class:framed={desktopWindow.custom} class:chat-open={app.route === 'mail' && prefs.viewMode !== 'classic' && app.selectedConversationId != null}>
   <ActivityBar />
   <main id="main" class="main" tabindex="-1">
     {#if app.loadError}
@@ -89,6 +96,7 @@
 {#if app.composer}
   <Composer init={app.composer} onclose={() => (app.composer = null)} />
 {/if}
+<MailWindows />
 <OrganizeDialogs />
 <CloudDialogs />
 <Toasts />
@@ -101,6 +109,10 @@
     height: 100%;
     min-height: 0;
     overflow: hidden;
+  }
+  /* Below the custom title bar of the frameless desktop window (34 px). */
+  .app.framed {
+    height: calc(100% - 34px);
   }
   .main {
     flex: 1;

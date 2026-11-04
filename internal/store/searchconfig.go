@@ -366,7 +366,13 @@ func (s *Store) SearchIndexStats(ctx context.Context) (SearchIndexStats, error) 
 // OptimizeSearchIndex merges all index segments (FTS5 'optimize'); run it
 // when idle, e.g. after a large import.
 func (s *Store) OptimizeSearchIndex(ctx context.Context) error {
-	return s.ftsCommand(ctx, `INSERT INTO %[1]s(%[1]s) VALUES ('optimize')`)
+	if err := s.ftsCommand(ctx, `INSERT INTO %[1]s(%[1]s) VALUES ('optimize')`); err != nil {
+		return err
+	}
+	// Planner statistics (ANALYZE where useful) for the list queries of
+	// large mailboxes.
+	_, err := s.db.ExecContext(ctx, `PRAGMA optimize`)
+	return err
 }
 
 // MergeSearchIndex performs an incremental merge of index segments, doing

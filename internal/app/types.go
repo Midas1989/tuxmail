@@ -160,6 +160,8 @@ type LinkPreview struct {
 type ItemCard struct {
 	Title   string `json:"title"`
 	Excerpt string `json:"excerpt"`
+	// Kind "newsletter": list/bulk mail or a mail from a no-reply sender.
+	Kind string `json:"kind,omitempty"`
 }
 
 // ItemReplyTo is the quoted message a bubble answers.
@@ -227,6 +229,11 @@ type ConversationItem struct {
 	FolderIDs      []int64          `json:"folderIds,omitempty"`
 	TagIDs         []int64          `json:"tagIds,omitempty"`
 	InScope        *bool            `json:"inScope,omitempty"`
+	// HasHTML: the mail has an HTML part ("Ganze Mail anzeigen" renders it).
+	HasHTML bool `json:"hasHtml,omitempty"`
+	// BodyMissing: only the headers are synced yet (Body is the snippet or
+	// empty); the body is being fetched.
+	BodyMissing bool `json:"bodyMissing,omitempty"`
 }
 
 // ConversationPatch changes chat-mode flags of a conversation. SnoozedUntil
@@ -346,6 +353,11 @@ type DiscoveryResult struct {
 	EASURL string `json:"easUrl,omitempty"`
 	// OAuthProvider names the sign-in service ("microsoft", "google").
 	OAuthProvider string `json:"oauthProvider,omitempty"`
+	// Verified: the chosen servers answered the probe (discovery.go).
+	Verified bool `json:"verified,omitempty"`
+	// Candidates are all found configurations, best first (the first one is
+	// the proposal above), with their probe results.
+	Candidates []DiscoveryCandidate `json:"candidates,omitempty"`
 }
 
 // NewAccountInput creates an account.
@@ -1109,6 +1121,8 @@ type Event struct {
 	// Extra carries the fields of event types without own struct fields
 	// (messenger.* events, see messenger_wiring.go).
 	Extra map[string]any `json:"-"`
+	// Sync is the account sync status of a sync.status event.
+	Sync *AccountStatus `json:"sync,omitempty"`
 	// Team is the payload of team.* events (team_events.go).
 	Team any `json:"team,omitempty"`
 }
@@ -1127,4 +1141,7 @@ const (
 	EventSearchFoldersChange = "searchfolders.changed"
 	EventWorkflowRun         = "workflow.run"
 	EventVaultLocked         = "vault.locked"
+	// EventSyncStatus carries the sync status (state, folder, progress) of
+	// one account; progress updates are throttled to about 4 per second.
+	EventSyncStatus = "sync.status"
 )

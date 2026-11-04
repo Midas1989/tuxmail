@@ -111,6 +111,9 @@ type Discoverer struct {
 	// UseAutodiscover enables Microsoft Autodiscover (EAS endpoints) in
 	// Discover; it is ranked after Mozilla autoconfig and before DNS SRV.
 	UseAutodiscover bool
+	// AlwaysHeuristics adds the guessed host names (imap.<domain>, ...) even
+	// when other sources found settings; used with ProbeAndRank.
+	AlwaysHeuristics bool
 	// AutodiscoverPassword optionally returns the password for
 	// authenticated POX Autodiscover requests (HTTPS only).
 	AutodiscoverPassword func(email string) string
@@ -233,9 +236,10 @@ func (d *Discoverer) Discover(ctx context.Context, email string) ([]Candidate, e
 		cands = append(cands, r.cands...)
 	}
 
-	// 5. Heuristics only when nothing better was found.
-	if len(cands) == 0 {
-		cands = d.heuristics(ctx, email, dom)
+	// 5. Heuristics only when nothing better was found (or always with
+	// AlwaysHeuristics, when the caller probes and ranks all candidates).
+	if len(cands) == 0 || d.AlwaysHeuristics {
+		cands = append(cands, d.heuristics(ctx, email, dom)...)
 	}
 	cands = dedupe(cands)
 	for i := range cands {

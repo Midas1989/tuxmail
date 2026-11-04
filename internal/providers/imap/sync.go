@@ -5,6 +5,7 @@ package imap
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -22,6 +23,8 @@ import (
 //   - If UIDNEXT and the message count are unchanged, the UID set is known
 //     to be unchanged; otherwise UID SEARCH ALL yields the current UID set,
 //     whose difference to the stored set gives Added and Removed.
+//   - At most FirstSyncChunk/SyncChunk new messages (the newest) are
+//     returned per call; SyncDelta.More asks the caller to continue.
 //   - Added messages are fetched with envelope, flags, size, internal date,
 //     body structure and the threading headers; OBJECTID / X-GM-* IDs are
 //     added when the server supports them.
@@ -83,6 +86,8 @@ func (p *Provider) syncLocked(ctx context.Context, c *imapclient.Client, folder 
 		sort.Slice(cur, func(i, j int) bool { return cur[i] < cur[j] })
 	}
 
+	delta.Total = int(sel.NumMessages)
+
 	// 2. Diff against the known set.
 	var added, kept []uint32
 	curSet := make(map[uint32]struct{}, len(cur))
@@ -99,6 +104,21 @@ func (p *Provider) syncLocked(ctx context.Context, c *imapclient.Client, folder 
 			delta.Removed = append(delta.Removed, ref(folder, u))
 		}
 	}
+
+	// Large folders are synced in chunks, newest first: the UIDs not
+	// fetched now stay out of the new state and are "added" again by the
+	// next call.
+	chunk := p.cfg.SyncChunk
+	if len(prev.UIDs) == 0 {
+		chunk = p.cfg.FirstSyncChunk
+	}
+	if len(added) > chunk {
+		added = added[len(added)-chunk:]
+		delta.More = true
+	}
+	// Newest first within the chunk, so that the first header batch holds
+	// the newest mails.
+	slices.Reverse(added)
 
 	prints := make(map[uint32]flagPrint, len(cur))
 

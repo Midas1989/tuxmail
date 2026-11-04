@@ -195,6 +195,12 @@ type SyncDelta struct {
 	Removed      []RemoteRef     `json:"removed"`
 	// FullResync is true when the server invalidated the previous state (e.g. UIDVALIDITY changed).
 	FullResync bool `json:"fullResync"`
+	// More is true when the provider returned only a part of the new
+	// messages (the newest); the caller stores the returned state and calls
+	// Sync again for the rest.
+	More bool `json:"more,omitempty"`
+	// Total is the number of messages in the folder on the server (0 = unknown).
+	Total int `json:"total,omitempty"`
 }
 
 // ChangeHint is emitted by Watch when the server signals changes.

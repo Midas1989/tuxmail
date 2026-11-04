@@ -280,7 +280,11 @@ export interface ConversationItem {
   unread?: boolean;
   /** 'card' = compact rendering for newsletters / HTML-heavy mails. */
   display?: 'bubble' | 'card' | 'system';
-  card?: { title: string; excerpt: string };
+  card?: { title: string; excerpt: string; kind?: 'newsletter' };
+  /** The mail has an HTML part ("Ganze Mail anzeigen"). */
+  hasHtml?: boolean;
+  /** Only the headers are synced yet; the body is being fetched. */
+  bodyMissing?: boolean;
   /** The message this one answers (quote shown above the text). */
   replyTo?: { itemId: string; senderName: string; excerpt: string };
   linkPreview?: LinkPreview;
@@ -457,6 +461,31 @@ export interface DiscoveryResult {
   oauthAvailable?: boolean;
   /** ActiveSync endpoint found by Autodiscover (kind "eas"). */
   easUrl?: string;
+  /** The proposed servers answered the probe (connection, TLS, greeting; login with the password when given). */
+  verified?: boolean;
+  /** All found configurations, best first (the first is the proposal), with probe results. */
+  candidates?: DiscoveryCandidate[];
+}
+
+/** Probe result of one server of a discovery candidate. */
+export interface DiscoveryCheck {
+  reachable: boolean;
+  /** "ok", "failed" (password rejected) or absent (not tried). */
+  login?: 'ok' | 'failed';
+  error?: string;
+}
+
+export interface DiscoveryCandidate {
+  source: string;
+  kind: AccountKind;
+  incoming?: ServerConfig;
+  outgoing?: ServerConfig;
+  easUrl?: string;
+  in: DiscoveryCheck;
+  out: DiscoveryCheck;
+  verified: boolean;
+  insecure?: boolean;
+  score: number;
 }
 
 export interface NewAccountInput {
@@ -486,6 +515,8 @@ export type ApiEvent =
   | { type: 'conversation.updated'; conversationId: number; itemId?: string }
   | { type: 'folder.updated'; folderId: number; accountId: number }
   | { type: 'account.updated'; accountId: number }
+  /** Sync state and progress of one account (throttled to ~4/s). */
+  | { type: 'sync.status'; accountId: number; status: AccountSyncStatus }
   | { type: 'connection'; state: 'online' | 'offline' | 'reconnecting' }
   /** Tags were created, renamed, merged, deleted or (un)assigned. */
   | { type: 'tags.changed' }
@@ -2058,6 +2089,52 @@ export interface CloudImportResult {
   filename: string;
   mimeType: string;
   size: number;
+}
+
+// ---------------------------------------------------------------------------
+// Sync status & diagnostics (Settings → Info & Diagnose)
+// ---------------------------------------------------------------------------
+
+export type SyncState = 'connecting' | 'syncing' | 'idle' | 'error' | 'stopped' | 'offline';
+
+/** Sync status of one mail account (internal/app AccountStatus). */
+export interface AccountSyncStatus {
+  accountId: number;
+  state: SyncState;
+  error?: string;
+  errorAt?: string;
+  nextRetry?: string;
+  lastSync?: string;
+  /** Remote name and local id of the folder being synced. */
+  folder?: string;
+  folderId?: number;
+  /** Progress of that folder: messages stored locally / on the server. */
+  done?: number;
+  total?: number;
+  /** First sync of the folder. */
+  initial?: boolean;
+}
+
+export interface DiagnosticsAccount {
+  id: number;
+  name: string;
+  kind: string;
+  incoming?: string;
+  outgoing?: string;
+  folders: number;
+  messages: number;
+  status?: AccountSyncStatus;
+}
+
+export interface DiagnosticsInfo {
+  version: string;
+  mode: 'desktop' | 'server';
+  portable: boolean;
+  dataDir?: string;
+  logFile?: string;
+  os: string;
+  goVersion: string;
+  accounts: DiagnosticsAccount[];
 }
 
 // --- OAuth/Cloud accounts ---

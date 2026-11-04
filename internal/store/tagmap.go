@@ -54,6 +54,18 @@ var nonTagKeywords = map[string]bool{
 	"$mailflagbit0": true, "$mailflagbit1": true, "$mailflagbit2": true, "$hasattachment": true,
 	"$hasnoattachment": true, "$autojunk": true, "$autonotjunk": true, "$recent": true, "$important": true,
 	"$notphishing": true, "$deleted": true, "$draft": true, "$seen": true, "$flagged": true,
+	// Spam filter / client bookkeeping seen on Dovecot, Apple Mail and
+	// Thunderbird servers; never user tags.
+	"junkrecorded": true, "$junkrecorded": true, "notjunkrecorded": true, "old": true, "$old": true,
+	"important": true, "$ismailinglist": true,
+	"$classifiedjunk": true, "$classifiednotjunk": true,
+}
+
+// IsSystemKeyword reports whether an IMAP keyword is protocol or spam filter
+// bookkeeping ($Forwarded, $MDNSent, Junk, NonJunk, JunkRecorded, Old, ...)
+// that is never shown as a tag. The list lives here only (nonTagKeywords).
+func IsSystemKeyword(kw string) bool {
+	return strings.HasPrefix(kw, `\`) || nonTagKeywords[strings.ToLower(strings.TrimSpace(kw))]
 }
 
 // isAtomChar reports whether c may appear in an IMAP atom (RFC 3501 ATOM-CHAR).
