@@ -52,7 +52,9 @@ func (d dir) Users(ctx context.Context) ([]team.DirUser, error) {
 	return out, err
 }
 
-func (d dir) UserGroupIDs(ctx context.Context, id int64) ([]int64, error) { return d.a.UserGroupIDs(ctx, id) }
+func (d dir) UserGroupIDs(ctx context.Context, id int64) ([]int64, error) {
+	return d.a.UserGroupIDs(ctx, id)
+}
 func (d dir) GroupName(ctx context.Context, id int64) (string, error) {
 	g, err := d.a.GetGroup(ctx, id)
 	if err != nil {
@@ -139,7 +141,9 @@ func (f *fixture) grant(uid, gid int64, r team.Role) {
 	}
 }
 
-func (f *fixture) actor(n string) team.Actor { return team.Actor{UserID: f.users[n], Name: "User " + n} }
+func (f *fixture) actor(n string) team.Actor {
+	return team.Actor{UserID: f.users[n], Name: "User " + n}
+}
 
 func (f *fixture) role(n string) team.Role {
 	r, err := f.svc.RoleOf(ctx, f.users[n], f.mb.ID)

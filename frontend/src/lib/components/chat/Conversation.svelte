@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Messenger conversation pane: header, in-chat search, timeline, composer. -->
 <script lang="ts">
+  import TeamPanel from '../team/TeamPanel.svelte';
+  import { team } from '../../state';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import Search from '@lucide/svelte/icons/search';
   import Info from '@lucide/svelte/icons/info';
@@ -326,6 +328,7 @@
       {#if !hybrid}<button class="icon-btn" aria-label={t('chat.info.toggle')} title={t('chat.info.toggle')} aria-pressed={app.infoOpen} onclick={() => (app.infoOpen = !app.infoOpen)}><Info size={18} /></button>{/if}
       <button class="icon-btn" aria-label={t('chat.moreActions')} title={t('chat.moreActions')} aria-haspopup="menu" onclick={(e) => (headerMenu = { x: e.clientX - 220, y: e.clientY + 12 })}><EllipsisVertical size={18} /></button>
     </header>
+    {#if team.activeId != null}<TeamPanel conversationId={conv.id} />{/if}
 
     {#if pinnedItems.length}
       {@const cur = pinnedItems[pinIndex % pinnedItems.length]}

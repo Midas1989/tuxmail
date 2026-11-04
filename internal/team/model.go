@@ -115,6 +115,8 @@ type Access struct {
 	Unassigned int `json:"unassigned"`
 	Open       int `json:"open"`
 	Mentions   int `json:"mentions"` // unread mentions of the user
+	// UserID is the asking user (the UI tells own presence from others').
+	UserID int64 `json:"userId"`
 }
 
 // Grant gives a user or a group a role on a mailbox.

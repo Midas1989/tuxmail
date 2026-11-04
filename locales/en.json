@@ -2432,5 +2432,104 @@
     "done": "Done",
     "archivesHint": "Archives at your backup targets:",
     "useArchive": "Use"
+  },
+  "team": {
+    "section": "Team mailboxes",
+    "back": "My mailboxes",
+    "personal": "Personal",
+    "viewsLabel": "Team views",
+    "open": "Open",
+    "me": "me",
+    "mentions": "{count} unread mentions",
+    "panel": "Team mailbox {name}",
+    "assignee": "Assignee",
+    "unassigned": "Unassigned",
+    "assignToMe": "Assign to me",
+    "due": "Due",
+    "overdue": "Overdue",
+    "view": {
+      "all": "All",
+      "mine": "Assigned to me",
+      "unassigned": "Unassigned",
+      "done": "Done"
+    },
+    "status": {
+      "label": "Status",
+      "open": "Open",
+      "in_progress": "In progress",
+      "waiting": "Waiting",
+      "done": "Done"
+    },
+    "priority": {
+      "label": "Priority",
+      "low": "Low",
+      "normal": "Normal",
+      "high": "High",
+      "urgent": "Urgent"
+    },
+    "comments": {
+      "toggle": "Show internal comments",
+      "count": "{count} notes",
+      "internal": "Internal – never sent to the customer",
+      "delete": "Delete comment",
+      "placeholder": "Internal note, @name mentions a colleague (Ctrl+Enter)",
+      "add": "Add comment",
+      "mention": "Mention a colleague"
+    },
+    "presence": {
+      "replying": "{name} is writing a reply",
+      "viewing": "{name} is viewing",
+      "draft": "Draft by {name} ({when})"
+    },
+    "error": {
+      "permission": "You do not have the permission for this in the team mailbox."
+    },
+    "role": {
+      "read": "Read",
+      "reply": "Reply",
+      "assign": "Assign",
+      "manage": "Manage"
+    },
+    "stats": {
+      "title": "Statistics",
+      "total": "Conversations",
+      "median": "Median first response",
+      "minutes": "{n} min",
+      "hours": "{n} h"
+    },
+    "admin": {
+      "title": "Team mailboxes",
+      "create": "Create team mailbox",
+      "intro": "Shared mailboxes are synced once on the server. Members see them in their folder tree and chat list, assign conversations and leave internal notes.",
+      "name": "Name",
+      "address": "Address",
+      "description": "Description",
+      "sharedDrafts": "Drafts are visible to the team",
+      "sharedDraftsShort": "Shared drafts",
+      "withAccount": "Connect the mail account now (IMAP/SMTP)",
+      "password": "Password",
+      "imap": "IMAP server",
+      "smtp": "SMTP server",
+      "port": "Port",
+      "created": "Team mailbox created",
+      "deleteConfirm": "Delete the team mailbox \"{name}\" with all its data?",
+      "accounts": "{count} accounts",
+      "disabled": "disabled",
+      "active": "Active",
+      "delete": "Delete {name}",
+      "member": "User or group",
+      "role": "Role",
+      "group": "Group",
+      "removeMember": "Remove {name}",
+      "pick": "Choose …",
+      "groups": "Groups",
+      "users": "Users",
+      "add": "Add",
+      "rolesHint": "Read: see conversations and notes. Reply: answer as the team, take conversations, comment. Assign: assign to anyone. Manage: snippets, workflows and members.",
+      "namePh": "Support",
+      "addressPh": "support@company.com",
+      "imapPh": "imap.company.com",
+      "smtpPh": "smtp.company.com"
+    }
   }
 }

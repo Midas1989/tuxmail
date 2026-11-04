@@ -2431,5 +2431,104 @@
     "done": "Fertig",
     "archivesHint": "Archive an deinen Sicherungszielen:",
     "useArchive": "Verwenden"
+  },
+  "team": {
+    "section": "Team-Postfächer",
+    "back": "Meine Postfächer",
+    "personal": "Persönlich",
+    "viewsLabel": "Team-Ansichten",
+    "open": "Öffnen",
+    "me": "ich",
+    "mentions": "{count} ungelesene Erwähnungen",
+    "panel": "Team-Postfach {name}",
+    "assignee": "Zuständig",
+    "unassigned": "Nicht zugewiesen",
+    "assignToMe": "Mir zuweisen",
+    "due": "Fällig",
+    "overdue": "Überfällig",
+    "view": {
+      "all": "Alle",
+      "mine": "Mir zugewiesen",
+      "unassigned": "Nicht zugewiesen",
+      "done": "Erledigt"
+    },
+    "status": {
+      "label": "Status",
+      "open": "Offen",
+      "in_progress": "In Bearbeitung",
+      "waiting": "Wartet",
+      "done": "Erledigt"
+    },
+    "priority": {
+      "label": "Priorität",
+      "low": "Niedrig",
+      "normal": "Normal",
+      "high": "Hoch",
+      "urgent": "Dringend"
+    },
+    "comments": {
+      "toggle": "Interne Kommentare anzeigen",
+      "count": "{count} Notizen",
+      "internal": "Intern – wird nie an Kunden gesendet",
+      "delete": "Kommentar löschen",
+      "placeholder": "Interne Notiz, @Name erwähnt Kollegen (Strg+Enter)",
+      "add": "Kommentar hinzufügen",
+      "mention": "Kollegen erwähnen"
+    },
+    "presence": {
+      "replying": "{name} schreibt gerade eine Antwort",
+      "viewing": "{name} sieht sich das an",
+      "draft": "Entwurf von {name} ({when})"
+    },
+    "error": {
+      "permission": "Dafür fehlt dir die Berechtigung in diesem Team-Postfach."
+    },
+    "role": {
+      "read": "Lesen",
+      "reply": "Beantworten",
+      "assign": "Zuweisen",
+      "manage": "Verwalten"
+    },
+    "stats": {
+      "title": "Statistik",
+      "total": "Konversationen",
+      "median": "Median erste Antwort",
+      "minutes": "{n} Min.",
+      "hours": "{n} Std."
+    },
+    "admin": {
+      "title": "Team-Postfächer",
+      "create": "Team-Postfach anlegen",
+      "intro": "Gemeinsame Postfächer werden einmal auf dem Server synchronisiert. Mitglieder sehen sie in Ordnerbaum und Chatliste, weisen Konversationen zu und hinterlassen interne Notizen.",
+      "name": "Name",
+      "address": "Adresse",
+      "description": "Beschreibung",
+      "sharedDrafts": "Entwürfe sind für das Team sichtbar",
+      "sharedDraftsShort": "Geteilte Entwürfe",
+      "withAccount": "E-Mail-Konto jetzt verbinden (IMAP/SMTP)",
+      "password": "Passwort",
+      "imap": "IMAP-Server",
+      "smtp": "SMTP-Server",
+      "port": "Port",
+      "created": "Team-Postfach angelegt",
+      "deleteConfirm": "Team-Postfach „{name}“ mit allen Daten löschen?",
+      "accounts": "{count} Konten",
+      "disabled": "deaktiviert",
+      "active": "Aktiv",
+      "delete": "{name} löschen",
+      "member": "Benutzer oder Gruppe",
+      "role": "Rolle",
+      "group": "Gruppe",
+      "removeMember": "{name} entfernen",
+      "pick": "Auswählen …",
+      "groups": "Gruppen",
+      "users": "Benutzer",
+      "add": "Hinzufügen",
+      "rolesHint": "Lesen: Konversationen und Notizen sehen. Beantworten: als Team antworten, Konversationen übernehmen, kommentieren. Zuweisen: an alle zuweisen. Verwalten: Textbausteine, Workflows und Mitglieder.",
+      "namePh": "Support",
+      "addressPh": "support@firma.de",
+      "imapPh": "imap.firma.de",
+      "smtpPh": "smtp.firma.de"
+    }
   }
 }

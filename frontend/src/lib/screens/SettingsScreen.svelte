@@ -26,6 +26,7 @@
   import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
   import BackupSettings from '../components/settings/BackupSettings.svelte';
   import CloudAccountsSettings from '../components/settings/CloudAccountsSettings.svelte'; // OAuth/Cloud accounts
+  import TeamSettings from '../components/team/TeamSettings.svelte'; // team mailboxes (server mode)
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
   $effect(() => {
@@ -101,6 +102,8 @@
       <p class="about">{t('onboarding.connect.cardText')}</p>
       <button class="btn btn-primary" onclick={() => (connectOpen = true)}><Server size={15} /> {t('onboarding.connect.title')}</button>
     </section>
+
+    <TeamSettings />
 
     <NotificationSettings />
 

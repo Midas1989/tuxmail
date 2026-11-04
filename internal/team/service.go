@@ -406,7 +406,7 @@ func (s *Service) Accessible(ctx context.Context, userID int64) ([]Access, error
 		if r == RoleNone {
 			continue
 		}
-		a := Access{Mailbox: m, Role: r}
+		a := Access{Mailbox: m, Role: r, UserID: userID}
 		_ = s.db.QueryRowContext(ctx, `SELECT
 			COALESCE(SUM(assignee_id = ? AND status <> 'done'), 0),
 			COALESCE(SUM(assignee_id IS NULL AND status <> 'done'), 0),

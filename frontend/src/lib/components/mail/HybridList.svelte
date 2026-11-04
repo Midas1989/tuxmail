@@ -5,6 +5,7 @@
   the whole conversation as bubbles with the folder's messages highlighted.
 -->
 <script lang="ts">
+  import TeamBadge from '../team/TeamBadge.svelte';
   import Inbox from '@lucide/svelte/icons/inbox';
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import { app } from '../../state';
@@ -56,6 +57,7 @@
           <div class="l2">
             <span class="who">{names(c)}</span>
             {#each c.channels.filter((ch) => ch !== 'email') as ch (ch)}<ChannelIcon channel={ch} size={12} />{/each}
+            <TeamBadge conversation={c} />
           </div>
           <div class="l3">
             <span class="snip">{c.lastIsOwn ? t('chat.you') + ': ' : c.lastSenderName ? c.lastSenderName.split(' ')[0] + ': ' : ''}{c.snippet}</span>

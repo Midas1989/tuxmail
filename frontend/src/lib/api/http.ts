@@ -271,6 +271,8 @@ export interface HttpTransportOptions {
   authToken?: () => string | undefined;
   /** Called on HTTP 401 (expired/revoked device token). */
   onUnauthorized?: () => void;
+  /** Rewrites request paths, e.g. to the team mailbox prefix /api/team/{id}/ (api/team.ts). */
+  rewritePath?: (path: string) => string;
 }
 
 function readCsrfToken(): string | undefined {
@@ -304,8 +306,10 @@ export class HttpTransport implements Api {
   private readonly maxDelay: number;
   private readonly authToken: () => string | undefined;
   private readonly onUnauthorized: (() => void) | undefined;
+  private readonly rewritePath: ((path: string) => string) | undefined;
 
   constructor(opts: HttpTransportOptions = {}) {
+    this.rewritePath = opts.rewritePath;
     this.base = (opts.baseUrl ?? '').replace(/\/$/, '');
     this.fetchImpl = opts.fetchImpl ?? ((...args) => fetch(...args));
     this.wsImpl = opts.webSocketImpl ?? (typeof WebSocket !== 'undefined' ? WebSocket : undefined);
@@ -330,7 +334,7 @@ export class HttpTransport implements Api {
     }
     let res: Response;
     try {
-      res = await this.fetchImpl(this.base + path, { method, headers: h, body: payload, credentials: bearer ? 'omit' : 'same-origin' });
+      res = await this.fetchImpl(this.base + (this.rewritePath ? this.rewritePath(path) : path), { method, headers: h, body: payload, credentials: bearer ? 'omit' : 'same-origin' });
     } catch (err) {
       throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
     }

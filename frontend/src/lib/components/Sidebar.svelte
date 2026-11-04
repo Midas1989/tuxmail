@@ -26,6 +26,7 @@
   import Settings2 from '@lucide/svelte/icons/settings-2';
   import ContextMenu, { type MenuItem } from './common/ContextMenu.svelte';
   import { folderSettingsTarget, menuRolesFor } from '../folderconfig';
+  import TeamSection from './team/TeamSection.svelte';
 
   let collapsed = $state<Record<string, boolean>>({});
 
@@ -322,6 +323,8 @@
         {/if}
       </li>
     {/each}
+
+    <TeamSection />
 
     <li role="none" class="section">
       <span class="section-title with-action">{t('organize.searchFolder.section')}

@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { app, prefs } from './lib/state';
+  import { app, prefs, team } from './lib/state';
   import { startRouter } from './lib/router';
   import { installShortcuts } from './lib/keyboard';
   import { t } from './lib/i18n/index.svelte';
@@ -37,6 +37,7 @@
       const v = q.get('view');
       if (v === 'chat' || v === 'hybrid') void app.setViewMode(v);
       if (q.get('compose')) app.openCompose();
+      void team.init(); // team mailboxes (server mode)
     });
     // Browser/PWA only (never inside Wails); notification clicks navigate here.
     void registerServiceWorker((url) => {
