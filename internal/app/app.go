@@ -27,7 +27,6 @@ import (
 	"github.com/Midas1989/Mailclient/internal/store"
 	"github.com/Midas1989/Mailclient/internal/store/blob"
 	tsync "github.com/Midas1989/Mailclient/internal/sync"
-	"github.com/Midas1989/Mailclient/internal/unsubscribe"
 	"github.com/Midas1989/Mailclient/internal/workflow"
 	"github.com/Midas1989/Mailclient/internal/workflow/vacation"
 )
@@ -97,13 +96,9 @@ type Options struct {
 
 	// HTTPClient is used for remote calls (provisioning, AI).
 	HTTPClient *http.Client
-	// WebhookClient is used by the workflow webhook action. Default: in
-	// server mode a client that only connects to public addresses (no
-	// SSRF into the server's network, AUDIT-C), otherwise HTTPClient.
-	WebhookClient *http.Client
-	Now           func() time.Time
-	Logger        *slog.Logger
-	Location      *time.Location
+	Now        func() time.Time
+	Logger     *slog.Logger
+	Location   *time.Location
 }
 
 // App is the application layer of one user: it implements the frontend API
@@ -170,13 +165,6 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{Timeout: 60 * time.Second}
-	}
-	if opts.WebhookClient == nil {
-		opts.WebhookClient = opts.HTTPClient
-		if opts.Mode == ModeServer {
-			opts.WebhookClient = unsubscribe.NewSafeClient()
-			opts.WebhookClient.Timeout = 2 * time.Minute
-		}
 	}
 	a := &App{kick: make(chan struct{}, 1), opts: opts, st: opts.Store, bus: opts.Bus, hub: NewHub(), log: opts.Logger, idxDirty: true,
 		remote: map[string]*remoteSession{}}
@@ -251,7 +239,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 			return nil, err
 		}
 	}
-	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.WebhookClient,
+	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient,
 		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}, Notifier: opts.Notifier}
 	a.proj.Workflow().Deps(&deps)
 	a.vac.mail, deps.Vacation = mail, vacationProxy{a: a} // vacation.go

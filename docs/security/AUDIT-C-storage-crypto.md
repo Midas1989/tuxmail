@@ -30,7 +30,7 @@ Wichtigste Ergebnisse:
   (Schritt-, Byte- und Listenbudget pro Auswertung, gefährliche Builtins
   entfernt).
 * **Mittel:** Vaultwarden-KDF-Downgrade (Server liefert `kdfIterations=1`),
-  Webhook-SSRF im Servermodus, Backup-Downgrade (unverschlüsseltes Archiv
+  Webhook-SSRF im Servermodus (durch Audit A / `netguard` abgedeckt), Backup-Downgrade (unverschlüsseltes Archiv
   trotz Passphrase akzeptiert), Zip-Slip unter Windows beim Restore,
   Lücken in der Log-/Diagnose-Schwärzung (Bearer-Token, `access_token`,
   `client_secret`, OAuth-`code`, API-Keys, Cookies, URL-Passwörter, JWTs),
@@ -74,7 +74,7 @@ govulncheck.
 | C-02 | **High** | S/MIME | Signer spoofing: with more than one SignerInfo the first certificate of the bag was reported as signer → "trusted signature" by a victim whose public certificate the attacker embeds | fixed | `internal/crypto/smime/spoof_test.go` |
 | C-03 | **High** (server) / Medium (desktop) | workflow | expr sandbox without byte/time limits: `repeat(repeat(..))`, `reduce(1..40, #acc + #acc, "x")`, `let` doubling chains, `toJSON`/`string()` of huge lists → OOM / CPU exhaustion of the (shared) server | fixed | `internal/workflow/sandbox_test.go` `TestSandboxRejectsResourceExhaustion`, `TestSandboxNoDangerousBuiltins`, `TestSandboxKeepsSemantics` |
 | C-04 | Medium | Vaultwarden | KDF parameters from the server's prelogin were accepted without bounds: PBKDF2 `iterations=1` makes the master-password hash sent to a malicious/compromised server trivially brute-forceable; huge Argon2 memory → client OOM | fixed | `internal/cloud/vaultwarden/crypto_test.go` `TestKDFDowngradeRejected` |
-| C-05 | Medium (server mode) | workflow | Webhook action used the default HTTP client: users of a multi-user server could POST to `127.0.0.1`, RFC 1918 hosts or cloud metadata (SSRF) | fixed | `unsubscribe.NewSafeClient` (dial-time IP check, no redirects) used in server mode (`app.Options.WebhookClient`) |
+| C-05 | Medium (server mode) | workflow | Webhook action uses the app HTTP client: users of a multi-user server could POST to `127.0.0.1`, RFC 1918 hosts or cloud metadata (SSRF) | fixed by audit A (A-02, `internal/netguard`: the server installs a dial-time policy on the default transport, which the webhook client uses; admins can allow private ranges) – a separate client from this audit was dropped after the merge to keep the admin policy authoritative | `internal/server/audit_test.go` (audit A) |
 | C-06 | Medium | backup | Downgrade: with a passphrase given, an unencrypted (unauthenticated) archive was silently accepted; anyone who can write to the backup target (WebDAV/USB) could swap in a crafted database | fixed | `internal/backup/security_test.go` `TestPlainArchiveWithPassphraseRefused` |
 | C-07 | Medium (Windows) | backup / import | Zip-slip on Windows: tar names with `\` or drive letters (`db\..\..\evil`, `C:\evil`) passed the `..`/`/` checks; server restore also accepted non-regular tar entries; import unzip only checked `..`/`IsAbs` | fixed | `TestExtractRejectsUnsafeEntries`, `internal/app/io_security_test.go` `TestUploadZipSlip` |
 | C-08 | Medium | diagnostics | Redaction regex missed `Authorization: Bearer <token>` (only the word "Bearer" was masked), compound keys (`access_token`, `refresh_token`, `client_secret`, `api_key`, `x-api-key`), OAuth `code`/`device_code`, cookies/session ids, URL userinfo passwords and JWTs | fixed | `internal/app/diagnostics_redact_internal_test.go` |
@@ -151,8 +151,6 @@ Verified without finding (attack tests added where useful):
 * `internal/cloud/vaultwarden/crypto.go`: `KDFParams.Validate` (PBKDF2
   5 000–2 000 000; Argon2id t 2–10, m 16–1024 MiB, p 1–16, as the Bitwarden
   clients), enforced in `MasterKey`.
-* `internal/app/app.go`: `Options.WebhookClient` (server default: public
-  addresses only).
 * `internal/backup`: `ErrNotEncrypted`; `filepath.IsLocal` + backslash checks;
   server restore only regular files; merge resets `external_confirmed`.
 * `internal/app/diagnostics.go`: new `secretRe`, `userinfoRe`, `jwtRe`.
