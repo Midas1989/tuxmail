@@ -22,6 +22,8 @@
   import SignatureSettings from '../components/settings/SignatureSettings.svelte';
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
+  import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
+  import BackupSettings from '../components/settings/BackupSettings.svelte';
   import CloudAccountsSettings from '../components/settings/CloudAccountsSettings.svelte'; // OAuth/Cloud accounts
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
@@ -118,6 +120,10 @@
       <p class="about">{t('settings.workflows.intro')}</p>
       <WorkflowList />
     </section>
+
+    <ImportExportSettings />
+
+    <BackupSettings />
 
     <section class="card" aria-labelledby="set-look">
       <h2 id="set-look">{t('settings.appearance')}</h2>

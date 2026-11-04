@@ -367,6 +367,28 @@ export interface Api {
   mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact>;
   /** Composer recipient suggestions from contacts and recently used addresses. */
   autocompleteAddresses(query: string, limit?: number): Promise<pim.AddressSuggestion[]>;
+  // --- Import/Export/Backup --- (KONZEPT 13/14; Go: internal/app/io_*.go)
+  listIOFormats(): Promise<IO.IOFormats>;
+  /** Upload an import file or backup archive (web mode; desktop may use local paths). */
+  uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload>;
+  /** Wizard step "mapping/options": counts, CSV header + suggested mapping, Thunderbird profile. */
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview>;
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob>;
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob>;
+  listIOJobs(): Promise<IO.IOJob[]>;
+  getIOJob(id: string): Promise<IO.IOJob>;
+  /** Cancel a running job (imports can be resumed with resumeJobId). */
+  cancelIOJob(id: string): Promise<void>;
+  /** URL of an export result or backup download. */
+  ioDownloadUrl(token: string): string;
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob>;
+  inspectBackup(source: IO.BackupSource, passphrase?: string): Promise<IO.BackupInspection>;
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob>;
+  listBackupSchedules(): Promise<IO.BackupSchedule[]>;
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule>;
+  deleteBackupSchedule(id: string): Promise<void>;
+  runBackupSchedule(id: string): Promise<IO.IOJob>;
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]>;
   // --- OAuth/Cloud accounts --- (KONZEPT 7.3–7.5; error codes oauth_not_configured, oauth_consent_required ...)
   /** Sign-in services (Microsoft, Google) and their client configuration. */
   listOAuthProviders(): Promise<OAuthProviderInfo[]>;
@@ -422,6 +444,8 @@ export class EventHub {
   }
 }
 
+// --- Import/Export/Backup ---
+import type * as IO from '../types';
 // --- Cloud ---
 // Cloud files (KONZEPT 12). Declared as a second part of the Api interface
 // (declaration merging) so that parallel feature branches merge cleanly.

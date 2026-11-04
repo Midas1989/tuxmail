@@ -15,6 +15,7 @@ import (
 	"testing/fstest"
 
 	"github.com/Midas1989/Mailclient/internal/app"
+	"github.com/Midas1989/Mailclient/internal/backup"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/secrets"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -157,6 +158,11 @@ func (l *lazyVault) Unlock(password []byte) error {
 func openDesktopApp(ctx context.Context, loc dataLocation, log *slog.Logger) (*app.App, *store.Store, error) {
 	if err := os.MkdirAll(loc.Dir, 0o700); err != nil {
 		return nil, nil, err
+	}
+	if applied, err := backup.ApplyPending(loc.Dir); err != nil {
+		return nil, nil, fmt.Errorf("apply staged restore: %w", err)
+	} else if applied {
+		log.Info("restored database from backup")
 	}
 	st, err := store.Open(ctx, filepath.Join(loc.Dir, "tuxmail.db"))
 	if err != nil {

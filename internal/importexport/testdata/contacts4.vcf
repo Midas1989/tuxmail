@@ -1,0 +1,7 @@
+BEGIN:VCARD
+VERSION:4.0
+UID:urn:uuid:4b1c1b06-0000-4000-8000-000000000001
+FN:Jane Roe
+EMAIL;PREF=1:jane@example.org
+KIND:individual
+END:VCARD

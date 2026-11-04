@@ -314,6 +314,7 @@ func (a *App) tick(ctx context.Context) {
 	}
 	a.sendDueScheduled(ctx)
 	a.runSendOps(ctx)
+	a.RunDueBackups(ctx)
 	a.syncEASPIMDue(ctx)
 	if hashes, err := a.st.PurgeUploads(ctx, a.now().Add(-24*time.Hour)); err == nil && a.blobs != nil {
 		for _, h := range hashes {
