@@ -241,10 +241,29 @@ jobs:
       - name: Package sizes
         run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # One download per package format (instead of one archive with all of them).
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: linux-desktop-${{ matrix.arch }}
-          path: dist/*
+          name: linux-desktop-${{ matrix.arch }}-deb
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: linux-desktop-${{ matrix.arch }}-rpm
+          path: dist/*.rpm
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: linux-desktop-${{ matrix.arch }}-appimage
+          path: dist/*.AppImage
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: linux-desktop-${{ matrix.arch }}-portable
+          path: dist/*-portable.tar.gz
           if-no-files-found: error
           retention-days: 14
 
@@ -423,10 +442,17 @@ jobs:
       - name: Package sizes
         run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # Setup and portable ZIP as separate downloads.
       - uses: actions/upload-artifact@v7.0.2
         with:
-          name: windows-desktop-${{ matrix.arch }}
-          path: dist/*
+          name: windows-desktop-${{ matrix.arch }}-setup
+          path: dist/TuxMail-*-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: windows-desktop-${{ matrix.arch }}-portable
+          path: dist/TuxMail-*-portable.zip
           if-no-files-found: error
           retention-days: 14
 

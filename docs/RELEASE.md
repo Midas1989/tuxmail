@@ -84,7 +84,7 @@ Artefakt `frontend-dist`, von allen Jobs nach `web/dist` geladen) → parallel *
 *publish* (Prüfsummen, SBOM, Signatur, Release).
 
 **Ohne Tag** (Push auf `main` oder `claude/**`, manueller Start) läuft derselbe Ablauf ohne Release: alle Dateien
-liegen als Workflow-Artefakte am Lauf (`server-*`, `linux-desktop-*`, `windows-desktop-*`, `checksums`, 14 Tage),
+liegen als Workflow-Artefakte am Lauf (`server-*`, `linux-desktop-<arch>-{deb,rpm,appimage,portable}`, `windows-desktop-<arch>-{setup,portable}`, `checksums`, 14 Tage),
 das Docker-Image wird als `:edge` veröffentlicht.
 
 ### Desktop- und Server-Binary
