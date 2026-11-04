@@ -49,6 +49,14 @@ type Options struct {
 	// Fragment returns only the sanitized body markup instead of a full
 	// document with CSP meta and the extracted style sheet.
 	Fragment bool
+	// Scope, if set (a CSS class name, [A-Za-z0-9_-]), confines the mail's
+	// style sheet to descendants of an element with that class: every
+	// selector is prefixed with ".Scope " (html/body/:root become the scope
+	// itself). Needed whenever the markup is embedded in a page that has
+	// content of its own (print view and archive PDF: otherwise a mail
+	// could hide or restyle the real header block, audit B-12). The caller
+	// wraps the fragment in <div class="Scope">.
+	Scope string
 }
 
 // PhishingLink is a link whose visible text names a different domain than
@@ -121,6 +129,8 @@ func templatePrefix(t string) string {
 	}
 	return t
 }
+
+var scopeRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,63}$`)
 
 var dataImageRe = regexp.MustCompile(`(?i)^data:image/(png|gif|jpe?g|webp|bmp);base64,[a-z0-9+/=\s]+$`)
 
@@ -230,8 +240,12 @@ func (s *Sanitizer) Sanitize(src string, opts Options) Result {
 	clean := pol.Sanitize(markup.String())
 
 	var sheet strings.Builder
+	scope := ""
+	if scopeRe.MatchString(opts.Scope) {
+		scope = "." + opts.Scope
+	}
 	for _, css := range st.styles {
-		sheet.WriteString(sanitizeStylesheet(css, st.rewriteURL, valueOK))
+		sheet.WriteString(sanitizeStylesheetScoped(css, st.rewriteURL, valueOK, scope))
 	}
 
 	for h := range st.trackers {
@@ -479,9 +493,38 @@ func (st *state) link(n *html.Node) {
 		removeAttr(n, "href")
 		return
 	}
+	if strings.HasPrefix(lh, "mailto:") {
+		setAttr(n, "href", safeMailto(href))
+	}
 	if pl, ok := phishingHint(collapseSpace(textContent(n)), href); ok {
 		st.res.PhishingLinks = append(st.res.PhishingLinks, pl)
 	}
+}
+
+// mailtoFields are the mailto: header fields kept (RFC 6068); others such
+// as "attach"/"attachment" (honoured by some mail programs to attach local
+// files) are dropped (audit B-09).
+var mailtoFields = map[string]bool{"to": true, "cc": true, "bcc": true, "subject": true, "body": true, "in-reply-to": true}
+
+func safeMailto(href string) string {
+	i := strings.IndexByte(href, '?')
+	if i < 0 {
+		return href
+	}
+	var keep []string
+	for _, kv := range strings.Split(href[i+1:], "&") {
+		k := kv
+		if j := strings.IndexByte(kv, '='); j >= 0 {
+			k = kv[:j]
+		}
+		if dk, err := url.QueryUnescape(k); err == nil && mailtoFields[strings.ToLower(strings.TrimSpace(dk))] {
+			keep = append(keep, kv)
+		}
+	}
+	if len(keep) == 0 {
+		return href[:i]
+	}
+	return href[:i] + "?" + strings.Join(keep, "&")
 }
 
 // ==== DOM helpers =============================================================

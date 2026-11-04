@@ -1615,6 +1615,8 @@ export interface Invitation {
   conflicts: string[];
   canRespond: boolean;
   replyPartStat?: string;
+  /** ORGANIZER (REPLY/COUNTER: attendee) differs from the sending address - possible spoofing. */
+  organizerMismatch?: boolean;
 }
 
 export interface InvitationResponse {

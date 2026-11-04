@@ -32,6 +32,7 @@
   import QueryBar from '../components/search/QueryBar.svelte';
   import ProjectDialog from '../components/projects/ProjectDialog.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
+  import { safeHref } from '../safeurl';
 
   type Tab = 'overview' | 'timeline' | 'communication' | 'schedule' | 'contacts' | 'files' | 'workflows' | 'rules';
   const TABS: Tab[] = ['overview', 'timeline', 'communication', 'schedule', 'contacts', 'files', 'workflows', 'rules'];
@@ -222,7 +223,7 @@
                   {#if p.dueDate}<dt>{t('projects.field.due')}</dt><dd class:over={isOverdue(p.dueDate) && p.status !== 'done'}>{fmt().date(p.dueDate)}</dd>{/if}
                   {#each p.customFields as f (f.key)}
                     <dt>{f.label}</dt>
-                    <dd>{#if f.type === 'url'}<a href={f.value} target="_blank" rel="noopener noreferrer">{f.value}</a>{:else if f.type === 'date' && f.value}{fmt().date(f.value)}{:else}{f.value || '–'}{/if}</dd>
+                    <dd>{#if f.type === 'url'}<a href={safeHref(f.value)} target="_blank" rel="noopener noreferrer">{f.value}</a>{:else if f.type === 'date' && f.value}{fmt().date(f.value)}{:else}{f.value || '–'}{/if}</dd>
                   {/each}
                 </dl>
               </section>
@@ -261,7 +262,7 @@
               {#if p.cloudFolder}
                 <section class="box">
                   <h3>{t('projects.cloudFolder')}</h3>
-                  <a class="cloud" href={p.cloudFolder.url ?? '#'} target="_blank" rel="noopener noreferrer"><Cloud size={16} /> <code>{p.cloudFolder.path}</code> <ExternalLink size={13} /></a>
+                  <a class="cloud" href={safeHref(p.cloudFolder.url) ?? '#'} target="_blank" rel="noopener noreferrer"><Cloud size={16} /> <code>{p.cloudFolder.path}</code> <ExternalLink size={13} /></a>
                 </section>
               {/if}
               {#if app.searchFolders.some((s) => s.projectId === p.id)}
@@ -355,7 +356,7 @@
           </ul>
         {:else if tab === 'files'}
           {#if p.cloudFolder}
-            <a class="cloud box" href={p.cloudFolder.url ?? '#'} target="_blank" rel="noopener noreferrer"><Cloud size={16} /> {t('projects.openCloud')} <code>{p.cloudFolder.path}</code> <ExternalLink size={13} /></a>
+            <a class="cloud box" href={safeHref(p.cloudFolder.url) ?? '#'} target="_blank" rel="noopener noreferrer"><Cloud size={16} /> {t('projects.openCloud')} <code>{p.cloudFolder.path}</code> <ExternalLink size={13} /></a>
           {/if}
           <table class="files">
             <thead><tr><th>{t('projects.file.name')}</th><th>{t('projects.file.size')}</th><th>{t('projects.file.date')}</th><th>{t('projects.file.by')}</th></tr></thead>

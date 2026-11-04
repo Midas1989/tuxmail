@@ -630,6 +630,7 @@
       "recurring": "Serie",
       "reply": "{name} hat geantwortet: {status}",
       "respond": "Antworten",
+      "spoofWarning": "Der Organisator dieser Einladung ist nicht der Absender ({sender}). Änderungen werden nicht automatisch übernommen.",
       "tentative": "Vielleicht",
       "title": "Einladung",
       "method": {

@@ -36,6 +36,7 @@
   import AppWindow from '@lucide/svelte/icons/app-window';
   import { app } from '../../state';
   import type { MessageDetail } from '../../types';
+  import { safeHref } from '../../safeurl';
 
   interface Props {
     item: ConversationItem;
@@ -264,7 +265,7 @@
       {/if}
       {#if item.linkPreview}
         {@const lp = item.linkPreview}
-        <a class="link-preview" href={lp.url} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>
+        <a class="link-preview" href={safeHref(lp.url)} target="_blank" rel="noopener noreferrer" onclick={(e) => e.stopPropagation()}>
           {#if lp.siteName}<span class="lp-site">{lp.siteName}</span>{/if}
           <span class="lp-title">{lp.title}</span>
           {#if lp.description}<span class="lp-desc">{lp.description}</span>{/if}

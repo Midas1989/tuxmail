@@ -12,6 +12,7 @@ import (
 
 	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/messenger/wire"
+	"github.com/Midas1989/Mailclient/internal/mime/parse"
 	"github.com/Midas1989/Mailclient/internal/store"
 )
 
@@ -298,7 +299,8 @@ func (s *Service) ingestMessage(ctx context.Context, acc account, c store.Chat, 
 		}
 	}
 	if m.Media != nil {
-		cm.MediaMime, cm.MediaName = m.Media.MIMEType, m.Media.Name
+		// Names come from the remote peer: no paths, no bidi spoofing.
+		cm.MediaMime, cm.MediaName = m.Media.MIMEType, parse.CleanFilename(m.Media.Name)
 		if cm.MediaName == "" {
 			cm.MediaName = defaultMediaName(m.Media.MIMEType)
 		}

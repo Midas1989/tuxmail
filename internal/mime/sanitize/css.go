@@ -70,7 +70,14 @@ var cssDangerous = []string{
 	"expression", "javascript", "vbscript", "livescript", "behavior", "binding", "@import",
 	"\\", "<", ">", "/*", "*/", "&#", "image-set", "element(", "paint(", "attr(", "var(", "env(",
 	"{", "}",
+	// Other functions that take a URL (CSS Images 4 / Values 5): they would
+	// bypass the url() rewriting (audit B-08).
+	"src(", "image(", "cross-fade(", "-webkit-cross-fade(",
 }
+
+// cssURLSpaceRe matches "url (" which is not a url token but would leave the
+// remote address in the output.
+var cssURLSpaceRe = regexp.MustCompile(`(?i)\burl\s+\(`)
 
 // rewriteCSSURLs replaces every url(...) in v with url("<new>") as decided by
 // fn; if fn returns ok=false the url() token is replaced by "none".
@@ -95,6 +102,9 @@ func cssValueChecker(urlOK func(u string) bool) func(string) bool {
 			if strings.Contains(lv, d) {
 				return false
 			}
+		}
+		if cssURLSpaceRe.MatchString(lv) {
+			return false
 		}
 		if !strings.Contains(lv, "url(") {
 			return true
@@ -306,15 +316,43 @@ func splitBlocks(s string) []cssBlock {
 // other at-rules are dropped (their remote URLs count as blocked). rewrite
 // is applied to url() values first.
 func sanitizeStylesheet(src string, rewrite func(u string) (string, bool), valueOK func(string) bool) string {
+	return sanitizeStylesheetScoped(src, rewrite, valueOK, "")
+}
+
+// sanitizeStylesheetScoped is sanitizeStylesheet with every selector
+// confined to descendants of scope (a ".class" selector; "" = unscoped).
+func sanitizeStylesheetScoped(src string, rewrite func(u string) (string, bool), valueOK func(string) bool, scope string) string {
 	// CSS escapes are a classic filter bypass; mails do not need them.
 	src = strings.ReplaceAll(stripCSSComments(src), "\\", "")
 	src = strings.NewReplacer("<!--", " ", "-->", " ").Replace(src)
 	var b strings.Builder
-	writeBlocks(&b, splitBlocks(src), rewrite, valueOK, 0)
+	writeBlocks(&b, splitBlocks(src), rewrite, valueOK, 0, scope)
 	return b.String()
 }
 
-func writeBlocks(b *strings.Builder, blocks []cssBlock, rewrite func(string) (string, bool), valueOK func(string) bool, depth int) {
+// rootSelectorRe matches a leading html/body/:root compound selector.
+var rootSelectorRe = regexp.MustCompile(`(?i)^(?:html|body|:root)\b`)
+
+// scopeSelector prefixes every selector of a selector list with scope.
+func scopeSelector(prelude, scope string) string {
+	if scope == "" {
+		return prelude
+	}
+	parts := splitTop(prelude, ',')
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		// "body .x" / "html body p" -> ".scope .x"; "body" -> ".scope".
+		for rootSelectorRe.MatchString(p) {
+			p = strings.TrimSpace(rootSelectorRe.ReplaceAllString(p, ""))
+		}
+		// A leading combinator would reach siblings of the scope element.
+		p = strings.TrimLeft(p, ">~+ ")
+		parts[i] = strings.TrimSpace(scope + " " + p)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func writeBlocks(b *strings.Builder, blocks []cssBlock, rewrite func(string) (string, bool), valueOK func(string) bool, depth int, scope string) {
 	for _, r := range blocks {
 		if strings.HasPrefix(r.prelude, "@") {
 			rest := r.prelude[1:]
@@ -326,7 +364,7 @@ func writeBlocks(b *strings.Builder, blocks []cssBlock, rewrite func(string) (st
 			prelude := strings.TrimSpace(rest[k:])
 			if name == "media" && r.hasBody && depth < 3 && mediaPreludeRe.MatchString(prelude) {
 				var inner strings.Builder
-				writeBlocks(&inner, splitBlocks(r.body), rewrite, valueOK, depth+1)
+				writeBlocks(&inner, splitBlocks(r.body), rewrite, valueOK, depth+1, scope)
 				if inner.Len() > 0 {
 					b.WriteString("@media " + prelude + " {\n" + inner.String() + "}\n")
 				}
@@ -350,6 +388,6 @@ func writeBlocks(b *strings.Builder, blocks []cssBlock, rewrite func(string) (st
 		if decls == "" {
 			continue
 		}
-		b.WriteString(strings.Join(strings.Fields(r.prelude), " ") + " { " + decls + " }\n")
+		b.WriteString(scopeSelector(strings.Join(strings.Fields(r.prelude), " "), scope) + " { " + decls + " }\n")
 	}
 }

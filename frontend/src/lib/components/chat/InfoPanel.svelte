@@ -20,6 +20,7 @@
   import Avatar from '../common/Avatar.svelte';
   import ChannelIcon from '../common/ChannelIcon.svelte';
   import AttachmentCard from '../common/AttachmentCard.svelte';
+  import { safeHref } from '../../safeurl';
 
   type Tab = 'media' | 'files' | 'links';
   let tab = $state<Tab>('media');
@@ -162,7 +163,7 @@
           {:else if links.length}
             <ul class="links">
               {#each links as l (l.url)}
-                <li><Link size={13} /> <a href={l.url} target="_blank" rel="noopener noreferrer">{l.title ?? l.url}</a></li>
+                <li><Link size={13} /> <a href={safeHref(l.url)} target="_blank" rel="noopener noreferrer">{l.title ?? l.url}</a></li>
               {/each}
             </ul>
           {:else}<p class="muted">{t('chat.info.none')}</p>{/if}
