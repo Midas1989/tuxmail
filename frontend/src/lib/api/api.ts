@@ -505,3 +505,26 @@ export interface Api {
   cloudSharePassword(id: number): Promise<{ password: string }>;
   generateCloudPassword(accountId: number): Promise<{ password: string }>;
 }
+
+// --- Mail protocols ---
+// Remote content and server rules (KONZEPT 8.3, 8.5), another part of the
+// Api interface (declaration merging).
+
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
+
+export interface Api {
+  /** Re-render a mail with remote images through the image proxy ("Bilder laden"). */
+  loadRemoteContent(messageId: number): Promise<RemoteContent>;
+  listRemoteAllow(): Promise<RemoteAllowEntry[]>;
+  /** "Immer für Absender laden": kind sender (address) or domain. */
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void>;
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void>;
+  getSieveStatus(accountId: number): Promise<SieveStatus>;
+  getSieveScript(accountId: number, name: string): Promise<SieveScript>;
+  checkSieveScript(accountId: number, script: string): Promise<SieveCheckResult>;
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void>;
+  /** Activate a script ('' deactivates all). */
+  activateSieveScript(accountId: number, name: string): Promise<void>;
+  deleteSieveScript(accountId: number, name: string): Promise<void>;
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus>;
+}

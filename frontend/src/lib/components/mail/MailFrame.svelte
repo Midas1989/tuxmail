@@ -20,12 +20,26 @@
   }
 
   /**
+   * Image sources allowed after the user loaded remote content: the origin of
+   * the image proxy when the HTML uses it (signed /api/proxy/image links, the
+   * sender never sees the reader), otherwise https: for directly restored
+   * images (demo transport without a proxy).
+   */
+  export function remoteImageSources(html: string): string {
+    const origins = new Set<string>();
+    for (const m of html.matchAll(/src="(https?:\/\/[^/"]+)?\/api\/proxy\/image/g)) {
+      origins.add(m[1] ?? (typeof location !== 'undefined' && location.origin !== 'null' ? location.origin : "'self'"));
+    }
+    return origins.size ? [...origins].join(' ') : 'https:';
+  }
+
+  /**
    * Build the srcdoc for the sandboxed iframe. The iframe gets sandbox="" (no
    * scripts, no same-origin, no forms, no popups) and its own CSP; remote
    * resources stay blocked unless the user explicitly allows them.
    */
   export function buildSrcdoc(opts: { html?: string; text?: string; allowRemote: boolean; dark: boolean }): string {
-    const img = opts.allowRemote ? "data: cid: https:" : 'data: cid:';
+    const img = opts.allowRemote ? `data: cid: ${remoteImageSources(opts.html ?? '')}` : 'data: cid:';
     const csp = `default-src 'none'; img-src ${img}; style-src 'unsafe-inline'; font-src data:; media-src 'none'; form-action 'none'`;
     const plain = !opts.html;
     const dark = plain && opts.dark;
@@ -41,7 +55,7 @@
       .q{color:${dark ? '#8b93a1' : '#6b7280'}}
       blockquote{margin:0 0 0 4px;padding-left:12px;border-left:3px solid ${dark ? '#353b47' : '#d0d7de'};color:${dark ? '#a2a9b6' : '#57606a'}}
       table{max-width:100%}`;
-    const body = plain ? `<pre class="plain">${plainToHtml(opts.text ?? '')}</pre>` : opts.allowRemote ? restoreRemoteImages(opts.html!) : opts.html!;
+    const body = plain ? `<pre class="plain">${plainToHtml(opts.text ?? '')}</pre>` : opts.allowRemote && !opts.html!.includes('/api/proxy/image') ? restoreRemoteImages(opts.html!) : opts.html!;
     return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank"><style>${css}</style></head><body>${body}</body></html>`;
   }
 </script>

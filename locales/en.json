@@ -139,11 +139,13 @@
       "empty": "No message selected",
       "emptyHint": "to browse, Ctrl+K for all commands",
       "label": "Reading pane",
-      "loadRemote": "Load",
+      "loadRemote": "Load images",
       "remoteBlocked": "Remote content was blocked to protect your privacy.",
       "to": "To",
       "toMany": "To {name} and {count} others",
-      "toMany_one": "To {name} and 1 other"
+      "toMany_one": "To {name} and 1 other",
+      "loadRemoteSender": "Always load for this sender",
+      "loadRemoteDomain": "Always for {domain}"
     },
     "sidebar": {
       "allAccounts": "All accounts",
@@ -1084,6 +1086,27 @@
       "accountDefault": "Account default",
       "saved": "Folder settings saved",
       "noAccounts": "No mail accounts yet."
+    },
+    "sieve": {
+      "title": "Server rules (Sieve)",
+      "intro": "Rules that your mail server runs on delivery (ManageSieve, e.g. Dovecot) - they also work while TuxMail is closed.",
+      "noAccounts": "No IMAP account with server rules.",
+      "account": "Account",
+      "unavailable": "The server does not offer ManageSieve",
+      "syncWorkflows": "Transfer workflows as server rules",
+      "preview": "{included} workflows run on the server, {skipped} only in TuxMail",
+      "scripts": "Scripts",
+      "new": "New script",
+      "active": "active",
+      "activate": "Activate",
+      "delete": "Delete script {name}",
+      "name": "Script name",
+      "editor": "Sieve script",
+      "lint": "Line {line}: {error}",
+      "check": "Check",
+      "checkOk": "The server accepts the script.",
+      "saveActivate": "Save and activate",
+      "managedHint": "TuxMail only changes the section between \"# BEGIN TuxMail\" and \"# END TuxMail\"; your own rules stay untouched."
     }
   },
   "search": {
@@ -1651,7 +1674,16 @@
       "step3": "Manual server setup",
       "title": "Add account",
       "tls": "Encryption",
-      "username": "Username"
+      "username": "Username",
+      "jmapUrl": "JMAP session URL (optional)",
+      "pop3": {
+        "title": "Messages on the server",
+        "leave": "Leave messages on the server",
+        "deleteAfter": "Delete from the server after",
+        "days": "days (0 = never)",
+        "deleteLocal": "Delete from the server when deleted in TuxMail",
+        "hint": "POP3 only has an inbox. You can move mails into local folders; they stay on this device even after the server copy is deleted."
+      }
     },
     "connect": {
       "cardText": "Connect this app to your TuxMail server to take over accounts, signatures and rules automatically.",

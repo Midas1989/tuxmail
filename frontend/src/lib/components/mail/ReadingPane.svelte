@@ -25,14 +25,37 @@
 
   let allowRemote = $state(false);
   let showAllRecipients = $state(false);
+  /** HTML with remote images routed through the image proxy (after "Bilder laden"). */
+  let remoteHtml = $state<string | null>(null);
+  let remoteBusy = $state(false);
 
   $effect(() => {
     void app.message?.id;
-    allowRemote = false;
+    allowRemote = !!app.message?.remoteLoaded;
+    remoteHtml = null;
     showAllRecipients = false;
   });
 
   const m = $derived(app.message);
+  const senderEmail = $derived(m?.from[0]?.email ?? '');
+
+  async function loadRemote(always?: 'sender' | 'domain') {
+    if (!m) return;
+    const id = m.id;
+    remoteBusy = true;
+    try {
+      if (always && senderEmail) {
+        await app.api.allowRemoteContent(always, always === 'sender' ? senderEmail : (senderEmail.split('@')[1] ?? ''));
+      }
+      const r = await app.api.loadRemoteContent(id);
+      if (app.message?.id === id) remoteHtml = r.html;
+    } catch {
+      // Without the proxy (e.g. older server) fall back to the CSP-only mode.
+    } finally {
+      remoteBusy = false;
+      if (app.message?.id === id) allowRemote = true;
+    }
+  }
   const flagged = $derived(!!m?.flags.includes(FLAG_FLAGGED));
   const acc = $derived(m ? app.account(m.accountId) : undefined);
 
@@ -102,7 +125,11 @@
         <div class="notice" role="note">
           <ImageOff size={16} aria-hidden="true" />
           <span>{t('mail.reader.remoteBlocked')}</span>
-          <button class="btn" onclick={() => (allowRemote = true)}>{t('mail.reader.loadRemote')}</button>
+          <button class="btn" disabled={remoteBusy} onclick={() => loadRemote()}>{t('mail.reader.loadRemote')}</button>
+          {#if senderEmail}
+            <button class="btn btn-ghost" disabled={remoteBusy} onclick={() => loadRemote('sender')} title={senderEmail}>{t('mail.reader.loadRemoteSender')}</button>
+            <button class="btn btn-ghost hide-sm" disabled={remoteBusy} onclick={() => loadRemote('domain')}>{t('mail.reader.loadRemoteDomain', { domain: senderEmail.split('@')[1] ?? '' })}</button>
+          {/if}
         </div>
       {/if}
 
@@ -117,7 +144,7 @@
       {/if}
 
       <div class="body" class:html={!!m.html}>
-        <MailFrame html={m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
+        <MailFrame html={remoteHtml ?? m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
       </div>
     </div>
   {:else}

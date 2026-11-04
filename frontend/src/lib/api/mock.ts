@@ -155,6 +155,10 @@ function waveform(seed: number, n = 40): number[] {
   });
 }
 
+// --- Mail protocols ---
+import { MockMailProto } from './mockMailProto';
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
+
 // --- Cloud ---
 import { MockCloud } from './mockCloud';
 import type {
@@ -2496,6 +2500,43 @@ export class MockTransport implements Api {
   }
   syncCloudPim(accountId: number): Promise<CloudPimResult> {
     return this.run(() => this.oauth.syncPim(accountId));
+  }
+
+  // --- Mail protocols (mockMailProto.ts) ---
+  readonly mailProto = new MockMailProto();
+
+  loadRemoteContent(messageId: number): Promise<RemoteContent> {
+    return this.getMessage(messageId).then((m) => this.run(() => this.mailProto.remoteContent(m.html ?? '')));
+  }
+  listRemoteAllow(): Promise<RemoteAllowEntry[]> {
+    return this.run(() => this.mailProto.listAllow());
+  }
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.run(() => this.mailProto.allow(kind, value));
+  }
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.run(() => this.mailProto.removeAllow(kind, value));
+  }
+  getSieveStatus(accountId: number): Promise<SieveStatus> {
+    return this.run(() => this.mailProto.status(accountId));
+  }
+  getSieveScript(accountId: number, name: string): Promise<SieveScript> {
+    return this.run(() => this.mailProto.script(accountId, name));
+  }
+  checkSieveScript(_accountId: number, script: string): Promise<SieveCheckResult> {
+    return this.run(() => this.mailProto.check(script));
+  }
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void> {
+    return this.run(() => this.mailProto.put(accountId, name, script, activate));
+  }
+  activateSieveScript(accountId: number, name: string): Promise<void> {
+    return this.run(() => this.mailProto.activate(accountId, name));
+  }
+  deleteSieveScript(accountId: number, name: string): Promise<void> {
+    return this.run(() => this.mailProto.remove(accountId, name));
+  }
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
+    return this.run(() => this.mailProto.setWorkflowSync(accountId, enabled));
   }
 }
 

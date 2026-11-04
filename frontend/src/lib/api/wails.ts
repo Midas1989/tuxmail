@@ -88,6 +88,9 @@ Account,
 } from '../types';
 import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 
+// --- Mail protocols ---
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
+
 // --- Cloud ---
 import type {
   CloudAccount,
@@ -753,6 +756,41 @@ export class WailsTransport implements Api {
   }
   syncCloudPim(accountId: number): Promise<CloudPimResult> {
     return this.call('SyncCloudPim', accountId);
+  }
+
+  // --- Mail protocols ---
+  loadRemoteContent(messageId: number): Promise<RemoteContent> {
+    return this.call('LoadRemoteContent', messageId);
+  }
+  listRemoteAllow(): Promise<RemoteAllowEntry[]> {
+    return this.call('ListRemoteAllow');
+  }
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.call('AllowRemoteContent', kind, value);
+  }
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.call('RemoveRemoteAllow', kind, value);
+  }
+  getSieveStatus(accountId: number): Promise<SieveStatus> {
+    return this.call('GetSieveStatus', accountId);
+  }
+  getSieveScript(accountId: number, name: string): Promise<SieveScript> {
+    return this.call('GetSieveScript', accountId, name);
+  }
+  checkSieveScript(accountId: number, script: string): Promise<SieveCheckResult> {
+    return this.call('CheckSieveScript', accountId, script);
+  }
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void> {
+    return this.call('PutSieveScript', accountId, name, script, activate);
+  }
+  activateSieveScript(accountId: number, name: string): Promise<void> {
+    return this.call('ActivateSieveScript', accountId, name);
+  }
+  deleteSieveScript(accountId: number, name: string): Promise<void> {
+    return this.call('DeleteSieveScript', accountId, name);
+  }
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
+    return this.call('SetSieveWorkflowSync', accountId, enabled);
   }
 }
 

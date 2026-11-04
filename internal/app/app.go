@@ -20,6 +20,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/ai"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
+	"github.com/Midas1989/Mailclient/internal/imageproxy"
 	"github.com/Midas1989/Mailclient/internal/project"
 	"github.com/Midas1989/Mailclient/internal/send"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -58,6 +59,9 @@ type Options struct {
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
 	OAuth      *OAuthOptions   // OAuth clients/redirect (default: environment), oauth_app.go
+	// ImageSigner signs remote image proxy URLs (server mode: server key,
+	// subject = user id); default: per-installation key, mailproto.go.
+	ImageSigner *imageproxy.Signer
 	// PIM configures calendars, tasks and contacts (pim.go). The background
 	// loop (CalDAV/CardDAV sync, reminders, invitations) runs when PIM or
 	// Sync is set and PIM.Disabled is false.
@@ -115,6 +119,7 @@ type App struct {
 	easPIM    easPIM            // EAS calendar/contacts scheduling (eas.go)
 	cloud     cloudState        // cloud_accounts.go
 	oauth     *oauthState       // oauth_app.go
+	mp        mailProtoState    // mailproto.go
 	pimOnce   sync.Once
 	pim       *pimService
 }

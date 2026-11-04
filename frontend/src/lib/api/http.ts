@@ -157,6 +157,17 @@
 //   GET  /api/identities/delegations            -> IdentityDelegation[]
 //   PUT  /api/identities/{id}/delegation        {mode, mailbox}
 //
+//   --- Mail protocols --- (KONZEPT 8.3, 8.5)
+//   GET  /api/messages/{id}/remote-content      -> RemoteContent
+//   GET  /api/remote-content/allow              -> RemoteAllowEntry[]
+//   POST /api/remote-content/allow              {kind, value};  POST /api/remote-content/allow/remove {kind, value}
+//   GET  /api/accounts/{id}/sieve               -> SieveStatus
+//   PUT  /api/accounts/{id}/sieve/workflows     {enabled} -> SieveStatus
+//   POST /api/accounts/{id}/sieve/check         {script} -> SieveCheckResult
+//   POST /api/accounts/{id}/sieve/activate      {name}
+//   GET/PUT/DELETE /api/accounts/{id}/sieve/scripts/{name}   SieveScript / {script, activate}
+//   GET  /api/proxy/image?url=&e=&s=&u=         remote image (signed link or session)
+//
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
 // snake_case as in internal/server/api_device.go (see native/server.ts):
 //   POST {serverUrl}/api/device/authorize       {client_name} -> grant
@@ -245,6 +256,9 @@ Account,
   Signature,
   UserPreferences,
 } from '../types';
+
+// --- Mail protocols ---
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
 
 // --- Cloud ---
 import type {
@@ -1135,6 +1149,43 @@ export class HttpTransport implements Api {
   }
   generateCloudPassword(accountId: number): Promise<{ password: string }> {
     return this.request('GET', `/api/cloud/accounts/${accountId}/password`);
+  }
+
+  // --- Mail protocols ---
+  async loadRemoteContent(messageId: number): Promise<RemoteContent> {
+    const r = await this.request<RemoteContent>('GET', `/api/messages/${messageId}/remote-content`);
+    if (this.base && r.html) r.html = r.html.replace(/(src|href)="\/api\//g, `$1="${this.base}/api/`);
+    return r;
+  }
+  listRemoteAllow(): Promise<RemoteAllowEntry[]> {
+    return this.request('GET', '/api/remote-content/allow');
+  }
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.request('POST', '/api/remote-content/allow', { kind, value });
+  }
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.request('POST', '/api/remote-content/allow/remove', { kind, value });
+  }
+  getSieveStatus(accountId: number): Promise<SieveStatus> {
+    return this.request('GET', `/api/accounts/${accountId}/sieve`);
+  }
+  getSieveScript(accountId: number, name: string): Promise<SieveScript> {
+    return this.request('GET', `/api/accounts/${accountId}/sieve/scripts/${encodeURIComponent(name)}`);
+  }
+  checkSieveScript(accountId: number, script: string): Promise<SieveCheckResult> {
+    return this.request('POST', `/api/accounts/${accountId}/sieve/check`, { script });
+  }
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void> {
+    return this.request('PUT', `/api/accounts/${accountId}/sieve/scripts/${encodeURIComponent(name)}`, { script, activate });
+  }
+  activateSieveScript(accountId: number, name: string): Promise<void> {
+    return this.request('POST', `/api/accounts/${accountId}/sieve/activate`, { name });
+  }
+  deleteSieveScript(accountId: number, name: string): Promise<void> {
+    return this.request('DELETE', `/api/accounts/${accountId}/sieve/scripts/${encodeURIComponent(name)}`);
+  }
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
+    return this.request('PUT', `/api/accounts/${accountId}/sieve/workflows`, { enabled });
   }
 }
 

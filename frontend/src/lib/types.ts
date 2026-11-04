@@ -199,6 +199,8 @@ export interface MessageDetail extends MessageSummary {
   attachments: Attachment[];
   /** Whether the HTML references remote content that was blocked. */
   hasRemoteContent?: boolean;
+  /** Remote images are already loaded through the image proxy (sender/domain allowlisted). */
+  remoteLoaded?: boolean;
 }
 
 export type ConversationKind = 'email_thread' | 'chat' | 'person_view';
@@ -463,6 +465,10 @@ export interface NewAccountInput {
   outgoing?: ServerConfig;
   /** ActiveSync server URL (kind "eas"); username may be DOMAIN\\user. */
   easUrl?: string;
+  /** POP3: server deletion policy (default: leave on server). */
+  pop3?: Pop3Options;
+  /** JMAP: session URL (default https://<incoming host>/.well-known/jmap). */
+  jmapUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -2042,4 +2048,82 @@ export interface CloudPimResult {
   contacts: number;
   tasks: number;
   deleted: number;
+}
+
+// ---------------------------------------------------------------------------
+// Mail protocols: POP3, JMAP, Sieve, remote image proxy (KONZEPT 7.1, 8.3, 8.5)
+// ---------------------------------------------------------------------------
+
+export interface Pop3Options {
+  leaveOnServer: boolean;
+  /** Delete on the server this many days after download (0 = never). */
+  deleteAfterDays?: number;
+  /** Delete on the server when the mail is deleted permanently in TuxMail. */
+  deleteOnLocalDelete?: boolean;
+}
+
+export interface RemoteContent {
+  /** Sanitized HTML with remote images routed through the image proxy. */
+  html: string;
+}
+
+export interface RemoteAllowEntry {
+  kind: 'sender' | 'domain';
+  value: string;
+  createdAt: string;
+}
+
+export interface SieveScriptInfo {
+  name: string;
+  active: boolean;
+}
+
+export interface SieveSkipped {
+  id: string;
+  name: string;
+  reason: string;
+}
+
+export interface SieveStatus {
+  accountId: number;
+  /** ManageSieve reachable and logged in. */
+  available: boolean;
+  error?: string;
+  extensions: string[];
+  scripts: SieveScriptInfo[];
+  /** "Workflows als Serverregeln übertragen". */
+  syncWorkflows: boolean;
+  /** Workflow ids that run on the server / that cannot. */
+  included: string[];
+  skipped: SieveSkipped[];
+}
+
+export interface SieveCommand {
+  name: string;
+  line: number;
+  args?: string[];
+  children?: SieveCommand[];
+  comment?: string;
+}
+
+export interface SieveParse {
+  commands: SieveCommand[];
+  requires: string[];
+  managed: boolean;
+  error?: string;
+  errorLine?: number;
+}
+
+export interface SieveScript {
+  name: string;
+  script: string;
+  active: boolean;
+  parse: SieveParse;
+}
+
+export interface SieveCheckResult {
+  ok: boolean;
+  warnings?: string;
+  error?: string;
+  line?: number;
 }

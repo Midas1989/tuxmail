@@ -138,11 +138,13 @@
       "empty": "Keine Nachricht ausgewählt",
       "emptyHint": "zum Blättern, Strg+K für alle Befehle",
       "label": "Lesebereich",
-      "loadRemote": "Laden",
+      "loadRemote": "Bilder laden",
       "remoteBlocked": "Externe Inhalte wurden zum Schutz deiner Privatsphäre blockiert.",
       "to": "An",
       "toMany": "An {name} und {count} weitere",
-      "toMany_one": "An {name} und 1 weitere Person"
+      "toMany_one": "An {name} und 1 weitere Person",
+      "loadRemoteSender": "Immer für Absender laden",
+      "loadRemoteDomain": "Immer für {domain}"
     },
     "sidebar": {
       "allAccounts": "Alle Konten",
@@ -1083,6 +1085,27 @@
       "accountDefault": "Wie im Konto",
       "saved": "Ordnereinstellungen gespeichert",
       "noAccounts": "Noch keine E-Mail-Konten."
+    },
+    "sieve": {
+      "title": "Serverregeln (Sieve)",
+      "intro": "Regeln, die dein Mailserver beim Empfang ausführt (ManageSieve, z. B. Dovecot) – sie greifen auch, wenn TuxMail geschlossen ist.",
+      "noAccounts": "Kein IMAP-Konto mit Serverregeln.",
+      "account": "Konto",
+      "unavailable": "Der Server bietet kein ManageSieve an",
+      "syncWorkflows": "Workflows als Serverregeln übertragen",
+      "preview": "{included} Workflows laufen auf dem Server, {skipped} nur in TuxMail",
+      "scripts": "Skripte",
+      "new": "Neues Skript",
+      "active": "aktiv",
+      "activate": "Aktivieren",
+      "delete": "Skript {name} löschen",
+      "name": "Skriptname",
+      "editor": "Sieve-Skript",
+      "lint": "Zeile {line}: {error}",
+      "check": "Prüfen",
+      "checkOk": "Der Server akzeptiert das Skript.",
+      "saveActivate": "Speichern und aktivieren",
+      "managedHint": "TuxMail ändert nur den Abschnitt zwischen „# BEGIN TuxMail“ und „# END TuxMail“; deine eigenen Regeln bleiben unverändert."
     }
   },
   "search": {
@@ -1650,7 +1673,16 @@
       "step3": "Server manuell",
       "title": "Konto hinzufügen",
       "tls": "Verschlüsselung",
-      "username": "Benutzername"
+      "username": "Benutzername",
+      "jmapUrl": "JMAP-Session-URL (optional)",
+      "pop3": {
+        "title": "Nachrichten auf dem Server",
+        "leave": "Nachrichten auf dem Server belassen",
+        "deleteAfter": "Vom Server löschen nach",
+        "days": "Tagen (0 = nie)",
+        "deleteLocal": "Vom Server löschen, wenn in TuxMail gelöscht",
+        "hint": "POP3 kennt nur einen Posteingang. Mails lassen sich in lokale Ordner verschieben; sie bleiben auf diesem Gerät, auch wenn die Serverkopie gelöscht wird."
+      }
     },
     "connect": {
       "cardText": "Verbinde diese App mit deinem TuxMail-Server, um Konten, Signaturen und Regeln automatisch zu übernehmen.",
