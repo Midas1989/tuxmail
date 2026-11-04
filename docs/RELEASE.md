@@ -196,3 +196,19 @@ rpm --import tuxmail-release-key.asc && rpm -K tuxmail-*.rpm
 GitHub Actions. Alle Actions sind auf volle Versions-Tags gepinnt. Werkzeugversionen in `release.yml`
 (`NFPM_VERSION`, `GO_WINRES_VERSION`) und `ci.yml` (actionlint) werden von Hand angehoben; nfpm ab v2.44
 braucht Go ≥ 1.25.
+
+## 7. Sicherheit vor dem Release
+
+- **Workflow `security.yml`** (Push auf `main`/`claude/**`, Pull Requests, wöchentlich, manuell): govulncheck,
+  gosec + staticcheck, CodeQL (Go, JavaScript/TypeScript), npm audit, osv-scanner, gitleaks, Trivy
+  (Dateisystem + gebautes Docker-Image, SBOM), Lizenzbericht, Fuzzing (60 s je Fuzz-Ziel) und der
+  dynamische Pentest-Harness (`security/pentest/`). Vor einem Release-Tag muss der letzte Lauf auf `main`
+  grün sein (Lizenzbericht und Pentest sind informativ). Übersicht: [docs/security/README.md](security/README.md).
+- **Go-Toolchain:** `setup-go` liest `go.mod`. Die Release-Binaries enthalten die Standardbibliothek dieser
+  Version – Patch-Releases von Go (Sicherheitsfixes) also zeitnah übernehmen (`toolchain`-Zeile in `go.mod`).
+- **Code Scanning:** Bei privatem Repository braucht der SARIF-Upload GitHub Advanced Security. Ohne GHAS
+  bleiben die SARIF-Dateien Artefakte des Laufs; mit GHAS die Repository-Variable `CODE_SCANNING_ENABLED=true`
+  setzen (Settings → Secrets and variables → Actions → Variables).
+- **Meldungen von Schwachstellen:** über *Private vulnerability reporting* (Settings → Code security →
+  Private vulnerability reporting aktivieren), Ablauf in [SECURITY.md](../SECURITY.md). Sicherheitsfixes werden
+  mit einem GitHub Security Advisory (ggf. CVE) und einem Patch-Release veröffentlicht.

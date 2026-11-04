@@ -17,3 +17,4 @@ frontend/dist/
 /cmd/tuxmail-setup/rsrc_windows_*.syso
 /cmd/tuxmail-setup/payload/*
 !/cmd/tuxmail-setup/payload/.keep
+__pycache__/

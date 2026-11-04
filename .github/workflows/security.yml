@@ -1,0 +1,342 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Continuous security scanning (audit E, docs/security/README.md).
+#
+# Code scanning (SARIF upload to GitHub "Security → Code scanning") needs
+# GitHub Advanced Security on private repositories. The upload steps run when
+# the repository is public or the repository variable CODE_SCANNING_ENABLED
+# is "true"; otherwise the SARIF files are kept as workflow artifacts only.
+name: Security
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * 1" # weekly, Monday 03:17 UTC (new advisories for unchanged code)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOTOOLCHAIN: local
+  # SARIF upload allowed (public repo or GHAS enabled via repository variable).
+  CODE_SCANNING: ${{ (github.event.repository.private == false || vars.CODE_SCANNING_ENABLED == 'true') && 'true' || 'false' }}
+
+jobs:
+  govulncheck:
+    name: govulncheck (reachable Go vulnerabilities)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      # Source mode: fails only on vulnerabilities whose vulnerable symbols are reachable.
+      - name: govulncheck (server, CLI, plugins)
+        run: govulncheck -show verbose ./...
+      - name: govulncheck (desktop + setup program, Windows build tags)
+        env:
+          GOOS: windows
+        run: govulncheck -tags desktop,production ./cmd/tuxmail ./cmd/tuxmail-setup
+
+  gosec:
+    name: gosec + staticcheck
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install tools
+        run: |
+          go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
+      # Report only: findings are triaged in docs/security/ and routed to the owners.
+      - name: gosec (SARIF)
+        run: gosec -no-fail -fmt sarif -out gosec.sarif -exclude-dir=internal/devserver ./...
+      - name: Upload gosec SARIF to code scanning
+        if: env.CODE_SCANNING == 'true'
+        continue-on-error: true # fork PRs get a read-only token
+        uses: github/codeql-action/upload-sarif@v4.39.2
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: gosec-sarif
+          path: gosec.sarif
+          retention-days: 30
+      - name: staticcheck
+        run: staticcheck -f stylish ./... | tee staticcheck.txt
+        continue-on-error: true # unused code / style; correctness checks are in go vet (ci.yml)
+      - name: staticcheck (security-relevant checks must pass)
+        # SA1xxx misuse of the standard library, SA4xxx dead or wrong code paths,
+        # SA5xxx correctness, SA9xxx dubious constructs. Deprecations (SA1019) are reported only.
+        run: staticcheck -checks 'SA*,-SA1019,-SA4006' ./...
+
+  codeql:
+    name: CodeQL (${{ matrix.language }})
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { language: go, build-mode: autobuild }
+          - { language: javascript-typescript, build-mode: none }
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        if: matrix.language == 'go'
+        with:
+          go-version-file: go.mod
+      - uses: github/codeql-action/init@v4.39.2
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v4.39.2
+        with:
+          category: /language:${{ matrix.language }}
+          upload: ${{ env.CODE_SCANNING == 'true' && 'always' || 'never' }}
+          output: codeql-results
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: codeql-${{ matrix.language }}-sarif
+          path: codeql-results
+          retention-days: 30
+
+  npm-audit:
+    name: npm audit (${{ matrix.dir }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        dir: [frontend, mobile]
+    defaults:
+      run:
+        working-directory: ${{ matrix.dir }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: "22"
+      - name: Runtime dependencies must be clean
+        run: npm audit --omit=dev --audit-level=low
+      - name: All dependencies (low allowed, moderate+ fails)
+        run: |
+          npm audit --json > "$RUNNER_TEMP/npm-audit-${{ matrix.dir }}.json" || true
+          npm audit --audit-level=moderate
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: npm-audit-${{ matrix.dir }}
+          path: ${{ runner.temp }}/npm-audit-${{ matrix.dir }}.json
+          retention-days: 30
+
+  osv-scanner:
+    name: osv-scanner (go.mod, package-lock.json)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install osv-scanner
+        env:
+          OSV_VERSION: v2.7.0
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/osv-scanner" \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          chmod +x "$RUNNER_TEMP/osv-scanner"
+      - name: Scan lockfiles
+        run: |
+          "$RUNNER_TEMP/osv-scanner" scan source \
+            -L go.mod -L frontend/package-lock.json -L mobile/package-lock.json
+
+  gitleaks:
+    name: gitleaks (secrets in history)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0 # full history
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+      # Allowlist for test fixtures and documented public values: .gitleaks.toml
+      - run: gitleaks detect --no-banner --redact --config .gitleaks.toml --log-opts=--all
+
+  trivy:
+    name: Trivy (filesystem + Docker image)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Filesystem scan (dependencies, misconfiguration, secrets)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,misconfig,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          skip-dirs: internal/devserver
+          exit-code: "1"
+      - uses: docker/setup-buildx-action@v4.4.1
+      - name: Build image (build/docker/Dockerfile)
+        uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: build/docker/Dockerfile
+          load: true
+          push: false
+          tags: tuxmail:security-scan
+          build-args: VERSION=0.0.0-scan
+      - name: Image scan (HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: image
+          image-ref: tuxmail:security-scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
+      - name: Image scan (SARIF)
+        if: always()
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.1
+          scan-type: image
+          image-ref: tuxmail:security-scan
+          format: sarif
+          output: trivy-image.sarif
+          skip-setup-trivy: true
+      - name: Upload Trivy SARIF to code scanning
+        if: always() && env.CODE_SCANNING == 'true'
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@v4.39.2
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+      - name: SBOM of the image (SPDX)
+        if: always()
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          image: tuxmail:security-scan
+          format: spdx-json
+          output-file: tuxmail-image.spdx.json
+          upload-artifact: false
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: trivy-and-sbom
+          path: |
+            trivy-image.sarif
+            tuxmail-image.spdx.json
+          retention-days: 30
+
+  licenses:
+    name: Go licenses (AGPL compatibility, report only)
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go install github.com/google/go-licenses/v2@v2.0.1
+      - name: License report
+        run: go-licenses report ./... 2>/dev/null | sort > go-licenses.csv
+      - name: Check AGPL-3.0-compatible licenses
+        # notice: permissive (MIT, BSD, Apache-2.0, ISC, ...); reciprocal: MPL-2.0;
+        # restricted: GPL/LGPL/AGPL. "forbidden" and "unknown" need a manual review.
+        run: go-licenses check ./... --allowed_licenses_categories=notice,permissive,reciprocal,restricted,unencumbered
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: go-licenses
+          path: go-licenses.csv
+          retention-days: 30
+
+  fuzz-targets:
+    name: Fuzz targets (inventory)
+    runs-on: ubuntu-24.04
+    outputs:
+      targets: ${{ steps.list.outputs.targets }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - id: list
+        name: List func Fuzz* in *_test.go
+        run: |
+          targets="$(grep -rn --include='*_test.go' -E '^func Fuzz[A-Za-z0-9_]+\(f \*testing\.F\)' . \
+            | sed -E 's#^\./(.*)/[^/]+_test\.go:[0-9]+:func (Fuzz[A-Za-z0-9_]+).*#{"pkg":"./\1","target":"\2"}#' \
+            | sort | paste -sd, - | sed -e 's/^/[/' -e 's/$/]/')"
+          echo "$targets"
+          echo "targets=$targets" >> "$GITHUB_OUTPUT"
+
+  fuzz:
+    name: Fuzz ${{ matrix.target }} (${{ matrix.pkg }})
+    needs: fuzz-targets
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.fuzz-targets.outputs.targets) }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: go test -fuzz (60 s)
+        run: go test -run='^$' -fuzz='^${{ matrix.target }}$' -fuzztime=60s "${{ matrix.pkg }}"
+      - name: Keep crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: fuzz-crash-${{ matrix.target }}-${{ strategy.job-index }}
+          path: ${{ matrix.pkg }}/testdata/fuzz
+          retention-days: 30
+
+  pentest:
+    name: Dynamic pentest harness (informational)
+    runs-on: ubuntu-24.04
+    continue-on-error: true # informational: network timing can make single checks flaky
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v6.0.0
+        with:
+          python-version: "3.12"
+      - name: Build tuxmail (API only, placeholder web UI)
+        run: go build -o "$RUNNER_TEMP/tuxmail" ./cmd/tuxmail
+      - name: Start server and create users
+        run: security/pentest/run-server.sh "$RUNNER_TEMP/tuxmail" "$RUNNER_TEMP/pentest"
+      - name: Run harness
+        run: python3 -I security/pentest/harness.py --base http://127.0.0.1:18080 --json pentest-report.json
+      - name: Server log
+        if: always()
+        run: tail -n 200 "$RUNNER_TEMP/pentest/server.log" || true
+      - uses: actions/upload-artifact@v7.0.2
+        if: always()
+        with:
+          name: pentest-report
+          path: pentest-report.json
+          retention-days: 30

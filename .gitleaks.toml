@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# gitleaks configuration (CI job "gitleaks" in .github/workflows/security.yml).
+# Default rules plus an allowlist for known non-secrets. Every entry below was
+# triaged in docs/security/PENTEST-E-dynamic.md (section "Tool findings").
+# Add new entries only with a comment explaining why the match is not a secret.
+
+title = "TuxMail gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Test fixtures, known-answer test vectors and documented public values"
+paths = [
+  # Go test files and fixtures: dummy tokens/passwords used by unit tests.
+  '''(^|/)[^/]+_test\.go$''',
+  '''(^|/)testdata/''',
+  # e2e fixtures of the frontend/mobile test suites.
+  '''^frontend/(e2e|tests?)/''',
+  '''^mobile/(e2e|tests?)/''',
+]
+# Regexes are matched against the whole rule match (key name + value).
+regexTarget = "match"
+regexes = [
+  # Public OAuth client registration of the ownCloud Infinite Scale desktop
+  # client (native app, loopback redirect; not confidential by design, see
+  # internal/cloud/opencloud/oidc.go).
+  '''UBntmLjC2yYCeHwsyj73Uwo9TAaecAetRwMw0xYcvNL9yRdLSUi0hUAHfvCHFeFh''',
+  # Public GPG fingerprint of the Matrix/Synapse APT repository (Ansible role defaults).
+  '''tuxmail_synapse_apt_key_fingerprint''',
+]
