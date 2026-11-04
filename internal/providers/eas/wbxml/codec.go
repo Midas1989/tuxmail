@@ -110,17 +110,19 @@ func (e *encoder) node(n *Node, depth int) error {
 		return nil
 	}
 	e.buf.WriteByte(tok | flagContent)
-	if n.Text != "" {
-		if strings.IndexByte(n.Text, 0) >= 0 {
-			// Inline strings are NUL-terminated; use opaque data instead.
-			e.opaque([]byte(n.Text))
-		} else {
-			e.buf.WriteByte(tokStrI)
-			e.buf.WriteString(n.Text)
-			e.buf.WriteByte(0)
+	switch {
+	case strings.IndexByte(n.Text, 0) >= 0:
+		// Inline strings are NUL-terminated; use opaque data instead, as a
+		// single OPAQUE token (the decoder joins adjacent opaque data).
+		e.opaque(append([]byte(n.Text), n.Opaque...))
+	case n.Text != "":
+		e.buf.WriteByte(tokStrI)
+		e.buf.WriteString(n.Text)
+		e.buf.WriteByte(0)
+		if n.IsOpaque {
+			e.opaque(n.Opaque)
 		}
-	}
-	if n.IsOpaque {
+	case n.IsOpaque:
 		e.opaque(n.Opaque)
 	}
 	for _, c := range n.Children {
@@ -338,7 +340,9 @@ func (d *decoder) content(n *Node, depth int) error {
 			if err != nil {
 				return err
 			}
-			if v > 0x10ffff {
+			// U+0000 is not an XML character (and Marshal cannot write it
+			// back as text: inline strings are NUL-terminated).
+			if v == 0 || v > 0x10ffff {
 				return fmt.Errorf("%w: invalid entity", ErrSyntax)
 			}
 			text.WriteRune(rune(v))

@@ -206,6 +206,7 @@ func TestDecodeErrors(t *testing.T) {
 		"03 01 6a 00 45 03 41",       // unterminated inline string
 		"03 01 6a 00 01",             // END as root
 		"03 01 6a 00 45 83 09 01",    // bad string table reference
+		"03 01 6a 00 45 02 00 01",    // entity U+0000
 	} {
 		if _, err := Unmarshal(mustHex(t, h)); err == nil {
 			t.Errorf("%s: expected error", h)
@@ -253,6 +254,16 @@ func TestTextWithNULBecomesOpaque(t *testing.T) {
 	}
 	if n.Value() != "a\x00b" {
 		t.Errorf("value %q", n.Value())
+	}
+
+	// Text with NUL next to opaque data is written as one OPAQUE token, so a
+	// second roundtrip yields the same bytes (fuzz finding, FuzzUnmarshal).
+	data, err = Marshal(&Node{Tag: T("AirSync:SyncKey"), Text: "\x00", Opaque: []byte("00"), IsOpaque: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := mustHex(t, "03 01 6a 00 4b c3 03 00 30 30 01"); !bytes.Equal(data, want) {
+		t.Fatalf("got % x, want % x", data, want)
 	}
 }
 

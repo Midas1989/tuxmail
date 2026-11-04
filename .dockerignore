@@ -3,6 +3,8 @@
 .git
 .github
 .claude
+# tool caches in the CI workspace (e.g. the Trivy DB in .cache/trivy)
+.cache
 **/node_modules
 frontend/dist
 mobile

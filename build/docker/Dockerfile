@@ -33,6 +33,8 @@ RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 COPY locales/ /src/locales/
 COPY assets/branding/ /src/assets/branding/
+# Settings → About embeds these repository-root files (?raw imports).
+COPY VERSION LICENSE NOTICE THIRD_PARTY_NOTICES.md /src/
 RUN npm run build && mkdir -p /out && cp -R dist/. /out/
 
 FROM scratch AS frontend-prebuilt
