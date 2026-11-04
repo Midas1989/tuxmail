@@ -84,6 +84,9 @@ type Config struct {
 	ThreadingConfig threading.Config
 
 	Projects ProjectHooks
+	// Comfort analyzes new mail (spam, categories, e-invoices, S/MIME) and
+	// enriches mail events (comfort.go); optional.
+	Comfort  MailProcessor
 	Tags     Tagger
 	Workflow WorkflowRunner
 	Sender   Sender

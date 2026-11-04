@@ -92,4 +92,17 @@
 // listed/revoked as "My shares". workflowCloud and workflowPDF implement
 // workflow.CloudActions and PDFActions (duplicate protection via
 // cloud_archive); the PDF itself comes from SetPDFRenderer.
+//
+// # Team mailboxes (server mode)
+//
+// team_source.go, team_api.go, team_events.go: a shared mailbox (KONZEPT
+// 8.14, internal/team) is synced once into its own store by a team-level App
+// (the runtime started by the server's team.Manager). A user's App reads
+// through to it via Options.Team (TeamSource); App.TeamApp checks the role
+// (read < reply < assign < manage) before handing out the runtime, and the
+// HTTP layer mounts the mailbox routes again under /api/team/{teamId}/.
+// TeamConversations adds assignment state and the views mine, unassigned,
+// open and done; TeamSend forces a team identity and records the first
+// response. Options.WorkflowActions registers extra workflow actions (the
+// team action "assign"), Options.Notifier backs the notify action.
 package app

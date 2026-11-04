@@ -23,6 +23,18 @@
     quiet: true
   when: tuxmail_oidc_enabled | bool
 
+- name: FCM-Dienstkonto (Android-Push) ablegen
+  ansible.builtin.copy:
+    src: "{{ tuxmail_fcm_service_account_src }}"
+    dest: "{{ tuxmail_fcm_service_account_file }}"
+    owner: root
+    group: "{{ tuxmail_group }}"
+    mode: "0640"
+    decrypt: true
+  no_log: true
+  notify: tuxmail restart
+  when: tuxmail_fcm_enabled | bool
+
 - name: Logdatei anlegen (check-config prüft, ob sie beschreibbar ist)
   ansible.builtin.file:
     path: "{{ tuxmail_log_file }}"

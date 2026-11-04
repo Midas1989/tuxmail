@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+[Unit]
+Description=Continuwuity Matrix homeserver (TuxMail bridge mode)
+Documentation=https://continuwuity.org/
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# "simple" statt "notify": nicht jede Release-Variante meldet sich per sd_notify;
+# Ansible wartet ohnehin auf /_matrix/client/versions.
+Type=simple
+User=continuwuity
+Group=continuwuity
+WorkingDirectory=/var/lib/continuwuity
+Environment=HOME=/var/lib/continuwuity
+ExecStart=/opt/continuwuity/current/continuwuity --config /etc/continuwuity/continuwuity.toml
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=300s
+TimeoutStopSec=60s
+LimitNOFILE=65536
+UMask=0077
+
+# --- Härtung ---------------------------------------------------------------
+ProtectSystem=strict
+ReadWritePaths=/var/lib/continuwuity
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProcSubset=pid
+KeyringMode=private
+RemoveIPC=true
+SystemCallArchitectures=native
+# @aio enthält io_uring (von Continuwuity genutzt), @resources für jemalloc/RocksDB.
+SystemCallFilter=@system-service @aio @resources
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

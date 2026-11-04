@@ -1,44 +1,59 @@
 ---
 # SPDX-License-Identifier: AGPL-3.0-or-later
-- name: Bridges und Gotenberg (optional)
+- name: Matrix-Homeserver und Messenger-Bridges (optional)
   when: tuxmail_bridges_enabled | bool
   block:
+    - name: Frühere Werte von tuxmail_bridges_runtime übernehmen (podman/docker = Container-Modus)
+      ansible.builtin.set_fact:
+        tuxmail_bridges_runtime_effective: "{{ 'container' if tuxmail_bridges_runtime in ['podman', 'docker'] else tuxmail_bridges_runtime }}"
+        tuxmail_bridges_engine_effective: >-
+          {{ tuxmail_bridges_runtime if tuxmail_bridges_runtime in ['podman', 'docker'] else tuxmail_bridges_container_engine }}
+
     - name: Einstellungen prüfen
       ansible.builtin.assert:
         that:
-          - tuxmail_bridges_runtime in ['podman', 'docker']
-          - tuxmail_bridges_homeserver in ['synapse', 'continuwuity']
-          - tuxmail_bridges_matrix_enabled | bool or tuxmail_bridges_gotenberg_enabled | bool
+          - tuxmail_bridges_runtime_effective in ['native', 'container']
+          - tuxmail_bridges_engine_effective in ['podman', 'docker']
+          - tuxmail_bridges_db in ['sqlite', 'postgres']
+          - tuxmail_bridges_arch in ['amd64', 'arm64']
+          - tuxmail_matrix_admin_user is match('^[a-z0-9._=/-]+$')
         fail_msg: >-
-          tuxmail_bridges_runtime: podman|docker, tuxmail_bridges_homeserver: synapse|continuwuity;
-          mindestens Matrix oder Gotenberg muss aktiviert sein.
+          tuxmail_bridges_runtime: native|container, tuxmail_bridges_container_engine: podman|docker,
+          tuxmail_bridges_db: sqlite|postgres, Architektur amd64/arm64,
+          tuxmail_matrix_admin_user nur Kleinbuchstaben, Ziffern und ._=/-
         quiet: true
 
-    - name: Abgeleitete Werte setzen
+    - name: Synapse nativ nur auf Debian/Ubuntu
+      ansible.builtin.assert:
+        that: ansible_facts['os_family'] == 'Debian'
+        fail_msg: >-
+          Synapse wird nativ nur über das matrix.org-apt-Repository (Debian/Ubuntu) installiert.
+          Unter RHEL/Rocky/Alma gibt es keine offiziellen Pakete – bitte tuxmail_matrix_server=continuwuity
+          verwenden (oder tuxmail_bridges_runtime=container).
+        quiet: true
+      when:
+        - tuxmail_bridges_runtime_effective == 'native'
+        - tuxmail_matrix_server == 'synapse'
+
+    - name: Hinweis – veralteter Wert für tuxmail_bridges_runtime
+      ansible.builtin.debug:
+        msg: >-
+          WARNUNG: tuxmail_bridges_runtime={{ tuxmail_bridges_runtime }} ist veraltet. Bitte
+          tuxmail_bridges_runtime=container und tuxmail_bridges_container_engine={{ tuxmail_bridges_runtime }}
+          setzen – oder besser die Installation ohne Container (tuxmail_bridges_runtime=native).
+      when: tuxmail_bridges_runtime in ['podman', 'docker']
+
+    - name: Betriebssystem-spezifische Werte laden
+      ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+    - name: Aktivierte Bridges bestimmen
       ansible.builtin.set_fact:
-        tuxmail_bridges_mautrix: >-
-          {{ tuxmail_bridges_mautrix_all | selectattr('enabled', 'truthy', convert_bool=True) | list
-             if tuxmail_bridges_matrix_enabled | bool else [] }}
-        tuxmail_bridges_volume_opts: "{{ ':Z' if ansible_facts['selinux']['status'] | default('disabled') == 'enabled' else '' }}"
-        tuxmail_bridges_run_cmd: "{{ [tuxmail_bridges_runtime, 'run', '--rm'] }}"
+        tuxmail_bridges_mautrix: "{{ tuxmail_bridges_mautrix_all | selectattr('enabled', 'truthy', convert_bool=True) | list }}"
 
-    - name: Container-Laufzeit installieren
-      ansible.builtin.import_tasks: runtime.yml
+    - name: Native Installation (ohne Container)
+      ansible.builtin.include_tasks: native/main.yml
+      when: tuxmail_bridges_runtime_effective == 'native'
 
-    - name: Matrix-Homeserver vorbereiten
-      ansible.builtin.import_tasks: homeserver.yml
-      when: tuxmail_bridges_matrix_enabled | bool
-
-    - name: Mautrix-Bridges vorbereiten
-      ansible.builtin.include_tasks: mautrix.yml
-      loop: "{{ tuxmail_bridges_mautrix }}"
-      loop_control:
-        loop_var: tuxmail_bridge
-        label: "{{ tuxmail_bridge.name }}"
-
-    - name: Homeserver – Bridges registrieren
-      ansible.builtin.import_tasks: register.yml
-      when: tuxmail_bridges_matrix_enabled | bool
-
-    - name: Compose-Projekt starten
-      ansible.builtin.import_tasks: compose.yml
+    - name: Container-Installation (ausdrückliche Ausnahme)
+      ansible.builtin.include_tasks: container/main.yml
+      when: tuxmail_bridges_runtime_effective == 'container'

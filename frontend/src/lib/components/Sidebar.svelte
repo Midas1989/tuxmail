@@ -18,14 +18,18 @@
   import type { SearchFolder } from '../types';
   import { app } from '../state';
   import type { SidebarSel } from '../state';
-  import { messengerChannel, type Account, type Folder, type FolderRole } from '../types';
+  import { messengerChannel, type Account, type Folder } from '../types';
   import { t } from '../i18n/index.svelte';
   import ChannelIcon from './common/ChannelIcon.svelte';
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import { folderTree, type FolderNode } from '../folders';
   import LayoutTemplate from '@lucide/svelte/icons/layout-template';
   import Eraser from '@lucide/svelte/icons/eraser';
   import Settings2 from '@lucide/svelte/icons/settings-2';
   import ContextMenu, { type MenuItem } from './common/ContextMenu.svelte';
   import { folderSettingsTarget, menuRolesFor } from '../folderconfig';
+  import TeamSection from './team/TeamSection.svelte';
 
   let collapsed = $state<Record<string, boolean>>({});
 
@@ -82,23 +86,12 @@
     return items;
   }
 
-  interface Node {
-    folder: Folder;
-    depth: number;
-    hasChildren: boolean;
-  }
-
-  function flatten(folders: Folder[]): Node[] {
-    const out: Node[] = [];
-    const walk = (parentId: number | undefined, depth: number) => {
-      for (const f of folders.filter((x) => (x.parentId ?? undefined) === parentId)) {
-        const hasChildren = folders.some((x) => x.parentId === f.id);
-        out.push({ folder: f, depth, hasChildren });
-        if (hasChildren && !collapsed['f' + f.id]) walk(f.id, depth + 1);
-      }
-    };
-    walk(undefined, 0);
-    return out;
+  // Display order and labels (folders.ts): Posteingang, Entwürfe, Gesendet,
+  // Archiv, Spam, Papierkorb, then the rest alphabetically; one folder per
+  // role with the role icon; "Archiv (Archive)" when the localized role
+  // name collides with a real folder name.
+  function flatten(folders: Folder[]): FolderNode[] {
+    return folderTree(folders, (r) => t(`mail.folder.role.${r}` as `mail.folder.role.inbox`), (id) => !!collapsed['f' + id]);
   }
 
   function isSel(s: SidebarSel): boolean {
@@ -152,10 +145,6 @@
     app.organizeDialog = { kind: 'searchFolder', folder: f };
   }
 
-  function folderLabel(f: Folder): string {
-    const role = f.role as FolderRole;
-    return role ? t(`mail.folder.role.${role}` as `mail.folder.role.inbox`) : f.name;
-  }
 
   function accountAddress(a: Account): string {
     return a.extra?.address ?? '';
@@ -259,6 +248,11 @@
             <span class="acc-name">{acc.displayName}</span>
             <span class="acc-addr">{accountAddress(acc)}</span>
           </span>
+          {#if app.syncStatus[acc.id]?.state === 'syncing' || app.syncStatus[acc.id]?.state === 'connecting'}
+            <span class="acc-sync" title={app.syncLabel(app.syncStatus[acc.id])}><LoaderCircle size={13} class="spin" aria-label={app.syncLabel(app.syncStatus[acc.id])} /></span>
+          {:else if app.syncStatus[acc.id]?.state === 'error'}
+            <span class="acc-sync err" title={app.syncStatus[acc.id]?.error}><TriangleAlert size={13} aria-label={t('sync.error', { account: acc.displayName })} /></span>
+          {/if}
           <span class="kind">{acc.kind.toUpperCase()}</span>
         </button>
         {#if !collapsed[key]}
@@ -266,7 +260,7 @@
             {#each flatten(app.folders[acc.id] ?? []) as node (node.folder.id)}
               {@const f = node.folder}
               {@const s = { kind: 'folder', accountId: acc.id, folderId: f.id } as SidebarSel}
-              {@const Icon = roleIcon[f.role ?? ''] ?? FolderIcon}
+              {@const Icon = roleIcon[node.role ?? ''] ?? FolderIcon}
               {@const fkey = 'f' + f.id}
               <li role="none">
                 <button
@@ -306,10 +300,13 @@
                     <span class="twisty"></span>
                   {/if}
                   <Icon size={16} aria-hidden="true" />
-                  <span class="name">{folderLabel(f)}</span>
-                  {#if f.unread > 0 && f.role !== 'sent' && f.role !== 'drafts'}
-                    <span class="count" class:muted={f.role === 'junk' || f.role === 'trash'}>{f.unread}</span>
-                  {:else if f.role === 'drafts' && f.total > 0}
+                  <span class="name" title={node.label !== f.name ? `${node.label} – ${f.name}` : undefined}>{node.label}</span>
+                  {#if app.folderSyncing(f.id)}
+                    <LoaderCircle size={12} class="spin fsync" aria-label={t('sync.listSyncing')} />
+                  {/if}
+                  {#if f.unread > 0 && node.role !== 'sent' && node.role !== 'drafts'}
+                    <span class="count" class:muted={node.role === 'junk' || node.role === 'trash'}>{f.unread}</span>
+                  {:else if node.role === 'drafts' && f.total > 0}
                     <span class="count muted">{f.total}</span>
                   {/if}
                 </button>
@@ -322,6 +319,8 @@
         {/if}
       </li>
     {/each}
+
+    <TeamSection />
 
     <li role="none" class="section">
       <span class="section-title with-action">{t('organize.searchFolder.section')}
@@ -419,6 +418,26 @@
 {/if}
 
 <style>
+  .acc-sync {
+    display: inline-flex;
+    color: var(--tm-accent);
+    flex: none;
+  }
+  .acc-sync.err {
+    color: var(--tm-danger);
+  }
+  .tree :global(.spin) {
+    animation: tm-spin 0.9s linear infinite;
+    flex: none;
+  }
+  .tree :global(.fsync) {
+    color: var(--tm-accent);
+  }
+  @keyframes tm-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
   .sidebar {
     display: flex;
     flex-direction: column;

@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+# Zusätzliche Härtung für die Unit des Debian-Pakets matrix-synapse-py3.
+# (Python mit cffi/Rust-Erweiterungen: MemoryDenyWriteExecute bleibt aus.)
+[Unit]
+{% if tuxmail_bridges_db == 'postgres' %}
+After=postgresql.service
+Requires=postgresql.service
+{% endif %}
+
+[Service]
+# "full" statt "strict": das Paket schreibt Laufzeitdateien (PID, Logs) an Orte, die
+# es selbst festlegt; /usr, /boot und /etc bleiben schreibgeschützt.
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+KeyringMode=private
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM

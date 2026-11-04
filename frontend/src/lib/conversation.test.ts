@@ -84,6 +84,30 @@ describe('buildTimeline', () => {
   });
 });
 
+describe('subject lines', () => {
+  it('appear only in two-way conversations, newsletters carry the subject in the bubble', () => {
+    const oneWay = [
+      item('m:1', '2026-11-02T09:00:00.000Z', { subject: 'Sale 1' }),
+      item('m:2', '2026-11-03T09:00:00.000Z', { subject: 'Sale 2' }),
+      item('m:3', '2026-11-04T09:00:00.000Z', { subject: 'Sale 3' }),
+    ];
+    const tl = buildTimeline(oneWay);
+    expect(tl.filter((e) => e.type === 'subject')).toEqual([]);
+    expect(tl.filter((e) => e.type === 'item').every((e) => e.type === 'item' && e.showSubject)).toBe(true);
+
+    const twoWay = [
+      item('m:1', '2026-11-02T09:00:00.000Z', { subject: 'Angebot' }),
+      item('m:2', '2026-11-02T10:00:00.000Z', { subject: 'Re: Angebot', isOwn: true, senderPersonId: 1 }),
+      item('m:3', '2026-11-02T11:00:00.000Z', { subject: 'Rechnung' }),
+    ];
+    const subj = buildTimeline(twoWay).filter((e) => e.type === 'subject');
+    expect(subj.map((e) => e.type === 'subject' && [e.subject, e.changed])).toEqual([
+      ['Angebot', false],
+      ['Rechnung', true],
+    ]);
+  });
+});
+
 describe('selection mapping', () => {
   const items = [
     item('m:1', '2026-11-01T08:00:00.000Z'),

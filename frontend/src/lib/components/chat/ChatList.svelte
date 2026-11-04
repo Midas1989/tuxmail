@@ -1,10 +1,14 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Messenger-style chat list: search, filter pills, archived row, pinned on top. -->
 <script lang="ts">
+  import ViewSwitcher from '../ViewSwitcher.svelte';
+  import { comfort } from '../../state';
+  import CategoryTabs from '../comfort/CategoryTabs.svelte';
+  import TeamSection from '../team/TeamSection.svelte';
+  import TeamBadge from '../team/TeamBadge.svelte';
   import Search from '@lucide/svelte/icons/search';
   import X from '@lucide/svelte/icons/x';
   import SquarePen from '@lucide/svelte/icons/square-pen';
-  import Rows3 from '@lucide/svelte/icons/rows-3';
   import Archive from '@lucide/svelte/icons/archive';
   import ArchiveRestore from '@lucide/svelte/icons/archive-arrow-up';
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
@@ -79,11 +83,6 @@
     else if (top + el.offsetHeight > listEl.scrollTop + listEl.clientHeight) listEl.scrollTop = top + el.offsetHeight - listEl.clientHeight;
   });
 
-  function avatarSeed(c: Conversation): string {
-    if (c.kind === 'chat' && c.isGroup) return c.title;
-    return app.person(c.participantIds[0])?.handles[0]?.value ?? c.title;
-  }
-
   function preview(c: Conversation): string {
     if (c.snippet) return c.snippet;
     if (c.lastMedia === 'photo') return '📷 ' + t('chat.media.photo');
@@ -144,10 +143,11 @@
       <span class="grow"></span>
       <button class="icon-btn" class:focus-on={app.focusActive} title={t('chat.focus.toggle')} aria-label={t('chat.focus.toggle')} aria-pressed={app.focus.enabled} onclick={() => app.toggleFocus()}><Target size={18} /></button>
       <button class="icon-btn" title={t('chat.newChat')} aria-label={t('chat.newChat')} onclick={() => app.openCompose()}><SquarePen size={18} /></button>
-      <button class="icon-btn" title={t('mail.view.classic') + ' (Ctrl+Shift+V)'} aria-label={t('mail.view.classic')} onclick={() => app.setViewMode('classic')}><Rows3 size={18} /></button>
+      <ViewSwitcher variant="menu" />
       <button class="icon-btn" title={t('chat.moreActions')} aria-label={t('chat.moreActions')} aria-haspopup="menu" onclick={(e) => (headerMenu = { x: e.clientX - 220, y: e.clientY + 12 })}><EllipsisVertical size={18} /></button>
     {/if}
   </header>
+  <TeamSection variant="strip" />
 
   <div class="search" role="search">
     <Search size={16} aria-hidden="true" />
@@ -193,6 +193,7 @@
         <button class="pill" role="radio" aria-checked={app.chatFilter === f} onclick={() => app.setChatFilter(f)}>{t(`chat.filter.${f}`)}</button>
       {/each}
     </div>
+    <CategoryTabs variant="pills" />
     {#if app.tags.length}
       <div class="pills tag-pills" role="group" aria-label={t('organize.tags.filter')}>
         {#each app.tags.filter((x) => x.total > 0) as x (x.tag.id)}
@@ -221,7 +222,7 @@
         <span class="arch-count">{app.archivedCount}</span>
       </button>
     {/if}
-    {#each app.conversations as c (c.id)}
+    {#each comfort.filterConversations(app.conversations) as c (c.id)}
       {@render chatRow(c)}
     {:else}
       {#if !app.conversationsLoading && !(app.focusActive && app.waitingCount)}
@@ -267,7 +268,7 @@
         ondragstart={(e) => ondragstart(e, c)}
         use:swipe={{ left: () => app.updateConversation(c.id, { archived: !c.archived }, c.archived ? 'chat.toast.unarchived' : 'chat.toast.archived'), right: () => app.updateConversation(c.id, { markedUnread: !unread }) }}
       >
-        <ChatAvatar name={c.title} seed={avatarSeed(c)} size={48} group={c.isGroup && c.kind === 'chat'} url={c.avatarUrl} channel={c.lastChannel ?? c.channels[0]} />
+        <ChatAvatar name={app.convAvatar(c).name} seed={app.convAvatar(c).seed} size={48} group={app.convAvatar(c).group} url={c.avatarUrl} channel={c.lastChannel ?? c.channels[0]} />
         <div class="body">
           <div class="l1">
             <span class="title">{c.title}</span>
@@ -288,6 +289,7 @@
               {#if !(c.draft && c.id !== app.selectedConversationId)}{preview(c)}{/if}
             </span>
             <span class="marks">
+              <TeamBadge conversation={c} />
               {#if c.returnedFromSnooze}<span class="back" title={t('chat.snooze.back')}><AlarmClock size={12} /> {t('chat.snooze.backShort')}</span>{/if}
               {#if c.scheduledCount}<Clock size={13} class="mark sched" aria-label={t('chat.schedule.count', { count: c.scheduledCount })} />{/if}
               {#if c.muted}<BellOff size={14} class="mark" aria-label={t('chat.muted')} />{/if}
@@ -609,7 +611,10 @@
     font-size: 12px;
     color: var(--tm-muted);
   }
+  /* Off-screen rows are skipped by layout and paint (long chat lists). */
   .item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 72px;
     position: relative;
     display: flex;
     gap: 12px;

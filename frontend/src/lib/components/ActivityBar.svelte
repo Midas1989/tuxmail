@@ -9,7 +9,21 @@
   import Search from '@lucide/svelte/icons/search';
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import { app, prefs } from '../state';
-  import { t } from '../i18n/index.svelte';
+  import { t, i18n } from '../i18n/index.svelte';
+
+  // Labels may wrap to two lines; long words break at the soft hyphens of
+  // nav.rail.* ("Ein\u00adstel\u00adlun\u00adgen") instead of being cut off
+  // ("Einstellu…"). The full label is always the tooltip.
+  let rail = $state<HTMLElement>();
+  $effect(() => {
+    void i18n.locale;
+    if (!rail) return;
+    // Auto-fit: shrink a label that still overflows two lines.
+    for (const el of rail.querySelectorAll<HTMLElement>('.lbl')) {
+      el.style.fontSize = '';
+      if (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) el.style.fontSize = '9px';
+    }
+  });
 
   type Item = { id: 'mail' | 'chats' | 'search' | 'projects' | 'calendar' | 'contacts' | 'files'; icon: typeof Mail; label: string; badge?: number };
 
@@ -40,7 +54,7 @@
   }
 </script>
 
-<nav class="rail" aria-label={t('nav.label')}>
+<nav class="rail" aria-label={t('nav.label')} bind:this={rail} lang={i18n.locale}>
   <div class="logo"><img src="./icons/icon-64.png" alt="TuxMail" width="34" height="34" /></div>
   <ul>
     {#each items as item (item.id)}
@@ -57,7 +71,7 @@
   <div class="spacer"></div>
   <button class="item settings" aria-current={app.route === 'settings' ? 'page' : undefined} onclick={() => app.navigate('settings')} title={t('nav.settings')}>
     <Settings size={21} strokeWidth={1.8} aria-hidden="true" />
-    <span class="lbl">{t('nav.settings')}</span>
+    <span class="lbl">{t('nav.rail.settings')}</span>
   </button>
 </nav>
 
@@ -99,8 +113,9 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
-    width: 52px;
-    height: 50px;
+    width: 56px;
+    min-height: 50px;
+    padding: 4px 1px;
     border: none;
     border-radius: 12px;
     background: transparent;
@@ -130,10 +145,18 @@
   .lbl {
     font-size: 10px;
     font-weight: 500;
-    max-width: 50px;
+    line-height: 1.12;
+    max-width: 54px;
+    max-height: 2.3em;
     overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    text-align: center;
+    white-space: normal;
+    hyphens: manual;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
   .dot {
     position: absolute;
@@ -175,8 +198,32 @@
     }
     ul {
       flex-direction: row;
-      flex: 1;
+      flex: 8;
+      min-width: 0;
       justify-content: space-around;
+      gap: 0;
+    }
+    li {
+      flex: 1 1 0;
+      min-width: 0;
+      display: flex;
+      justify-content: center;
+    }
+    /* Eight destinations share the width; labels wrap (soft hyphens). */
+    .item {
+      width: 100%;
+      max-width: 64px;
+      min-height: 50px;
+      padding: 3px 0;
+      gap: 1px;
+    }
+    .item.settings {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .lbl {
+      font-size: 9.5px;
+      max-width: 100%;
     }
     .item[aria-current='page']::before {
       display: none;

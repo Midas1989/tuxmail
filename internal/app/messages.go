@@ -4,6 +4,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -270,12 +271,11 @@ func (a *App) GetMessage(ctx context.Context, id int64) (MessageDetail, error) {
 	if rt := addrList(addrs, store.RoleReplyTo); len(rt) > 0 {
 		d.ReplyTo = rt
 	}
-	raw, err := a.rawMessage(m)
-	if err == nil {
-		r, rerr := a.render.Render(WithMessageID(ctx, id), raw)
+	r, rerr := a.renderCached(ctx, m)
+	if !errors.Is(rerr, errNoBody) {
 		if rerr == nil {
 			d.Text, d.HTML, d.HasRemoteContent = r.Text, r.HTML, r.HasRemoteContent
-			a.autoRemote(ctx, &d, m, raw) // mailproto.go: allowlisted senders
+			a.autoRemote(ctx, &d, m, nil) // mailproto.go: allowlisted senders (raw loaded there)
 			if r.InReplyTo != nil {
 				d.InReplyTo = r.InReplyTo
 			}

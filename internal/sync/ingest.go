@@ -46,13 +46,38 @@ func (b *batch) conv(ids ...int64) {
 	}
 }
 
-// syncFolder applies one incremental sync of a folder.
+// syncFolder applies one incremental sync of a folder. Providers may return
+// large changes in chunks (SyncDelta.More, newest mails first); every chunk
+// is committed, its state stored and its events published before the next
+// one is requested, so that the UI fills from the top while a large folder
+// is still syncing. Progress is reported in the account status.
 func (w *Worker) syncFolder(ctx context.Context, f domain.Folder) error {
+	for {
+		more, err := w.syncFolderChunk(ctx, f)
+		if err != nil || !more {
+			return err
+		}
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		// Keep user operations responsive during long initial syncs.
+		if err := w.runOps(ctx); err != nil {
+			return err
+		}
+	}
+}
+
+func (w *Worker) syncFolderChunk(ctx context.Context, f domain.Folder) (bool, error) {
 	st := w.m.st
 	state, err := st.FolderSyncState(ctx, f.ID)
 	if err != nil {
-		return err
+		return false, err
 	}
+	// A folder whose initial sync is not complete yet keeps the marker
+	// partialPrefix in front of the provider state (across restarts), so
+	// that its older mails never count as newly received.
+	partial := strings.HasPrefix(string(state), partialPrefix)
+	state = domain.SyncState(strings.TrimPrefix(string(state), partialPrefix))
 	initial := state == ""
 	var (
 		delta domain.SyncDelta
@@ -63,24 +88,24 @@ func (w *Worker) syncFolder(ctx context.Context, f domain.Folder) error {
 		delta, next, err = p.Sync(ctx, f.RemoteID, state)
 		return err
 	}); err != nil {
-		return fmt.Errorf("sync %q: %w", f.RemoteID, err)
+		return false, fmt.Errorf("sync %q: %w", f.RemoteID, err)
 	}
 	b := newBatch()
 	if delta.FullResync && !initial {
 		n, err := st.RemoveAllLocations(ctx, f.ID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		w.log.Info("sync: full resync", "folder", f.RemoteID, "dropped_locations", n)
 	}
 	for _, r := range delta.Removed {
 		if err := w.applyRemoved(ctx, f, r, b); err != nil {
-			return err
+			return false, err
 		}
 	}
 	for _, rm := range delta.FlagsChanged {
 		if err := w.applyFlags(ctx, f, rm, b); err != nil {
-			return err
+			return false, err
 		}
 	}
 	added := delta.Added
@@ -92,24 +117,48 @@ func (w *Worker) syncFolder(ctx context.Context, f domain.Folder) error {
 		}
 		return refNum(added[i].Ref.ID) > refNum(added[j].Ref.ID)
 	})
-	quiet := initial || delta.FullResync
+	// A chunked sync stays "initial" (no mail.received) until the folder
+	// has been synced completely once.
+	quiet := initial || partial || delta.FullResync
+	local := 0
+	if delta.Total > 0 && len(added) > 0 {
+		if fl, err := st.GetFolder(ctx, f.ID); err == nil && !initial {
+			local = fl.Total
+		}
+		w.setProgress(f, local, delta.Total, quiet)
+	}
 	for i := 0; i < len(added); i += w.m.cfg.IngestBatch {
+		if err := ctx.Err(); err != nil {
+			return false, err // stop quickly; this chunk is fetched again next time
+		}
 		for _, rm := range added[i:min(i+w.m.cfg.IngestBatch, len(added))] {
 			if err := w.ingest(ctx, f, rm, quiet, b); err != nil {
 				if ctx.Err() != nil || IsNetworkError(err) {
-					return err
+					return false, err
 				}
 				w.log.Warn("sync: ingest failed", "folder", f.RemoteID, "ref", rm.Ref.ID, "err", err)
 			}
 		}
+		n := b.changed
 		w.flush(ctx, f, b)
+		if delta.Total > 0 {
+			local += n
+			w.setProgress(f, min(local, delta.Total), delta.Total, quiet)
+		}
+	}
+	if delta.More && quiet {
+		next = partialPrefix + next
 	}
 	if err := st.SetFolderSyncState(ctx, f.ID, next); err != nil {
-		return err
+		return false, err
 	}
 	w.flush(ctx, f, b)
-	return nil
+	return delta.More, nil
 }
+
+// partialPrefix marks the stored sync state of a folder whose chunked
+// initial sync is still running.
+const partialPrefix = "partial:"
 
 func refNum(s string) uint64 {
 	n, _ := strconv.ParseUint(s, 10, 64)
@@ -279,6 +328,9 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 	}
 	b.conv(row.ConversationID)
 	if created {
+		if m.cfg.Comfort != nil && raw != nil {
+			m.cfg.Comfort.ProcessNewMail(ctx, row, raw, f.Role) // comfort.go
+		}
 		if m.cfg.Projects != nil {
 			if err := m.cfg.Projects.ProcessNewItem(ctx, store.Item{Kind: store.ItemMessage, ID: id}); err != nil {
 				w.log.Warn("sync: project rules", "message", id, "err", err)
@@ -287,7 +339,12 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 		if !quiet && receivable(f.Role) {
 			b.received = append(b.received, m.mailEvent(ctx, events.MailReceived, row, f, ct))
 		}
-		w.m.publishMessage(ctx, w.acc.ID, id, row.ConversationID, "added")
+		// The initial sync of a folder announces its mails per batch
+		// (folder.updated, conversation.updated in flush) instead of one event
+		// per mail, which flooded the UI (and the desktop event bridge).
+		if !quiet {
+			w.m.publishMessage(ctx, w.acc.ID, id, row.ConversationID, "added")
+		}
 	}
 	return nil
 }
@@ -560,6 +617,9 @@ func (m *Manager) mailEvent(ctx context.Context, typ events.Type, msg store.Mess
 		for _, a := range ct.Attachments {
 			mail.Attachments = append(mail.Attachments, events.Attachment{Name: a.Name, MIME: a.MIME, Size: a.Size})
 		}
+	}
+	if m.cfg.Comfort != nil {
+		m.cfg.Comfort.EnrichMailEvent(ctx, msg, mail)
 	}
 	return events.Event{Type: typ, AccountID: msg.AccountID, Ref: mail.Key, Mail: mail}
 }

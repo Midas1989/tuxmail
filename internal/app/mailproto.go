@@ -185,6 +185,15 @@ func (a *App) autoRemote(ctx context.Context, d *MessageDetail, m store.Message,
 	if err != nil || !ok {
 		return
 	}
+	if raw == nil { // GetMessage renders from the render cache (rendercache.go)
+		mm, err := a.st.GetMessage(ctx, m.ID)
+		if err != nil {
+			return
+		}
+		if raw, err = a.rawMessage(mm); err != nil {
+			return
+		}
+	}
 	if html, err := a.renderRemote(ctx, m.ID, raw); err == nil && html != "" {
 		d.HTML, d.RemoteLoaded = html, true
 	}

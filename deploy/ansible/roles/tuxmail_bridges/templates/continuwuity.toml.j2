@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+# Continuwuity – Matrix-Homeserver für den TuxMail-Bridge-Modus (KONZEPT 11.3).
+# Änderungen bitte über Ansible-Variablen (tuxmail_matrix_*, tuxmail_continuwuity_extra_config).
+# Alle Optionen: conduwuit-example.toml im Continuwuity-Repository.
+
+[global]
+# Nachträglich NICHT änderbar, ohne die Datenbank zu löschen.
+server_name = {{ tuxmail_matrix_server_name | to_json }}
+
+database_path = "/var/lib/continuwuity"
+
+# Nur lokal; öffentlich erreichbar ausschließlich über nginx (/_matrix).
+address = ["127.0.0.1"]
+port = {{ tuxmail_matrix_port | int }}
+
+# Upload-Limit (Bytes), passend zu nginx client_max_body_size.
+max_request_size = {{ (tuxmail_matrix_max_upload_mb | int) * 1024 * 1024 }}
+
+{% if tuxmail_bridges_cw_bootstrap | default(false) | bool %}
+# EINMALIG für das erste Konto (Server-Admin) – wird von Ansible sofort wieder entfernt.
+allow_registration = true
+registration_token = {{ tuxmail_bridges_cw_bootstrap_token | to_json }}
+{% else %}
+# Registrierung aus. Weitere Konten im Admin-Raum: "!admin users create-user <name>"
+allow_registration = false
+{% endif %}
+
+# Föderation mit anderen Matrix-Servern
+allow_federation = {{ tuxmail_matrix_federation | bool | to_json }}
+{% if not (tuxmail_matrix_federation | bool) %}
+# Ohne Föderation keine Schlüsselserver abfragen.
+trusted_servers = []
+{% endif %}
+
+# Kein Suffix (Standard wäre ein Flaggen-Emoji) an neuen Anzeigenamen.
+new_user_displayname_suffix = ""
+
+# Appservices (Bridges) werden NICHT aus Dateien gelesen, sondern im Admin-Raum
+# registriert ("!admin appservices register"). Die Registrierungen liegen unter
+# /etc/continuwuity/appservices/ (siehe README, Abschnitt Bridges).
+{% for key, value in tuxmail_continuwuity_extra_config.items() %}
+{{ key }} = {{ value | to_json }}
+{% endfor %}
+
+[global.well_known]
+client = {{ tuxmail_matrix_public_base_url | to_json }}
+{% if tuxmail_matrix_federation | bool %}
+server = {{ (tuxmail_domain ~ ':443') | to_json }}
+{% endif %}

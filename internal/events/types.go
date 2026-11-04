@@ -141,6 +141,23 @@ type Mail struct {
 	Attachments []Attachment        `json:"attachments,omitempty"`
 	IsInvoice   bool                `json:"isInvoice,omitempty"`
 	PGP         PGPStatus           `json:"pgp"`
+	// Comfort analysis (KONZEPT 8.7, 8.11): spam score 0..100 and the
+	// structured e-invoice, if any.
+	SpamScore float64  `json:"spamScore,omitempty"`
+	IsSpam    bool     `json:"isSpam,omitempty"`
+	Invoice   *Invoice `json:"invoice,omitempty"`
+}
+
+// Invoice is a structured e-invoice (ZUGFeRD/Factur-X, XRechnung) found in a mail.
+type Invoice struct {
+	Format   string    `json:"format"`
+	Number   string    `json:"number,omitempty"`
+	Issued   time.Time `json:"issued,omitzero"`
+	Due      time.Time `json:"due,omitzero"`
+	Amount   float64   `json:"amount,omitempty"`
+	Currency string    `json:"currency,omitempty"`
+	Seller   string    `json:"seller,omitempty"`
+	IBAN     string    `json:"iban,omitempty"`
 }
 
 // Identity is the sender identity of a draft.

@@ -82,7 +82,10 @@
     "mail": "Mail",
     "search": "Suche",
     "settings": "Einstellungen",
-    "projects": "Projekte"
+    "projects": "Projekte",
+    "rail": {
+      "settings": "Ein­stel­lun­gen"
+    }
   },
   "mail": {
     "attachment": {
@@ -179,6 +182,13 @@
       "otherFolder": "In einem anderen Ordner",
       "onlyFolder": "Nur Nachrichten aus diesem Ordner",
       "onlyFolderShort": "Nur dieser Ordner"
+    },
+    "window": {
+      "loading": "Wird geladen …",
+      "print": "Drucken",
+      "source": "Quelltext anzeigen",
+      "newWindow": "In neuem Fenster öffnen",
+      "resize": "Größe ändern"
     }
   },
   "chat": {
@@ -479,6 +489,14 @@
       "hour": "In 1 Stunde",
       "monday": "Montag früh",
       "tomorrow": "Morgen früh"
+    },
+    "noTextContent": "(Kein Textinhalt – Mail öffnen)",
+    "bodyLoading": "Mail wird geladen …",
+    "full": {
+      "show": "Ganze Mail anzeigen",
+      "compact": "Kompakte Ansicht",
+      "all": "Ganze Mails anzeigen",
+      "window": "Im Mail-Fenster öffnen"
     }
   },
   "calendar": {
@@ -1142,6 +1160,47 @@
         "sender": "Absender",
         "domain": "Domain"
       }
+    },
+    "diag": {
+      "title": "Info & Diagnose",
+      "version": "Version",
+      "mode": "Modus",
+      "modeDesktop": "Desktop",
+      "modeServer": "Server",
+      "portable": "portabel",
+      "dataDir": "Datenverzeichnis",
+      "logFile": "Logdatei",
+      "system": "System",
+      "accounts": "Konten",
+      "noAccounts": "Keine Mailkonten.",
+      "state": "Status",
+      "folder": "Ordner",
+      "progress": "Fortschritt",
+      "lastSync": "Letzte Synchronisation",
+      "lastError": "Letzter Fehler",
+      "never": "nie",
+      "folders": "{count} Ordner · {messages} Nachrichten",
+      "export": "Diagnosedaten exportieren",
+      "exportHint": "Erstellt eine ZIP-Datei mit den Logdateien und der Konfiguration ohne Passwörter, Tokens oder Mailinhalte. Hängen Sie sie an einen Fehlerbericht an.",
+      "exported": "Diagnosedaten gespeichert als {file}",
+      "refresh": "Aktualisieren",
+      "syncNow": "Jetzt synchronisieren",
+      "states": {
+        "connecting": "Verbinde",
+        "syncing": "Synchronisiere",
+        "idle": "Aktuell",
+        "error": "Fehler",
+        "stopped": "Angehalten",
+        "offline": "Offline"
+      },
+      "incoming": "Posteingangsserver",
+      "outgoing": "Postausgangsserver"
+    },
+    "window": {
+      "title": "Fenster",
+      "nativeTitleBar": "Systemtitelleiste verwenden",
+      "nativeTitleBarHint": "Zeigt die Titelleiste des Betriebssystems statt der eigenen von TuxMail. Wirkt nach einem Neustart.",
+      "restart": "Starten Sie TuxMail neu, um die Änderung zu übernehmen."
     }
   },
   "search": {
@@ -1718,6 +1777,18 @@
         "days": "Tagen (0 = nie)",
         "deleteLocal": "Vom Server löschen, wenn in TuxMail gelöscht",
         "hint": "POP3 kennt nur einen Posteingang. Mails lassen sich in lokale Ordner verschieben; sie bleiben auf diesem Gerät, auch wenn die Serverkopie gelöscht wird."
+      },
+      "others": "Andere gefundene Einstellungen ({count})",
+      "others_one": "Andere gefundene Einstellungen (1)",
+      "useThis": "Diese verwenden",
+      "check": {
+        "verified": "geprüft",
+        "reachable": "erreichbar",
+        "loginOk": "Anmeldung erfolgreich",
+        "loginFailed": "Anmeldung abgelehnt (Passwort oder Benutzername?)",
+        "unreachable": "nicht erreichbar: {error}",
+        "unknown": "nicht geprüft",
+        "noneWorking": "Keiner der gefundenen Server konnte bestätigt werden. Prüfen Sie das Passwort oder geben Sie die Einstellungen manuell ein."
       }
     },
     "connect": {
@@ -2614,5 +2685,348 @@
       "cancel": "Abbrechen",
       "qrLabel": "QR-Code zum Koppeln"
     }
+  },
+  "team": {
+    "section": "Team-Postfächer",
+    "back": "Meine Postfächer",
+    "personal": "Persönlich",
+    "viewsLabel": "Team-Ansichten",
+    "open": "Öffnen",
+    "me": "ich",
+    "mentions": "{count} ungelesene Erwähnungen",
+    "panel": "Team-Postfach {name}",
+    "assignee": "Zuständig",
+    "unassigned": "Nicht zugewiesen",
+    "assignToMe": "Mir zuweisen",
+    "due": "Fällig",
+    "overdue": "Überfällig",
+    "view": {
+      "all": "Alle",
+      "mine": "Mir zugewiesen",
+      "unassigned": "Nicht zugewiesen",
+      "done": "Erledigt"
+    },
+    "status": {
+      "label": "Status",
+      "open": "Offen",
+      "in_progress": "In Bearbeitung",
+      "waiting": "Wartet",
+      "done": "Erledigt"
+    },
+    "priority": {
+      "label": "Priorität",
+      "low": "Niedrig",
+      "normal": "Normal",
+      "high": "Hoch",
+      "urgent": "Dringend"
+    },
+    "comments": {
+      "toggle": "Interne Kommentare anzeigen",
+      "count": "{count} Notizen",
+      "internal": "Intern – wird nie an Kunden gesendet",
+      "delete": "Kommentar löschen",
+      "placeholder": "Interne Notiz, @Name erwähnt Kollegen (Strg+Enter)",
+      "add": "Kommentar hinzufügen",
+      "mention": "Kollegen erwähnen"
+    },
+    "presence": {
+      "replying": "{name} schreibt gerade eine Antwort",
+      "viewing": "{name} sieht sich das an",
+      "draft": "Entwurf von {name} ({when})"
+    },
+    "error": {
+      "permission": "Dafür fehlt dir die Berechtigung in diesem Team-Postfach."
+    },
+    "role": {
+      "read": "Lesen",
+      "reply": "Beantworten",
+      "assign": "Zuweisen",
+      "manage": "Verwalten"
+    },
+    "stats": {
+      "title": "Statistik",
+      "total": "Konversationen",
+      "median": "Median erste Antwort",
+      "minutes": "{n} Min.",
+      "hours": "{n} Std."
+    },
+    "admin": {
+      "title": "Team-Postfächer",
+      "create": "Team-Postfach anlegen",
+      "intro": "Gemeinsame Postfächer werden einmal auf dem Server synchronisiert. Mitglieder sehen sie in Ordnerbaum und Chatliste, weisen Konversationen zu und hinterlassen interne Notizen.",
+      "name": "Name",
+      "address": "Adresse",
+      "description": "Beschreibung",
+      "sharedDrafts": "Entwürfe sind für das Team sichtbar",
+      "sharedDraftsShort": "Geteilte Entwürfe",
+      "withAccount": "E-Mail-Konto jetzt verbinden (IMAP/SMTP)",
+      "password": "Passwort",
+      "imap": "IMAP-Server",
+      "smtp": "SMTP-Server",
+      "port": "Port",
+      "created": "Team-Postfach angelegt",
+      "deleteConfirm": "Team-Postfach „{name}“ mit allen Daten löschen?",
+      "accounts": "{count} Konten",
+      "disabled": "deaktiviert",
+      "active": "Aktiv",
+      "delete": "{name} löschen",
+      "member": "Benutzer oder Gruppe",
+      "role": "Rolle",
+      "group": "Gruppe",
+      "removeMember": "{name} entfernen",
+      "pick": "Auswählen …",
+      "groups": "Gruppen",
+      "users": "Benutzer",
+      "add": "Hinzufügen",
+      "rolesHint": "Lesen: Konversationen und Notizen sehen. Beantworten: als Team antworten, Konversationen übernehmen, kommentieren. Zuweisen: an alle zuweisen. Verwalten: Textbausteine, Workflows und Mitglieder.",
+      "namePh": "Support",
+      "addressPh": "support@firma.de",
+      "imapPh": "imap.firma.de",
+      "smtpPh": "smtp.firma.de"
+    }
+  },
+  "comfort": {
+    "loading": "Wird geladen…",
+    "add": "Hinzufügen",
+    "category": {
+      "tabs": "Smarte Kategorien",
+      "all": "Alle",
+      "personal": "Wichtig/Persönlich",
+      "newsletter": "Newsletter",
+      "invoice": "Rechnungen & Bestellungen",
+      "notification": "Benachrichtigungen",
+      "social": "Social",
+      "appointment": "Termine",
+      "label": "Kategorie",
+      "manual": "manuell gesetzt"
+    },
+    "spam": {
+      "isSpam": "Diese Mail ist wahrscheinlich Spam (Wert {score}).",
+      "suspicious": "Diese Mail wirkt verdächtig (Spam-Wert {score}).",
+      "notSpam": "Kein Spam",
+      "spam": "Spam",
+      "markedSpam": "Als Spam markiert – der Filter lernt daraus.",
+      "markedHam": "Als „Kein Spam“ markiert."
+    },
+    "smime": {
+      "decrypted": "Entschlüsselt (S/MIME).",
+      "cannotDecrypt": "Mit S/MIME verschlüsselt – kein passendes Zertifikat zum Entschlüsseln.",
+      "sig": {
+        "trusted": "Signiert von {name} (vertrauenswürdiges Zertifikat).",
+        "untrusted": "Signiert von {name} – der Aussteller ist nicht vertrauenswürdig.",
+        "mismatch": "Signiert von {name}, das Zertifikat gehört aber nicht zur Absenderadresse.",
+        "expired": "Signiert von {name} mit abgelaufenem Zertifikat.",
+        "invalid": "Ungültige Signatur – der Inhalt wurde möglicherweise verändert."
+      },
+      "issuer": "Aussteller: {issuer}",
+      "title": "S/MIME-Zertifikate",
+      "intro": "Eigenes Zertifikat (.p12/.pfx) importieren, um zu signieren und zu entschlüsseln. Zertifikate anderer werden aus signierten Mails automatisch übernommen.",
+      "import": "Importieren",
+      "importNow": "Zertifikat importieren",
+      "password": "Passwort der Zertifikatsdatei",
+      "imported": "Zertifikat für {email} importiert.",
+      "confirmDelete": "Zertifikat von {email} löschen?",
+      "delete": "Zertifikat löschen",
+      "trust": "Vertrauen",
+      "untrust": "Vertrauen entziehen",
+      "trusted": "vertraut",
+      "expired": "abgelaufen",
+      "validUntil": "gültig bis {date}",
+      "none": "Noch keine Zertifikate.",
+      "source": {
+        "own": "eigenes",
+        "imported": "importiert",
+        "collected": "aus Mail"
+      },
+      "signByDefault": "Jede Mail signieren, wenn ein Zertifikat vorhanden ist",
+      "encryptAuto": "Automatisch verschlüsseln, wenn alle Empfänger Zertifikate haben",
+      "prefer": "Wenn beides möglich ist:",
+      "preferPgp": "OpenPGP bevorzugen",
+      "preferSmime": "S/MIME bevorzugen"
+    },
+    "newsletter": {
+      "bar": "Newsletter von {name}",
+      "alreadyUnsubscribed": "Vom Newsletter {name} abgemeldet.",
+      "unsubscribe": "Abmelden",
+      "archiveAll": "Alle archivieren",
+      "autoArchive": "Künftig automatisch archivieren",
+      "unsubscribed": "Abgemeldet.",
+      "unsubscribedMail": "Abmelde-Mail gesendet.",
+      "openedLink": "Die Abmeldeseite wurde im Browser geöffnet.",
+      "failed": "Abmelden fehlgeschlagen: {error}",
+      "archived": "{count} Mails archiviert.",
+      "autoArchiveCreated": "Workflow angelegt: künftige Mails werden automatisch archiviert."
+    },
+    "subscriptions": {
+      "title": "Abonnements",
+      "open": "Abonnements öffnen",
+      "intro": "In deinen Postfächern erkannte Newsletter und Verteiler.",
+      "filter": "Abonnements filtern",
+      "empty": "Noch keine Newsletter erkannt.",
+      "sender": "Absender",
+      "frequency": "Häufigkeit",
+      "lastMail": "Letzte Mail",
+      "inInbox": "Im Posteingang",
+      "perMonth": "{n}/Monat",
+      "oneClick": "Abmelden (ein Klick)",
+      "unsubscribedBadge": "abgemeldet",
+      "autoArchiveOn": "wird archiviert"
+    },
+    "invoice": {
+      "title": "E-Rechnung",
+      "format": {
+        "facturx": "ZUGFeRD / Factur-X",
+        "zugferd1": "ZUGFeRD 1.0",
+        "cii": "XRechnung (CII)",
+        "ubl": "XRechnung (UBL)"
+      },
+      "seller": "Rechnungssteller",
+      "number": "Rechnungsnummer",
+      "amount": "Betrag",
+      "issued": "Rechnungsdatum",
+      "due": "Fällig am",
+      "iban": "IBAN",
+      "copyIban": "IBAN kopieren",
+      "reference": "Verwendungszweck",
+      "payBy": "Aufgabe: bezahlen bis {date}",
+      "payTask": "Aufgabe „Rechnung bezahlen“ anlegen",
+      "taskCreated": "Aufgabe angelegt."
+    },
+    "print": {
+      "print": "Drucken (Umschalt: ganze Konversation)",
+      "pdf": "Als Archiv-PDF speichern (PDF/A-3)",
+      "popupBlocked": "Die Druckansicht wurde vom Browser blockiert."
+    },
+    "spell": {
+      "toggle": "Rechtschreibprüfung",
+      "language": "Sprache der Rechtschreibprüfung",
+      "auto": "Automatisch",
+      "autoDetected": "Auto ({lang})",
+      "lang": {
+        "de": "Deutsch",
+        "en": "Englisch"
+      },
+      "errors": "{count} mögliche Rechtschreibfehler",
+      "menu": "Rechtschreibvorschläge",
+      "noSuggestions": "Keine Vorschläge",
+      "addToDictionary": "„{word}“ zum Wörterbuch hinzufügen",
+      "ignore": "Ignorieren",
+      "added": "„{word}“ zum Wörterbuch hinzugefügt."
+    },
+    "meeting": {
+      "add": "Videokonferenz-Link einfügen",
+      "create": "Online-Meeting erstellen",
+      "providerLabel": "Videokonferenz-Dienst",
+      "provider": {
+        "jitsi": "Jitsi Meet",
+        "nextcloud_talk": "Nextcloud Talk",
+        "teams": "Microsoft Teams"
+      },
+      "defaultTitle": "Online-Meeting",
+      "join": "Meeting beitreten ({provider})",
+      "password": "Passwort: {password}",
+      "failed": "Das Meeting konnte nicht erstellt werden: {error}"
+    },
+    "crypto": {
+      "title": "Signatur und Verschlüsselung",
+      "auto": "Automatisch",
+      "smimeSign": "S/MIME: signieren",
+      "smimeEncrypt": "S/MIME: signieren + verschlüsseln",
+      "pgpEncrypt": "OpenPGP: signieren + verschlüsseln",
+      "none": "Unverschlüsselt"
+    },
+    "merge": {
+      "open": "Serienmail",
+      "title": "Serienmail",
+      "step": {
+        "recipients": "Empfänger",
+        "template": "Text",
+        "preview": "Vorschau",
+        "send": "Versand"
+      },
+      "fromGroup": "Aus Kontaktgruppe",
+      "chooseGroup": "Gruppe wählen…",
+      "load": "Laden",
+      "fromFile": "Aus CSV- oder Excel-Datei",
+      "chooseFile": "Datei wählen…",
+      "recipientsLoaded": "{count} Empfänger geladen.",
+      "placeholders": "Platzhalter:",
+      "text": "Text",
+      "useHtml": "Formatierten Text aus dem Editor senden (HTML)",
+      "perMinute": "Mails pro Minute",
+      "unsubscribe": "Abmeldeadresse (List-Unsubscribe, optional)",
+      "unsubscribePlaceholder": "mailto:abmelden@example.org oder https://…",
+      "encrypt": "Für Empfänger mit Schlüssel verschlüsseln (OpenPGP/S/MIME)",
+      "next": "Weiter",
+      "prev": "Vorheriger Empfänger",
+      "toPreview": "Vorschau",
+      "previewOf": "{n} von {total}: {email}",
+      "missing": "Fehlende Werte: {fields}",
+      "duration": "{count} einzelne Mails, ca. {minutes} Min.",
+      "send": "{count} Mails senden",
+      "status": "{sent} gesendet, {failed} fehlgeschlagen, {pending} ausstehend",
+      "state": {
+        "draft": "vorbereitet",
+        "running": "wird gesendet…",
+        "done": "fertig",
+        "cancelled": "gestoppt"
+      },
+      "entry": {
+        "pending": "ausstehend",
+        "sent": "gesendet",
+        "failed": "fehlgeschlagen",
+        "skipped": "übersprungen"
+      },
+      "retry": "Fehlgeschlagene wiederholen",
+      "stop": "Stoppen"
+    },
+    "settings": {
+      "title": "Komfortfunktionen",
+      "spam": "Spam-Filter",
+      "spamEnabled": "Lernender Spam-Filter (lokal)",
+      "unsure": "Verdächtig ab Wert {n}",
+      "spamThreshold": "Spam ab Wert {n}",
+      "moveToJunk": "Spam automatisch in den Junk-Ordner verschieben",
+      "serverLearn": "Auch den Server lernen lassen ($Junk/$NotJunk)",
+      "categories": "Smarte Kategorien",
+      "categoriesEnabled": "Mails in Kategorien einteilen (lokal)",
+      "aiRefine": "Unsichere Fälle von der KI-Assistenz verfeinern lassen",
+      "categoriesHint": "Das Verschieben in eine andere Kategorie trainiert den Klassifikator. Suche mit category:rechnung.",
+      "newsletter": "Newsletter",
+      "newsletterBar": "Newsletter-Leiste im Lesebereich anzeigen",
+      "spell": "Rechtschreibprüfung",
+      "spellEnabled": "Rechtschreibung beim Schreiben prüfen",
+      "userDictionary": "Eigenes Wörterbuch",
+      "addWord": "Wort hinzufügen",
+      "removeWord": "„{word}“ entfernen",
+      "meeting": "Videokonferenzen",
+      "jitsiUrl": "Jitsi-Server",
+      "mergePdf": "Serienmails & PDF",
+      "pdfName": "PDF-Dateiname",
+      "useChromium": "HTML-Mails mit Chromium rendern, falls installiert",
+      "chromiumPath": "Chromium / Chrome / Edge",
+      "chromiumAuto": "automatisch erkannt"
+    }
+  },
+  "sync": {
+    "connecting": "Verbinde mit {account} …",
+    "syncing": "Synchronisiere {account} …",
+    "folder": "Synchronisiere {account} · {folder}",
+    "progress": "Synchronisiere {account} · {folder} {done} / {total}",
+    "done": "{account} ist synchronisiert",
+    "error": "Synchronisation von {account} fehlgeschlagen",
+    "retry": "Erneut versuchen",
+    "details": "Details",
+    "listSyncing": "Wird synchronisiert …",
+    "listSyncingHint": "{done} von {total} Nachrichten geladen – neue Mails erscheinen hier sofort.",
+    "listSyncingHintNoCount": "Das Postfach wird geladen – neue Mails erscheinen hier sofort.",
+    "allIdle": "Alle Konten sind aktuell",
+    "indicator": "Synchronisationsstatus"
+  },
+  "window": {
+    "minimise": "Minimieren",
+    "maximise": "Maximieren",
+    "restore": "Wiederherstellen",
+    "close": "Schließen"
   }
 }

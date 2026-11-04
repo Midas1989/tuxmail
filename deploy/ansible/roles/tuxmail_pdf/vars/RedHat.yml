@@ -1,0 +1,13 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# RHEL/Rocky/Alma 9: Chromium aus EPEL. chromium-headless bringt die schlanke
+# headless_shell ohne Abhängigkeiten zu X11/Wayland-Sitzungen mit.
+tuxmail_pdf_os_chromium_packages:
+  - chromium-headless
+tuxmail_pdf_os_font_packages:
+  - dejavu-sans-fonts
+  - liberation-fonts
+tuxmail_pdf_chromium_candidates:
+  - /usr/lib64/chromium-browser/headless_shell
+  - /usr/bin/chromium-browser
+  - /usr/bin/chromium

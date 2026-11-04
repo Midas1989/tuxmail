@@ -1,0 +1,27 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Räumt eine früher angelegte Gotenberg-Unit ab (Wechsel auf chromium/none).
+# Das Image selbst bleibt liegen (manuell: podman rmi <image>).
+
+- name: Gotenberg-Unit suchen
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ tuxmail_gotenberg_service_name }}.service"
+  register: tuxmail_pdf_gotenberg_unit_file
+
+- name: Gotenberg stoppen und Unit entfernen
+  when: tuxmail_pdf_gotenberg_unit_file.stat.exists
+  block:
+    - name: Gotenberg stoppen und deaktivieren
+      ansible.builtin.systemd_service:
+        name: "{{ tuxmail_gotenberg_service_name }}"
+        enabled: false
+        state: stopped
+
+    - name: Gotenberg-Unit entfernen
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ tuxmail_gotenberg_service_name }}.service"
+        state: absent
+
+    - name: Systemd neu laden
+      ansible.builtin.systemd_service:
+        daemon_reload: true

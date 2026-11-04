@@ -17,9 +17,12 @@
   import TagChips from '../common/TagChips.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
   import { app, prefs } from '../../state';
+  import { comfort } from '../../state';
+  import CategoryTabs from '../comfort/CategoryTabs.svelte';
   import { FLAG_ANSWERED, FLAG_FLAGGED, FLAG_FORWARDED, FLAG_SEEN, type MessageSummary } from '../../types';
   import { formatListDate, t } from '../../i18n/index.svelte';
   import Avatar from '../common/Avatar.svelte';
+  import ListSyncState from './ListSyncState.svelte';
 
   const OVERSCAN = 6;
 
@@ -43,17 +46,19 @@
     return r === 'sent' || r === 'drafts';
   });
 
-  const total = $derived(app.messages.length);
+  // Smart category filter (comfort): the visible list.
+  const list = $derived(comfort.filterMessages(app.messages));
+  const total = $derived(list.length);
   const start = $derived(Math.max(0, Math.floor(scrollTop / rowH) - OVERSCAN));
   const end = $derived(Math.min(total, Math.ceil((scrollTop + height) / rowH) + OVERSCAN));
-  const visible = $derived(app.messages.slice(start, end).map((m, i) => ({ m, index: start + i })));
+  const visible = $derived(list.slice(start, end).map((m, i) => ({ m, index: start + i })));
 
   // Scroll the selected row into view when requested (keyboard nav, view switch).
   $effect(() => {
     void app.listScrollTick;
     const id = app.selectedMessageId;
     if (!viewport || id == null) return;
-    const idx = app.messages.findIndex((m) => m.id === id);
+    const idx = list.findIndex((m) => m.id === id);
     if (idx < 0) return;
     const top = idx * rowH;
     if (top < viewport.scrollTop) viewport.scrollTop = top;
@@ -71,9 +76,9 @@
 
   function rowClick(e: MouseEvent, m: MessageSummary, index: number) {
     if (e.shiftKey && anchor != null) {
-      const a = app.messages.findIndex((x) => x.id === anchor);
+      const a = list.findIndex((x) => x.id === anchor);
       const [from, to] = a < index ? [a, index] : [index, a];
-      for (const x of app.messages.slice(from, to + 1)) app.toggleChecked(x.id, true);
+      for (const x of list.slice(from, to + 1)) app.toggleChecked(x.id, true);
       return;
     }
     if (e.ctrlKey || e.metaKey) {
@@ -111,18 +116,24 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && e.shiftKey && app.selectedMessageId != null) {
+      // Shift+Enter: the selected mail in its own mail window.
+      e.preventDefault();
+      void app.openMailWindow(app.selectedMessageId);
+      return;
+    }
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       app.moveSelection(1);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       app.moveSelection(-1);
-    } else if (e.key === 'Home' && app.messages.length) {
+    } else if (e.key === 'Home' && list.length) {
       e.preventDefault();
-      void app.selectMessage(app.messages[0].id, { scroll: true });
-    } else if (e.key === 'End' && app.messages.length) {
+      void app.selectMessage(list[0].id, { scroll: true });
+    } else if (e.key === 'End' && list.length) {
       e.preventDefault();
-      void app.selectMessage(app.messages[app.messages.length - 1].id, { scroll: true });
+      void app.selectMessage(list[list.length - 1].id, { scroll: true });
     }
   }
 
@@ -166,6 +177,7 @@
     </header>
     {#if sf}<div class="sf-query" title={sf.query}><code>{sf.query}</code></div>{/if}
   {/if}
+  <CategoryTabs />
   <div
     class="viewport"
     bind:this={viewport}
@@ -178,7 +190,9 @@
     {onkeydown}
     data-list="messages"
   >
-    {#if total === 0 && !app.messagesLoading}
+    {#if total === 0 && !app.search && app.listSync}
+      <ListSyncState status={app.listSync} />
+    {:else if total === 0 && !app.messagesLoading}
       <div class="empty">
         <Inbox size={36} strokeWidth={1.4} aria-hidden="true" />
         <p class="e1">{app.search ? t('mail.list.noResults') : t('mail.list.empty')}</p>
@@ -194,6 +208,7 @@
         {@const acc = app.account(m.accountId)}
         <div
           id="msg-{m.id}"
+          ondblclick={() => app.openMailWindow(m.id)}
           class="row"
           class:unread
           class:selected

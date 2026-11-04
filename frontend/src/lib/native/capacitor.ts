@@ -14,7 +14,7 @@
 
 import { mount, unmount } from 'svelte';
 import { Capacitor } from '@capacitor/core';
-import { app, prefs } from '../state';
+import { app, prefs, team } from '../state';
 import { t } from '../i18n/index.svelte';
 import { App, Browser, Preferences, SplashScreen, SystemBars, SystemBarsStyle, TuxMail, type PushRegistration, type SharePayload } from './plugins';
 import { ProfileStore, type KeyValueStore, type ServerProfile } from './profiles';
@@ -285,6 +285,10 @@ async function openTarget(target: DeepLinkTarget): Promise<void> {
   const q = new URLSearchParams(target.hash.split('?')[1] ?? '');
   if (location.hash !== target.hash.split('?')[0]) location.hash = target.hash.split('?')[0];
   if (q.get('view') === 'chat' && prefs.viewMode !== 'chat') await app.setViewMode('chat');
+  // Team mailbox notifications carry #/mail?team=<id>&conversation=<id> (conversation ids of the team store).
+  const teamId = Number(q.get('team'));
+  if (teamId && team.activeId !== teamId) await team.enter(teamId);
+  else if (!teamId && team.activeId != null) await team.leave();
   if (target.conversationId != null) await app.selectConversation(target.conversationId);
   if (target.messageId != null) await app.selectMessage(target.messageId);
   if (target.compose) app.openCompose();

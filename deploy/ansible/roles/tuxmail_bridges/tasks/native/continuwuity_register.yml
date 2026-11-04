@@ -1,0 +1,81 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Continuwuity liest Appservice-Registrierungen nicht aus Dateien, sondern erwartet
+# im Admin-Raum den Befehl "!admin appservices register" mit der YAML-Datei als
+# Codeblock. Ist ein Admin-Zugriffstoken vorhanden (/etc/continuwuity/admin.token,
+# siehe continuwuity_admin.yml), sendet Ansible diese Nachricht selbst über die
+# Client-API. Eine Prüfsummen-Markierung je Bridge sorgt für Idempotenz; bei geänderter
+# Registrierung wird vorher "!admin appservices unregister <id>" gesendet.
+
+- name: Registrierungen nach /etc/continuwuity/appservices kopieren
+  ansible.builtin.copy:
+    src: "/etc/mautrix-{{ item.name }}/registration.yaml"
+    dest: "/etc/continuwuity/appservices/{{ item.name }}.yaml"
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ tuxmail_bridges_mautrix }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Admin-Zugriffstoken suchen
+  ansible.builtin.stat:
+    path: /etc/continuwuity/admin.token
+  register: tuxmail_bridges_cw_token_file
+
+- name: Bridges automatisch im Admin-Raum registrieren
+  when:
+    - tuxmail_continuwuity_automate | bool
+    - tuxmail_bridges_cw_token_file.stat.exists
+  block:
+    - name: Admin-Zugriffstoken lesen
+      ansible.builtin.slurp:
+        src: /etc/continuwuity/admin.token
+      register: tuxmail_bridges_cw_token_raw
+      no_log: true
+
+    - name: Admin-Raum auflösen (#admins:{{ tuxmail_matrix_server_name }})
+      ansible.builtin.uri:
+        url: >-
+          {{ tuxmail_bridges_homeserver_url }}/_matrix/client/v3/directory/room/{{
+          ('#admins:' ~ tuxmail_matrix_server_name) | urlencode | replace('/', '%2F') }}
+        headers:
+          Authorization: "Bearer {{ tuxmail_bridges_cw_token_raw.content | b64decode | trim }}"
+        status_code: 200
+      register: tuxmail_bridges_cw_admin_room
+      no_log: true
+
+    - name: Registrierung je Bridge senden
+      ansible.builtin.include_tasks: native/continuwuity_register_one.yml
+      loop: "{{ tuxmail_bridges_mautrix }}"
+      loop_control:
+        loop_var: tuxmail_bridge
+        label: "{{ tuxmail_bridge.name }}"
+
+    - name: Automatische Registrierung war erfolgreich
+      ansible.builtin.set_fact:
+        tuxmail_bridges_cw_auto_ok: true
+
+  rescue:
+    - name: Hinweis – automatische Registrierung fehlgeschlagen
+      ansible.builtin.debug:
+        msg:
+          - "WARNUNG: Die Bridges konnten nicht automatisch bei Continuwuity registriert werden."
+          - "Bitte manuell wie unten beschrieben registrieren und den Lauf danach wiederholen."
+      changed_when: false
+
+- name: Anleitung – Bridges manuell bei Continuwuity registrieren
+  ansible.builtin.debug:
+    msg:
+      - "Mit dem Admin-Konto {{ tuxmail_bridges_matrix_admin }} (z. B. in TuxMail oder Element) den Raum"
+      - "#admins:{{ tuxmail_matrix_server_name }} öffnen und für JEDE Bridge eine Nachricht senden:"
+      - "  !admin appservices register"
+      - "  ```"
+      - "  <Inhalt von /etc/continuwuity/appservices/<bridge>.yaml>   (sudo cat …)"
+      - "  ```"
+      - "Kontrolle: '!admin appservices list'. Bridges: {{ tuxmail_bridges_mautrix | map(attribute='name') | join(', ') }}"
+      - "Danach: sudo systemctl restart {{ tuxmail_bridges_mautrix | map(attribute='name') | map('regex_replace', '^', 'mautrix-') | join(' ') }}"
+  when:
+    - tuxmail_bridges_mautrix | length > 0
+    - not (tuxmail_bridges_cw_auto_ok | default(false) | bool)

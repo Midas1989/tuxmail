@@ -22,6 +22,7 @@
   import SignatureSettings from '../components/settings/SignatureSettings.svelte';
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
+  import DiagnosticsSettings from '../components/settings/DiagnosticsSettings.svelte';
   import MessengerSettings from '../components/settings/MessengerSettings.svelte';
   import MessengerWizard from '../components/settings/MessengerWizard.svelte';
   import MessageCircle from '@lucide/svelte/icons/message-circle';
@@ -34,6 +35,9 @@
   import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
   import BackupSettings from '../components/settings/BackupSettings.svelte';
   import CloudAccountsSettings from '../components/settings/CloudAccountsSettings.svelte'; // OAuth/Cloud accounts
+  import ComfortSettingsCard from '../components/comfort/ComfortSettingsCard.svelte'; // spam, categories, spell, merge, PDF
+  import SmimeSettingsCard from '../components/comfort/SmimeSettingsCard.svelte';
+  import TeamSettings from '../components/team/TeamSettings.svelte'; // team mailboxes (server mode)
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
   $effect(() => {
@@ -113,6 +117,8 @@
       <button class="btn btn-primary" onclick={() => (connectOpen = true)}><Server size={15} /> {t('onboarding.connect.title')}</button>
     </section>
 
+    <TeamSettings />
+
     <MessengerSettings />
 
     <NotificationSettings />
@@ -128,6 +134,10 @@
     <AiSettingsCard />
 
     <CloudAccountsSettings />
+
+    <ComfortSettingsCard />
+
+    <SmimeSettingsCard />
 
     <TagSettings />
 
@@ -185,6 +195,8 @@
         {/each}
       </dl>
     </section>
+
+    <DiagnosticsSettings />
 
     <section class="card" aria-labelledby="set-about">
       <h2 id="set-about">{t('settings.about')}</h2>

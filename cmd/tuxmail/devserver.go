@@ -31,6 +31,8 @@ func (c *cli) devserverCmd(ctx context.Context, args []string) error {
 	domain := fs.String("domain", "", "mail domain of the autoconfig document (default: domain of the first user)")
 	noSeed := fs.Bool("no-seed", false, "do not add sample mail")
 	verbose := fs.Bool("verbose", false, "log protocol errors and deliveries")
+	profile := fs.String("profile", "", `folder profile: "" (English folders) or "german" (Dovecot-like German folders with SPECIAL-USE, "Archive" plus "Archiv/2024")`)
+	bulk := fs.Int("bulk", 0, "add this many generated mails to the INBOX of every user (plus a share in the other folders) for large-mailbox tests")
 	extIMAP := fs.String("external-imap", "", "use a real IMAP server (implicit TLS host:port, e.g. Dovecot 127.0.0.1:993) instead of the in-memory one")
 	extSMTP := fs.String("external-smtp", "127.0.0.1:25", "with --external-imap: inbound SMTP (MX) used by /api/send")
 	extSub := fs.String("external-submission", "127.0.0.1:587", "with --external-imap: submission server (STARTTLS) for the autoconfig document")
@@ -52,6 +54,13 @@ func (c *cli) devserverCmd(ctx context.Context, args []string) error {
 	}
 	log := slog.New(slog.NewTextHandler(c.stderr, &slog.HandlerOptions{Level: lvl}))
 	cfg := devserver.Config{IMAPAddr: *imapAddr, SMTPAddr: *smtpAddr, HTTPAddr: *httpAddr, Domain: *domain, Users: users, Logger: log}
+	switch *profile {
+	case "":
+	case "german":
+		cfg.Folders, cfg.SpecialUse = devserver.GermanFolders, devserver.GermanSpecialUse
+	default:
+		return fmt.Errorf("%w: unknown --profile %q", errUsage, *profile)
+	}
 	if *extIMAP != "" {
 		tc := &tls.Config{MinVersion: tls.VersionTLS12}
 		if *extCA != "" {
@@ -73,14 +82,22 @@ func (c *cli) devserverCmd(ctx context.Context, args []string) error {
 	}
 	defer s.Close()
 	if !*noSeed {
-		if cfg.External != nil {
+		switch {
+		case cfg.External != nil:
 			err = devserver.SeedIMAP(cfg.External.IMAP, cfg.External.TLSConfig, true, users, time.Now())
-		} else {
+		case *profile == "":
 			err = s.Seed(time.Now())
 		}
 		if err != nil {
 			return err
 		}
+	}
+	if *bulk > 0 && cfg.External == nil {
+		start := time.Now()
+		if err := seedBulk(s, cfg, *bulk); err != nil {
+			return err
+		}
+		fmt.Fprintf(c.stderr, "devserver: %d generated mails per user added in %s\n", *bulk, time.Since(start).Round(time.Millisecond))
 	}
 	info := map[string]any{"imap": s.IMAPAddr(), "smtp": s.SMTPAddr(), "http": s.HTTPAddr(), "domain": s.Domain(),
 		"ispdb": "http://" + s.HTTPAddr() + "/v1.1/"}
@@ -111,5 +128,34 @@ func (u *userFlags) Set(v string) error {
 		usr.Name = parts[2]
 	}
 	*u = append(*u, usr)
+	return nil
+}
+
+// seedBulk fills every user's INBOX with n mails and the other folders with
+// a share of it (Trash and the archives larger, the rest smaller).
+func seedBulk(s *devserver.Server, cfg devserver.Config, n int) error {
+	folders := cfg.Folders
+	if len(folders) == 0 {
+		folders = devserver.DefaultFolders
+	}
+	now := time.Now()
+	for _, u := range s.Users() {
+		for i, f := range folders {
+			k := n / 20
+			lf := strings.ToLower(f)
+			switch {
+			case f == "INBOX":
+				k = n
+			case lf == "trash" || lf == "papierkorb" || strings.HasPrefix(lf, "archiv"):
+				k = n / 4
+			}
+			if k == 0 {
+				continue
+			}
+			if err := s.SeedBulk(u.Email, f, k, now, uint64(i+1)); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }

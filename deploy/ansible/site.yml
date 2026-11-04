@@ -12,8 +12,13 @@
 #                         zunächst nur HTTP (für die ACME-Challenge)
 #   4. tuxmail_tls      – Zertifikat beschaffen/prüfen (letsencrypt | custom | none)
 #   5. tuxmail_nginx    – vHost erneut rendern, jetzt mit TLS (idempotent)
-#   6. tuxmail          – Binary, Konfiguration, systemd, Backup, Admin
-#   7. tuxmail_bridges  – optional: Matrix + mautrix-Bridges, Gotenberg
+#   6. tuxmail_pdf      – optional: PDF-Rendering (Chromium-Paket | Gotenberg-Container);
+#                         vor tuxmail, damit /etc/tuxmail/pdf.env beim Start vorliegt
+#   7. tuxmail          – Binary, Konfiguration, systemd, Backup, Admin
+#   8. tuxmail_bridges  – optional: Matrix-Homeserver + mautrix-Bridges (nativ, ohne Container)
+#
+# Standard: die gesamte Installation kommt OHNE Docker/Podman aus. Container werden nur
+# bei tuxmail_bridges_runtime=container bzw. tuxmail_pdf_renderer=gotenberg_container genutzt.
 - name: TuxMail Server bereitstellen
   hosts: tuxmail
   become: true
@@ -50,12 +55,17 @@
         - not (tuxmail_nginx_use_snippet | bool)
       tags: [tls, nginx]
 
+    - name: PDF-Rendering (optional)
+      ansible.builtin.import_role:
+        name: tuxmail_pdf
+      tags: [pdf, tuxmail]
+
     - name: TuxMail-Dienst
       ansible.builtin.import_role:
         name: tuxmail
       tags: [tuxmail]
 
-    - name: Messenger-Bridges und Gotenberg (optional)
+    - name: Matrix-Homeserver und Messenger-Bridges (optional)
       ansible.builtin.import_role:
         name: tuxmail_bridges
       tags: [bridges]

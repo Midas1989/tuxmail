@@ -23,6 +23,10 @@ type bodyParts struct {
 	visible, quoted, signature string
 	attachments                []RenderedAttachment
 	encrypted                  bool
+	// automated: newsletter / notification (List-*, Precedence bulk,
+	// Auto-Submitted); html: the mail has an HTML part; loaded: the body
+	// was available (false: header-only sync, text is the snippet).
+	automated, html, loaded bool
 }
 
 // bodyCache caches rendered bubble texts by blob hash (raw mails are
@@ -71,10 +75,30 @@ func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
 	if err != nil {
 		return bodyParts{visible: m.Snippet}
 	}
+	v := bodyParts{attachments: r.Attachments, encrypted: r.Encrypted, automated: r.Automated, html: r.HTML != "", loaded: true}
 	q := quote.Extract(r.Text, r.HTML)
-	v := bodyParts{visible: q.Visible, quoted: q.Quoted, signature: q.Signature, attachments: r.Attachments, encrypted: r.Encrypted}
-	if v.visible == "" && v.quoted == "" {
-		v.visible = r.Text
+	switch {
+	case r.Automated:
+		// Newsletters and notifications have no quote history: their
+		// layout (tables, footers) must not be mistaken for quotes or a
+		// signature, which left the bubble empty.
+		v.visible = strings.TrimSpace(joinNonEmpty("\n\n", q.Visible, q.Quoted, q.Signature))
+	default:
+		v.visible, v.quoted, v.signature = q.Visible, q.Quoted, q.Signature
+	}
+	if strings.TrimSpace(v.visible) == "" {
+		// Never an empty bubble: whatever text the mail has (HTML-only
+		// mails: text from the HTML), else the snippet.
+		v.visible = strings.TrimSpace(r.Text)
+		if v.visible == "" {
+			v.visible = strings.TrimSpace(joinNonEmpty("\n\n", q.Visible, q.Quoted, q.Signature))
+		}
+		if v.visible == "" {
+			v.visible = m.Snippet
+		}
+		if v.visible != "" && v.visible == strings.TrimSpace(joinNonEmpty("\n\n", v.quoted, v.signature)) {
+			v.quoted, v.signature = "", ""
+		}
 	}
 	bubbleCache.put(m.BlobHash, v)
 	return v
@@ -204,7 +228,14 @@ func (a *App) mailItem(ctx context.Context, ic *itemCtx, convID int64, m store.M
 	if ic.scoped {
 		it.InScope = boolPtr(ic.scopeMail[m.ID])
 	}
-	if utf8.RuneCountInString(it.Body) > 1500 && it.Quoted == "" {
+	it.HasHTML = b.html
+	it.BodyMissing = !b.loaded
+	switch {
+	case b.automated || (!it.IsOwn && noReplyFrom(addrs)):
+		// Newsletter card: subject as title, a short preview, "Öffnen".
+		it.Display = "card"
+		it.Card = &ItemCard{Title: m.Subject, Excerpt: excerpt(it.Body, 200), Kind: "newsletter"}
+	case utf8.RuneCountInString(it.Body) > 1500 && it.Quoted == "":
 		it.Display = "card"
 		it.Card = &ItemCard{Title: m.Subject, Excerpt: excerpt(it.Body, 280)}
 	}
@@ -388,6 +419,9 @@ func (a *App) timeline(ctx context.Context, conv store.Conversation, scope *Conv
 	if ic.reactions, err = a.st.ItemReactions(ctx, ids); err != nil {
 		return nil, err
 	}
+	// Bodies still missing after a header-only sync are fetched now (newest
+	// first); conversation.updated refreshes the bubbles.
+	a.prefetchBodies(conv.ID, msgs)
 	for _, m := range msgs {
 		if ic.hidden[mailItemID(m.ID)] {
 			continue

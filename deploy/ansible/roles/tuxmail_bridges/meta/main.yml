@@ -3,7 +3,7 @@
 galaxy_info:
   role_name: tuxmail_bridges
   author: TuxMail contributors
-  description: Optional – Matrix-Homeserver, mautrix-whatsapp/-signal und Gotenberg als Container
+  description: Optional – Matrix-Homeserver (Continuwuity/Synapse) und mautrix-Bridges, nativ per systemd (Container optional)
   license: AGPL-3.0-or-later
   min_ansible_version: "2.15"
   platforms:

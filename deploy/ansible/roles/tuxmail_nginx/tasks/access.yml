@@ -13,7 +13,7 @@
     - ansible_facts['os_family'] == 'RedHat'
     - tuxmail_nginx_manage_selinux | bool
     - ansible_facts['selinux']['status'] | default('disabled') == 'enabled'
-    - not (tuxmail_listen_is_socket | bool)
+    - not (tuxmail_listen_is_socket | bool) or (tuxmail_matrix_nginx_enabled | bool)
   block:
     - name: Python-Bindings für SELinux-Verwaltung installieren
       ansible.builtin.dnf:

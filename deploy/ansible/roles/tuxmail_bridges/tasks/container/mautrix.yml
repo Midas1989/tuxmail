@@ -1,0 +1,84 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Eine mautrix-Bridge (bridgev2) vorbereiten. Ablauf wie in der mautrix-Dokumentation:
+#   1. Container ohne config.yaml starten -> Beispielkonfiguration wird erzeugt
+#   2. Konfiguration anpassen (Homeserver, Appservice-Adresse, SQLite, Rechte)
+#   3. Container erneut starten -> registration.yaml wird erzeugt
+
+- name: "Datenverzeichnis für mautrix-{{ tuxmail_bridge.name }}"
+  ansible.builtin.file:
+    path: "{{ tuxmail_bridges_dir }}/{{ tuxmail_bridge.name }}"
+    state: directory
+    mode: "0750"
+
+- name: "Beispielkonfiguration erzeugen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.command:
+    argv: >-
+      {{ tuxmail_bridges_run_cmd
+         + ['-v', tuxmail_bridges_dir ~ '/' ~ tuxmail_bridge.name ~ ':/data' ~ tuxmail_bridges_volume_opts,
+            tuxmail_bridge.image] }}
+    creates: "{{ tuxmail_bridges_dir }}/{{ tuxmail_bridge.name }}/config.yaml"
+
+- name: "Konfiguration lesen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.slurp:
+    src: "{{ tuxmail_bridges_dir }}/{{ tuxmail_bridge.name }}/config.yaml"
+  register: tuxmail_bridges_cfg_raw
+
+- name: "Gewünschte Konfiguration berechnen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_cfg_current: "{{ tuxmail_bridges_cfg_raw.content | b64decode | from_yaml }}"
+    tuxmail_bridges_cfg_overrides:
+      homeserver:
+        address: "http://homeserver:8008"
+        domain: "{{ tuxmail_matrix_server_name }}"
+      appservice:
+        address: "http://mautrix-{{ tuxmail_bridge.name }}:{{ tuxmail_bridge.port }}"
+        hostname: "0.0.0.0"
+        port: "{{ tuxmail_bridge.port | int }}"
+      database:
+        type: "sqlite3-fk-wal"
+        uri: "file:/data/mautrix-{{ tuxmail_bridge.name }}.db?_txlock=immediate"
+    tuxmail_bridges_cfg_permissions: >-
+      {{ tuxmail_bridges_permissions }}
+
+- name: "Konfiguration zusammenführen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_cfg_desired: >-
+      {{ (tuxmail_bridges_cfg_current | combine(tuxmail_bridges_cfg_overrides, recursive=True))
+         | combine({'bridge': (tuxmail_bridges_cfg_current.bridge | default({}))
+                              | combine({'permissions': tuxmail_bridges_cfg_permissions})}) }}
+
+- name: "Konfiguration schreiben (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.copy:
+    content: "{{ tuxmail_bridges_cfg_desired | to_nice_yaml(indent=4, width=1000) }}"
+    dest: "{{ tuxmail_bridges_dir }}/{{ tuxmail_bridge.name }}/config.yaml"
+    mode: "0600"
+  register: tuxmail_bridges_cfg_written
+  # Vergleich auf Datenebene: die Bridge formatiert ihre Datei beim Start selbst um.
+  when: tuxmail_bridges_cfg_desired != tuxmail_bridges_cfg_current
+
+- name: "Registrierung erzeugen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.command:
+    argv: >-
+      {{ tuxmail_bridges_run_cmd
+         + ['-v', tuxmail_bridges_dir ~ '/' ~ tuxmail_bridge.name ~ ':/data' ~ tuxmail_bridges_volume_opts,
+            tuxmail_bridge.image] }}
+    creates: "{{ tuxmail_bridges_dir }}/{{ tuxmail_bridge.name }}/registration.yaml"
+  register: tuxmail_bridges_reg_generated
+
+- name: "Registrierung für Synapse bereitstellen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.copy:
+    src: "{{ tuxmail_bridges_dir }}/{{ tuxmail_bridge.name }}/registration.yaml"
+    dest: "{{ tuxmail_bridges_dir }}/synapse/appservices/{{ tuxmail_bridge.name }}.yaml"
+    remote_src: true
+    mode: "0644"
+  register: tuxmail_bridges_reg_copied
+  when: tuxmail_matrix_server == 'synapse'
+
+- name: "Änderungen merken (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_restart_needed: >-
+      {{ (tuxmail_bridges_restart_needed | default(false) | bool)
+         or (tuxmail_bridges_cfg_written is changed)
+         or (tuxmail_bridges_reg_generated is changed)
+         or (tuxmail_bridges_reg_copied is changed) }}

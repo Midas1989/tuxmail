@@ -25,7 +25,7 @@ type Subscription struct {
 	DeviceName string `json:"deviceName"`
 	UserAgent  string `json:"userAgent"`
 	// Kind is webpush (browsers, PWA) or unifiedpush (Android, RFC 8030
-	// endpoint of a distributor); fcm is not supported yet.
+	// endpoint of a distributor) or fcm (Endpoint "fcm:<token>", no keys).
 	Kind      string    `json:"type"`
 	CreatedAt time.Time `json:"createdAt"`
 }
@@ -115,7 +115,7 @@ func (p *Prefs) Apply(pl Payload, now time.Time) (Payload, bool) {
 		return pl, false
 	}
 	if !p.ShowContent {
-		pl.Title, pl.Body = PrivacyTitle, PrivacyBody
+		pl.Title, pl.Body, pl.Sender = PrivacyTitle, PrivacyBody, ""
 	}
 	return pl, true
 }
@@ -137,6 +137,9 @@ func (s *Store) now() int64 {
 
 // ValidateSubscription checks a subscription received from a browser.
 func ValidateSubscription(sub Subscription) error {
+	if sub.Kind == KindFCM {
+		return validateFCM(sub) // sender_fcm.go
+	}
 	u, err := url.Parse(sub.Endpoint)
 	if err != nil || u.Scheme != "https" || u.Host == "" || len(sub.Endpoint) > 2048 {
 		return errors.New("push: endpoint must be an https URL")

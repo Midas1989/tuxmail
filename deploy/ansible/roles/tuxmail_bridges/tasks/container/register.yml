@@ -1,0 +1,44 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Bridges bei Synapse eintragen
+  when: tuxmail_matrix_server == 'synapse'
+  block:
+    - name: Datei homeserver.yaml lesen
+      ansible.builtin.slurp:
+        src: "{{ tuxmail_bridges_dir }}/synapse/homeserver.yaml"
+      register: tuxmail_bridges_hs_raw
+
+    - name: Gewünschte Synapse-Einstellungen berechnen
+      ansible.builtin.set_fact:
+        tuxmail_bridges_hs_current: "{{ tuxmail_bridges_hs_raw.content | b64decode | from_yaml }}"
+        tuxmail_bridges_hs_overrides:
+          enable_registration: false
+          app_service_config_files: >-
+            {{ tuxmail_bridges_mautrix | map(attribute='name')
+               | map('regex_replace', '^(.*)$', '/data/appservices/\\1.yaml') | list }}
+
+    - name: Datei homeserver.yaml aktualisieren
+      ansible.builtin.copy:
+        content: "{{ tuxmail_bridges_hs_current | combine(tuxmail_bridges_hs_overrides) | to_nice_yaml(indent=2, width=1000) }}"
+        dest: "{{ tuxmail_bridges_dir }}/synapse/homeserver.yaml"
+        mode: "0644"
+      register: tuxmail_bridges_hs_written
+      when: (tuxmail_bridges_hs_current | combine(tuxmail_bridges_hs_overrides)) != tuxmail_bridges_hs_current
+
+    - name: Neustart vormerken
+      ansible.builtin.set_fact:
+        tuxmail_bridges_restart_needed: "{{ (tuxmail_bridges_restart_needed | default(false) | bool) or (tuxmail_bridges_hs_written is changed) }}"
+
+- name: Anleitung – Bridges bei Continuwuity registrieren
+  ansible.builtin.debug:
+    msg:
+      - "Continuwuity liest Appservice-Registrierungen nicht aus Dateien. Einmalig im Admin-Raum"
+      - "(#admins:{{ tuxmail_matrix_server_name }}) für jede Bridge senden:"
+      - "  !admin appservices register"
+      - "  ```"
+      - "  <Inhalt von {{ tuxmail_bridges_dir }}/<bridge>/registration.yaml>"
+      - "  ```"
+      - "Bridges: {{ tuxmail_bridges_mautrix | map(attribute='name') | join(', ') }}"
+  when:
+    - tuxmail_matrix_server == 'continuwuity'
+    - tuxmail_bridges_mautrix | length > 0

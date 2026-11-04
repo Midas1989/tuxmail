@@ -128,3 +128,17 @@ App zurückkehren“ melden.
   Android-App öffnen“) – die App übernimmt die Adresse in „Server verbinden“.
 - `POST /api/auth/logout` mit Bearer-Token widerruft die Gerätesitzung bereits;
   die Geräteliste sollte Push-Registrierungen der Sitzung mit entfernen.
+
+## Stand (Server)
+
+- FCM ist umgesetzt (`internal/server/push/fcm`, HTTP v1 mit Service-Account,
+  Konfiguration `push.fcm.service_account_file` bzw. `TUXMAIL_FCM_SERVICE_ACCOUNT`).
+  Ohne Konfiguration antwortet `POST /api/push/subscribe` mit `501 not_configured`.
+  FCM-Registrierungen werden als `fcm:<token>` gespeichert und per `token`
+  abgemeldet; `UNREGISTERED`/`INVALID_ARGUMENT` (Token) löschen sie.
+- Payload: zusätzlich `sender`, `itemId`, `badge` und `teamId` (Team-Postfach;
+  `conversationId` bezieht sich dann auf das Team-Postfach, `url` ist
+  `/#/mail?team=<id>&conversation=<id>`). Typ `team` (Erwähnung/Zuweisung)
+  landet in der App im Kanal „Erinnerungen“ – ein eigener Kanal wäre sinnvoll.
+- Chats, Termine und Erwähnungen werden mit `Urgency: high` (FCM `HIGH`) gesendet;
+  pro Anmeldesitzung geht nur an die neueste Registrierung.

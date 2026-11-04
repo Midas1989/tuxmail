@@ -73,6 +73,10 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_oidc_user_group: ""
 # tuxmail_oidc_groups_claim: groups
 
+# --- Android-Push über FCM (optional) ---
+# tuxmail_fcm_service_account_src: files/fcm-service-account.json   # gern vault-verschlüsselt
+# tuxmail_fcm_service_account_file: /etc/tuxmail/fcm-service-account.json
+
 # --- Erster Administrator ---
 # tuxmail_admin_create: true
 # tuxmail_admin_username: admin
@@ -117,10 +121,27 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_firewall_ssh_port: 22
 # tuxmail_firewall_extra_ports: []
 
-# --- Bridges & Gotenberg (optional) ---
+# --- PDF-Erzeugung (optional, ohne Container) ---
+# tuxmail_pdf_renderer: none                # none | chromium | gotenberg_container
+# tuxmail_pdf_chromium_path: ""             # leer = automatisch; Pflicht unter Ubuntu
+# tuxmail_pdf_container_engine: podman      # nur gotenberg_container: podman | docker
+# tuxmail_gotenberg_image: "docker.io/gotenberg/gotenberg:8.39.0"
+
+# --- Matrix-Homeserver & Bridges (optional, Bridge-Modus) ---
 # tuxmail_bridges_enabled: false
-# tuxmail_bridges_runtime: podman           # podman | docker
-# tuxmail_bridges_homeserver: synapse       # synapse | continuwuity
+# tuxmail_bridges_runtime: native           # native (ohne Container) | container
+# tuxmail_bridges_container_engine: podman  # nur container: podman | docker
+# tuxmail_matrix_server: continuwuity       # continuwuity | synapse (nur Debian/Ubuntu)
+# tuxmail_matrix_server_name: "{{ tuxmail_domain }}"
+# tuxmail_matrix_federation: false
+# tuxmail_matrix_nginx_proxy: true          # https://<domain>/_matrix/ -> 127.0.0.1:8008
+# tuxmail_matrix_well_known: false
+# tuxmail_matrix_admin_user: admin          # Passwort: tuxmail_matrix_admin_password (Vault) oder generiert
+# tuxmail_bridges_db: sqlite                # sqlite | postgres
 # tuxmail_bridges_whatsapp_enabled: true
 # tuxmail_bridges_signal_enabled: true
-# tuxmail_bridges_gotenberg_enabled: true
+# tuxmail_bridges_gmessages_enabled: false
+# tuxmail_continuwuity_version: "26.7.2"
+# tuxmail_continuwuity_sha256: {amd64: "<sha256>", arm64: ""}   # Pflicht bei Continuwuity
+# tuxmail_mautrix_whatsapp_version: "0.2610.0"                   # + tuxmail_mautrix_whatsapp_sha256
+# tuxmail_mautrix_signal_version: "0.2610.0"                     # + tuxmail_mautrix_signal_sha256

@@ -1,0 +1,56 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+[Unit]
+Description=mautrix-{{ tuxmail_bridge.name }} Matrix bridge (TuxMail bridge mode)
+Documentation=https://docs.mau.fi/bridges/
+After=network-online.target {{ tuxmail_bridges_homeserver_service }}.service{{ ' postgresql.service' if tuxmail_bridges_db == 'postgres' else '' }}
+Wants=network-online.target {{ tuxmail_bridges_homeserver_service }}.service
+{% if tuxmail_bridges_db == 'postgres' %}
+Requires=postgresql.service
+{% endif %}
+
+[Service]
+Type=simple
+User=mautrix-{{ tuxmail_bridge.name }}
+Group=mautrix-{{ tuxmail_bridge.name }}
+WorkingDirectory=/var/lib/mautrix-{{ tuxmail_bridge.name }}
+Environment=HOME=/var/lib/mautrix-{{ tuxmail_bridge.name }}
+# --no-update: Konfiguration wird ausschließlich von Ansible geschrieben (read-only).
+ExecStart=/opt/mautrix-{{ tuxmail_bridge.name }}/current/mautrix-{{ tuxmail_bridge.name }} --no-update --config /etc/mautrix-{{ tuxmail_bridge.name }}/config.yaml --registration /etc/mautrix-{{ tuxmail_bridge.name }}/registration.yaml
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+UMask=0077
+
+# --- Härtung ---------------------------------------------------------------
+ProtectSystem=strict
+ReadWritePaths=/var/lib/mautrix-{{ tuxmail_bridge.name }}
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectProc=invisible
+ProcSubset=pid
+KeyringMode=private
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target

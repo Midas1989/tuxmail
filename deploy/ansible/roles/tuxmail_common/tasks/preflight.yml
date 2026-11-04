@@ -30,6 +30,18 @@
       tuxmail_listen "host:port" oder "unix:/pfad".
     quiet: true
 
+- name: Optionale Komponenten sind gültig konfiguriert
+  ansible.builtin.assert:
+    that:
+      - tuxmail_pdf_renderer in ['none', 'chromium', 'gotenberg_container']
+      - tuxmail_matrix_server in ['continuwuity', 'synapse']
+      - tuxmail_matrix_server_name is match('^[A-Za-z0-9.-]+(:[0-9]+)?$')
+      - tuxmail_matrix_port | int > 0
+    fail_msg: >-
+      Ungültige Einstellung. Erlaubt: tuxmail_pdf_renderer=none|chromium|gotenberg_container,
+      tuxmail_matrix_server=continuwuity|synapse, tuxmail_matrix_server_name als Hostname.
+    quiet: true
+
 - name: Kombination nginx/TLS ist sinnvoll
   ansible.builtin.assert:
     that:

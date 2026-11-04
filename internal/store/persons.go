@@ -297,8 +297,11 @@ func (s *Store) MergePersons(ctx context.Context, keep int64, others ...int64) e
 // LinkAddressesToPerson sets the person of all mail addresses with the given
 // e-mail address (case-insensitive) and returns the number of updated rows.
 func (s *Store) LinkAddressesToPerson(ctx context.Context, email string, personID int64) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE message_addresses SET person_id = ? WHERE lower(email) = ?`,
-		nullID(personID), NormalizeHandle(HandleEmail, email))
+	// Only rows that are not linked yet are written: the indexer calls this
+	// for every address of every new mail, and rewriting all earlier rows of
+	// a frequent sender each time made large initial syncs quadratic.
+	res, err := s.db.ExecContext(ctx, `UPDATE message_addresses SET person_id = ?1 WHERE lower(email) = ?2
+		AND person_id IS NOT ?1`, nullID(personID), NormalizeHandle(HandleEmail, email))
 	if err != nil {
 		return 0, err
 	}

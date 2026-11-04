@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+# Synapse – Einstellungen für den TuxMail-Bridge-Modus. Überschreibt die gleichnamigen
+# Schlüssel aus /etc/matrix-synapse/homeserver.yaml (Dateien in conf.d/ werden danach gelesen).
+# server_name steht in conf.d/server_name.yaml (Debconf, nachträglich nicht änderbar).
+
+# Nur lokal; öffentlich erreichbar ausschließlich über nginx (/_matrix).
+listeners:
+  - port: {{ tuxmail_matrix_port | int }}
+    type: http
+    tls: false
+    bind_addresses: ["127.0.0.1"]
+    x_forwarded: true
+    resources:
+      - names: {{ (['client', 'federation'] if tuxmail_matrix_federation | bool else ['client']) | to_json }}
+        compress: false
+
+public_baseurl: {{ (tuxmail_matrix_public_base_url ~ '/') | to_json }}
+serve_server_wellknown: {{ (tuxmail_matrix_federation | bool) | to_json }}
+
+enable_registration: false
+max_upload_size: "{{ tuxmail_matrix_max_upload_mb | int }}M"
+report_stats: false
+
+{% if not (tuxmail_matrix_federation | bool) %}
+# Föderation aus: keine fremden Server zulassen, keine Schlüsselserver abfragen.
+federation_domain_whitelist: []
+trusted_key_servers: []
+suppress_key_server_warning: true
+{% endif %}
+
+{% if tuxmail_bridges_db == 'postgres' %}
+# PostgreSQL über den Unix-Socket, Anmeldung per peer (Systembenutzer matrix-synapse).
+database:
+  name: psycopg2
+  args:
+    user: matrix-synapse
+    dbname: synapse
+    host: /run/postgresql
+    cp_min: 5
+    cp_max: 10
+{% endif %}
+
+# Appservice-Registrierungen der mautrix-Bridges (von Ansible verwaltet).
+app_service_config_files: {{ tuxmail_bridges_synapse_as_files | default([]) | to_json }}
+{% if tuxmail_synapse_extra_config | length > 0 %}
+
+# tuxmail_synapse_extra_config
+{{ tuxmail_synapse_extra_config | to_nice_yaml(indent=2, width=1000) }}
+{% endif %}

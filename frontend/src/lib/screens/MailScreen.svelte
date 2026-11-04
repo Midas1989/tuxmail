@@ -3,8 +3,6 @@
   import { fade, fly } from 'svelte/transition';
   import Search from '@lucide/svelte/icons/search';
   import Menu from '@lucide/svelte/icons/menu';
-  import Rows3 from '@lucide/svelte/icons/rows-3';
-  import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import Command from '@lucide/svelte/icons/command';
   import Sun from '@lucide/svelte/icons/sun';
   import Moon from '@lucide/svelte/icons/moon';
@@ -22,9 +20,10 @@
   import OriginalMailDialog from '../components/chat/OriginalMailDialog.svelte';
   import ForwardDialog from '../components/chat/ForwardDialog.svelte';
   import ChatDialogs from '../components/chat/ChatDialogs.svelte';
-  import MessageSquareText from '@lucide/svelte/icons/message-square-text';
   import Pin from '@lucide/svelte/icons/pin';
-  import type { ViewMode } from '../state/app.svelte';
+  import ViewSwitcher from '../components/ViewSwitcher.svelte';
+  import SyncIndicator from '../components/SyncIndicator.svelte';
+  import { desktopWindow } from '../native/window.svelte';
 
   let searchText = $state(app.search);
   let timer: ReturnType<typeof setTimeout> | null = null;
@@ -45,11 +44,6 @@
 
   const hybrid = $derived(prefs.viewMode === 'hybrid');
   const hasSelection = $derived(hybrid ? app.selectedConversationId != null : app.selectedMessageId != null);
-  const MODES: { id: ViewMode; icon: typeof Rows3 }[] = [
-    { id: 'classic', icon: Rows3 },
-    { id: 'hybrid', icon: MessageSquareText },
-    { id: 'chat', icon: MessagesSquare },
-  ];
   const isDefault = $derived(app.folderDefaultView === prefs.viewMode);
 
   const scopeTitle = $derived.by(() => {
@@ -114,14 +108,8 @@
       {#if app.connection !== 'online'}
         <span class="conn" role="status"><WifiOff size={15} /> {t(`common.conn.${app.connection}`)}</span>
       {/if}
-      <div class="seg view-toggle" role="radiogroup" aria-label={t('mail.view.label')} title="Ctrl+Shift+V">
-        {#each MODES as m (m.id)}
-          {@const Icon = m.icon}
-          <button role="radio" aria-checked={prefs.viewMode === m.id} onclick={() => app.setViewMode(m.id)} title={t(`mail.view.${m.id}Hint`)}>
-            <Icon size={15} aria-hidden="true" /><span class="hide-md">{t(`mail.view.${m.id}`)}</span>
-          </button>
-        {/each}
-      </div>
+      {#if !desktopWindow.custom}<SyncIndicator />{/if}
+      <ViewSwitcher />
       <button
         class="icon-btn hide-xs"
         aria-pressed={isDefault}
@@ -299,11 +287,6 @@
     }
     .panes.has-selection .pane-list,
     .panes:not(.has-selection) .pane-detail {
-      display: none;
-    }
-  }
-  @media (max-width: 1279px) {
-    .hide-md {
       display: none;
     }
   }

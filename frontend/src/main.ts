@@ -2,6 +2,7 @@
 import { mount } from 'svelte';
 import './app.css';
 import App from './App.svelte';
+import StandaloneMail from './StandaloneMail.svelte';
 import { isNativeShell } from './lib/platform';
 
 const target = document.getElementById('app')!;
@@ -17,6 +18,8 @@ if (isNativeShell()) {
   );
 }
 
-const app = isNativeShell() ? undefined : mount(App, { target });
+// #/mail/<id>: a single mail in its own browser window (mail window "In neuem Fenster öffnen").
+const standalone = /^#\/mail\/(\d+)/.exec(location.hash);
+const app = isNativeShell() ? undefined : standalone ? mount(StandaloneMail, { target, props: { id: Number(standalone[1]) } }) : mount(App, { target });
 
 export default app;

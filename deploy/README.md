@@ -6,10 +6,15 @@ Linux-Server zu betreiben (siehe [KONZEPT.md, Kap. 4.5, 15.5, 15.6](../docs/KONZ
 
 | Pfad | Inhalt |
 |---|---|
-| `ansible/` | Ansible-Projekt (empfohlen): Installation, Updates, nginx, TLS, Backups, Firewall, optionale Bridges |
+| `ansible/` | Ansible-Projekt (empfohlen): Installation **ohne Docker/Podman**, Updates, nginx, TLS, Backups, Firewall, optional Matrix-Homeserver + Bridges und PDF-Rendering |
 | `systemd/` | Beispiel-Units und -Konfiguration für eine manuelle Installation (aus den Ansible-Templates erzeugt) |
 | `nginx/` | Beispiel-vHost (`tuxmail.conf`) und location-Snippet (`tuxmail-snippet.conf`) |
-| `docker/` | `docker-compose.example.yml` für das Container-Image `ghcr.io/midas1989/tuxmail` (Abschnitt 11) |
+| `docker/` | `docker-compose.example.yml` für das Container-Image `ghcr.io/midas1989/tuxmail` – nur als Alternative (Abschnitt 12) |
+
+> **Grundsatz:** Die gesamte Linux-Installation funktioniert **ohne Docker und ohne Podman**.
+> TuxMail selbst und alle optionalen Komponenten laufen als native Programme unter systemd
+> (Abschnitt 2). Container sind nur noch eine ausdrückliche, abschaltbare Ausnahme
+> (`tuxmail_bridges_runtime=container`, `tuxmail_pdf_renderer=gotenberg_container`).
 
 ---
 
@@ -26,7 +31,8 @@ Linux-Server zu betreiben (siehe [KONZEPT.md, Kap. 4.5, 15.5, 15.6](../docs/KONZ
 
 - `ansible-core` ≥ 2.15 (getestet mit 2.21/2.22) und Python 3
 - Collections: `ansible-galaxy collection install -r deploy/ansible/requirements.yml`
-  (`ansible.posix`, `community.general`; im Paket `ansible` bereits enthalten)
+  (`ansible.posix`, `community.general`, `community.postgresql`; alle im pip-Paket `ansible` bereits
+  enthalten – praktisch, wenn Ansible Galaxy nicht erreichbar ist: `pip install ansible`)
 
 ```bash
 cd deploy/ansible
@@ -35,7 +41,180 @@ $EDITOR inventory/group_vars/all.yml                   # Domain, Version, Modi, 
 ansible-galaxy collection install -r requirements.yml
 ```
 
-## 2. Schnellstart
+## 2. Installation ohne Docker (Standard)
+
+Alles wird aus Distributionspaketen oder aus den **offiziellen Release-Dateien** (feste Version,
+SHA-256-Prüfsumme) installiert und läuft als eigener Systembenutzer in einer gehärteten
+systemd-Unit. Jede optionale Komponente ist standardmäßig **aus** und idempotent.
+
+### Komponenten
+
+| Komponente | Schalter (Standard) | Herkunft | Dienst / Benutzer | Pfade |
+|---|---|---|---|---|
+| TuxMail | immer | GitHub-Release + `checksums.txt` | `tuxmail.service` / `tuxmail` | `/opt/tuxmail/{versions,current}`, `/etc/tuxmail`, `/var/lib/tuxmail` |
+| nginx, certbot | `tuxmail_nginx_mode` (`new`), `tuxmail_tls_mode` | Distribution (EPEL) | `nginx` | `/etc/nginx` |
+| PDF: Chromium | `tuxmail_pdf_renderer: chromium` (`none`) | Distribution (`chromium`, RHEL: EPEL `chromium-headless`) | Kindprozess von `tuxmail` | `/etc/tuxmail/pdf.env` |
+| Matrix: Continuwuity | `tuxmail_bridges_enabled: true` (`false`), `tuxmail_matrix_server: continuwuity` | statisches Binary (Forgejo-Release) | `continuwuity.service` / `continuwuity` | `/opt/continuwuity`, `/etc/continuwuity`, `/var/lib/continuwuity` |
+| Matrix: Synapse | `tuxmail_matrix_server: synapse` | apt-Repo `packages.matrix.org` (nur Debian/Ubuntu) | `matrix-synapse.service` / `matrix-synapse` | `/etc/matrix-synapse`, `/var/lib/matrix-synapse` |
+| mautrix-whatsapp | `tuxmail_bridges_whatsapp_enabled` (`true`) | GitHub-Release + SHA-256 | `mautrix-whatsapp.service` / `mautrix-whatsapp` | `/opt/mautrix-whatsapp`, `/etc/mautrix-whatsapp`, `/var/lib/mautrix-whatsapp` |
+| mautrix-signal | `tuxmail_bridges_signal_enabled` (`true`) | GitHub-Release + SHA-256 | `mautrix-signal.service` / `mautrix-signal` | analog |
+| mautrix-gmessages | `tuxmail_bridges_gmessages_enabled` (`false`) | GitHub-Release + SHA-256 | `mautrix-gmessages.service` / `mautrix-gmessages` | analog |
+| PostgreSQL | `tuxmail_bridges_db: postgres` (`sqlite`) | Distribution | `postgresql.service` | Distributionsstandard |
+| *Gotenberg* | `tuxmail_pdf_renderer: gotenberg_container` | **Container** (Ausnahme) | `tuxmail-gotenberg.service` | – |
+
+Meta-Bridges (Instagram/Facebook) sind entfallen (KONZEPT 11.2).
+
+### Beispiel: alles nativ
+
+```bash
+ansible-playbook site.yml \
+  -e tuxmail_domain=mail.example.de -e tuxmail_tls_letsencrypt_email=admin@example.de \
+  -e tuxmail_pdf_renderer=chromium \
+  -e tuxmail_bridges_enabled=true \
+  -e '{"tuxmail_continuwuity_sha256": {"amd64": "<sha256 des Continuwuity-Binaries>"}}'
+```
+
+Ergebnis: TuxMail + nginx + Let's Encrypt, Chromium für PDFs, Continuwuity auf `127.0.0.1:8008`
+(öffentlich nur `https://mail.example.de/_matrix/…`, Föderation aus), `mautrix-whatsapp` und
+`mautrix-signal` mit SQLite, ein Matrix-Admin-Konto `@admin:mail.example.de` (Passwort unter
+`credentials/<host>/matrix_admin_password`) und vollautomatisch registrierte Bridges.
+Mit `-e tuxmail_matrix_server=synapse -e tuxmail_bridges_db=postgres` stattdessen Synapse mit PostgreSQL.
+
+### Matrix-Homeserver
+
+**Continuwuity** (Standard): einzelnes statisches Binary, sehr geringer Speicherbedarf.
+
+- Download: `tuxmail_continuwuity_url` =
+  `https://forgejo.ellis.link/continuwuation/continuwuity/releases/download/v<version>/conduwuit-linux-static-<arch>`.
+  Die offiziellen Releases liegen auf Forgejo; der GitHub-Spiegel enthält keine Binaries. Asset-Name
+  (`tuxmail_continuwuity_asset`) und Basis-URL (`tuxmail_continuwuity_release_base_url`) haben sich
+  zwischen Versionen geändert – **vor dem Einsatz auf der Release-Seite prüfen**.
+- Die Prüfsumme ist **Pflicht** und nicht vorbelegt (`tuxmail_continuwuity_sha256: {amd64: …, arm64: …}`
+  oder `tuxmail_continuwuity_checksum_url`). Ermitteln: Datei herunterladen, `sha256sum` ausführen,
+  mit der Release-Seite vergleichen. Alternativ `tuxmail_continuwuity_binary_src` (lokale Datei).
+- Konfiguration `/etc/continuwuity/continuwuity.toml`: `server_name`, Listener nur `127.0.0.1`,
+  Registrierung aus, Föderation laut `tuxmail_matrix_federation`, `[global.well_known]`.
+  Zusätzliche Schlüssel: `tuxmail_continuwuity_extra_config`.
+- **Erstes Konto:** Beim ersten Lauf enthält die Konfiguration kurzzeitig ein zufälliges, einmaliges
+  `registration_token`; Ansible registriert damit über die Client-API `@<tuxmail_matrix_admin_user>`
+  (das erste Konto wird Server-Admin und Mitglied von `#admins:<server_name>`) und schaltet die
+  Registrierung sofort wieder ab. Das Zugriffstoken liegt nur auf dem Server
+  (`/etc/continuwuity/admin.token`, root 0600).
+- **Bridges registrieren:** Continuwuity liest Registrierungen nicht aus Dateien. Ansible sendet
+  daher mit dem Admin-Token im Admin-Raum `!admin appservices register` + Registrierung (Markierung
+  `/etc/continuwuity/appservices/<bridge>.registered`; bei Änderung vorher `unregister`).
+  Ohne Token (`tuxmail_continuwuity_automate=false`, Konto manuell angelegt) gibt das Playbook die
+  genauen Schritte aus:
+
+  ```text
+  # im Raum #admins:<server_name> als Admin senden, je Bridge:
+  !admin appservices register
+  ```
+  ```yaml
+  <Inhalt von /etc/continuwuity/appservices/whatsapp.yaml>
+  ```
+  ```text
+  !admin appservices list
+  sudo systemctl restart mautrix-whatsapp mautrix-signal
+  ```
+
+**Synapse** (`tuxmail_matrix_server: synapse`): Paket `matrix-synapse-py3` aus dem offiziellen
+Repository `https://packages.matrix.org/debian/` (Schlüssel wird gegen den Fingerabdruck
+`AAF9AE843A7584B5A3E4CD2BCF45A512DE2DA058` geprüft, Version optional per `tuxmail_synapse_version`).
+Eigene Einstellungen nur in `/etc/matrix-synapse/conf.d/tuxmail.yaml` (Listener `127.0.0.1`,
+`enable_registration: false`, `app_service_config_files`, ggf. PostgreSQL); die Bridges werden
+vollautomatisch registriert, das Admin-Konto per `register_new_matrix_user` angelegt. Zusätzliche
+Härtung per Drop-in `matrix-synapse.service.d/tuxmail-hardening.conf`.
+**RHEL/Rocky/Alma: nicht unterstützt** (keine offiziellen Pakete, Systempython zu alt) – dort
+Continuwuity verwenden.
+
+**nginx:** `https://<tuxmail_domain>/_matrix/` (bei Synapse auch `/_synapse/client/`) wird an den
+Homeserver weitergereicht (`tuxmail_matrix_nginx_proxy`); `/_matrix/federation` und `/_matrix/key`
+liefern 404, solange `tuxmail_matrix_federation=false`. `/.well-known/matrix/client` (und bei
+Föderation `/server`) optional mit `tuxmail_matrix_well_known=true` – nur sinnvoll, wenn
+`tuxmail_matrix_server_name` gleich `tuxmail_domain` ist. Im Snippet-Modus stehen die Matrix-Pfade
+mit im Snippet. **`tuxmail_matrix_server_name` und die Föderation später nicht mehr ändern.**
+
+### mautrix-Bridges
+
+Je Bridge: `--generate-example-config` → Ansible setzt Homeserver (`http://127.0.0.1:8008`,
+`domain`), Appservice-Adresse `127.0.0.1:<port>` (whatsapp 29318, signal 29328, gmessages 29336),
+Datenbank, Logging nach journald und die **Rechte** (`tuxmail_bridges_permissions`: Server-Domain
+`user`, `tuxmail_bridges_matrix_admin` `admin`) → `--generate-registration` → Start mit
+`--no-update` (die Bridge schreibt ihre Konfiguration nie selbst um). Eigene Anpassungen:
+`tuxmail_mautrix_config_overrides: {whatsapp: {…}}`. Die Units starten nach dem Homeserver
+(`After=`/`Wants=`, bei PostgreSQL zusätzlich `Requires=postgresql.service`).
+
+**Datenbank:** SQLite unter `/var/lib/mautrix-<name>/` (Standard) oder PostgreSQL
+(`tuxmail_bridges_db: postgres`): je Bridge Rolle `mautrix-<name>` und Datenbank `mautrix_<name>`,
+Anmeldung nur über den Unix-Socket mit `peer` – keine Passwörter. Ein späterer Wechsel
+SQLite → PostgreSQL migriert keine Daten (Bridges neu koppeln).
+
+### Bridges in TuxMail koppeln
+
+1. In TuxMail ein **Matrix-Konto im Bridge-Modus** hinzufügen: Homeserver
+   `tuxmail_matrix_public_base_url` (z. B. `https://mail.example.de`), Benutzer
+   `@admin:<server_name>`, Passwort aus `credentials/<host>/matrix_admin_password` bzw. Vault.
+2. Im Messenger-Bereich WhatsApp bzw. Signal **„Über Bridge koppeln“** wählen. TuxMail spricht mit
+   dem Bridge-Bot (`@whatsappbot:…`, `@signalbot:…`, `@gmessagesbot:…`) und zeigt den QR-Code an
+   (KONZEPT 11.3; bietet die eingesetzte TuxMail-Version den Assistenten noch nicht, Schritt 3
+   verwenden). Auf dem Handy: WhatsApp → Verknüpfte Geräte → Gerät hinzufügen bzw.
+   Signal → Verknüpfte Geräte.
+3. Ohne Assistent (oder zur Fehlersuche) geht es mit jedem Matrix-Client: Direktchat mit
+   `@whatsappbot:<server_name>` öffnen, `login` senden, QR-Code scannen; `help` listet alle Befehle.
+
+Ein Messenger-Konto läuft **entweder** direkt **oder** über die Bridge, nie beides gleichzeitig.
+Weitere Benutzer dürfen koppeln, wenn ihr Matrix-Konto auf diesem Server liegt (Recht `user`).
+
+### PDF-Rendering
+
+`tuxmail_pdf_renderer`:
+
+- `none` (Standard) – kein HTML-Rendering durch einen Browser.
+- `chromium` – Chromium aus den Distributionspaketen (Debian `chromium`, RHEL EPEL
+  `chromium-headless`) plus Schriftarten; der gefundene Pfad landet als
+  `TUXMAIL_CHROMIUM_PATH=…` in `/etc/tuxmail/pdf.env`, die `tuxmail.service` per
+  `EnvironmentFile=-` einliest. Für Chromium als Kindprozess werden in `tuxmail.service`
+  `MemoryDenyWriteExecute` (JIT), die Sperre von Namensräumen (außer cgroup) und der
+  `@privileged`-Filter gelockert (`tuxmail_service_chromium_compat`). **Ubuntu** liefert Chromium
+  nur als Snap, der unter der gehärteten Unit nicht läuft: Chrome/Chromium als `.deb` installieren
+  und `tuxmail_pdf_chromium_path` setzen (oder `tuxmail_pdf_chromium_install=false`).
+- `gotenberg_container` – Ausnahme mit Container: Gotenberg (`tuxmail_gotenberg_image`, feste
+  Version) über `tuxmail-gotenberg.service` mit `podman` bzw. `docker run` auf
+  `127.0.0.1:3000`; `pdf.env` erhält `TUXMAIL_GOTENBERG_URL`.
+
+Wechsel auf `none`/`chromium` entfernt eine frühere Gotenberg-Unit wieder.
+
+### Update und Rollback der Komponenten
+
+Native Binaries liegen versioniert unter `/opt/<dienst>/versions/<version>/` mit Symlink
+`/opt/<dienst>/current` (wie TuxMail). Update = Version **und** SHA-256 ändern, Playbook erneut
+ausführen:
+
+```bash
+ansible-playbook site.yml --tags bridges \
+  -e tuxmail_mautrix_whatsapp_version=0.2611.0 \
+  -e '{"tuxmail_mautrix_whatsapp_sha256": {"amd64": "<sha256 aus sha256sums.txt>"}}'
+```
+
+Bei einem Versionswechsel wird der Dienst gestoppt, `/var/lib/<dienst>` nach
+`/var/backups/tuxmail-bridges/<dienst>-<alt>-to-<neu>-<zeit>.tar.gz` gesichert
+(`tuxmail_bridges_backup_before_upgrade`), der Symlink umgestellt und der Dienst neu gestartet.
+`tuxmail_bridges_keep_versions` (3) Versionen bleiben für Rollbacks liegen:
+
+```bash
+# Rollback: alte Version (und deren Prüfsumme) wieder setzen und Playbook ausführen – oder manuell:
+sudo systemctl stop mautrix-whatsapp
+sudo ln -sfn /opt/mautrix-whatsapp/versions/0.2610.0 /opt/mautrix-whatsapp/current
+# nur falls die neue Version die Datenbank migriert hat:
+sudo tar -xzpf /var/backups/tuxmail-bridges/mautrix-whatsapp-0.2610.0-to-0.2611.0-<zeit>.tar.gz -C /var/lib
+sudo systemctl start mautrix-whatsapp
+```
+
+Synapse wird über apt aktualisiert (`tuxmail_synapse_version` oder `apt upgrade`), Chromium und
+PostgreSQL mit den normalen Systemupdates.
+
+## 3. Schnellstart
 
 Alle Befehle aus `deploy/ansible/` heraus. Einstellungen können in `inventory/group_vars/all.yml`
 oder per `-e` gesetzt werden.
@@ -127,10 +306,12 @@ ansible-playbook site.yml -e tuxmail_nginx_mode=none -e tuxmail_tls_mode=custom 
 ```bash
 ansible-playbook site.yml --tags tuxmail     # nur Binary/Konfiguration/Dienst
 ansible-playbook site.yml --tags nginx,tls   # nur Reverse-Proxy und Zertifikat
+ansible-playbook site.yml --tags pdf         # nur PDF-Rendering (pdf.env, Chromium/Gotenberg)
+ansible-playbook site.yml --tags nginx,bridges  # Homeserver/Bridges (+ /_matrix im vHost)
 ansible-playbook site.yml --check --diff     # Probelauf (Befehle werden dabei übersprungen)
 ```
 
-## 3. Was das Playbook einrichtet
+## 4. Was das Playbook einrichtet
 
 | Element | Details |
 |---|---|
@@ -138,10 +319,12 @@ ansible-playbook site.yml --check --diff     # Probelauf (Befehle werden dabei �
 | `/opt/tuxmail/versions/<version>/` | ein Verzeichnis je installierter Version (root-eigen, 0755) |
 | `/opt/tuxmail/current` | Symlink auf die aktive Version; `/usr/local/bin/tuxmail` zeigt darauf |
 | `/etc/tuxmail/` | `root:tuxmail 0750`; `config.yaml` (0640), `oidc_client_secret` (0640) |
-| `/var/lib/tuxmail/` | `tuxmail:tuxmail 0750` – Daten (siehe Abschnitt 6) |
+| `/var/lib/tuxmail/` | `tuxmail:tuxmail 0750` – Daten (siehe Abschnitt 7) |
 | `/var/log/tuxmail/` | `tuxmail:tuxmail 0750` – nur genutzt, wenn `tuxmail_log_file` gesetzt ist (sonst journald) |
 | `/var/backups/tuxmail/` | `root 0700` – Sicherungen (Archive 0600) |
 | `tuxmail.service` | gehärtet: `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `NoNewPrivileges`, leeres `CapabilityBoundingSet`, `RestrictAddressFamilies`, `SystemCallFilter=@system-service`, `MemoryDenyWriteExecute`, `ReadWritePaths` nur Daten/Logs, `LimitNOFILE=65536`, `Restart=on-failure`, `ExecStartPre=… check-config` |
+| `/etc/tuxmail/pdf.env` | optional (`tuxmail_pdf_renderer`), per `EnvironmentFile=-` eingelesen |
+| `/etc/tuxmail/fcm-service-account.json` | optional (`tuxmail_fcm_service_account_src`), `root:tuxmail 0640` |
 | `tuxmail-backup.timer` | optional (`tuxmail_backup_timer_enabled`), täglich |
 | nginx | WebSocket `/api/events` (Upgrade, 1 h Timeout, ohne Puffer), alle übrigen Pfade (SPA, `/device`, API, Long-Polling) an TuxMail, `client_max_body_size` = `tuxmail_max_upload_mb`, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy`, CSP (`frame-ancestors`…), HTTP→HTTPS, ACME-Webroot |
 | SELinux (RHEL) | Boolean `httpd_can_network_connect` (nginx → `127.0.0.1:8080`) |
@@ -167,7 +350,7 @@ ausgeschlossen) gespeichert und **einmal** ausgegeben. Eine Markierung
 Unter RHEL mit aktivem SELinux nicht empfohlen (nginx darf ohne eigenes Policy-Modul nicht
 verbinden) – dort TCP verwenden.
 
-## 4. Variablen (Auswahl)
+## 5. Variablen (Auswahl)
 
 Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/group_vars/all.yml`.
 
@@ -217,7 +400,28 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_nginx_ipv6` | automatisch | auch auf `[::]` lauschen |
 | `tuxmail_nginx_disable_default_site` | `true` | Debian-Standardseite entfernen (nur `new`) |
 | `tuxmail_firewall_enabled` | `false` | ufw/firewalld: SSH, 80, 443 freigeben |
-| `tuxmail_bridges_enabled` | `false` | Matrix + mautrix-Bridges + Gotenberg (Container) |
+| `tuxmail_fcm_service_account_src` | `""` | Firebase-Dienstkonto (JSON, gern Vault) → Android-Push über FCM |
+| `tuxmail_pdf_renderer` | `none` | `none` \| `chromium` \| `gotenberg_container` |
+| `tuxmail_pdf_chromium_path` | `""` (automatisch) | Chromium-Binary; Pflicht unter Ubuntu |
+| `tuxmail_pdf_container_engine` / `tuxmail_gotenberg_image` | `podman` / `gotenberg:8.39.0` | nur `gotenberg_container` |
+| `tuxmail_bridges_enabled` | `false` | Matrix-Homeserver + mautrix-Bridges (Bridge-Modus) |
+| `tuxmail_bridges_runtime` | `native` | `native` (ohne Container) \| `container` |
+| `tuxmail_bridges_container_engine` | `podman` | nur `container`: `podman` \| `docker` |
+| `tuxmail_matrix_server` | `continuwuity` | `continuwuity` \| `synapse` (nur Debian/Ubuntu) |
+| `tuxmail_matrix_server_name` | `<tuxmail_domain>` | Matrix-Servername (nachträglich nicht änderbar) |
+| `tuxmail_matrix_port` | `8008` | Homeserver auf `127.0.0.1` |
+| `tuxmail_matrix_federation` | `false` | Föderation (nginx blockiert sonst `/_matrix/federation`) |
+| `tuxmail_matrix_nginx_proxy` / `_well_known` | `true` / `false` | `/_matrix` über nginx / `.well-known/matrix/*` |
+| `tuxmail_matrix_public_base_url` | `https://<tuxmail_domain>` | öffentliche Homeserver-URL |
+| `tuxmail_matrix_admin_create` / `_admin_user` / `_admin_password` | `true` / `admin` / `""` | Matrix-Admin-Konto (**Vault!**, leer = generieren) |
+| `tuxmail_bridges_whatsapp_enabled` / `_signal_enabled` / `_gmessages_enabled` | `true` / `true` / `false` | Bridges |
+| `tuxmail_bridges_db` | `sqlite` | `sqlite` \| `postgres` (Distributionspakete, peer-Anmeldung) |
+| `tuxmail_bridges_permissions_extra` | `{}` | weitere mautrix-Rechte (`{"@anna:…": "user"}`) |
+| `tuxmail_bridges_keep_versions` / `_backup_before_upgrade` | `3` / `true` | Update/Rollback der Binaries |
+| `tuxmail_continuwuity_version` / `_sha256` / `_url` | `26.7.2` / **leer (Pflicht)** / Forgejo-Muster | Continuwuity-Binary |
+| `tuxmail_mautrix_<bridge>_version` / `_sha256` | `0.2610.0` / vorbelegt (amd64, arm64) | mautrix-Binaries |
+| `tuxmail_mautrix_config_overrides` | `{}` | eigene Werte je Bridge (rekursiv) |
+| `tuxmail_synapse_version` / `_extra_config` | `""` / `{}` | Synapse-Paketversion / zusätzliche Einstellungen |
 
 **Geheimnisse mit Ansible Vault:**
 
@@ -228,7 +432,7 @@ ansible-vault encrypt_string --name tuxmail_oidc_client_secret 'abc123…'
 ansible-playbook site.yml --ask-vault-pass
 ```
 
-## 5. Update und Rollback
+## 6. Update und Rollback
 
 **Update:** Version ändern und Playbook erneut ausführen:
 
@@ -265,7 +469,7 @@ sudo systemctl start tuxmail && curl -fsS http://127.0.0.1:8080/healthz
 
 Manuelle Sicherung jederzeit: `sudo /usr/local/sbin/tuxmail-backup --stop manual 10`.
 
-## 6. Daten und Sicherungen – wichtig
+## 7. Daten und Sicherungen – wichtig
 
 `/var/lib/tuxmail` enthält u. a.:
 
@@ -281,7 +485,7 @@ sie mit `umask 077` (Archive 0600, Verzeichnis 0700). Werden Sicherungen außerh
 abgelegt, **verschlüsseln** (`tuxmail_backup_age_recipients: ["age1…"]`, privaten age-Schlüssel
 getrennt aufbewahren). Beim Zurückspielen Rechte erhalten (`tar -p` als root).
 
-## 7. Benutzerverwaltung
+## 8. Benutzerverwaltung
 
 Die Kommandozeile läuft als Dienstbenutzer (damit neue Dateien `tuxmail` gehören):
 
@@ -309,32 +513,41 @@ Umgebungsvariablen `TUXMAIL_LISTEN`, `TUXMAIL_DATA_DIR`, `TUXMAIL_PUBLIC_URL`,
 `TUXMAIL_LOG_LEVEL` überschreiben einzelne Werte aus `config.yaml` (z. B. über
 `tuxmail_service_environment`).
 
-## 8. Optionale Rollen
+## 9. Optionale Rollen
 
 **Firewall** (`tuxmail_firewall_enabled: true`): ufw (Debian/Ubuntu) bzw. firewalld (RHEL). Gibt
 immer zuerst SSH (`tuxmail_firewall_ssh_port`) frei, dann 80/443 und `tuxmail_firewall_extra_ports`.
 ufw wird mit „eingehend verweigern“ aktiviert (`tuxmail_firewall_ufw_enable`).
 
-**Bridges & Gotenberg** (`tuxmail_bridges_enabled: true`, KONZEPT 11.3/8.11) – optional,
-standardmäßig aus. Startet per podman-compose (oder `docker compose`) unter `/opt/tuxmail-bridges`:
+**PDF-Rendering** (`tuxmail_pdf_renderer`, Rolle `tuxmail_pdf`, KONZEPT 8.11) und
+**Matrix-Homeserver + Bridges** (`tuxmail_bridges_enabled`, Rolle `tuxmail_bridges`,
+KONZEPT 11.3): nativ, siehe Abschnitt 2. Rechtliche Hinweise zu inoffiziellen
+Messenger-Anbindungen: KONZEPT 18.1.
 
-- Matrix-Homeserver: **Synapse** (Standard; Bridges werden automatisch per
-  `app_service_config_files` registriert) oder **Continuwuity** (Registrierung einmalig im
-  Admin-Raum mit `!admin appservices register`, Anleitung wird ausgegeben). Nur an
-  `127.0.0.1:8008` gebunden, Registrierung deaktiviert.
-- `mautrix-whatsapp` und `mautrix-signal`: Konfiguration wird erzeugt und angepasst (Homeserver,
-  SQLite, Rechte), Registrierung erzeugt.
-- **Gotenberg** (PDF) auf `127.0.0.1:3000`.
+**Android-Push über FCM** (Play-Store-Variante der App, KONZEPT 15.9): Den JSON-Schlüssel eines
+Firebase-Dienstkontos (Rolle „Firebase Cloud Messaging API Admin“, Firebase-Projekt der App) auf
+dem Steuerrechner ablegen – gern verschlüsselt mit `ansible-vault encrypt files/fcm.json` – und
+`tuxmail_fcm_service_account_src: files/fcm.json` setzen. Ansible kopiert ihn nach
+`/etc/tuxmail/fcm-service-account.json` (`root:tuxmail 0640`, Pfad: `tuxmail_fcm_service_account_file`)
+und trägt nur dann `push.fcm.service_account_file` in `config.yaml` ein. Ohne die Variable bleibt
+FCM aus; Web Push (VAPID) funktioniert immer. Die Umgebungsvariable `TUXMAIL_FCM_SERVICE_ACCOUNT`
+(z. B. über `tuxmail_service_environment`) hat Vorrang vor `config.yaml`.
 
-Danach Matrix-Konto für TuxMail anlegen (`register_new_matrix_user`, Befehl wird ausgegeben) und
-in TuxMail hinzufügen. Images in den Defaults sind `:latest` – für den Produktivbetrieb feste
-Versionen setzen. Rechtliche Hinweise zu inoffiziellen Messenger-Anbindungen: KONZEPT 18.1.
+**Container-Modus (Alternative, nicht empfohlen):** `tuxmail_bridges_runtime: container` startet
+Homeserver und Bridges wie früher per podman-compose bzw. `docker compose`
+(`tuxmail_bridges_container_engine`) unter `/opt/tuxmail-bridges`, Ports nur auf `127.0.0.1`.
+Images: `tuxmail_bridges_*_image` (feste Versionen setzen). Bei Synapse werden die Bridges per
+`app_service_config_files` registriert, bei Continuwuity gibt das Playbook die Schritte für den
+Admin-Raum aus; das Matrix-Konto wird hier nicht automatisch angelegt (Befehl wird ausgegeben).
+Die alten Werte `tuxmail_bridges_runtime: podman|docker` werden noch als Container-Modus erkannt
+(mit Warnung). Gotenberg ist nicht mehr Teil des Compose-Projekts, sondern
+`tuxmail_pdf_renderer: gotenberg_container`.
 
-## 9. Fehlerbehebung
+## 10. Fehlerbehebung
 
 | Problem | Prüfen / Lösung |
 |---|---|
-| Health-Check schlägt fehl | `journalctl -u tuxmail -n 100`; `sudo runuser -u tuxmail -- tuxmail check-config --config /etc/tuxmail/config.yaml`; `curl -v http://127.0.0.1:8080/healthz`. Bei Problemen nach einem Update: Rollback (Abschnitt 5). |
+| Health-Check schlägt fehl | `journalctl -u tuxmail -n 100`; `sudo runuser -u tuxmail -- tuxmail check-config --config /etc/tuxmail/config.yaml`; `curl -v http://127.0.0.1:8080/healthz`. Bei Problemen nach einem Update: Rollback (Abschnitt 6). |
 | `check-config` lehnt Konfiguration ab | Fehlermeldung im Ansible-Output (validate); unbekannte Schlüssel, fehlende TLS-/Secret-/Logdatei, Rechte. |
 | Dienst startet nicht: „master.key permissions“ | `sudo chmod 600 /var/lib/tuxmail/master.key && sudo chown tuxmail:tuxmail /var/lib/tuxmail/master.key` |
 | `nginx -t` schlägt fehl (existing) | Der vorherige Zustand wurde wiederhergestellt. Häufig: doppelter `server_name`, Port-/`default_server`-Konflikte. Fehlermeldung mit `sudo nginx -t` ansehen. |
@@ -347,10 +560,20 @@ Versionen setzen. Rechtliche Hinweise zu inoffiziellen Messenger-Anbindungen: KO
 | Doppelte HSTS-Header | nginx blendet den HSTS-Header von TuxMail aus (`proxy_hide_header`), wenn es selbst HSTS sendet; ohne TLS in nginx bleibt der von TuxMail erhalten. |
 | `nginx -t`: „Address family not supported“ | Host ohne IPv6: `tuxmail_nginx_ipv6=false` (Standard erkennt das automatisch). |
 | Download/Prüfsumme schlägt fehl | Release-URL erreichbar? `tuxmail_release_base_url` anpassen oder `tuxmail_binary_src` verwenden. |
+| „keine SHA-256-Prüfsumme hinterlegt“ (Continuwuity) | `tuxmail_continuwuity_sha256` für die Architektur setzen (Abschnitt 2). 404 beim Download: Asset-Name auf der Forgejo-Release-Seite prüfen und `tuxmail_continuwuity_asset` anpassen. |
+| `… --version` schlägt fehl (Bridge/Homeserver) | Falsche Architektur oder fehlende Laufzeitbibliothek: `ldd /opt/<dienst>/current/<dienst>`; Continuwuity braucht ggf. `liburing`. |
+| Homeserver antwortet nicht | `journalctl -u continuwuity -n 100` bzw. `-u matrix-synapse`; `curl -s http://127.0.0.1:8008/_matrix/client/versions`. Port belegt? `ss -ltnp 'sport = :8008'`. |
+| Bridge startet immer wieder neu | `journalctl -u mautrix-whatsapp -n 100`. „homeserver unreachable“: Homeserver läuft? „unknown token“/M_UNKNOWN_TOKEN: Registrierung fehlt beim Homeserver (Continuwuity: `!admin appservices list` im Admin-Raum, ggf. Markierung `/etc/continuwuity/appservices/<bridge>.registered` löschen und Playbook erneut ausführen; Synapse: `app_service_config_files` in `conf.d/tuxmail.yaml`). |
+| Automatische Registrierung bei Continuwuity fehlgeschlagen | Admin-Raum `#admins:<server_name>` vorhanden und das Konto Mitglied? Token in `/etc/continuwuity/admin.token` gültig? Sonst Schritte aus der Playbook-Ausgabe manuell ausführen. |
+| `login` beim Bridge-Bot: „You don't have permission“ | Konto nicht in `tuxmail_bridges_permissions` (Server-Domain = `user`); andere Server über `tuxmail_bridges_permissions_extra`. |
+| Matrix-Client erreicht den Server nicht | `curl https://<domain>/_matrix/client/versions` muss JSON liefern (nginx-Weiterleitung, `tuxmail_matrix_nginx_proxy`). Nach dem Einschalten der Bridges `--tags nginx,bridges` ausführen, damit der vHost die `/_matrix`-Pfade erhält. |
+| PostgreSQL: „Peer authentication failed“ | Dienst läuft als `mautrix-<name>` bzw. `matrix-synapse`? `pg_hba.conf` muss `local all all peer` enthalten (Distributionsstandard). |
+| Chromium startet nicht (PDF) | `TUXMAIL_CHROMIUM_PATH` in `/etc/tuxmail/pdf.env` prüfen; `tuxmail_service_chromium_compat` muss `true` sein (lockert MemoryDenyWriteExecute/Namensräume); Ubuntu: Snap-Chromium funktioniert nicht, `.deb` verwenden. `journalctl -u tuxmail`. |
+| Gotenberg (Container) nicht erreichbar | `systemctl status tuxmail-gotenberg`, `curl http://127.0.0.1:3000/health`; Image-Tag vorhanden? |
 
 Ansible ausführlicher: `ansible-playbook site.yml -vv`. Probelauf: `--check --diff`.
 
-## 10. Manuelle Installation (ohne Ansible)
+## 11. Manuelle Installation (ohne Ansible)
 
 Die Dateien in `systemd/` und `nginx/` sind aus den Ansible-Templates erzeugte Beispiele
 (TCP-Listener, Let's Encrypt, Domain `mail.example.org`):
@@ -368,9 +591,10 @@ sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail
 # nginx: nginx/tuxmail.conf nach sites-available/ bzw. conf.d/, Domain/Zertifikat anpassen, nginx -t
 ```
 
-## 11. Docker / Podman
+## 12. Docker / Podman (Alternative)
 
-Für jede Version gibt es ein Multi-Arch-Image (linux/amd64, linux/arm64) im GitHub Container Registry:
+Container sind für TuxMail **nicht nötig** – der empfohlene Weg ist die native Installation
+(Abschnitt 2). Wer trotzdem Container betreiben möchte: Für jede Version gibt es ein Multi-Arch-Image (linux/amd64, linux/arm64) im GitHub Container Registry:
 
 | Tag | Inhalt |
 |---|---|

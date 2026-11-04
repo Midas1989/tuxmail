@@ -23,6 +23,7 @@ require (
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mooijtech/go-pst/v6 v6.0.2
 	github.com/nyaruka/phonenumbers v1.8.1
+	github.com/smallstep/pkcs7 v0.2.3
 	github.com/teambition/rrule-go v1.8.2
 	github.com/wailsapp/go-webview2 v1.0.19
 	github.com/wailsapp/wails/v2 v2.10.2
@@ -30,6 +31,7 @@ require (
 	go.mau.fi/util v0.9.5
 	go.mau.fi/whatsmeow v0.0.0-20260116142645-06f473759141
 	golang.org/x/crypto v0.48.0
+	golang.org/x/image v0.27.0
 	golang.org/x/net v0.50.0
 	golang.org/x/oauth2 v0.34.0
 	golang.org/x/sys v0.41.0
@@ -37,6 +39,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	maunium.net/go/mautrix v0.26.2
 	modernc.org/sqlite v1.44.0
+	software.sslmate.com/src/go-pkcs12 v0.7.4
 )
 
 require github.com/cloudflare/circl v1.6.3 // indirect

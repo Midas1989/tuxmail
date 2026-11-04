@@ -65,6 +65,16 @@ tuxmail_oidc_groups_claim: "groups"
 
 tuxmail_login_rate_per_minute: 10
 
+# --- Android-Push über Firebase Cloud Messaging (optional, KONZEPT 15.9) ---------
+# JSON-Schlüssel eines Firebase-Dienstkontos (Rolle "Firebase Cloud Messaging API Admin")
+# auf dem Steuerrechner, gern mit "ansible-vault encrypt" verschlüsselt. Leer = FCM aus.
+# Wird nach tuxmail_fcm_service_account_file kopiert (root:tuxmail 0640) und als
+# push.fcm.service_account_file in config.yaml eingetragen.
+tuxmail_fcm_service_account_src: ""
+tuxmail_fcm_service_account_file: "{{ tuxmail_config_dir }}/fcm-service-account.json"
+# Abgeleitet: config.yaml erhält den push-Abschnitt nur, wenn FCM aktiv ist.
+tuxmail_fcm_enabled: "{{ tuxmail_fcm_service_account_src | length > 0 }}"
+
 
 # --- systemd -------------------------------------------------------------------
 tuxmail_service_name: "tuxmail"
@@ -73,6 +83,11 @@ tuxmail_limit_nofile: 65536
 # TUXMAIL_LISTEN, TUXMAIL_DATA_DIR, TUXMAIL_PUBLIC_URL, TUXMAIL_LOG_LEVEL aus
 # (überschreiben config.yaml – normalerweise nicht nötig).
 tuxmail_service_environment: {}
+# Härtung für den Chromium-Kindprozess lockern (nur bei tuxmail_pdf_renderer=chromium):
+# MemoryDenyWriteExecute=false, Namensräume (außer cgroup) und @privileged-Systemaufrufe
+# erlaubt. Auf false setzen, um die volle Härtung zu behalten (Chromium startet dann
+# ggf. nicht oder nur ohne eigene Sandbox).
+tuxmail_service_chromium_compat: "{{ tuxmail_pdf_renderer == 'chromium' }}"
 
 # --- Health-Check nach (Neu-)Start ------------------------------------------------
 tuxmail_healthcheck_enabled: true

@@ -45,6 +45,7 @@ func (a *App) ensureIndexed(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	deferred := false // mails left to the sync engine's threading (grace period)
 	for {
 		ms, err := a.st.MessagesWithoutConversation(ctx, indexBatch)
 		if err != nil {
@@ -57,6 +58,7 @@ func (a *App) ensureIndexed(ctx context.Context) error {
 			// own here (that split threads under concurrent folder syncs).
 			// Only leftovers of failed threading are covered.
 			if a.mgr != nil && m.CreatedAt.After(a.now().Add(-threadGrace)) {
+				deferred = true
 				continue
 			}
 			if _, err := a.ensureThread(ctx, m); err != nil {
@@ -98,7 +100,11 @@ func (a *App) ensureIndexed(ctx context.Context) error {
 			return err
 		}
 	}
-	a.idxDirty, a.idxMsgMax, a.idxChatMax = false, msgMax, chatMax
+	// Deferred mails must be looked at again once their grace period is
+	// over (before, the index was marked clean and they stayed without
+	// conversation, i.e. invisible in the hybrid/chat lists, until the next
+	// new mail arrived).
+	a.idxDirty, a.idxMsgMax, a.idxChatMax = deferred, msgMax, chatMax
 	return nil
 }
 

@@ -119,6 +119,12 @@
 //   POST /api/cloud/shares                      CloudShareInput -> CloudShare
 //   DELETE /api/cloud/shares/{id}               -> CloudShare (revoked)
 //   GET  /api/cloud/shares/{id}/password        -> {password}
+//   --- Diagnostics ---
+//   GET  /api/sync/status                       -> AccountSyncStatus[]
+//   POST /api/sync/{id}/now
+//   GET  /api/diagnostics                       -> DiagnosticsInfo
+//   GET  /api/messages/{id}/source              text/plain (raw RFC 5322)
+//   GET  /api/diagnostics/export                zip (logs + redacted config)
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
 //   Messenger (internal/server/api/messenger_routes.go):
 //   GET  /api/messenger/plugins                 -> MessengerPlugin[]
@@ -299,6 +305,8 @@ export interface HttpTransportOptions {
   authToken?: () => string | undefined;
   /** Called on HTTP 401 (expired/revoked device token). */
   onUnauthorized?: () => void;
+  /** Rewrites request paths, e.g. to the team mailbox prefix /api/team/{id}/ (api/team.ts). */
+  rewritePath?: (path: string) => string;
 }
 
 function readCsrfToken(): string | undefined {
@@ -332,8 +340,10 @@ export class HttpTransport implements Api {
   private readonly maxDelay: number;
   private readonly authToken: () => string | undefined;
   private readonly onUnauthorized: (() => void) | undefined;
+  private readonly rewritePath: ((path: string) => string) | undefined;
 
   constructor(opts: HttpTransportOptions = {}) {
+    this.rewritePath = opts.rewritePath;
     this.base = (opts.baseUrl ?? '').replace(/\/$/, '');
     this.fetchImpl = opts.fetchImpl ?? ((...args) => fetch(...args));
     this.wsImpl = opts.webSocketImpl ?? (typeof WebSocket !== 'undefined' ? WebSocket : undefined);
@@ -358,7 +368,7 @@ export class HttpTransport implements Api {
     }
     let res: Response;
     try {
-      res = await this.fetchImpl(this.base + path, { method, headers: h, body: payload, credentials: bearer ? 'omit' : 'same-origin' });
+      res = await this.fetchImpl(this.base + (this.rewritePath ? this.rewritePath(path) : path), { method, headers: h, body: payload, credentials: bearer ? 'omit' : 'same-origin' });
     } catch (err) {
       throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
     }
@@ -1200,6 +1210,45 @@ export class HttpTransport implements Api {
     return this.request('GET', `/api/cloud/accounts/${accountId}/password`);
   }
 
+  // --- Diagnostics ---
+  syncStatus(): Promise<AccountSyncStatus[]> {
+    return this.request('GET', '/api/sync/status');
+  }
+  syncNow(accountId: number): Promise<void> {
+    return this.request('POST', `/api/sync/${accountId}/now`);
+  }
+  diagnostics(): Promise<DiagnosticsInfo> {
+    return this.request('GET', '/api/diagnostics');
+  }
+  async messageSource(id: number): Promise<string> {
+    const h: Record<string, string> = {};
+    const bearer = this.authToken();
+    if (bearer) h.Authorization = `Bearer ${bearer}`;
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.base}/api/messages/${id}/source`, { headers: h, credentials: bearer ? 'omit' : 'same-origin' });
+    } catch (err) {
+      throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
+    }
+    if (!res.ok) throw new ApiError(res.statusText, res.status, 'http_' + res.status);
+    return res.text();
+  }
+  async exportDiagnostics(): Promise<{ filename: string; blob: Blob }> {
+    const h: Record<string, string> = {};
+    const bearer = this.authToken();
+    if (bearer) h.Authorization = `Bearer ${bearer}`;
+    let res: Response;
+    try {
+      res = await this.fetchImpl(`${this.base}/api/diagnostics/export`, { headers: h, credentials: bearer ? 'omit' : 'same-origin' });
+    } catch (err) {
+      throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
+    }
+    if (!res.ok) throw new ApiError(res.statusText, res.status, 'http_' + res.status);
+    const cd = res.headers.get('Content-Disposition') ?? '';
+    const filename = /filename="?([^";]+)"?/.exec(cd)?.[1] ?? 'tuxmail-diagnose.zip';
+    return { filename, blob: await res.blob() };
+  }
+
   // --- Mail protocols ---
   async loadRemoteContent(messageId: number): Promise<RemoteContent> {
     const r = await this.request<RemoteContent>('GET', `/api/messages/${messageId}/remote-content`);
@@ -1262,6 +1311,9 @@ function scopeParams(s: ConversationScope): Record<string, string | number | und
     searchFolderId: s.kind === 'searchFolder' ? s.searchFolderId : undefined,
   };
 }
+
+// --- Diagnostics ---
+import type { AccountSyncStatus, DiagnosticsInfo } from '../types';
 
 // --- Import/Export/Backup ---
 import type * as IO from '../types';

@@ -1,0 +1,42 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Prüfen, ob das Matrix-Admin-Konto bereits angelegt wurde
+  ansible.builtin.stat:
+    path: /etc/matrix-synapse/.tuxmail-admin-initialized
+  register: tuxmail_bridges_synapse_marker
+
+- name: Matrix-Admin-Konto anlegen
+  when: not tuxmail_bridges_synapse_marker.stat.exists
+  block:
+    - name: Passwort bestimmen
+      ansible.builtin.include_tasks: native/admin_password.yml
+
+    - name: Konto per register_new_matrix_user anlegen (gemeinsames Geheimnis)
+      ansible.builtin.command:
+        argv:
+          - register_new_matrix_user
+          - --user
+          - "{{ tuxmail_matrix_admin_user }}"
+          - --password
+          - "{{ tuxmail_bridges_admin_password }}"
+          - --admin
+          - --config
+          - /etc/matrix-synapse/conf.d/tuxmail-secret.yaml
+          - "{{ tuxmail_bridges_homeserver_url }}"
+      register: tuxmail_bridges_synapse_reg
+      changed_when: true
+      failed_when:
+        - tuxmail_bridges_synapse_reg.rc != 0
+        - "'User ID already taken' not in (tuxmail_bridges_synapse_reg.stdout ~ tuxmail_bridges_synapse_reg.stderr)"
+      no_log: true
+
+    - name: Markierung setzen
+      ansible.builtin.copy:
+        content: "Matrix-Konto {{ tuxmail_bridges_matrix_admin }} wurde von Ansible angelegt.\n"
+        dest: /etc/matrix-synapse/.tuxmail-admin-initialized
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Zugangsdaten anzeigen (nur einmal)
+      ansible.builtin.include_tasks: native/admin_show.yml

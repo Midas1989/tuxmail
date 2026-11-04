@@ -1,0 +1,63 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Native Installation ohne Container. Reihenfolge:
+#   1. PostgreSQL (optional)
+#   2. Homeserver installieren, konfigurieren, starten, erstes Admin-Konto
+#   3. Bridges installieren, Konfiguration + Appservice-Registrierung erzeugen
+#   4. Bridges beim Homeserver registrieren
+#   5. Bridges starten
+
+- name: Verzeichnis für Sicherungen vor Versionswechseln
+  ansible.builtin.file:
+    path: "{{ tuxmail_bridges_backup_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: PostgreSQL bereitstellen
+  ansible.builtin.include_tasks: native/postgres.yml
+  when: tuxmail_bridges_db == 'postgres'
+
+- name: Continuwuity installieren
+  ansible.builtin.include_tasks: native/continuwuity.yml
+  when: tuxmail_matrix_server == 'continuwuity'
+
+- name: Synapse installieren
+  ansible.builtin.include_tasks: native/synapse.yml
+  when: tuxmail_matrix_server == 'synapse'
+
+- name: Mautrix-Bridges installieren
+  ansible.builtin.include_tasks: native/mautrix.yml
+  loop: "{{ tuxmail_bridges_mautrix }}"
+  loop_control:
+    loop_var: tuxmail_bridge
+    label: "mautrix-{{ tuxmail_bridge.name }}"
+
+- name: Bridges bei Synapse registrieren
+  ansible.builtin.include_tasks: native/synapse_register.yml
+  when: tuxmail_matrix_server == 'synapse'
+
+- name: Bridges bei Continuwuity registrieren
+  ansible.builtin.include_tasks: native/continuwuity_register.yml
+  when: tuxmail_matrix_server == 'continuwuity'
+
+- name: Bridges aktivieren und (neu) starten
+  ansible.builtin.systemd_service:
+    name: "mautrix-{{ item.name }}.service"
+    enabled: true
+    state: "{{ 'restarted' if ('mautrix-' ~ item.name) in (tuxmail_bridges_restart | default([])) else 'started' }}"
+    daemon_reload: true
+  loop: "{{ tuxmail_bridges_mautrix }}"
+  loop_control:
+    label: "mautrix-{{ item.name }}"
+
+- name: Abgeschaltete Bridges stoppen
+  ansible.builtin.include_tasks: native/mautrix_absent.yml
+  loop: "{{ tuxmail_bridges_mautrix_all | rejectattr('name', 'in', tuxmail_bridges_mautrix | map(attribute='name') | list) | list }}"
+  loop_control:
+    loop_var: tuxmail_bridge
+    label: "mautrix-{{ tuxmail_bridge.name }}"
+
+- name: Zusammenfassung
+  ansible.builtin.include_tasks: native/summary.yml

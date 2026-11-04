@@ -25,6 +25,7 @@
 </script>
 
 <script lang="ts">
+  import MeetingLinkButton from '../comfort/MeetingLinkButton.svelte'; // Jitsi / Nextcloud Talk / Teams
   import Trash from '@lucide/svelte/icons/trash-2';
   import Video from '@lucide/svelte/icons/video';
   import MapPin from '@lucide/svelte/icons/map-pin';
@@ -348,7 +349,16 @@
             <a class="icon-btn" href={meetingUrl} target="_blank" rel="noopener noreferrer" title={t('calendar.event.join')} aria-label={t('calendar.event.join')}><Video size={16} /></a>
             <button type="button" class="icon-btn" title={t('calendar.event.copyLink')} aria-label={t('calendar.event.copyLink')} onclick={() => navigator.clipboard?.writeText(meetingUrl)}><Copy size={15} /></button>
           {:else}
-            <button type="button" class="btn" onclick={() => (meetingUrl = jitsiRoom(title))}><Video size={15} /> {t('calendar.event.createJitsi')}</button>
+            <MeetingLinkButton
+              {title}
+              participants={attendees.map((a) => a.email)}
+              fallback={() => jitsiRoom(title)}
+              onlink={(l) => {
+                meetingUrl = l.url;
+                if (!location) location = l.url;
+                description = description ? `${description}\n\n${l.description}` : l.description;
+              }}
+            />
           {/if}
         </span>
       </label>

@@ -1,4 +1,4 @@
-{% from '_tuxmail_macros.j2' import locations with context %}
+{% from '_tuxmail_macros.j2' import locations, matrix_locations with context %}
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # {{ tuxmail_nginx_marker }} – {{ ansible_managed }}
 # TuxMail Reverse-Proxy für {{ tuxmail_nginx_server_names | join(', ') }}
@@ -77,6 +77,9 @@ server {
 
 {% endif %}
 {{ locations(false, '$scheme', true) }}
+{% if tuxmail_matrix_nginx_enabled | bool %}
+{{ matrix_locations('$scheme', true) }}
+{% endif %}
 }
 {% else %}
 {% if tuxmail_nginx_extra_server_config | length > 0 %}
@@ -92,5 +95,8 @@ server {
 {% endif %}
 {# Ohne TLS: entweder Bootstrap (Let's Encrypt folgt) oder TLS am vorgelagerten Proxy #}
 {{ locations(false, (tuxmail_public_scheme if tuxmail_tls_mode == 'none' else '$scheme'), false) }}
+{% if tuxmail_matrix_nginx_enabled | bool %}
+{{ matrix_locations((tuxmail_public_scheme if tuxmail_tls_mode == 'none' else '$scheme'), false) }}
+{% endif %}
 }
 {% endif %}

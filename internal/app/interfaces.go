@@ -36,10 +36,20 @@ type Syncer interface {
 
 // AccountStatus is the sync state of one account.
 type AccountStatus struct {
-	AccountID int64     `json:"accountId"`
-	State     string    `json:"state"` // online | offline | syncing | error
-	Error     string    `json:"error,omitempty"`
+	AccountID int64  `json:"accountId"`
+	State     string `json:"state"` // connecting | syncing | idle | error | stopped | offline
+	Error     string `json:"error,omitempty"`
+	// ErrorAt is when Error happened; NextRetry when the next attempt is due.
+	ErrorAt   time.Time `json:"errorAt,omitzero"`
+	NextRetry time.Time `json:"nextRetry,omitzero"`
 	LastSync  time.Time `json:"lastSync,omitzero"`
+	// Folder / FolderID: the folder being synced; Done / Total its progress
+	// (local / server messages); Initial during its first sync.
+	Folder   string `json:"folder,omitempty"`
+	FolderID int64  `json:"folderId,omitempty"`
+	Done     int    `json:"done,omitempty"`
+	Total    int    `json:"total,omitempty"`
+	Initial  bool   `json:"initial,omitempty"`
 }
 
 // SendRequest is a message to send, resolved by the application layer.
@@ -83,6 +93,9 @@ type RenderedMessage struct {
 	References       []string
 	Attachments      []RenderedAttachment
 	Encrypted        bool
+	// Automated: list/bulk mail or Auto-Submitted (newsletters,
+	// notifications); rendered as a card in the chat views.
+	Automated bool
 }
 
 // RenderedAttachment is an attachment found in a raw message. Index is the

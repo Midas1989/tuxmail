@@ -1,0 +1,32 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Rolle tuxmail_pdf – OPTIONAL. HTML-Rendering für die PDF-Erzeugung im
+# Server-Modus (KONZEPT 8.11). Auswahl über tuxmail_pdf_renderer (tuxmail_common):
+#   none | chromium | gotenberg_container
+#
+# Ergebnis ist /etc/tuxmail/pdf.env, die tuxmail.service per EnvironmentFile einliest:
+#   chromium            -> TUXMAIL_CHROMIUM_PATH=/usr/bin/chromium
+#   gotenberg_container -> TUXMAIL_GOTENBERG_URL=http://127.0.0.1:3000
+
+# --- chromium ------------------------------------------------------------------------
+# Pfad zum Chromium-Binary. Leer = automatisch (erster vorhandener Eintrag aus
+# tuxmail_pdf_chromium_candidates nach der Paketinstallation).
+# Pflicht unter Ubuntu (dort gibt es Chromium nur als Snap, siehe README).
+tuxmail_pdf_chromium_path: ""
+# Pakete; leer = Standard des Betriebssystems (vars/<os_family>.yml).
+tuxmail_pdf_chromium_packages: []
+# Pakete installieren (false = Chromium ist bereits vorhanden, nur Pfad eintragen).
+tuxmail_pdf_chromium_install: true
+# Schriftarten für ordentliche PDFs (leer = Standard des Betriebssystems).
+tuxmail_pdf_font_packages: []
+
+# --- gotenberg_container (Ausnahme: benötigt podman oder docker) ------------------------
+# podman (wird installiert) | docker (muss vorher installiert sein)
+tuxmail_pdf_container_engine: "podman"
+# Feste Version setzen (Tag oder besser @sha256-Digest)!
+tuxmail_gotenberg_image: "docker.io/gotenberg/gotenberg:8.39.0"
+tuxmail_gotenberg_service_name: "tuxmail-gotenberg"
+
+# --- Intern ------------------------------------------------------------------------------
+tuxmail_pdf_gotenberg_url: "http://127.0.0.1:{{ tuxmail_gotenberg_port }}"

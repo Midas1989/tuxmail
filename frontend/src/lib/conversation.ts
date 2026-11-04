@@ -192,6 +192,8 @@ export type TimelineEntry =
       channelChanged: boolean;
       /** Show the reply quote (hidden when it just answers the bubble right above). */
       showReplyQuote: boolean;
+      /** One-way mail conversation: the bubble shows its subject (no subject lines). */
+      showSubject?: boolean;
     };
 
 /** Bubbles of the same sender within this window are visually grouped. */
@@ -217,6 +219,7 @@ export function buildTimeline(items: ConversationItem[], opts: TimelineOptions |
   let lastDay = '';
   let lastSubject: string | null = null;
   const unreadIdx = o.unreadFromId ? sorted.findIndex((i) => i.id === o.unreadFromId) : -1;
+  const twoWay = (sorted.some((i) => i.isOwn) && sorted.some((i) => !i.isOwn)) || sorted.some((i) => i.channel !== 'email');
   const breaks = new Set<number>(); // indices that start a new visual group
   for (let i = 0; i < sorted.length; i++) {
     const it = sorted[i];
@@ -235,7 +238,10 @@ export function buildTimeline(items: ConversationItem[], opts: TimelineOptions |
       out.push({ type: 'unread', key: 'unread', count: sorted.length - i });
       breaks.add(i);
     }
-    if (it.channel === 'email' && it.subject && it.display !== 'card') {
+    // Subject lines only in real conversations (someone answered): for
+    // one-way senders (newsletters, notifications) every mail has a new
+    // subject, which belongs into its card/bubble, not into "Betreff geändert".
+    if (it.channel === 'email' && it.subject && it.display !== 'card' && twoWay) {
       const norm = normalizeSubject(it.subject);
       if (norm && norm !== lastSubject) {
         out.push({ type: 'subject', key: 'subj:' + it.id, subject: norm, changed: lastSubject !== null });
@@ -259,6 +265,7 @@ export function buildTimeline(items: ConversationItem[], opts: TimelineOptions |
       groupEnd: true,
       channelChanged: !!prev && prev.channel !== it.channel,
       showReplyQuote: !!it.replyTo && (!prev || prev.id !== it.replyTo.itemId || it.channel !== 'email'),
+      showSubject: !twoWay && it.channel === 'email' && !!it.subject && it.display !== 'card',
     };
     if (samePrev) {
       for (let k = out.length - 1; k >= 0; k--) {
@@ -319,9 +326,10 @@ export function pickFolderForMessage(folderIds: number[], folders: Folder[], cur
 // ---------------------------------------------------------------------------
 
 export function initials(name: string): string {
+  // Letters and digits only: "Run failed: CI (main)" must not become "R(".
   const parts = name
-    .replace(/[<>"]/g, '')
-    .split(/[\s@._-]+/)
+    .replace(/<[^>]*>/g, ' ')
+    .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
   if (parts.length === 0) return '?';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();

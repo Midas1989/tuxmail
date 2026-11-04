@@ -58,7 +58,7 @@ func (r *MIMERenderer) Render(ctx context.Context, raw []byte) (RenderedMessage,
 		return RenderedMessage{}, err
 	}
 	out := RenderedMessage{Text: m.Text, InReplyTo: m.Header.InReplyTo, References: m.Header.References, Attachments: attachmentsOf(m),
-		Encrypted: m.PGP.Encrypted}
+		Encrypted: m.PGP.Encrypted, Automated: m.IsAutomated()}
 	if strings.TrimSpace(m.HTML) != "" {
 		id, _ := ctx.Value(messageIDKey{}).(int64)
 		res := r.San.Sanitize(m.HTML, sanitize.Options{MessageID: strconv.FormatInt(id, 10)})

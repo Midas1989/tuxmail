@@ -1,0 +1,43 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Compose-Datei schreiben
+  ansible.builtin.template:
+    src: compose.yaml.j2
+    dest: "{{ tuxmail_bridges_dir }}/compose.yaml"
+    owner: root
+    group: root
+    mode: "0640"
+  register: tuxmail_bridges_compose_file
+
+- name: Container bei geänderter Compose-Datei entfernen (werden neu erstellt)  # noqa: no-handler (muss vor "up" laufen)
+  ansible.builtin.command:
+    argv: "{{ tuxmail_bridges_compose_cmd + ['-p', tuxmail_bridges_project, '-f', tuxmail_bridges_dir ~ '/compose.yaml', 'down'] }}"
+    chdir: "{{ tuxmail_bridges_dir }}"
+  changed_when: true
+  when: tuxmail_bridges_compose_file is changed
+
+- name: Container starten
+  ansible.builtin.command:
+    argv: "{{ tuxmail_bridges_compose_cmd + ['-p', tuxmail_bridges_project, '-f', tuxmail_bridges_dir ~ '/compose.yaml', 'up', '-d'] }}"
+    chdir: "{{ tuxmail_bridges_dir }}"
+  register: tuxmail_bridges_up
+  # "up -d" ist idempotent; Änderungen werden über die vorherigen Aufgaben gemeldet.
+  changed_when: false
+
+- name: Container nach Konfigurationsänderung neu starten
+  ansible.builtin.command:
+    argv: "{{ tuxmail_bridges_compose_cmd + ['-p', tuxmail_bridges_project, '-f', tuxmail_bridges_dir ~ '/compose.yaml', 'restart'] }}"
+    chdir: "{{ tuxmail_bridges_dir }}"
+  changed_when: true
+  when:
+    - tuxmail_bridges_restart_needed | default(false) | bool
+    - tuxmail_bridges_compose_file is not changed
+
+- name: Hinweise zu den Bridges
+  ansible.builtin.debug:
+    msg:
+      - "Matrix-Homeserver ({{ tuxmail_matrix_server }}, Container): http://127.0.0.1:{{ tuxmail_matrix_port }} (nur lokal)"
+      - "Matrix-Konto für TuxMail anlegen (Synapse):"
+      - "  {{ tuxmail_bridges_engine_effective }} exec -it {{ tuxmail_bridges_project }}-homeserver \\"
+      - "      register_new_matrix_user -c /data/homeserver.yaml http://localhost:8008"
+      - "Anschließend in TuxMail das Matrix-Konto hinzufügen und die Bridges per Chat mit @whatsappbot / @signalbot koppeln."

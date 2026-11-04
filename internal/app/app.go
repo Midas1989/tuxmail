@@ -76,6 +76,13 @@ type Options struct {
 	// loop (CalDAV/CardDAV sync, reminders, invitations) runs when PIM or
 	// Sync is set and PIM.Disabled is false.
 	PIM *PIMOptions
+	// Team gives access to shared team mailboxes (server mode, team_source.go).
+	Team TeamSource
+	// WorkflowActions are registered in addition to the built-in actions
+	// (e.g. the team action "assign" of a team mailbox runtime).
+	WorkflowActions []workflow.ActionType
+	// Notifier delivers the workflow action notify (channel "push" ...).
+	Notifier workflow.Notifier
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -134,6 +141,8 @@ type App struct {
 	vac       vacationState     // vacation.go
 	pimOnce   sync.Once
 	pim       *pimService
+	comfort   *comfortState // comfort_state.go (spam, categories, S/MIME, PDF, ...)
+	diag      diagState     // diagnostics.go
 }
 
 // New creates the application layer.
@@ -190,6 +199,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.opts.Discoverer = autoconfigDiscoverer{}
 	}
 	a.proj = project.New(a.st, a.bus, project.Options{Now: opts.Now, Logger: opts.Logger})
+	a.comfort = newComfortState(a)
 	a.sync = opts.Syncer
 	var mail workflow.MailActions = &workflowMail{a: a}
 	if a.opts.Sender == nil && opts.Send != nil {
@@ -207,6 +217,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		}
 		a.configureEASSync(&cfg)
 		a.configureOAuthSync(&cfg)
+		a.configureComfortSync(&cfg)
 		if opts.Sync.Configure != nil {
 			opts.Sync.Configure(&cfg)
 		}
@@ -221,8 +232,13 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.sync = &localSyncer{st: a.st}
 	}
 	a.wfReg = workflow.DefaultRegistry()
+	for _, t := range opts.WorkflowActions {
+		if err := a.wfReg.Register(t); err != nil {
+			return nil, err
+		}
+	}
 	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient,
-		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}}
+		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}, Notifier: opts.Notifier}
 	a.proj.Workflow().Deps(&deps)
 	a.vac.mail, deps.Vacation = mail, vacationProxy{a: a} // vacation.go
 	loc := workflow.RunLocal
@@ -250,6 +266,11 @@ func (a *App) Start() {
 	a.runOnce.Do(func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		a.cancel = cancel
+		if n, err := a.st.PurgeSystemKeywordTags(ctx); err != nil {
+			a.log.Warn("app: purging system keyword tags", "err", err)
+		} else if n > 0 {
+			a.log.Info("app: removed tags made from system keywords", "count", n)
+		}
 		if a.mgr != nil {
 			if err := a.mgr.Start(ctx); err != nil {
 				a.log.Warn("app: starting sync failed", "err", err)
@@ -264,6 +285,8 @@ func (a *App) Start() {
 			}
 		}()
 		go func() { defer a.wg.Done(); a.timers(ctx) }()
+		a.wg.Add(1)
+		go func() { defer a.wg.Done(); a.comfortLoop(ctx) }()
 		a.wg.Add(1)
 		go func() { defer a.wg.Done(); a.loadVacation(ctx) }() // vacation.go
 		if a.opts.PIM != nil || a.opts.Sync != nil {

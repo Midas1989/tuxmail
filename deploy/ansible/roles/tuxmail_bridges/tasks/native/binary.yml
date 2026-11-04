@@ -1,0 +1,120 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Installiert ein einzelnes Binary versioniert und schaltet den Symlink um:
+#   /opt/<name>/versions/<version>/<name>   (root:root 0755)
+#   /opt/<name>/current -> versions/<version>
+# Eingaben (include_tasks vars):
+#   tuxmail_bin_name, tuxmail_bin_version, tuxmail_bin_url, tuxmail_bin_checksum ("sha256:<hex>"
+#   oder "sha256:<url>"), tuxmail_bin_src (lokale Datei oder ""), tuxmail_bin_data_dir
+# Ergebnis: Dienst tuxmail_bin_name landet bei einem Versionswechsel in tuxmail_bridges_restart.
+
+- name: "Versionsverzeichnis anlegen – {{ tuxmail_bin_name ~ ' ' ~ tuxmail_bin_version }}"
+  ansible.builtin.file:
+    path: "/opt/{{ tuxmail_bin_name }}/versions/{{ tuxmail_bin_version }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: "Prüfsumme ist angegeben ({{ tuxmail_bin_name }})"
+  ansible.builtin.assert:
+    that: tuxmail_bin_src | length > 0 or tuxmail_bin_checksum is match('^sha256:.+')
+    fail_msg: >-
+      Für {{ tuxmail_bin_name }} {{ tuxmail_bin_version }} ({{ tuxmail_bin_url }}) ist keine SHA-256-Prüfsumme
+      hinterlegt. Datei herunterladen, mit "sha256sum" prüfen und die passende *_sha256-Variable setzen.
+    quiet: true
+
+- name: "Binary herunterladen und SHA-256 prüfen ({{ tuxmail_bin_name }})"
+  ansible.builtin.get_url:
+    url: "{{ tuxmail_bin_url }}"
+    dest: "/opt/{{ tuxmail_bin_name }}/versions/{{ tuxmail_bin_version }}/{{ tuxmail_bin_name }}"
+    checksum: "{{ tuxmail_bin_checksum }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: tuxmail_bin_src | length == 0
+
+- name: "Lokales Binary vom Steuerrechner kopieren ({{ tuxmail_bin_name }})"
+  ansible.builtin.copy:
+    src: "{{ tuxmail_bin_src }}"
+    dest: "/opt/{{ tuxmail_bin_name }}/versions/{{ tuxmail_bin_version }}/{{ tuxmail_bin_name }}"
+    owner: root
+    group: root
+    mode: "0755"
+  when: tuxmail_bin_src | length > 0
+
+- name: "Binary läuft auf diesem System (--version) – {{ tuxmail_bin_name }}"
+  ansible.builtin.command:
+    argv: ["/opt/{{ tuxmail_bin_name }}/versions/{{ tuxmail_bin_version }}/{{ tuxmail_bin_name }}", "--version"]
+  register: tuxmail_bin_version_out
+  changed_when: false
+
+- name: "Aktive Version ermitteln ({{ tuxmail_bin_name }})"
+  ansible.builtin.stat:
+    path: "/opt/{{ tuxmail_bin_name }}/current"
+  register: tuxmail_bin_current
+
+- name: "Versionswechsel feststellen ({{ tuxmail_bin_name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bin_previous: >-
+      {{ (tuxmail_bin_current.stat.lnk_target | basename)
+         if (tuxmail_bin_current.stat.exists and tuxmail_bin_current.stat.islnk) else '' }}
+
+- name: "Sicherung vor dem Versionswechsel ({{ tuxmail_bin_name }})"
+  when:
+    - tuxmail_bridges_backup_before_upgrade | bool
+    - tuxmail_bin_previous | length > 0
+    - tuxmail_bin_previous != tuxmail_bin_version
+  block:
+    - name: "Dienst anhalten ({{ tuxmail_bin_name }})"
+      ansible.builtin.systemd_service:
+        name: "{{ tuxmail_bin_name }}.service"
+        state: stopped
+
+    - name: "Datenverzeichnis sichern ({{ tuxmail_bin_name }})"
+      ansible.builtin.command:
+        argv:
+          - tar
+          - --create
+          - --gzip
+          - --preserve-permissions
+          - --file
+          - >-
+            {{ tuxmail_bridges_backup_dir }}/{{ tuxmail_bin_name }}-{{ tuxmail_bin_previous }}-to-{{ tuxmail_bin_version
+            }}-{{ ansible_facts['date_time']['iso8601_basic_short'] }}.tar.gz
+          - --directory
+          - "{{ tuxmail_bin_data_dir | dirname }}"
+          - "{{ tuxmail_bin_data_dir | basename }}"
+      changed_when: true
+
+- name: "Version aktivieren (Symlink current) – {{ tuxmail_bin_name }}"
+  ansible.builtin.file:
+    src: "/opt/{{ tuxmail_bin_name }}/versions/{{ tuxmail_bin_version }}"
+    dest: "/opt/{{ tuxmail_bin_name }}/current"
+    state: link
+    owner: root
+    group: root
+    force: true
+  register: tuxmail_bin_link
+
+- name: "Neustart vormerken ({{ tuxmail_bin_name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_restart: "{{ (tuxmail_bridges_restart | default([])) + ([tuxmail_bin_name] if tuxmail_bin_link is changed else []) }}"
+
+- name: "Alte Versionen ermitteln ({{ tuxmail_bin_name }})"
+  ansible.builtin.find:
+    paths: "/opt/{{ tuxmail_bin_name }}/versions"
+    file_type: directory
+    recurse: false
+  register: tuxmail_bin_installed
+
+- name: "Überzählige alte Versionen entfernen ({{ tuxmail_bin_name }})"
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ tuxmail_bin_old[: [(tuxmail_bin_old | length) - (tuxmail_bin_keep | int), 0] | max] }}"
+  vars:
+    tuxmail_bin_old: >-
+      {{ tuxmail_bin_installed.files | sort(attribute='mtime') | map(attribute='path')
+         | reject('equalto', '/opt/' ~ tuxmail_bin_name ~ '/versions/' ~ tuxmail_bin_version) | list }}
+    tuxmail_bin_keep: "{{ [(tuxmail_bridges_keep_versions | int) - 1, 0] | max }}"

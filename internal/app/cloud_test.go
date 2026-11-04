@@ -364,6 +364,7 @@ func TestCloudOpenCloudLoginAndWorkflow(t *testing.T) {
 	if links := srv.LinkList(); len(links) != 1 || links[0].Password == "" {
 		t.Errorf("links %+v", links)
 	}
+	f.a.SetPDFRenderer(nil) // the app installs the comfort PDF renderer by default
 	if _, err := wp.ArchivePDF(ctx, ref, workflow.PDFRequest{Target: "opencloud", Path: "/Archiv/x.pdf"}); !workflow.IsPermanent(err) {
 		t.Errorf("no renderer: %v", err)
 	}

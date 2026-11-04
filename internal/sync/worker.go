@@ -44,6 +44,8 @@ type Worker struct {
 	nextToken   int64
 	bodyFailed  map[int64]bool
 	moreBodies  bool
+	// lastProgress is when the last progress update was published.
+	lastProgress time.Time
 }
 
 // protection describes what a pending operation changed locally, so that a
@@ -122,11 +124,35 @@ func (w *Worker) setStatus(fn func(st *AccountStatus)) {
 
 func (w *Worker) setState(s State, folder string) {
 	w.setStatus(func(st *AccountStatus) {
+		if folder != st.Folder {
+			st.FolderID, st.Done, st.Total, st.Initial = 0, 0, 0, false
+		}
 		st.State, st.Folder = s, folder
 		if s != StateError {
 			st.NextRetry = time.Time{}
 		}
 	})
+}
+
+// ProgressInterval throttles the progress updates of account.status.
+const ProgressInterval = 250 * time.Millisecond
+
+// setProgress reports the progress of the folder being synced. Updates are
+// published at most every ProgressInterval (and always when it is done).
+func (w *Worker) setProgress(f domain.Folder, done, total int, initial bool) {
+	w.mu.Lock()
+	w.status.State, w.status.Folder, w.status.FolderID = StateSyncing, f.RemoteID, f.ID
+	w.status.Done, w.status.Total, w.status.Initial = done, total, initial
+	st := w.status
+	now := w.m.now()
+	due := now.Sub(w.lastProgress) >= ProgressInterval || (total > 0 && done >= total)
+	if due {
+		w.lastProgress = now
+	}
+	w.mu.Unlock()
+	if due {
+		w.m.publishStatus(st)
+	}
 }
 
 // ==== protections ==============================================================
@@ -359,6 +385,18 @@ func (w *Worker) cycle(ctx context.Context) error {
 				return err
 			}
 			w.log.Warn("sync: folder sync failed", "folder", f.RemoteID, "err", err)
+		}
+		// The newest Inbox bodies right after the Inbox headers, before the
+		// (possibly large) other folders: opening a fresh mail is instant.
+		if err == nil && f.Role == domain.RoleInbox {
+			w.setState(StateSyncing, "")
+			more, berr := w.backfillBodies(ctx)
+			if berr != nil && (ctx.Err() != nil || IsNetworkError(berr)) {
+				return berr
+			}
+			w.mu.Lock()
+			w.moreBodies = w.moreBodies || more
+			w.mu.Unlock()
 		}
 		// Keep user operations responsive during long syncs.
 		if err := w.runOps(ctx); err != nil {
