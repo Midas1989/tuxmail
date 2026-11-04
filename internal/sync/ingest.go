@@ -571,7 +571,7 @@ func (m *Manager) mailEvent(ctx context.Context, typ events.Type, msg store.Mess
 func (w *Worker) backfillBodies(ctx context.Context) (bool, error) {
 	cfg := &w.m.cfg
 	var notBefore time.Time
-	switch cfg.Bodies {
+	switch w.bodyPolicy() {
 	case BodiesOnDemand:
 		return false, nil
 	case BodiesRecent:

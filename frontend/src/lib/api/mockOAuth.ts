@@ -107,6 +107,12 @@ export class MockOAuth {
       Object.assign(st, { status: 'error', errorCode: 'oauth_consent_required', error: 'an administrator of the organization must approve TuxMail' });
       return;
     }
+    const existing = input.accountId ? this.host.accounts().find((a) => a.id === input.accountId) : undefined;
+    if (existing) {
+      // "Neu anmelden": the grant of the existing account is replaced.
+      Object.assign(st, { status: 'done', accountId: existing.id });
+      return;
+    }
     const acc = await this.host.createAccount({ kind: input.kind, displayName: input.displayName || input.email, email: input.email, name: input.name || input.email });
     acc.extra = { ...acc.extra, oauthProvider: input.provider };
     acc.incoming = undefined;

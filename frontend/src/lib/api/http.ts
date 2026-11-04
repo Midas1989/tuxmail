@@ -182,6 +182,17 @@
 //   GET/PUT /api/vacation                       VacationSettings (out of office)
 //   GET  /api/proxy/image?url=&e=&s=&u=         remote image (signed link or session)
 //
+//   --- Account edit --- ("Konto bearbeiten")
+//   GET  /api/accounts/{id}/settings            -> AccountSettings
+//   PATCH /api/accounts/{id}                    AccountUpdate -> AccountSettings
+//   DELETE /api/accounts/{id}?keepData=1
+//   PUT  /api/accounts/{id}/password            {password, verify} -> AccountSettings
+//   POST /api/accounts/{id}/test                ConnectionTestInput -> ConnectionTestResult
+//   POST /api/accounts/{id}/sync
+//   GET  /api/accounts/{id}/diagnostics         -> AccountDiagnostics
+//   POST /api/identities                        Identity -> Identity
+//   DELETE /api/identities/{id};  POST /api/identities/{id}/default
+//
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
 // snake_case as in internal/server/api_device.go (see native/server.ts):
 //   POST {serverUrl}/api/device/authorize       {client_name} -> grant
@@ -1252,6 +1263,38 @@ export class HttpTransport implements Api {
   saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
     return this.request('PUT', '/api/vacation', settings);
   }
+
+  // --- Account edit ---
+  getAccountSettings(accountId: number): Promise<AccountSettings> {
+    return this.request('GET', `/api/accounts/${accountId}/settings`);
+  }
+  updateAccount(accountId: number, update: AccountUpdate): Promise<AccountSettings> {
+    return this.request('PATCH', `/api/accounts/${accountId}`, update);
+  }
+  changeAccountPassword(accountId: number, password: string, verify: boolean): Promise<AccountSettings> {
+    return this.request('PUT', `/api/accounts/${accountId}/password`, { password, verify });
+  }
+  testAccountConnection(accountId: number, input: ConnectionTestInput): Promise<ConnectionTestResult> {
+    return this.request('POST', `/api/accounts/${accountId}/test`, input);
+  }
+  syncAccountNow(accountId: number): Promise<void> {
+    return this.request('POST', `/api/accounts/${accountId}/sync`);
+  }
+  deleteAccount(accountId: number, options: { keepData: boolean }): Promise<void> {
+    return this.request('DELETE', `/api/accounts/${accountId}${options.keepData ? '?keepData=1' : ''}`);
+  }
+  createIdentity(identity: AccountIdentity): Promise<AccountIdentity> {
+    return this.request('POST', '/api/identities', identity);
+  }
+  deleteIdentity(identityId: number): Promise<void> {
+    return this.request('DELETE', `/api/identities/${identityId}`);
+  }
+  setDefaultIdentity(identityId: number): Promise<void> {
+    return this.request('POST', `/api/identities/${identityId}/default`);
+  }
+  accountDiagnostics(accountId: number): Promise<AccountDiagnostics> {
+    return this.request('GET', `/api/accounts/${accountId}/diagnostics`);
+  }
 }
 
 import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
@@ -1269,3 +1312,6 @@ function scopeParams(s: ConversationScope): Record<string, string | number | und
 
 // --- Import/Export/Backup ---
 import type * as IO from '../types';
+
+// --- Account edit ---
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity } from '../types';

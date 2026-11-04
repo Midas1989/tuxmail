@@ -2258,3 +2258,103 @@ export interface VacationSettings {
   /** Accounts whose mail server answers itself (read only). */
   serverAccounts?: number[];
 }
+
+// --- Account edit ---
+// "Konto bearbeiten" (Settings -> Konten; Go: internal/app/account_edit.go).
+
+export type BodyPolicy = 'recent' | 'all' | 'on_demand';
+export type IdleMode = 'default' | 'custom' | 'off';
+
+export interface AccountSyncStatus {
+  accountId: number;
+  /** online | offline | syncing | error | stopped */
+  state: string;
+  error?: string;
+  lastSync?: string;
+}
+
+export interface AccountIndexOptions {
+  content: boolean;
+  attachments: boolean;
+  encrypted: boolean;
+}
+
+export interface AccountSettings {
+  account: Account;
+  email: string;
+  status?: AccountSyncStatus;
+  hasPassword: boolean;
+  /** "microsoft" | "google" (or "oauth2"): "Neu anmelden" instead of a password. */
+  oauthProvider?: string;
+  easUrl?: string;
+  jmapUrl?: string;
+  pop3?: Pop3Options;
+  bodyPolicy: BodyPolicy;
+  /** 0 = default poll interval. */
+  pollMinutes: number;
+  idleMode: IdleMode;
+  idleFolders: number[];
+  index: AccountIndexOptions;
+  sieve?: SieveConfig;
+  /** Connection test steps: imap | pop3 | jmap | eas | ews | graph | gmail | smtp | sieve | caldav | carddav. */
+  tests: string[];
+  editable: boolean;
+}
+
+/** Fields left out stay unchanged. */
+export interface AccountUpdate {
+  displayName?: string;
+  color?: string;
+  enabled?: boolean;
+  email?: string;
+  incoming?: ServerConfig;
+  outgoing?: ServerConfig;
+  easUrl?: string;
+  jmapUrl?: string;
+  pop3?: Pop3Options;
+  bodyPolicy?: BodyPolicy;
+  pollMinutes?: number;
+  idleMode?: IdleMode;
+  idleFolders?: number[];
+  index?: AccountIndexOptions;
+  sieve?: SieveConfig;
+  /** Log in with the new settings first; error code "connection_failed" saves nothing. */
+  verify?: boolean;
+}
+
+export interface ConnectionTestInput {
+  kinds?: string[];
+  /** Test unsaved settings of the dialog. */
+  update?: AccountUpdate;
+  /** Test a new password instead of the stored one. */
+  password?: string;
+}
+
+export interface ConnectionTestStep {
+  kind: string;
+  target: string;
+  ok: boolean;
+  /** auth_failed | unreachable | tls | timeout | oauth_reauth_required | not_configured | error */
+  code?: string;
+  error?: string;
+  millis: number;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  steps: ConnectionTestStep[];
+}
+
+export interface AccountDiagnostics {
+  generatedAt: string;
+  version: string;
+  mode: string;
+  account: Account;
+  status?: AccountSyncStatus;
+  folders: { name: string; role?: string; total: number; unread: number }[];
+  identities: number;
+  pendingOps: number;
+  failedOps: { kind: string; attempts: number; lastError: string; createdAt: string }[];
+  index: AccountIndexOptions;
+  settings: AccountSettings;
+}

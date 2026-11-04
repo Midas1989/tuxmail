@@ -559,3 +559,28 @@ export interface Api {
   getVacationSettings(): Promise<VacationSettings>;
   saveVacationSettings(settings: VacationSettings): Promise<VacationSettings>;
 }
+
+// --- Account edit ---
+// "Konto bearbeiten" (Settings -> Konten; Go: internal/app/account_edit.go),
+// another part of the Api interface (declaration merging).
+
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity } from '../types';
+
+export interface Api {
+  getAccountSettings(accountId: number): Promise<AccountSettings>;
+  /** Validate and save; restarts the sync worker. verify=true logs in first (error code "connection_failed"). */
+  updateAccount(accountId: number, update: AccountUpdate): Promise<AccountSettings>;
+  /** Store a new password in the secret store (verify: test login first). */
+  changeAccountPassword(accountId: number, password: string, verify: boolean): Promise<AccountSettings>;
+  /** Log in to IMAP/POP3/JMAP/EAS/EWS/Graph/SMTP/Sieve/CalDAV/CardDAV without changing anything. */
+  testAccountConnection(accountId: number, input: ConnectionTestInput): Promise<ConnectionTestResult>;
+  /** "Jetzt synchronisieren" / "Erneut versuchen". */
+  syncAccountNow(accountId: number): Promise<void>;
+  /** Remove the account; keepData keeps folders and mails as a local account. */
+  deleteAccount(accountId: number, options: { keepData: boolean }): Promise<void>;
+  createIdentity(identity: AccountIdentity): Promise<AccountIdentity>;
+  deleteIdentity(identityId: number): Promise<void>;
+  setDefaultIdentity(identityId: number): Promise<void>;
+  /** Support export of one account (no secrets). */
+  accountDiagnostics(accountId: number): Promise<AccountDiagnostics>;
+}

@@ -97,6 +97,13 @@ type OIDC struct {
 type Limits struct {
 	MaxUploadMB        int `yaml:"max_upload_mb"`
 	LoginRatePerMinute int `yaml:"login_rate_per_minute"`
+	// BackgroundSync keeps the application layer (mail sync, timers,
+	// workflows, out-of-office, push notifications) of users with at least
+	// one enabled account running while they are not logged in.
+	BackgroundSync bool `yaml:"background_sync"`
+	// BackgroundSyncMaxUsers caps the number of users synced in the
+	// background at the same time (UI sessions are not limited).
+	BackgroundSyncMaxUsers int `yaml:"background_sync_max_users"`
 }
 
 // Default returns the configuration used for keys missing from the file.
@@ -114,7 +121,7 @@ func Default() Config {
 			Registration:      "disabled",
 			OIDC:              OIDC{GroupsClaim: "groups"},
 		},
-		Limits: Limits{MaxUploadMB: 200, LoginRatePerMinute: 10},
+		Limits: Limits{MaxUploadMB: 200, LoginRatePerMinute: 10, BackgroundSync: true, BackgroundSyncMaxUsers: 500},
 	}
 }
 
@@ -248,6 +255,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Limits.LoginRatePerMinute < 1 {
 		add("limits.login_rate_per_minute: must be at least 1")
+	}
+	if c.Limits.BackgroundSyncMaxUsers < 1 {
+		add("limits.background_sync_max_users: must be at least 1")
 	}
 	return errors.Join(errs...)
 }

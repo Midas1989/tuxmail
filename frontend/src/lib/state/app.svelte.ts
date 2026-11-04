@@ -420,7 +420,8 @@ export class AppState {
         // accountId 0: settings shared by all accounts changed (e.g. signatures).
         void this.api.listAccounts().then((a) => {
           this.accounts = a.sort((x, y) => x.sortOrder - y.sortOrder);
-          return e.accountId ? this.reloadFolders(e.accountId) : undefined;
+          // A removed account (account edit dialog) has no folders to reload.
+          return e.accountId && this.accounts.some((x) => x.id === e.accountId) ? this.reloadFolders(e.accountId).catch(() => undefined) : undefined;
         });
         void this.api.listIdentities().then((i) => (this.identities = i));
         void this.api.listSignatures().then((s) => (this.signatures = s));

@@ -22,8 +22,11 @@
     onpassword?: () => void;
     /** Leave the wizard to open the settings. */
     onsettings?: () => void;
+    /** Re-authenticate this account ("Neu anmelden") with its access method. */
+    accountId?: number;
+    accountKind?: AccountKind;
   }
-  let { provider, email, name, ondone, onpassword, onsettings }: Props = $props();
+  let { provider, email, name, ondone, onpassword, onsettings, accountId, accountKind }: Props = $props();
 
   const kindsFor: Record<OAuthProviderId, AccountKind[]> = {
     microsoft: ['graph', 'imap', 'eas', 'ews'],
@@ -31,7 +34,7 @@
   };
   const displayName = $derived(provider === 'microsoft' ? 'Microsoft' : 'Google');
   let chosen = $state<AccountKind | null>(null);
-  const kind = $derived<AccountKind>(chosen ?? kindsFor[provider][0]);
+  const kind = $derived<AccountKind>(accountKind ?? chosen ?? kindsFor[provider][0]);
   let flow = $state<OAuthFlowStatus | null>(null);
   let errorCode = $state<string | null>(null);
   let errorText = $state('');
@@ -56,7 +59,7 @@
   async function start(mode?: 'device') {
     errorCode = null;
     try {
-      flow = await app.api.startOAuth({ provider, email, kind, name, displayName: email, mode });
+      flow = await app.api.startOAuth({ provider, email, kind, name, displayName: email, mode, accountId });
       if (flow.mode === 'redirect' && flow.authUrl) window.open(flow.authUrl, '_blank', 'noopener');
       timer = setInterval(poll, 1000);
     } catch (err) {
@@ -110,12 +113,14 @@
 <div class="oauth">
   <p class="lead">{t('cloud.signIn.lead', { provider: displayName })}</p>
   {#if !flow}
+    {#if !accountKind}
     <label>
       <span class="label">{t('cloud.signIn.method')}</span>
       <select class="input" value={kind} onchange={(e) => (chosen = e.currentTarget.value as AccountKind)}>
         {#each kindsFor[provider] as k (k)}<option value={k}>{t(`cloud.signIn.kind.${k}` as 'cloud.signIn.kind.imap')}</option>{/each}
       </select>
     </label>
+    {/if}
     {#if errorMessage}
       <p class="error" role="alert">{errorMessage}</p>
       {#if errorCode === 'oauth_not_configured' && onsettings}

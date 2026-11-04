@@ -839,9 +839,44 @@ export class WailsTransport implements Api {
   saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
     return this.call('SaveVacationSettings', settings);
   }
+
+  // --- Account edit --- (internal/app/account_edit.go)
+  getAccountSettings(accountId: number): Promise<AccountSettings> {
+    return this.call('GetAccountSettings', accountId);
+  }
+  updateAccount(accountId: number, update: AccountUpdate): Promise<AccountSettings> {
+    return this.call('UpdateAccount', accountId, update);
+  }
+  changeAccountPassword(accountId: number, password: string, verify: boolean): Promise<AccountSettings> {
+    return this.call('ChangeAccountPassword', accountId, password, verify);
+  }
+  testAccountConnection(accountId: number, input: ConnectionTestInput): Promise<ConnectionTestResult> {
+    return this.call('TestAccountConnection', accountId, input);
+  }
+  syncAccountNow(accountId: number): Promise<void> {
+    return this.call('SyncAccountNow', accountId);
+  }
+  deleteAccount(accountId: number, options: { keepData: boolean }): Promise<void> {
+    return this.call('DeleteAccount', accountId, options);
+  }
+  createIdentity(identity: AccountIdentity): Promise<AccountIdentity> {
+    return this.call('CreateIdentity', identity);
+  }
+  deleteIdentity(identityId: number): Promise<void> {
+    return this.call('DeleteIdentity', identityId);
+  }
+  setDefaultIdentity(identityId: number): Promise<void> {
+    return this.call('SetDefaultIdentity', identityId);
+  }
+  accountDiagnostics(accountId: number): Promise<AccountDiagnostics> {
+    return this.call('AccountDiagnostics', accountId);
+  }
 }
 
 import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
 
 // --- Import/Export/Backup ---
 import type * as IO from '../types';
+
+// --- Account edit ---
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity } from '../types';

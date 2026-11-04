@@ -2608,6 +2608,127 @@ export class MockTransport implements Api {
   saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
     return this.run(() => this.mailProto.saveVacation(settings));
   }
+
+  // --- Account edit --- (mockAccountEdit.ts)
+  readonly accountEdit = new MockAccountEdit(() => this.opts.now ?? new Date());
+
+  private editAccount(id: number): Account {
+    const acc = this.accounts.find((a) => a.id === id);
+    if (!acc) throw new ApiError('not found', 404, 'not_found');
+    return acc;
+  }
+  private accountSieve(acc: Account): SieveConfig | undefined {
+    return acc.kind === 'imap' ? this.mailProto.config(acc.id) : undefined;
+  }
+  getAccountSettings(accountId: number): Promise<AccountSettings> {
+    return this.run(() => {
+      const acc = this.editAccount(accountId);
+      return this.accountEdit.settings(acc, this.accountSieve(acc));
+    });
+  }
+  updateAccount(accountId: number, update: AccountUpdate): Promise<AccountSettings> {
+    return this.run(() => {
+      const acc = this.editAccount(accountId);
+      const next = clone(acc);
+      const probe = new MockAccountEdit();
+      probe.apply(clone(acc), update); // validation only
+      if (update.verify && (update.incoming || update.outgoing)) {
+        const res = this.accountEdit.test(acc, { update, kinds: this.accountEdit.settings(acc).tests.filter((k) => k !== 'sieve') });
+        const bad = res.steps.find((s) => !s.ok);
+        if (bad) throw new ApiError(`${bad.kind} (${bad.target}): ${bad.error}`, 422, 'connection_failed');
+      }
+      this.accountEdit.apply(next, update);
+      if (update.sieve && acc.kind === 'imap') this.mailProto.setConfig(accountId, update.sieve);
+      this.accounts = this.accounts.map((a) => (a.id === accountId ? next : a));
+      this.emit({ type: 'account.updated', accountId });
+      return this.accountEdit.settings(next, this.accountSieve(next));
+    });
+  }
+  changeAccountPassword(accountId: number, password: string, verify: boolean): Promise<AccountSettings> {
+    return this.run(() => {
+      const acc = this.editAccount(accountId);
+      if (!password) throw new ApiError('password required', 400, 'invalid_input');
+      if (verify) {
+        const res = this.accountEdit.test(acc, { password, kinds: this.accountEdit.settings(acc).tests.filter((k) => k !== 'sieve') });
+        const bad = res.steps.find((s) => !s.ok);
+        if (bad) throw new ApiError(`${bad.kind} (${bad.target}): ${bad.error}`, 422, 'connection_failed');
+      }
+      this.accountEdit.setPassword(accountId, password);
+      this.emit({ type: 'account.updated', accountId });
+      return this.accountEdit.settings(acc, this.accountSieve(acc));
+    });
+  }
+  async testAccountConnection(accountId: number, input: ConnectionTestInput): Promise<ConnectionTestResult> {
+    await sleep(Math.max(this.latency * 6, 0));
+    return this.run(() => {
+      const acc = this.editAccount(accountId);
+      return this.accountEdit.test(acc, input, input.update?.sieve ?? this.accountSieve(acc));
+    });
+  }
+  syncAccountNow(accountId: number): Promise<void> {
+    return this.run(() => {
+      this.editAccount(accountId);
+      this.accountEdit.syncNow(accountId);
+      this.emit({ type: 'account.updated', accountId });
+    });
+  }
+  deleteAccount(accountId: number, options: { keepData: boolean }): Promise<void> {
+    return this.run(() => {
+      const acc = this.editAccount(accountId);
+      if (options.keepData) {
+        const kept: Account = { ...acc, kind: 'local', incoming: undefined, outgoing: undefined, extra: { address: acc.extra?.address ?? '', archivedKind: acc.kind } };
+        this.accounts = this.accounts.map((a) => (a.id === accountId ? kept : a));
+      } else {
+        this.accounts = this.accounts.filter((a) => a.id !== accountId);
+        this.folders = this.folders.filter((f) => f.accountId !== accountId);
+      }
+      this.identities = this.identities.filter((i) => i.accountId !== accountId);
+      this.accountEdit.forget(accountId);
+      this.emit({ type: 'account.updated', accountId });
+    });
+  }
+  createIdentity(identity: Identity): Promise<Identity> {
+    return this.run(() => {
+      this.editAccount(identity.accountId);
+      if (!/^[^\s@]+@[^\s@]+$/.test(identity.email.trim())) throw new ApiError(`invalid e-mail address "${identity.email}"`, 400, 'invalid_input');
+      const id = Math.max(0, ...this.identities.map((i) => i.id)) + 1;
+      const first = !this.identities.some((i) => i.accountId === identity.accountId);
+      const created: Identity = { ...identity, id, email: identity.email.trim(), isDefault: first || identity.isDefault };
+      if (created.isDefault) this.identities = this.identities.map((i) => (i.accountId === created.accountId ? { ...i, isDefault: false } : i));
+      this.identities.push(created);
+      this.emit({ type: 'account.updated', accountId: identity.accountId });
+      return created;
+    });
+  }
+  deleteIdentity(identityId: number): Promise<void> {
+    return this.run(() => {
+      const cur = this.identities.find((i) => i.id === identityId);
+      if (!cur) throw new ApiError('not found', 404, 'not_found');
+      const same = this.identities.filter((i) => i.accountId === cur.accountId);
+      if (same.length <= 1) throw new ApiError('an account needs at least one identity', 409, 'conflict');
+      this.identities = this.identities.filter((i) => i.id !== identityId);
+      if (cur.isDefault) {
+        const next = this.identities.find((i) => i.accountId === cur.accountId);
+        if (next) next.isDefault = true;
+      }
+      this.emit({ type: 'account.updated', accountId: cur.accountId });
+    });
+  }
+  setDefaultIdentity(identityId: number): Promise<void> {
+    return this.run(() => {
+      const cur = this.identities.find((i) => i.id === identityId);
+      if (!cur) throw new ApiError('not found', 404, 'not_found');
+      this.identities = this.identities.map((i) => (i.accountId === cur.accountId ? { ...i, isDefault: i.id === identityId } : i));
+      this.emit({ type: 'account.updated', accountId: cur.accountId });
+    });
+  }
+  accountDiagnostics(accountId: number): Promise<AccountDiagnostics> {
+    return this.run(() => {
+      const acc = this.editAccount(accountId);
+      const s = this.accountEdit.settings(acc, this.accountSieve(acc));
+      return this.accountEdit.diagnostics(s, this.folders.filter((f) => f.accountId === accountId), this.identities.filter((i) => i.accountId === accountId).length, 'demo');
+    });
+  }
 }
 
 import { MockMessenger } from './mockMessenger';
@@ -2616,3 +2737,7 @@ import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, Me
 // --- Import/Export/Backup ---
 import type * as IO from '../types';
 import { MockIO } from './mockIO';
+
+// --- Account edit ---
+import { MockAccountEdit } from './mockAccountEdit';
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult } from '../types';

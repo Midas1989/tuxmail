@@ -455,13 +455,14 @@ func Routes(opts Options) []Route {
 		// Live events
 		{"GET /api/events", eventsHandler(opts)},
 	}
-	routes = append(routes, cloudRoutes()...)     // cloud routes
-	routes = append(routes, ioRoutes()...)        // io_routes.go
-	routes = append(routes, mailProtoRoutes()...) // mailproto_routes.go
-	routes = append(routes, oauthRoutes()...)     // oauth_routes.go
-	routes = append(routes, MessengerRoutes()...) // messenger_routes.go
-	routes = append(routes, pimRoutes()...)       // pim_routes.go
-	return append(routes, teamRoutes(routes)...)  // team_routes.go (wraps mailbox routes of the groups above)
+	routes = append(routes, cloudRoutes()...)       // cloud routes
+	routes = append(routes, ioRoutes()...)          // io_routes.go
+	routes = append(routes, mailProtoRoutes()...)   // mailproto_routes.go
+	routes = append(routes, oauthRoutes()...)       // oauth_routes.go
+	routes = append(routes, MessengerRoutes()...)   // messenger_routes.go
+	routes = append(routes, pimRoutes()...)         // pim_routes.go
+	routes = append(routes, accountEditRoutes()...) // account_routes.go
+	return append(routes, teamRoutes(routes)...)    // team_routes.go (wraps mailbox routes of the groups above)
 }
 
 // send returns a function writing (value, error) results:

@@ -23,8 +23,20 @@ import (
 // user). Every user gets an internal/app.App on the store
 // data_dir/users/<id>/tuxmail.db (UserStoreFile, the same file MailData
 // reads for provisioning) and the blob store data_dir/users/<id>/blobs.
-// Apps are opened on first use and closed after appIdleTimeout without
-// requests and WebSocket subscribers.
+// Apps are opened on first use. Without requests and WebSocket subscribers
+// for appIdleTimeout an App is
+//
+//   - kept running as a background App (limits.background_sync, default on)
+//     when the user has at least one enabled account: mail sync, timers,
+//     workflows, out-of-office and push notifications keep working while
+//     nobody is logged in; only UI state is released (App.ReleaseUIState);
+//   - closed otherwise.
+//
+// At startup and every backgroundReconcileInterval the pool also opens the
+// Apps of users who have enabled accounts but no App yet (after a restart),
+// one after another with backgroundStagger between them, at most
+// limits.background_sync_max_users at a time and with an exponential
+// backoff for users whose App fails to open (background.go).
 
 const appIdleTimeout = time.Hour
 
@@ -32,24 +44,65 @@ type appEntry struct {
 	app      *app.App
 	st       *store.Store
 	lastUsed time.Time
+	// background marks an App kept open (or opened) only for background
+	// sync; it is cleared by the next UI request.
+	background bool
+	// uiReleased is set once the UI state of a background App was released.
+	uiReleased bool
 }
 
 type appPool struct {
-	s  *Server
-	mu sync.Mutex
-	m  map[int64]*appEntry
+	s      *Server
+	mu     sync.Mutex
+	m      map[int64]*appEntry
+	closed bool
+
+	bg backgroundState // background.go
+	// open creates the App of a user (p.openApp; tests replace it).
+	open func(ctx context.Context, userID int64) (*appEntry, error)
 }
 
-func newAppPool(s *Server) *appPool { return &appPool{s: s, m: map[int64]*appEntry{}} }
+func newAppPool(s *Server) *appPool {
+	p := &appPool{s: s, m: map[int64]*appEntry{}}
+	p.open = p.openApp
+	p.bg.failures = map[int64]bgFailure{}
+	return p
+}
 
-// get returns (opening if needed) the App of a user.
+// get returns (opening if needed) the App of a user for a UI request.
 func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
+	return p.acquire(ctx, userID, false)
+}
+
+// acquire returns the App of a user, opening it if needed. background
+// opens do not count as UI use (lastUsed stays old so idle eviction and the
+// background cap apply right away).
+func (p *appPool) acquire(ctx context.Context, userID int64, background bool) (*app.App, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.closed {
+		return nil, errors.New("server: shutting down")
+	}
 	if e, ok := p.m[userID]; ok {
-		e.lastUsed = time.Now()
+		if !background {
+			e.lastUsed, e.background, e.uiReleased = time.Now(), false, false
+		}
 		return e.app, nil
 	}
+	e, err := p.open(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	e.lastUsed = time.Now()
+	if background {
+		e.lastUsed, e.background = time.Time{}, true
+	}
+	p.m[userID] = e
+	return e.app, nil
+}
+
+// openApp opens the store and creates and starts the App of a user.
+func (p *appPool) openApp(ctx context.Context, userID int64) (*appEntry, error) {
 	dir := p.s.auth.UserDir(userID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
@@ -82,22 +135,56 @@ func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
 	}
 	a.Start()
 	go p.s.watchUserApp(userID, a) // push_notify.go
-	p.m[userID] = &appEntry{app: a, st: st, lastUsed: time.Now()}
-	return a, nil
+	return &appEntry{app: a, st: st}, nil
 }
 
-// prune closes idle apps.
+// prune handles idle apps: users with enabled accounts keep a background
+// App (up to the cap) whose UI state is released, the others are closed.
 func (p *appPool) prune() {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
 	p.mu.Lock()
-	var idle []*appEntry
+	var idle []int64
 	for id, e := range p.m {
 		if time.Since(e.lastUsed) > appIdleTimeout && e.app.Events().Subscribers() == 0 {
-			idle = append(idle, e)
-			delete(p.m, id)
+			idle = append(idle, id)
 		}
 	}
 	p.mu.Unlock()
-	for _, e := range idle {
+	var closeList, release []*appEntry
+	for _, id := range idle {
+		p.mu.Lock()
+		e, ok := p.m[id]
+		p.mu.Unlock()
+		if !ok {
+			continue
+		}
+		keep := p.backgroundEnabled() && hasEnabledAccounts(ctx, e.st)
+		p.mu.Lock()
+		if cur, ok := p.m[id]; !ok || cur != e || time.Since(e.lastUsed) <= appIdleTimeout {
+			p.mu.Unlock()
+			continue // used or dropped meanwhile
+		}
+		if keep && !e.background && p.backgroundCountLocked() >= p.maxBackground() {
+			keep = false
+			p.s.log.Warn("background sync limit reached, closing idle app", "user", id, "max", p.maxBackground())
+		}
+		if keep {
+			e.background = true
+			if !e.uiReleased {
+				e.uiReleased = true
+				release = append(release, e)
+			}
+		} else {
+			delete(p.m, id)
+			closeList = append(closeList, e)
+		}
+		p.mu.Unlock()
+	}
+	for _, e := range release {
+		e.app.ReleaseUIState()
+	}
+	for _, e := range closeList {
 		e.close()
 	}
 }
@@ -117,6 +204,7 @@ func (p *appPool) closeAll() {
 	p.mu.Lock()
 	all := p.m
 	p.m = map[int64]*appEntry{}
+	p.closed = true
 	p.mu.Unlock()
 	for _, e := range all {
 		e.close()
