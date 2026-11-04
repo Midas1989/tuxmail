@@ -120,6 +120,18 @@
 //   DELETE /api/cloud/shares/{id}               -> CloudShare (revoked)
 //   GET  /api/cloud/shares/{id}/password        -> {password}
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
+//   Messenger (internal/server/api/messenger_routes.go):
+//   GET  /api/messenger/plugins                 -> MessengerPlugin[]
+//   PATCH /api/messenger/plugins/{name}         MessengerPluginPatch -> MessengerPlugin
+//   POST /api/messenger/plugins/{name}/restart
+//   POST /api/messenger/pairings                MessengerPairingInput -> MessengerPairing
+//   GET/DELETE /api/messenger/pairings/{id}     -> MessengerPairing (DELETE cancels)
+//   POST /api/messenger/pairings/{id}/input     {field, value}
+//   GET  /api/messenger/accounts                -> MessengerAccountState[]
+//   DELETE /api/messenger/accounts/{id}         unlink and delete the account
+//   POST /api/messenger/accounts/{id}/sync
+//   POST /api/conversations/{id}/typing         {active}
+//   GET  /api/messenger/media/{id}              media of a chat message (downloaded through the plugin)
 //   --- Folder config ---
 //   GET  /api/accounts/{id}/folder-config       -> FolderConfig
 //   PUT  /api/accounts/{id}/folder-config/roles/{role}  {folderId} (0 = automatic) -> FolderConfig
@@ -156,6 +168,19 @@
 //   POST /api/accounts/{id}/pim-sync            -> CloudPimResult
 //   GET  /api/identities/delegations            -> IdentityDelegation[]
 //   PUT  /api/identities/{id}/delegation        {mode, mailbox}
+//
+//   --- Mail protocols --- (KONZEPT 8.3, 8.5)
+//   GET  /api/messages/{id}/remote-content      -> RemoteContent
+//   GET  /api/remote-content/allow              -> RemoteAllowEntry[]
+//   POST /api/remote-content/allow              {kind, value};  POST /api/remote-content/allow/remove {kind, value}
+//   GET  /api/accounts/{id}/sieve               -> SieveStatus
+//   PUT  /api/accounts/{id}/sieve/workflows     {enabled} -> SieveStatus
+//   POST /api/accounts/{id}/sieve/check         {script} -> SieveCheckResult
+//   POST /api/accounts/{id}/sieve/activate      {name}
+//   GET/PUT/DELETE /api/accounts/{id}/sieve/scripts/{name}   SieveScript / {script, activate}
+//   GET/PUT /api/accounts/{id}/sieve/config     SieveConfig
+//   GET/PUT /api/vacation                       VacationSettings (out of office)
+//   GET  /api/proxy/image?url=&e=&s=&u=         remote image (signed link or session)
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
 // snake_case as in internal/server/api_device.go (see native/server.ts):
@@ -245,6 +270,9 @@ Account,
   Signature,
   UserPreferences,
 } from '../types';
+
+// --- Mail protocols ---
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
 
 // --- Cloud ---
 import type {
@@ -963,6 +991,41 @@ export class HttpTransport implements Api {
     }
   }
 
+  // --- Messenger ---
+  listMessengerPlugins(): Promise<MessengerPlugin[]> {
+    return this.request('GET', '/api/messenger/plugins');
+  }
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin> {
+    return this.request('PATCH', `/api/messenger/plugins/${encodeURIComponent(name)}`, patch);
+  }
+  async restartMessengerPlugin(name: string): Promise<void> {
+    await this.request('POST', `/api/messenger/plugins/${encodeURIComponent(name)}/restart`);
+  }
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
+    return this.request('POST', '/api/messenger/pairings', input);
+  }
+  getMessengerPairing(id: string): Promise<MessengerPairing> {
+    return this.request('GET', `/api/messenger/pairings/${encodeURIComponent(id)}`);
+  }
+  async submitMessengerPairingInput(id: string, field: string, value: string): Promise<void> {
+    await this.request('POST', `/api/messenger/pairings/${encodeURIComponent(id)}/input`, { field, value });
+  }
+  async cancelMessengerPairing(id: string): Promise<void> {
+    await this.request('DELETE', `/api/messenger/pairings/${encodeURIComponent(id)}`);
+  }
+  listMessengerAccounts(): Promise<MessengerAccountState[]> {
+    return this.request('GET', '/api/messenger/accounts');
+  }
+  async removeMessengerAccount(accountId: number): Promise<void> {
+    await this.request('DELETE', `/api/messenger/accounts/${accountId}`);
+  }
+  async syncMessengerAccount(accountId: number): Promise<void> {
+    await this.request('POST', `/api/messenger/accounts/${accountId}/sync`);
+  }
+  async setMessengerTyping(conversationId: number, active: boolean): Promise<void> {
+    await this.request('POST', `/api/conversations/${conversationId}/typing`, { active });
+  }
+
   // --- PIM ---
   listCalendars(): Promise<pim.PimCalendar[]> {
     return this.request('GET', '/api/calendars');
@@ -1140,7 +1203,58 @@ export class HttpTransport implements Api {
   generateCloudPassword(accountId: number): Promise<{ password: string }> {
     return this.request('GET', `/api/cloud/accounts/${accountId}/password`);
   }
+
+  // --- Mail protocols ---
+  async loadRemoteContent(messageId: number): Promise<RemoteContent> {
+    const r = await this.request<RemoteContent>('GET', `/api/messages/${messageId}/remote-content`);
+    if (this.base && r.html) r.html = r.html.replace(/(src|href)="\/api\//g, `$1="${this.base}/api/`);
+    return r;
+  }
+  listRemoteAllow(): Promise<RemoteAllowEntry[]> {
+    return this.request('GET', '/api/remote-content/allow');
+  }
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.request('POST', '/api/remote-content/allow', { kind, value });
+  }
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.request('POST', '/api/remote-content/allow/remove', { kind, value });
+  }
+  getSieveStatus(accountId: number): Promise<SieveStatus> {
+    return this.request('GET', `/api/accounts/${accountId}/sieve`);
+  }
+  getSieveScript(accountId: number, name: string): Promise<SieveScript> {
+    return this.request('GET', `/api/accounts/${accountId}/sieve/scripts/${encodeURIComponent(name)}`);
+  }
+  checkSieveScript(accountId: number, script: string): Promise<SieveCheckResult> {
+    return this.request('POST', `/api/accounts/${accountId}/sieve/check`, { script });
+  }
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void> {
+    return this.request('PUT', `/api/accounts/${accountId}/sieve/scripts/${encodeURIComponent(name)}`, { script, activate });
+  }
+  activateSieveScript(accountId: number, name: string): Promise<void> {
+    return this.request('POST', `/api/accounts/${accountId}/sieve/activate`, { name });
+  }
+  deleteSieveScript(accountId: number, name: string): Promise<void> {
+    return this.request('DELETE', `/api/accounts/${accountId}/sieve/scripts/${encodeURIComponent(name)}`);
+  }
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
+    return this.request('PUT', `/api/accounts/${accountId}/sieve/workflows`, { enabled });
+  }
+  getSieveConfig(accountId: number): Promise<SieveConfig> {
+    return this.request('GET', `/api/accounts/${accountId}/sieve/config`);
+  }
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig> {
+    return this.request('PUT', `/api/accounts/${accountId}/sieve/config`, config);
+  }
+  getVacationSettings(): Promise<VacationSettings> {
+    return this.request('GET', '/api/vacation');
+  }
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
+    return this.request('PUT', '/api/vacation', settings);
+  }
 }
+
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
 
 function scopeParams(s: ConversationScope): Record<string, string | number | undefined> {
   return {

@@ -21,7 +21,7 @@
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
-  import type { AccountKind, AuthMethod, DiscoveryResult, ServerConfig } from '../../types';
+  import type { AccountKind, AuthMethod, DiscoveryResult, Pop3Options, ServerConfig } from '../../types';
   import Modal from '../common/Modal.svelte';
   import logoUrl from '$branding/tuxmail-logo.png';
   import CloudConnectForm, { CLOUD_PROVIDERS } from '../cloud/CloudConnectForm.svelte';
@@ -50,6 +50,8 @@
   let outgoing = $state<ServerConfig>({ host: '', port: 465, tls: 'tls', auth: 'password', username: '' });
   let allowInsecure = $state(false);
   let easUrl = $state('');
+  let jmapUrl = $state('');
+  let pop3 = $state<Pop3Options>({ leaveOnServer: true, deleteAfterDays: 0, deleteOnLocalDelete: false });
   let usePassword = $state(false); // OAuth/Cloud accounts: skip the sign-in step
 
   const needsOutgoing = $derived(protocol === 'imap' || protocol === 'pop3');
@@ -113,6 +115,8 @@
         incoming,
         outgoing: needsOutgoing ? outgoing : undefined,
         easUrl: protocol === 'eas' && easUrl ? easUrl : undefined,
+        jmapUrl: protocol === 'jmap' && jmapUrl ? jmapUrl : undefined,
+        pop3: protocol === 'pop3' ? { ...pop3, deleteAfterDays: Math.max(0, Number(pop3.deleteAfterDays) || 0) } : undefined,
       });
       step = 'done';
     } catch (err) {
@@ -227,6 +231,9 @@
       <fieldset>
         <legend>{t('onboarding.account.incoming')}</legend>
         <div class="grid">
+          {#if protocol === 'jmap'}
+            <label class="wide"><span class="label">{t('onboarding.account.jmapUrl')}</span><input class="input" type="url" bind:value={jmapUrl} placeholder="https://mail.example.org/.well-known/jmap" /></label>
+          {/if}
           {#if protocol === 'eas'}
             <label class="wide"><span class="label">{t('onboarding.account.easUrl')}</span><input class="input" type="url" bind:value={easUrl} placeholder="https://mail.example.com/Microsoft-Server-ActiveSync" /></label>
           {/if}
@@ -247,6 +254,21 @@
           <label class="wide"><span class="label">{t('onboarding.account.username')}</span><input class="input" bind:value={incoming.username} /></label>
         </div>
       </fieldset>
+      {#if protocol === 'pop3'}
+        <fieldset>
+          <legend>{t('onboarding.account.pop3.title')}</legend>
+          <label class="check"><input type="checkbox" bind:checked={pop3.leaveOnServer} /> {t('onboarding.account.pop3.leave')}</label>
+          {#if pop3.leaveOnServer}
+            <label class="check">
+              {t('onboarding.account.pop3.deleteAfter')}
+              <input class="input days" type="number" min="0" max="3650" bind:value={pop3.deleteAfterDays} aria-label={t('onboarding.account.pop3.days')} />
+              {t('onboarding.account.pop3.days')}
+            </label>
+            <label class="check"><input type="checkbox" bind:checked={pop3.deleteOnLocalDelete} /> {t('onboarding.account.pop3.deleteLocal')}</label>
+          {/if}
+          <p class="hint">{t('onboarding.account.pop3.hint')}</p>
+        </fieldset>
+      {/if}
       {#if needsOutgoing}
         <fieldset>
           <legend>{t('onboarding.account.outgoing')}</legend>
@@ -290,6 +312,16 @@
 </Modal>
 
 <style>
+  .check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 6px 0;
+    font-size: 13px;
+  }
+  .days {
+    width: 80px;
+  }
   .brand {
     display: block;
     width: 120px;

@@ -275,6 +275,7 @@ func (a *App) GetMessage(ctx context.Context, id int64) (MessageDetail, error) {
 		r, rerr := a.render.Render(WithMessageID(ctx, id), raw)
 		if rerr == nil {
 			d.Text, d.HTML, d.HasRemoteContent = r.Text, r.HTML, r.HasRemoteContent
+			a.autoRemote(ctx, &d, m, raw) // mailproto.go: allowlisted senders
 			if r.InReplyTo != nil {
 				d.InReplyTo = r.InReplyTo
 			}

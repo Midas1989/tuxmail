@@ -459,6 +459,32 @@ export class EventHub {
   }
 }
 
+// --- Messenger ---
+// Messenger plugins (KONZEPT 11); merged into the Api interface above.
+// Live updates arrive as ApiEvents messenger.plugin / messenger.pairing /
+// messenger.typing; chats and messages use the conversation methods.
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
+
+export interface Api {
+  listMessengerPlugins(): Promise<MessengerPlugin[]>;
+  /** Enable/disable (enabling WhatsApp needs acceptRisk once) or change settings. */
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin>;
+  restartMessengerPlugin(name: string): Promise<void>;
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing>;
+  getMessengerPairing(id: string): Promise<MessengerPairing>;
+  submitMessengerPairingInput(id: string, field: string, value: string): Promise<void>;
+  cancelMessengerPairing(id: string): Promise<void>;
+  listMessengerAccounts(): Promise<MessengerAccountState[]>;
+  removeMessengerAccount(accountId: number): Promise<void>;
+  syncMessengerAccount(accountId: number): Promise<void>;
+  setMessengerTyping(conversationId: number, active: boolean): Promise<void>;
+}
+
+/** Download URL of the media of a messenger chat message. */
+export function messengerMediaUrl(chatMessageId: number): string {
+  return `/api/messenger/media/${chatMessageId}`;
+}
+
 // --- Import/Export/Backup ---
 import type * as IO from '../types';
 // --- Cloud ---
@@ -504,4 +530,32 @@ export interface Api {
   revokeCloudShare(id: number): Promise<CloudShare>;
   cloudSharePassword(id: number): Promise<{ password: string }>;
   generateCloudPassword(accountId: number): Promise<{ password: string }>;
+}
+
+// --- Mail protocols ---
+// Remote content and server rules (KONZEPT 8.3, 8.5), another part of the
+// Api interface (declaration merging).
+
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
+
+export interface Api {
+  /** Re-render a mail with remote images through the image proxy ("Bilder laden"). */
+  loadRemoteContent(messageId: number): Promise<RemoteContent>;
+  listRemoteAllow(): Promise<RemoteAllowEntry[]>;
+  /** "Immer für Absender laden": kind sender (address) or domain. */
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void>;
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void>;
+  getSieveStatus(accountId: number): Promise<SieveStatus>;
+  getSieveScript(accountId: number, name: string): Promise<SieveScript>;
+  checkSieveScript(accountId: number, script: string): Promise<SieveCheckResult>;
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void>;
+  /** Activate a script ('' deactivates all). */
+  activateSieveScript(accountId: number, name: string): Promise<void>;
+  deleteSieveScript(accountId: number, name: string): Promise<void>;
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus>;
+  getSieveConfig(accountId: number): Promise<SieveConfig>;
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig>;
+  /** Out-of-office: pushed to servers that can answer themselves, local replies otherwise. */
+  getVacationSettings(): Promise<VacationSettings>;
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings>;
 }

@@ -3,7 +3,6 @@
 package api
 
 import (
-	"fmt"
 	"mime"
 	"net/http"
 	"net/url"
@@ -456,11 +455,13 @@ func Routes(opts Options) []Route {
 		// Live events
 		{"GET /api/events", eventsHandler(opts)},
 	}
-	routes = append(routes, cloudRoutes()...)    // cloud routes
-	routes = append(routes, ioRoutes()...)       // io_routes.go
-	routes = append(routes, oauthRoutes()...)    // oauth_routes.go
-	routes = append(routes, pimRoutes()...)      // pim_routes.go
-	return append(routes, teamRoutes(routes)...) // team_routes.go (wraps mailbox routes of the groups above)
+	routes = append(routes, cloudRoutes()...)     // cloud routes
+	routes = append(routes, ioRoutes()...)        // io_routes.go
+	routes = append(routes, mailProtoRoutes()...) // mailproto_routes.go
+	routes = append(routes, oauthRoutes()...)     // oauth_routes.go
+	routes = append(routes, MessengerRoutes()...) // messenger_routes.go
+	routes = append(routes, pimRoutes()...)       // pim_routes.go
+	return append(routes, teamRoutes(routes)...)  // team_routes.go (wraps mailbox routes of the groups above)
 }
 
 // send returns a function writing (value, error) results:
@@ -512,18 +513,10 @@ func serveCID(w http.ResponseWriter, r *http.Request, a *app.App, id int64) {
 	serveBlob(w, c, true)
 }
 
-// serveImageProxy is the remote-image proxy for HTML mails. Remote content
-// is blocked until the proxy (fetch, size limit, type check, no cookies,
-// tracking-pixel filter) is implemented.
-//
-// TODO(proxy): fetch the image server-side so the sender never learns the
-// reader's IP, with an allow-list per sender and a cache.
-func serveImageProxy(w http.ResponseWriter, r *http.Request, _ *app.App) {
-	u, err := url.Parse(r.URL.Query().Get("url"))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		badRequest(w, "invalid url")
-		return
-	}
-	writeJSON(w, http.StatusNotImplemented, errorBody{Error: "remote_content_blocked",
-		Message: fmt.Sprintf("loading remote images (%s) is not available yet", u.Host)})
+// serveImageProxy is the remote-image proxy for HTML mails
+// (internal/imageproxy): signed URLs work without a session (sandboxed mail
+// frames); routes mounted here sit behind the embedding server's
+// authentication, so unsigned requests are accepted as authenticated.
+func serveImageProxy(w http.ResponseWriter, r *http.Request, a *app.App) {
+	a.ServeImageProxy(w, r, true)
 }

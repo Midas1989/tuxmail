@@ -33,7 +33,8 @@
       "email": "Email",
       "signal": "Signal",
       "whatsapp": "WhatsApp",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "matrix": "Matrix"
     },
     "conn": {
       "offline": "Offline",
@@ -139,11 +140,13 @@
       "empty": "No message selected",
       "emptyHint": "to browse, Ctrl+K for all commands",
       "label": "Reading pane",
-      "loadRemote": "Load",
+      "loadRemote": "Load images",
       "remoteBlocked": "Remote content was blocked to protect your privacy.",
       "to": "To",
       "toMany": "To {name} and {count} others",
-      "toMany_one": "To {name} and 1 other"
+      "toMany_one": "To {name} and 1 other",
+      "loadRemoteSender": "Always load for this sender",
+      "loadRemoteDomain": "Always for {domain}"
     },
     "sidebar": {
       "allAccounts": "All accounts",
@@ -212,7 +215,8 @@
       "signal": "Signal",
       "telegram": "Telegram",
       "groups": "Groups",
-      "favorites": "Favorites"
+      "favorites": "Favorites",
+      "matrix": "Matrix"
     },
     "chatMenu": "Chat options for {name}",
     "muted": "Muted",
@@ -889,7 +893,8 @@
       "vaultwarden": "Vaultwarden",
       "whatsapp": "WhatsApp",
       "telegram": "Telegram",
-      "local": "Local Folders"
+      "local": "Local Folders",
+      "matrix": "Matrix"
     },
     "region": {
       "custom": "Custom pattern",
@@ -1084,6 +1089,60 @@
       "accountDefault": "Account default",
       "saved": "Folder settings saved",
       "noAccounts": "No mail accounts yet."
+    },
+    "sieve": {
+      "title": "Server rules (Sieve)",
+      "intro": "Rules that your mail server runs on delivery (ManageSieve, e.g. Dovecot) - they also work while TuxMail is closed.",
+      "noAccounts": "No IMAP account with server rules.",
+      "account": "Account",
+      "unavailable": "The server does not offer ManageSieve",
+      "syncWorkflows": "Transfer workflows as server rules",
+      "preview": "{included} workflows run on the server, {skipped} only in TuxMail",
+      "scripts": "Scripts",
+      "new": "New script",
+      "active": "active",
+      "activate": "Activate",
+      "delete": "Delete script {name}",
+      "name": "Script name",
+      "editor": "Sieve script",
+      "lint": "Line {line}: {error}",
+      "check": "Check",
+      "checkOk": "The server accepts the script.",
+      "saveActivate": "Save and activate",
+      "managedHint": "TuxMail only changes the section between \"# BEGIN TuxMail\" and \"# END TuxMail\"; your own rules stay untouched.",
+      "advanced": "ManageSieve server (advanced)",
+      "disabled": "Do not use server rules for this account",
+      "separate": "Keep TuxMail rules in an own script (include)",
+      "configSaved": "Saved."
+    },
+    "vacation": {
+      "title": "Out of office",
+      "intro": "Automatic reply while you are away. Mail servers that can answer themselves (Sieve, JMAP, Exchange, Gmail) get the reply, so it works with TuxMail closed; other accounts are answered by TuxMail once per sender.",
+      "enabled": "Send out-of-office replies",
+      "start": "From",
+      "end": "Until",
+      "subject": "Subject",
+      "subjectDefault": "Abwesenheitsnotiz: {{betreff}}",
+      "externalText": "Reply text",
+      "internalText": "Text for colleagues (own domains, optional)",
+      "ownDomains": "Own domains",
+      "oncePerDays": "At most one reply per sender within (days)",
+      "forwardTo": "Forward to deputy (optional)",
+      "placeholders": "Placeholders such as {{betreff}} are filled in by TuxMail; servers use the subject \"Auto: <subject>\" instead.",
+      "serverHandled": "Answered by the server: {accounts}",
+      "saved": "Out-of-office settings saved."
+    },
+    "remote": {
+      "title": "Remote images",
+      "intro": "Images of these senders and domains are loaded automatically - through the TuxMail image proxy, so senders never see your IP address.",
+      "placeholder": "Address or domain, e.g. news@shop.example or shop.example",
+      "add": "Add",
+      "remove": "Remove {value}",
+      "empty": "No senders allowed yet. Use \"Always load for this sender\" in the reading pane.",
+      "kind": {
+        "sender": "Sender",
+        "domain": "Domain"
+      }
     }
   },
   "search": {
@@ -1651,7 +1710,16 @@
       "step3": "Manual server setup",
       "title": "Add account",
       "tls": "Encryption",
-      "username": "Username"
+      "username": "Username",
+      "jmapUrl": "JMAP session URL (optional)",
+      "pop3": {
+        "title": "Messages on the server",
+        "leave": "Leave messages on the server",
+        "deleteAfter": "Delete from the server after",
+        "days": "days (0 = never)",
+        "deleteLocal": "Delete from the server when deleted in TuxMail",
+        "hint": "POP3 only has an inbox. You can move mails into local folders; they stay on this device even after the server copy is deleted."
+      }
     },
     "connect": {
       "cardText": "Connect this app to your TuxMail server to take over accounts, signatures and rules automatically.",
@@ -2432,6 +2500,121 @@
     "done": "Done",
     "archivesHint": "Archives at your backup targets:",
     "useArchive": "Use"
+  },
+  "messenger": {
+    "title": "Messenger",
+    "intro": "Messenger plugins run as separate programs next to TuxMail. Every plugin is off until you enable it.",
+    "add": "Add messenger account",
+    "risk": {
+      "low": "Low risk",
+      "medium": "Medium risk",
+      "high": "High risk"
+    },
+    "official": "Official API",
+    "experimental": "Experimental",
+    "state": {
+      "missing": "Not installed",
+      "stopped": "Stopped",
+      "starting": "Starting",
+      "running": "Running",
+      "crashed": "Crashed – restarting",
+      "failed": "Failed"
+    },
+    "enabled": "Enabled",
+    "enable": "Enable",
+    "disable": "Disable",
+    "restart": "Restart",
+    "version": "Version {version}",
+    "pid": "PID {pid}",
+    "restarts": "{count} restarts",
+    "restarts_one": "{count} restart",
+    "lastError": "Last error: {error}",
+    "nextRetry": "Next attempt {time}",
+    "updateHint": "Update needed: {hint}",
+    "notInstalled": "The plugin file {file} was not found in the plugins folder.",
+    "accounts": "{count} accounts",
+    "accounts_one": "{count} account",
+    "settingsTitle": "Settings",
+    "setting": {
+      "signal_cli_path": "Path to signal-cli",
+      "api_id": "Telegram api_id",
+      "api_hash": "Telegram api_hash",
+      "default_homeserver": "Default homeserver"
+    },
+    "save": "Save",
+    "saved": "Saved",
+    "riskTitle": "Before you enable {name}",
+    "riskText": {
+      "whatsapp": "WhatsApp does not allow unofficial clients. TuxMail links itself as a device of your account like WhatsApp Web, but WhatsApp may block accounts that use unofficial clients. TuxMail sends conservatively (no bulk messages, rate limited). Use it at your own risk.",
+      "generic": "This plugin uses an unofficial connection. The service may block accounts that use unofficial clients. Use it at your own risk."
+    },
+    "riskAccept": "I understand the risk and want to enable {name}.",
+    "riskConfirm": "Enable {name}",
+    "accountState": {
+      "connected": "Connected",
+      "connecting": "Connecting",
+      "disconnected": "Disconnected",
+      "logged_out": "Logged out on the phone",
+      "error": "Error"
+    },
+    "unlink": "Unlink",
+    "unlinkConfirm": "Unlink {name}? Its chats are removed from TuxMail; the phone keeps them.",
+    "sync": "Sync now",
+    "typing": "{name} is typing …",
+    "media": "Media",
+    "wizard": {
+      "title": "Add messenger account",
+      "chooseService": "Which messenger do you want to add?",
+      "sameChats": "TuxMail becomes a linked device of your existing account: you keep using your phone, and the same chats appear here.",
+      "signalHistory": "Signal does not copy older messages to linked devices; contacts and groups are synced, new messages appear from now on.",
+      "telegramCredentials": "The Telegram API credentials of this installation are missing (TUXMAIL_TELEGRAM_API_ID / TUXMAIL_TELEGRAM_API_HASH).",
+      "disabledNote": "This plugin is disabled.",
+      "method": {
+        "qr": "Scan QR code",
+        "phone": "Phone number and code",
+        "password": "User name and password",
+        "token": "Single sign-on",
+        "bridge": "Through a Matrix bridge"
+      },
+      "displayName": "Name in TuxMail (optional)",
+      "phone": "Phone number (international, e.g. +49 170 1234567)",
+      "homeserver": "Homeserver",
+      "username": "User",
+      "password": "Password",
+      "network": "Network",
+      "bridgeAccount": "Matrix account with the bridges",
+      "noBridgeAccount": "Add a Matrix account first; its homeserver must run the bridge.",
+      "start": "Start linking",
+      "waiting": "Connecting to {name} …",
+      "scan": "Scan this code with {name} on your phone",
+      "scanHint": {
+        "whatsapp": "WhatsApp → Settings → Linked devices → Link a device",
+        "signal": "Signal → Settings → Linked devices → Link new device",
+        "telegram": "Telegram → Settings → Devices → Link desktop device",
+        "bridge": "Scan with the {network} app on your phone (the bridge logs in for you)."
+      },
+      "code": "Enter this code on your phone",
+      "codeHint": "WhatsApp → Linked devices → Link a device → Link with phone number instead",
+      "expires": "Code renews in {seconds} s",
+      "input": {
+        "code": "Login code",
+        "password": "Password (two-step verification)",
+        "phone": "Phone number",
+        "homeserver": "Homeserver",
+        "username": "User",
+        "token": "Login token",
+        "confirm": "Confirmation"
+      },
+      "submit": "Continue",
+      "success": "{name} is linked. Your chats are being loaded.",
+      "error": "Linking failed: {message}",
+      "cancelled": "Linking was cancelled.",
+      "retry": "Try again",
+      "back": "Back",
+      "done": "Done",
+      "cancel": "Cancel",
+      "qrLabel": "QR code for linking"
+    }
   },
   "team": {
     "section": "Team mailboxes",

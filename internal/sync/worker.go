@@ -213,7 +213,8 @@ func (w *Worker) withProvider(ctx context.Context, fn func(p domain.MailProvider
 	w.provMu.Lock()
 	defer w.provMu.Unlock()
 	if w.prov == nil {
-		p, err := w.m.cfg.Providers.Build(ctx, w.acc, w.m.cfg.Credentials, w.m.cfg.ProviderOptions)
+		bctx := WithProviderEnv(ctx, ProviderEnv{Store: w.m.st, AccountID: w.acc.ID})
+		p, err := w.m.cfg.Providers.Build(bctx, w.acc, w.m.cfg.Credentials, w.m.cfg.ProviderOptions)
 		if err != nil {
 			return err
 		}

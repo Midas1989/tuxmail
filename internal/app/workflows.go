@@ -384,12 +384,17 @@ func (a *App) SaveWorkflow(ctx context.Context, in Workflow) (Workflow, error) {
 	if in.ProjectID != 0 {
 		a.hub.Publish(Event{Type: EventProjectUpdated, ProjectID: in.ProjectID})
 	}
+	a.sieveSyncSoon() // mailproto.go
 	return a.GetWorkflow(ctx, w.ID)
 }
 
 // DeleteWorkflow deletes a workflow and its run log.
 func (a *App) DeleteWorkflow(ctx context.Context, id string) error {
-	return a.wf.Delete(ctx, id)
+	if err := a.wf.Delete(ctx, id); err != nil {
+		return err
+	}
+	a.sieveSyncSoon() // mailproto.go
+	return nil
 }
 
 // SetWorkflowEnabled enables or disables a workflow.
@@ -397,6 +402,7 @@ func (a *App) SetWorkflowEnabled(ctx context.Context, id string, enabled bool) (
 	if err := a.wf.SetEnabled(ctx, id, enabled, true); err != nil {
 		return Workflow{}, err
 	}
+	a.sieveSyncSoon() // mailproto.go
 	return a.GetWorkflow(ctx, id)
 }
 

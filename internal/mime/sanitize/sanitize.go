@@ -32,6 +32,10 @@ type Config struct {
 	// TrackerDomains are domains whose images are always treated as
 	// tracking pixels (default DefaultTrackerDomains). Subdomains match.
 	TrackerDomains []string
+	// SignURL, if set, turns an allowed remote image URL into a (signed)
+	// proxy URL; it takes precedence over ProxyURLTemplate, whose prefix
+	// must still match the returned URLs.
+	SignURL func(remoteURL string) string
 }
 
 // Options are per-message settings.
@@ -406,6 +410,9 @@ func (st *state) rewriteURL(raw string) (string, bool) {
 }
 
 func (st *state) proxied(u string) string {
+	if st.s.cfg.SignURL != nil {
+		return st.s.cfg.SignURL(u)
+	}
 	if st.s.cfg.ProxyURLTemplate == "" {
 		return u
 	}

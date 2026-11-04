@@ -32,7 +32,8 @@
       "email": "E-Mail",
       "signal": "Signal",
       "whatsapp": "WhatsApp",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "matrix": "Matrix"
     },
     "conn": {
       "offline": "Offline",
@@ -138,11 +139,13 @@
       "empty": "Keine Nachricht ausgewählt",
       "emptyHint": "zum Blättern, Strg+K für alle Befehle",
       "label": "Lesebereich",
-      "loadRemote": "Laden",
+      "loadRemote": "Bilder laden",
       "remoteBlocked": "Externe Inhalte wurden zum Schutz deiner Privatsphäre blockiert.",
       "to": "An",
       "toMany": "An {name} und {count} weitere",
-      "toMany_one": "An {name} und 1 weitere Person"
+      "toMany_one": "An {name} und 1 weitere Person",
+      "loadRemoteSender": "Immer für Absender laden",
+      "loadRemoteDomain": "Immer für {domain}"
     },
     "sidebar": {
       "allAccounts": "Alle Konten",
@@ -211,7 +214,8 @@
       "signal": "Signal",
       "telegram": "Telegram",
       "groups": "Gruppen",
-      "favorites": "Favoriten"
+      "favorites": "Favoriten",
+      "matrix": "Matrix"
     },
     "chatMenu": "Chat-Optionen für {name}",
     "muted": "Stummgeschaltet",
@@ -888,7 +892,8 @@
       "vaultwarden": "Vaultwarden",
       "whatsapp": "WhatsApp",
       "telegram": "Telegram",
-      "local": "Lokale Ordner"
+      "local": "Lokale Ordner",
+      "matrix": "Matrix"
     },
     "region": {
       "custom": "Eigenes Muster",
@@ -1083,6 +1088,60 @@
       "accountDefault": "Wie im Konto",
       "saved": "Ordnereinstellungen gespeichert",
       "noAccounts": "Noch keine E-Mail-Konten."
+    },
+    "sieve": {
+      "title": "Serverregeln (Sieve)",
+      "intro": "Regeln, die dein Mailserver beim Empfang ausführt (ManageSieve, z. B. Dovecot) – sie greifen auch, wenn TuxMail geschlossen ist.",
+      "noAccounts": "Kein IMAP-Konto mit Serverregeln.",
+      "account": "Konto",
+      "unavailable": "Der Server bietet kein ManageSieve an",
+      "syncWorkflows": "Workflows als Serverregeln übertragen",
+      "preview": "{included} Workflows laufen auf dem Server, {skipped} nur in TuxMail",
+      "scripts": "Skripte",
+      "new": "Neues Skript",
+      "active": "aktiv",
+      "activate": "Aktivieren",
+      "delete": "Skript {name} löschen",
+      "name": "Skriptname",
+      "editor": "Sieve-Skript",
+      "lint": "Zeile {line}: {error}",
+      "check": "Prüfen",
+      "checkOk": "Der Server akzeptiert das Skript.",
+      "saveActivate": "Speichern und aktivieren",
+      "managedHint": "TuxMail ändert nur den Abschnitt zwischen „# BEGIN TuxMail“ und „# END TuxMail“; deine eigenen Regeln bleiben unverändert.",
+      "advanced": "ManageSieve-Server (erweitert)",
+      "disabled": "Für dieses Konto keine Serverregeln verwenden",
+      "separate": "TuxMail-Regeln in eigenem Skript ablegen (include)",
+      "configSaved": "Gespeichert."
+    },
+    "vacation": {
+      "title": "Abwesenheitsnotiz",
+      "intro": "Automatische Antwort während deiner Abwesenheit. Mailserver, die selbst antworten können (Sieve, JMAP, Exchange, Gmail), übernehmen die Antwort – sie greift dann auch bei geschlossenem TuxMail; andere Konten beantwortet TuxMail einmal pro Absender.",
+      "enabled": "Abwesenheitsnotiz senden",
+      "start": "Von",
+      "end": "Bis",
+      "subject": "Betreff",
+      "subjectDefault": "Abwesenheitsnotiz: {{betreff}}",
+      "externalText": "Antworttext",
+      "internalText": "Text für Kollegen (eigene Domains, optional)",
+      "ownDomains": "Eigene Domains",
+      "oncePerDays": "Höchstens eine Antwort pro Absender innerhalb von (Tagen)",
+      "forwardTo": "An Vertretung weiterleiten (optional)",
+      "placeholders": "Platzhalter wie {{betreff}} füllt TuxMail aus; Server verwenden stattdessen den Betreff „Auto: <Betreff>“.",
+      "serverHandled": "Vom Server beantwortet: {accounts}",
+      "saved": "Abwesenheitsnotiz gespeichert."
+    },
+    "remote": {
+      "title": "Externe Bilder",
+      "intro": "Bilder dieser Absender und Domains werden automatisch geladen – über den Bild-Proxy von TuxMail, damit Absender deine IP-Adresse nicht sehen.",
+      "placeholder": "Adresse oder Domain, z. B. news@shop.example oder shop.example",
+      "add": "Hinzufügen",
+      "remove": "{value} entfernen",
+      "empty": "Noch keine Absender freigegeben. Nutze „Immer für Absender laden“ in der Leseansicht.",
+      "kind": {
+        "sender": "Absender",
+        "domain": "Domain"
+      }
     }
   },
   "search": {
@@ -1650,7 +1709,16 @@
       "step3": "Server manuell",
       "title": "Konto hinzufügen",
       "tls": "Verschlüsselung",
-      "username": "Benutzername"
+      "username": "Benutzername",
+      "jmapUrl": "JMAP-Session-URL (optional)",
+      "pop3": {
+        "title": "Nachrichten auf dem Server",
+        "leave": "Nachrichten auf dem Server belassen",
+        "deleteAfter": "Vom Server löschen nach",
+        "days": "Tagen (0 = nie)",
+        "deleteLocal": "Vom Server löschen, wenn in TuxMail gelöscht",
+        "hint": "POP3 kennt nur einen Posteingang. Mails lassen sich in lokale Ordner verschieben; sie bleiben auf diesem Gerät, auch wenn die Serverkopie gelöscht wird."
+      }
     },
     "connect": {
       "cardText": "Verbinde diese App mit deinem TuxMail-Server, um Konten, Signaturen und Regeln automatisch zu übernehmen.",
@@ -2431,6 +2499,121 @@
     "done": "Fertig",
     "archivesHint": "Archive an deinen Sicherungszielen:",
     "useArchive": "Verwenden"
+  },
+  "messenger": {
+    "title": "Messenger",
+    "intro": "Messenger-Plugins laufen als eigene Programme neben TuxMail. Jedes Plugin bleibt aus, bis du es aktivierst.",
+    "add": "Messenger-Konto hinzufügen",
+    "risk": {
+      "low": "Geringes Risiko",
+      "medium": "Mittleres Risiko",
+      "high": "Hohes Risiko"
+    },
+    "official": "Offizielle API",
+    "experimental": "Experimentell",
+    "state": {
+      "missing": "Nicht installiert",
+      "stopped": "Gestoppt",
+      "starting": "Startet",
+      "running": "Läuft",
+      "crashed": "Abgestürzt – Neustart folgt",
+      "failed": "Fehlgeschlagen"
+    },
+    "enabled": "Aktiviert",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "restart": "Neu starten",
+    "version": "Version {version}",
+    "pid": "PID {pid}",
+    "restarts": "{count} Neustarts",
+    "restarts_one": "{count} Neustart",
+    "lastError": "Letzter Fehler: {error}",
+    "nextRetry": "Nächster Versuch {time}",
+    "updateHint": "Update nötig: {hint}",
+    "notInstalled": "Die Plugin-Datei {file} wurde im Plugin-Ordner nicht gefunden.",
+    "accounts": "{count} Konten",
+    "accounts_one": "{count} Konto",
+    "settingsTitle": "Einstellungen",
+    "setting": {
+      "signal_cli_path": "Pfad zu signal-cli",
+      "api_id": "Telegram api_id",
+      "api_hash": "Telegram api_hash",
+      "default_homeserver": "Standard-Homeserver"
+    },
+    "save": "Speichern",
+    "saved": "Gespeichert",
+    "riskTitle": "Bevor du {name} aktivierst",
+    "riskText": {
+      "whatsapp": "WhatsApp erlaubt keine inoffiziellen Clients. TuxMail koppelt sich wie WhatsApp Web als Gerät deines Kontos, WhatsApp kann aber Konten sperren, die inoffizielle Clients nutzen. TuxMail sendet zurückhaltend (keine Massennachrichten, Ratenbegrenzung). Die Nutzung erfolgt auf eigenes Risiko.",
+      "generic": "Dieses Plugin nutzt eine inoffizielle Anbindung. Der Dienst kann Konten sperren, die inoffizielle Clients nutzen. Die Nutzung erfolgt auf eigenes Risiko."
+    },
+    "riskAccept": "Ich habe das Risiko verstanden und möchte {name} aktivieren.",
+    "riskConfirm": "{name} aktivieren",
+    "accountState": {
+      "connected": "Verbunden",
+      "connecting": "Verbindet",
+      "disconnected": "Getrennt",
+      "logged_out": "Am Handy abgemeldet",
+      "error": "Fehler"
+    },
+    "unlink": "Entkoppeln",
+    "unlinkConfirm": "{name} entkoppeln? Die Chats werden aus TuxMail entfernt, auf dem Handy bleiben sie erhalten.",
+    "sync": "Jetzt synchronisieren",
+    "typing": "{name} schreibt …",
+    "media": "Medien",
+    "wizard": {
+      "title": "Messenger-Konto hinzufügen",
+      "chooseService": "Welchen Messenger möchtest du hinzufügen?",
+      "sameChats": "TuxMail wird ein verknüpftes Gerät deines bestehenden Kontos: Du nutzt dein Handy weiter und siehst hier dieselben Chats.",
+      "signalHistory": "Signal überträgt ältere Nachrichten nicht auf verknüpfte Geräte; Kontakte und Gruppen werden übernommen, neue Nachrichten erscheinen ab jetzt.",
+      "telegramCredentials": "Die Telegram-API-Zugangsdaten dieser Installation fehlen (TUXMAIL_TELEGRAM_API_ID / TUXMAIL_TELEGRAM_API_HASH).",
+      "disabledNote": "Dieses Plugin ist deaktiviert.",
+      "method": {
+        "qr": "QR-Code scannen",
+        "phone": "Telefonnummer und Code",
+        "password": "Benutzername und Passwort",
+        "token": "Single Sign-on",
+        "bridge": "Über eine Matrix-Bridge"
+      },
+      "displayName": "Name in TuxMail (optional)",
+      "phone": "Telefonnummer (international, z. B. +49 170 1234567)",
+      "homeserver": "Homeserver",
+      "username": "Benutzer",
+      "password": "Passwort",
+      "network": "Netzwerk",
+      "bridgeAccount": "Matrix-Konto mit den Bridges",
+      "noBridgeAccount": "Füge zuerst ein Matrix-Konto hinzu; auf dessen Homeserver muss die Bridge laufen.",
+      "start": "Kopplung starten",
+      "waiting": "Verbinde mit {name} …",
+      "scan": "Scanne diesen Code mit {name} auf deinem Handy",
+      "scanHint": {
+        "whatsapp": "WhatsApp → Einstellungen → Verknüpfte Geräte → Gerät hinzufügen",
+        "signal": "Signal → Einstellungen → Verknüpfte Geräte → Neues Gerät verknüpfen",
+        "telegram": "Telegram → Einstellungen → Geräte → Desktop-Gerät verknüpfen",
+        "bridge": "Scanne mit der {network}-App auf deinem Handy (die Bridge meldet sich für dich an)."
+      },
+      "code": "Gib diesen Code auf deinem Handy ein",
+      "codeHint": "WhatsApp → Verknüpfte Geräte → Gerät hinzufügen → Stattdessen mit Telefonnummer verknüpfen",
+      "expires": "Code wird in {seconds} s erneuert",
+      "input": {
+        "code": "Anmeldecode",
+        "password": "Passwort (zweistufige Bestätigung)",
+        "phone": "Telefonnummer",
+        "homeserver": "Homeserver",
+        "username": "Benutzer",
+        "token": "Anmelde-Token",
+        "confirm": "Bestätigung"
+      },
+      "submit": "Weiter",
+      "success": "{name} ist gekoppelt. Deine Chats werden geladen.",
+      "error": "Kopplung fehlgeschlagen: {message}",
+      "cancelled": "Die Kopplung wurde abgebrochen.",
+      "retry": "Erneut versuchen",
+      "back": "Zurück",
+      "done": "Fertig",
+      "cancel": "Abbrechen",
+      "qrLabel": "QR-Code zum Koppeln"
+    }
   },
   "team": {
     "section": "Team-Postfächer",

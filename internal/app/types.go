@@ -102,6 +102,9 @@ type MessageDetail struct {
 	Text             string       `json:"text,omitempty"`
 	Attachments      []Attachment `json:"attachments"`
 	HasRemoteContent bool         `json:"hasRemoteContent,omitempty"`
+	// RemoteLoaded is set when HTML already references remote images through
+	// the image proxy (sender/domain on the allowlist), mailproto.go.
+	RemoteLoaded bool `json:"remoteLoaded,omitempty"`
 }
 
 // Conversation is a row of the chat list.
@@ -354,6 +357,10 @@ type NewAccountInput struct {
 	// EASURL is the ActiveSync server URL of kind "eas" accounts (optional
 	// when incoming.host is set; the username may be DOMAIN\user).
 	EASURL string `json:"easUrl,omitempty"`
+	// POP3 holds the server deletion policy of kind "pop3" accounts and
+	// JMAPURL the session URL of kind "jmap" accounts (mailproto.go).
+	POP3    *POP3Options `json:"pop3,omitempty"`
+	JMAPURL string       `json:"jmapUrl,omitempty"`
 }
 
 // ==== Push / notifications =====================================================
@@ -1096,6 +1103,9 @@ type Event struct {
 	ProjectID      int64               `json:"projectId,omitempty"`
 	WorkflowID     string              `json:"workflowId,omitempty"`
 	Run            *WorkflowRunSummary `json:"run,omitempty"`
+	// Extra carries the fields of event types without own struct fields
+	// (messenger.* events, see messenger_wiring.go).
+	Extra map[string]any `json:"-"`
 	// Team is the payload of team.* events (team_events.go).
 	Team any `json:"team,omitempty"`
 }

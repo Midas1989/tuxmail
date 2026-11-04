@@ -723,6 +723,7 @@ func (a *App) MarkConversationRead(ctx context.Context, id int64) error {
 			a.afterMailChange(ctx, unseen, before)
 		}
 	}
+	a.markReadMessenger(ctx, src.chats) // read receipts before the marker moves
 	for _, c := range src.chats {
 		t, err := a.st.LatestChatMessageTime(ctx, c.ID)
 		if err != nil {

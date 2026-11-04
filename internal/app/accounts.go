@@ -148,6 +148,9 @@ func (autoconfigDiscoverer) Discover(ctx context.Context, email, password string
 		res.DisplayName = dom
 	}
 	if err != nil || len(cands) == 0 {
+		if j := discoverJMAP(ctx, d, email, password); j != nil { // mailproto.go
+			return *j, nil
+		}
 		return res, nil //nolint:nilerr // "none" is a valid result the UI handles
 	}
 	c := cands[0]
@@ -208,6 +211,7 @@ func (a *App) CreateAccount(ctx context.Context, in NewAccountInput) (Account, e
 	if err := applyEASInput(&acc, in); err != nil {
 		return Account{}, err
 	}
+	applyMailProtoInput(&acc, in) // mailproto.go
 	accs, err := a.st.ListAccounts(ctx)
 	if err != nil {
 		return Account{}, err

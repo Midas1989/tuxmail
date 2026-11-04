@@ -88,6 +88,9 @@ Account,
 } from '../types';
 import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 
+// --- Mail protocols ---
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
+
 // --- Cloud ---
 import type {
   CloudAccount,
@@ -564,6 +567,41 @@ export class WailsTransport implements Api {
     };
   }
 
+  // --- Messenger ---
+  listMessengerPlugins(): Promise<MessengerPlugin[]> {
+    return this.call('ListMessengerPlugins');
+  }
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin> {
+    return this.call('UpdateMessengerPlugin', name, patch);
+  }
+  restartMessengerPlugin(name: string): Promise<void> {
+    return this.call('RestartMessengerPlugin', name);
+  }
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
+    return this.call('StartMessengerPairing', input);
+  }
+  getMessengerPairing(id: string): Promise<MessengerPairing> {
+    return this.call('GetMessengerPairing', id);
+  }
+  submitMessengerPairingInput(id: string, field: string, value: string): Promise<void> {
+    return this.call('SubmitMessengerPairingInput', id, field, value);
+  }
+  cancelMessengerPairing(id: string): Promise<void> {
+    return this.call('CancelMessengerPairing', id);
+  }
+  listMessengerAccounts(): Promise<MessengerAccountState[]> {
+    return this.call('ListMessengerAccounts');
+  }
+  removeMessengerAccount(accountId: number): Promise<void> {
+    return this.call('RemoveMessengerAccount', accountId);
+  }
+  syncMessengerAccount(accountId: number): Promise<void> {
+    return this.call('SyncMessengerAccount', accountId);
+  }
+  setMessengerTyping(conversationId: number, active: boolean): Promise<void> {
+    return this.call('SetMessengerTyping', conversationId, active);
+  }
+
   // --- PIM --- (internal/app/pim_api.go)
   listCalendars(): Promise<pim.PimCalendar[]> {
     return this.call('ListCalendars');
@@ -754,7 +792,56 @@ export class WailsTransport implements Api {
   syncCloudPim(accountId: number): Promise<CloudPimResult> {
     return this.call('SyncCloudPim', accountId);
   }
+
+  // --- Mail protocols ---
+  loadRemoteContent(messageId: number): Promise<RemoteContent> {
+    return this.call('LoadRemoteContent', messageId);
+  }
+  listRemoteAllow(): Promise<RemoteAllowEntry[]> {
+    return this.call('ListRemoteAllow');
+  }
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.call('AllowRemoteContent', kind, value);
+  }
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.call('RemoveRemoteAllow', kind, value);
+  }
+  getSieveStatus(accountId: number): Promise<SieveStatus> {
+    return this.call('GetSieveStatus', accountId);
+  }
+  getSieveScript(accountId: number, name: string): Promise<SieveScript> {
+    return this.call('GetSieveScript', accountId, name);
+  }
+  checkSieveScript(accountId: number, script: string): Promise<SieveCheckResult> {
+    return this.call('CheckSieveScript', accountId, script);
+  }
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void> {
+    return this.call('PutSieveScript', accountId, name, script, activate);
+  }
+  activateSieveScript(accountId: number, name: string): Promise<void> {
+    return this.call('ActivateSieveScript', accountId, name);
+  }
+  deleteSieveScript(accountId: number, name: string): Promise<void> {
+    return this.call('DeleteSieveScript', accountId, name);
+  }
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
+    return this.call('SetSieveWorkflowSync', accountId, enabled);
+  }
+  getSieveConfig(accountId: number): Promise<SieveConfig> {
+    return this.call('GetSieveConfig', accountId);
+  }
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig> {
+    return this.call('SetSieveConfig', accountId, config);
+  }
+  getVacationSettings(): Promise<VacationSettings> {
+    return this.call('GetVacationSettings');
+  }
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
+    return this.call('SaveVacationSettings', settings);
+  }
 }
+
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
 
 // --- Import/Export/Backup ---
 import type * as IO from '../types';

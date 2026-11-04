@@ -24,14 +24,16 @@ export type AccountKind =
   | 'whatsapp'
   | 'signal'
   | 'telegram'
+  | 'matrix'
   | 'matrix_bridge';
 
 export const MAIL_KINDS: readonly AccountKind[] = ['imap', 'pop3', 'jmap', 'eas', 'graph', 'ews', 'gmail'];
-export const MESSENGER_KINDS: readonly AccountKind[] = ['whatsapp', 'signal', 'telegram', 'matrix_bridge'];
+export const MESSENGER_KINDS: readonly AccountKind[] = ['whatsapp', 'signal', 'telegram', 'matrix', 'matrix_bridge'];
 
 /** Messenger channel of an account kind (null for mail/PIM accounts). */
-export function messengerChannel(kind: AccountKind): 'whatsapp' | 'signal' | 'telegram' | null {
-  return kind === 'whatsapp' || kind === 'signal' || kind === 'telegram' ? kind : null;
+export function messengerChannel(kind: AccountKind): 'whatsapp' | 'signal' | 'telegram' | 'matrix' | null {
+  if (kind === 'matrix_bridge') return 'matrix';
+  return kind === 'whatsapp' || kind === 'signal' || kind === 'telegram' || kind === 'matrix' ? kind : null;
 }
 
 export type TLSMode = 'tls' | 'starttls' | 'none';
@@ -117,8 +119,8 @@ export interface Address {
 // View-level DTOs (application layer -> UI)
 // ---------------------------------------------------------------------------
 
-export type Channel = 'email' | 'whatsapp' | 'signal' | 'telegram';
-export type HandleKind = 'email' | 'phone' | 'whatsapp' | 'signal' | 'telegram';
+export type Channel = 'email' | 'whatsapp' | 'signal' | 'telegram' | 'matrix';
+export type HandleKind = 'email' | 'phone' | 'whatsapp' | 'signal' | 'telegram' | 'matrix';
 
 export interface PersonHandle {
   kind: HandleKind;
@@ -199,6 +201,8 @@ export interface MessageDetail extends MessageSummary {
   attachments: Attachment[];
   /** Whether the HTML references remote content that was blocked. */
   hasRemoteContent?: boolean;
+  /** Remote images are already loaded through the image proxy (sender/domain allowlisted). */
+  remoteLoaded?: boolean;
 }
 
 export type ConversationKind = 'email_thread' | 'chat' | 'person_view';
@@ -317,7 +321,7 @@ export interface LinkPreview {
   imageUrl?: string;
 }
 
-export type ChatFilter = 'all' | 'unread' | 'mail' | 'whatsapp' | 'signal' | 'telegram' | 'groups' | 'favorites';
+export type ChatFilter = 'all' | 'unread' | 'mail' | 'whatsapp' | 'signal' | 'telegram' | 'matrix' | 'groups' | 'favorites';
 
 export interface ConversationPatch {
   /** ISO time, null = wake up now. */
@@ -463,6 +467,10 @@ export interface NewAccountInput {
   outgoing?: ServerConfig;
   /** ActiveSync server URL (kind "eas"); username may be DOMAIN\\user. */
   easUrl?: string;
+  /** POP3: server deletion policy (default: leave on server). */
+  pop3?: Pop3Options;
+  /** JMAP: session URL (default https://<incoming host>/.well-known/jmap). */
+  jmapUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -486,7 +494,8 @@ export type ApiEvent =
   | { type: 'vault.locked' }
   | PimEvent
   /** Import/export/backup job changed (poll Api.getIOJob). */
-  | { type: 'io.job'; itemId: string; state: string };
+  | { type: 'io.job'; itemId: string; state: string }
+  | MessengerApiEvent;
 
 export type ApiEventType = ApiEvent['type'];
 
@@ -1180,6 +1189,103 @@ export interface WorkflowTemplate {
   workflow: Workflow;
 }
 
+// --- Messenger ---
+// Messenger plugins (KONZEPT 4.4, 11, 18.1): opt-in per plugin with risk
+// notice, plugin process status, pairing (QR / code / password) and the
+// plugin state of messenger accounts. Mirrors internal/app/messenger_api.go.
+
+export type MessengerRisk = 'low' | 'medium' | 'high';
+export type MessengerPluginState = 'missing' | 'stopped' | 'starting' | 'running' | 'crashed' | 'failed';
+export type MessengerPairingMethod = 'qr' | 'phone' | 'password' | 'token' | 'bridge';
+export type MessengerPairingState = 'waiting' | 'qr' | 'code' | 'input' | 'success' | 'error' | 'cancelled';
+
+export interface MessengerPluginStatus {
+  state: MessengerPluginState;
+  version?: string;
+  pid?: number;
+  restarts: number;
+  lastError?: string;
+  startedAt?: string;
+  lastCrash?: string;
+  nextRetry?: string;
+  /** Set when the plugin (or the network) reports that it is outdated. */
+  updateHint?: string;
+  capabilities: string[];
+  path?: string;
+}
+
+export interface MessengerPlugin {
+  name: string;
+  displayName: string;
+  channel: string;
+  risk: MessengerRisk;
+  /** Uses an API the network allows for third-party clients (Telegram, Matrix). */
+  official: boolean;
+  experimental: boolean;
+  /** Enabling requires acknowledging the risk notice (WhatsApp). */
+  needsRiskAck: boolean;
+  pairingMethods: MessengerPairingMethod[];
+  settingKeys: string[];
+  installed: boolean;
+  enabled: boolean;
+  riskAcceptedAt?: string;
+  settings: Record<string, string>;
+  accounts: number;
+  status: MessengerPluginStatus;
+}
+
+export interface MessengerPluginPatch {
+  enabled?: boolean;
+  acceptRisk?: boolean;
+  /** Empty values reset a setting. */
+  settings?: Record<string, string>;
+}
+
+export interface MessengerPairingInput {
+  plugin: string;
+  method: MessengerPairingMethod;
+  displayName?: string;
+  phone?: string;
+  homeserver?: string;
+  username?: string;
+  password?: string;
+  token?: string;
+  /** Bridge mode: network to link through the bridge of a Matrix account. */
+  network?: string;
+  bridgeAccountId?: number;
+}
+
+export interface MessengerPairing {
+  id: string;
+  plugin: string;
+  method: MessengerPairingMethod;
+  network?: string;
+  state: MessengerPairingState;
+  /** Data to render as QR code (state 'qr'). */
+  qr?: string;
+  /** Pairing code to type on the phone (state 'code'). */
+  code?: string;
+  /** Requested input (state 'input'): code, password, phone, homeserver ... */
+  field?: string;
+  message?: string;
+  expiresAt?: string;
+  accountId?: number;
+}
+
+export interface MessengerAccountState {
+  accountId: number;
+  plugin: string;
+  mode: 'direct' | 'bridge';
+  state: string;
+  lastError?: string;
+  syncedAt?: string;
+}
+
+export type MessengerApiEvent =
+  | { type: 'messenger.plugin'; name: string }
+  | { type: 'messenger.pairing'; pairing: MessengerPairing }
+  /** Ephemeral: somebody types in a conversation. */
+  | { type: 'messenger.typing'; conversationId: number; accountId: number; personId?: number; name: string; active: boolean };
 // --- Folder config ---
 // Settings → account → "Ordner" (internal/app/folderconfig.go).
 
@@ -2042,4 +2148,113 @@ export interface CloudPimResult {
   contacts: number;
   tasks: number;
   deleted: number;
+}
+
+// ---------------------------------------------------------------------------
+// Mail protocols: POP3, JMAP, Sieve, remote image proxy (KONZEPT 7.1, 8.3, 8.5)
+// ---------------------------------------------------------------------------
+
+export interface Pop3Options {
+  leaveOnServer: boolean;
+  /** Delete on the server this many days after download (0 = never). */
+  deleteAfterDays?: number;
+  /** Delete on the server when the mail is deleted permanently in TuxMail. */
+  deleteOnLocalDelete?: boolean;
+}
+
+export interface RemoteContent {
+  /** Sanitized HTML with remote images routed through the image proxy. */
+  html: string;
+}
+
+export interface RemoteAllowEntry {
+  kind: 'sender' | 'domain';
+  value: string;
+  createdAt: string;
+}
+
+export interface SieveScriptInfo {
+  name: string;
+  active: boolean;
+}
+
+export interface SieveSkipped {
+  id: string;
+  name: string;
+  reason: string;
+}
+
+export interface SieveStatus {
+  accountId: number;
+  /** ManageSieve reachable and logged in. */
+  available: boolean;
+  error?: string;
+  extensions: string[];
+  scripts: SieveScriptInfo[];
+  /** "Workflows als Serverregeln übertragen". */
+  syncWorkflows: boolean;
+  /** Workflow ids that run on the server / that cannot. */
+  included: string[];
+  skipped: SieveSkipped[];
+}
+
+export interface SieveCommand {
+  name: string;
+  line: number;
+  args?: string[];
+  children?: SieveCommand[];
+  comment?: string;
+}
+
+export interface SieveParse {
+  commands: SieveCommand[];
+  requires: string[];
+  managed: boolean;
+  error?: string;
+  errorLine?: number;
+}
+
+export interface SieveScript {
+  name: string;
+  script: string;
+  active: boolean;
+  parse: SieveParse;
+}
+
+export interface SieveCheckResult {
+  ok: boolean;
+  warnings?: string;
+  error?: string;
+  line?: number;
+}
+
+/** ManageSieve settings of an IMAP account (advanced; defaults: IMAP host, 4190, STARTTLS). */
+export interface SieveConfig {
+  host: string;
+  port: number;
+  tls: TLSMode;
+  disabled: boolean;
+  /** Keep TuxMail's rules in an own script included from the active one. */
+  separate: boolean;
+}
+
+/** Out-of-office settings ("Abwesenheitsnotiz", KONZEPT 8.5). Times RFC 3339; zero/empty = open. */
+export interface VacationSettings {
+  enabled: boolean;
+  start?: string | null;
+  end?: string | null;
+  accountIds?: number[];
+  identities?: string[];
+  subject?: string;
+  internalText?: string;
+  externalText?: string;
+  ownDomains?: string[];
+  ownAddresses?: string[];
+  oncePerDays?: number;
+  forwardTo?: string[];
+  chatAutoReply?: boolean;
+  chatText?: string;
+  chatChannels?: string[];
+  /** Accounts whose mail server answers itself (read only). */
+  serverAccounts?: number[];
 }

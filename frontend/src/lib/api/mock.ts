@@ -155,6 +155,10 @@ function waveform(seed: number, n = 40): number[] {
   });
 }
 
+// --- Mail protocols ---
+import { MockMailProto } from './mockMailProto';
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
+
 // --- Cloud ---
 import { MockCloud } from './mockCloud';
 import type {
@@ -177,6 +181,8 @@ export interface MockOptions {
   simulateIncoming?: boolean;
   /** Auto-reply in direct chats after the user sends something. */
   autoReply?: boolean;
+  /** Messenger pairing: a shown QR/pairing code counts as scanned after this delay (ms, 0 = never). */
+  messengerAutoAcceptMs?: number;
 }
 
 /** Day 0 of the demo data. Before 13:00 local time we use yesterday so no item lies in the future. */
@@ -1287,7 +1293,7 @@ export class MockTransport implements Api {
     privacy: 'full',
     quietHours: { enabled: true, start: '22:00', end: '07:00' },
     accounts: {},
-    channels: { email: true, whatsapp: true, signal: true, telegram: true },
+    channels: { email: true, whatsapp: true, signal: true, telegram: true, matrix: true },
   };
   private pushSubscriptions: PushSubscriptionInput[] = [];
 
@@ -2276,6 +2282,62 @@ export class MockTransport implements Api {
     };
   }
 
+  // --- Messenger ---
+  private messengerState: MockMessenger | null = null;
+  private get messenger(): MockMessenger {
+    if (!this.messengerState) {
+      this.messengerState = new MockMessenger({
+        accounts: () => this.accounts,
+        addAccount: (a) => {
+          const acc: Account = { ...a, id: this.nextId++, sortOrder: this.accounts.length };
+          this.accounts.push(acc);
+          this.emit({ type: 'account.updated', accountId: acc.id });
+          return acc;
+        },
+        removeAccount: (id) => {
+          this.accounts = this.accounts.filter((a) => a.id !== id);
+          this.emit({ type: 'account.updated', accountId: id });
+        },
+        emit: (e) => this.emit(e),
+        autoAcceptMs: this.opts.messengerAutoAcceptMs ?? 6000,
+      });
+    }
+    return this.messengerState;
+  }
+  listMessengerPlugins(): Promise<MessengerPlugin[]> {
+    return this.run(() => this.messenger.list());
+  }
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin> {
+    return this.run(() => this.messenger.update(name, patch));
+  }
+  restartMessengerPlugin(name: string): Promise<void> {
+    return this.run(() => this.messenger.restart(name));
+  }
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
+    return this.run(() => this.messenger.start(input));
+  }
+  getMessengerPairing(id: string): Promise<MessengerPairing> {
+    return this.run(() => this.messenger.get(id));
+  }
+  submitMessengerPairingInput(id: string, field: string, value: string): Promise<void> {
+    return this.run(() => this.messenger.submit(id, field, value));
+  }
+  cancelMessengerPairing(id: string): Promise<void> {
+    return this.run(() => this.messenger.cancel(id));
+  }
+  listMessengerAccounts(): Promise<MessengerAccountState[]> {
+    return this.run(() => this.messenger.accounts());
+  }
+  removeMessengerAccount(accountId: number): Promise<void> {
+    return this.run(() => this.messenger.remove(accountId));
+  }
+  syncMessengerAccount(_accountId: number): Promise<void> {
+    return this.run(() => undefined);
+  }
+  setMessengerTyping(_conversationId: number, _active: boolean): Promise<void> {
+    return this.run(() => undefined);
+  }
+
   // --- PIM --- (mockPim.ts)
   private pimState?: MockPim;
   private get pim(): MockPim {
@@ -2497,7 +2559,59 @@ export class MockTransport implements Api {
   syncCloudPim(accountId: number): Promise<CloudPimResult> {
     return this.run(() => this.oauth.syncPim(accountId));
   }
+
+  // --- Mail protocols (mockMailProto.ts) ---
+  readonly mailProto = new MockMailProto();
+
+  loadRemoteContent(messageId: number): Promise<RemoteContent> {
+    return this.getMessage(messageId).then((m) => this.run(() => this.mailProto.remoteContent(m.html ?? '')));
+  }
+  listRemoteAllow(): Promise<RemoteAllowEntry[]> {
+    return this.run(() => this.mailProto.listAllow());
+  }
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.run(() => this.mailProto.allow(kind, value));
+  }
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.run(() => this.mailProto.removeAllow(kind, value));
+  }
+  getSieveStatus(accountId: number): Promise<SieveStatus> {
+    return this.run(() => this.mailProto.status(accountId));
+  }
+  getSieveScript(accountId: number, name: string): Promise<SieveScript> {
+    return this.run(() => this.mailProto.script(accountId, name));
+  }
+  checkSieveScript(_accountId: number, script: string): Promise<SieveCheckResult> {
+    return this.run(() => this.mailProto.check(script));
+  }
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void> {
+    return this.run(() => this.mailProto.put(accountId, name, script, activate));
+  }
+  activateSieveScript(accountId: number, name: string): Promise<void> {
+    return this.run(() => this.mailProto.activate(accountId, name));
+  }
+  deleteSieveScript(accountId: number, name: string): Promise<void> {
+    return this.run(() => this.mailProto.remove(accountId, name));
+  }
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
+    return this.run(() => this.mailProto.setWorkflowSync(accountId, enabled));
+  }
+  getSieveConfig(accountId: number): Promise<SieveConfig> {
+    return this.run(() => this.mailProto.config(accountId));
+  }
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig> {
+    return this.run(() => this.mailProto.setConfig(accountId, config));
+  }
+  getVacationSettings(): Promise<VacationSettings> {
+    return this.run(() => this.mailProto.vacationSettings());
+  }
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
+    return this.run(() => this.mailProto.saveVacation(settings));
+  }
 }
+
+import { MockMessenger } from './mockMessenger';
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
 
 // --- Import/Export/Backup ---
 import type * as IO from '../types';

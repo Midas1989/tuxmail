@@ -63,6 +63,7 @@ func (a *App) transports() send.TransportFactory {
 	tokens := a.oauthTokens()
 	kinds := send.CloudFactories(tokens, a.opts.Secrets)
 	kinds[domain.KindEAS] = send.EASFactory{Secrets: a.opts.Secrets, State: a.easState()}
+	kinds[domain.KindJMAP] = jmapTransports{a: a} // mailproto.go
 	return send.KindRouter{
 		Default: send.SMTPFactory{Secrets: a.opts.Secrets, TokenSource: tokens},
 		Kinds:   kinds,
