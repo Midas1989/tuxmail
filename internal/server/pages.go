@@ -51,7 +51,8 @@ function msg(j){return j.message||j.error||'Error'}
 `
 
 const loginJS = commonJS + `const f=document.getElementById('login'),err=document.getElementById('err');let challenge='';
-function next(){const n=new URLSearchParams(location.search).get('next');return n&&n.startsWith('/')&&!n.startsWith('//')?n:'/'}
+function next(){const n=new URLSearchParams(location.search).get('next');if(!n||n[0]!=='/'||n[1]==='/'||n[1]==='\\')return '/';
+try{const u=new URL(n,location.origin);if(u.origin===location.origin)return u.pathname+u.search+u.hash}catch(e){}return '/'}
 f.addEventListener('submit',async(e)=>{e.preventDefault();err.textContent='';
 const u=f.username.value,p=f.password.value,t=f.totp.value.trim();
 const res=challenge?await post('/api/auth/login/totp',{challenge,code:t}):await post('/api/auth/login',{username:u,password:p});
@@ -63,7 +64,7 @@ const deviceBody = `<h1>Connect a device</h1>
 <div id="step1"><form id="code"><label for="c">Code shown on the device</label><input id="c" name="code" autocomplete="off" required autofocus>
 <button type="submit">Continue</button></form></div>
 <div id="step2" class="hidden"><p>Allow <b id="name"></b> to access your TuxMail account?</p><p>Code: <code id="ucode"></code></p>
-<p id="where"></p><div id="totp" class="hidden"><label for="t">Two-factor code</label><input id="t" inputmode="numeric" autocomplete="one-time-code"></div>
+<p id="where"></p><p class="err">Only allow this if you started the sign-in on this device yourself just now. Never enter or approve a code that someone sent you.</p><div id="totp" class="hidden"><label for="t">Two-factor code</label><input id="t" inputmode="numeric" autocomplete="one-time-code"></div>
 <button id="approve">Allow</button><button id="deny" class="secondary">Deny</button></div>
 <div id="done" class="hidden"><p id="donemsg"></p></div><div class="err" id="err" role="alert"></div>`
 
@@ -73,7 +74,7 @@ let j={};try{j=await r.json()}catch(e){}
 if(r.status===401){location.href='/login?next='+encodeURIComponent(location.pathname+'?user_code='+c);return}
 if(r.status!==200){err.textContent=msg(j);return}
 code=c;const q=j.request||{};$('name').textContent=q.deviceName||q.clientName||'TuxMail';$('ucode').textContent=c;
-$('where').textContent=q.ip?('IP: '+q.ip):'';if(j.totpRequired)$('totp').classList.remove('hidden');
+$('where').textContent=[q.ip?('IP: '+q.ip):'',q.userAgent?('Client: '+q.userAgent):'',q.createdAt?('Requested: '+new Date(q.createdAt).toLocaleString()):''].filter(Boolean).join(' · ');if(j.totpRequired)$('totp').classList.remove('hidden');
 $('step1').classList.add('hidden');$('step2').classList.remove('hidden')}
 async function decide(approve){const res=await post('/api/device/approve',{user_code:code,approve,totp_code:$('t').value.trim()});
 if(res.status!==204){err.textContent=msg(res.body);return}

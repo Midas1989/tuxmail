@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/app"
+	"github.com/Midas1989/Mailclient/internal/auth"
 	"github.com/Midas1989/Mailclient/internal/backup"
 	"github.com/Midas1989/Mailclient/internal/server/api"
 	"github.com/Midas1989/Mailclient/internal/server/push"
@@ -216,10 +217,31 @@ func (e *appEntry) close() {
 	_ = e.st.Close()
 }
 
+// readonlyAllowed are the state-changing routes of the application API that
+// users with the role readonly ("guest", KONZEPT 15.6) may call: queries
+// sent as POST, read markers of team mentions, presence and UI preferences.
+// Everything else that is not GET/HEAD is refused for them (audit A-03);
+// their team mailbox role is capped at read (internal/team).
+var readonlyAllowed = map[string]bool{
+	"POST /api/search":                                    true,
+	"POST /api/team/{teamId}/search":                      true,
+	"POST /api/workflows/validate":                        true,
+	"POST /api/workflows/complete":                        true,
+	"POST /api/team/{teamId}/workflows/validate":          true,
+	"POST /api/team/{teamId}/workflows/complete":          true,
+	"POST /api/team/mentions/read":                        true,
+	"POST /api/team/{teamId}/conversations/{id}/presence": true,
+	"PUT /api/preferences":                                true,
+}
+
 // appHandler authenticates the request (cookie session or Bearer device
 // token) and passes the user's App to h.
 func (s *Server) appHandler(h api.AppHandler) http.HandlerFunc {
 	return s.user(func(w http.ResponseWriter, r *http.Request, a *authInfo) {
+		if a.User.Role == auth.RoleReadonly && !safeMethod(r.Method) && !readonlyAllowed[r.Pattern] {
+			writeError(w, http.StatusForbidden, "read_only", "this account is read-only")
+			return
+		}
 		ap, err := s.apps.get(r.Context(), a.User.ID)
 		if err != nil {
 			s.log.Error("open user data", "user", a.User.ID, "err", err)

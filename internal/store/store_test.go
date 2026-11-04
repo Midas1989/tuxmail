@@ -186,9 +186,22 @@ func TestIdentitiesAndSignatures(t *testing.T) {
 		t.Fatalf("signature: %+v", gotSig)
 	}
 	gotSig.Placement = "above_quote"
+	gotSig.PlainOverride = true
+	gotSig.Images = []domain.SignatureImage{{ContentID: "sig-a@tuxmail", MIMEType: "image/png", Filename: "logo.png", BlobHash: "ab", Size: 3}}
 	noErr(t, s.UpdateSignature(ctx, gotSig))
-	if l := must[[]domain.Signature](t)(s.ListSignatures(ctx)); len(l) != 1 || l[0] != gotSig {
+	if l := must[[]domain.Signature](t)(s.ListSignatures(ctx)); len(l) != 1 || !reflect.DeepEqual(l[0], gotSig) {
 		t.Fatalf("list signatures: %+v", l)
+	}
+	if im := must[domain.SignatureImage](t)(s.SignatureImageByCID(ctx, "sig-a@tuxmail")); im.BlobHash != "ab" {
+		t.Fatalf("image by cid: %+v", im)
+	}
+	if un := must[[]string](t)(s.UnreferencedBlobs(ctx, []string{"ab", "cd"})); len(un) != 1 || un[0] != "cd" {
+		t.Fatalf("unreferenced: %v", un)
+	}
+	gotSig.Images = nil
+	noErr(t, s.UpdateSignature(ctx, gotSig))
+	if g := must[domain.Signature](t)(s.GetSignature(ctx, sigID)); len(g.Images) != 0 {
+		t.Fatalf("images not replaced: %+v", g.Images)
 	}
 
 	id1 := domain.Identity{AccountID: acc, Name: "Me", Email: "me@example.org", ReplyTo: "r@example.org", BccSelf: true,

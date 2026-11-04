@@ -25,8 +25,7 @@
   const errLabel = $derived(error ? t('sync.error', { account: app.account(error.accountId)?.displayName ?? '' }) : '');
 
   function details() {
-    app.settingsAnchor = 'set-diag';
-    app.navigate('settings');
+    app.openSettings('about', 'diagnostics');
   }
 </script>
 

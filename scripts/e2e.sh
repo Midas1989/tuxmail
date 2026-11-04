@@ -69,6 +69,8 @@ public_url: http://127.0.0.1:$http_port
 data_dir: $work/data
 log: {level: debug, format: text, file: $work/serve.log}
 limits: {login_rate_per_minute: 60}
+# the devserver mail server listens on loopback
+security: {allow_private_networks: true}
 EOF
 password='correct horse battery staple'
 echo "$password" | "$bin" user add --config "$work/config.yaml" --username anna --email anna@tuxmail.test \

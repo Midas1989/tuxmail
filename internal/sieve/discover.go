@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // Discovery is the result of probing a ManageSieve server.
@@ -27,7 +28,7 @@ type Discovery struct {
 // No credentials are sent.
 func Discover(ctx context.Context, dial func(ctx context.Context, network, addr string) (net.Conn, error), hosts ...string) (*Discovery, error) {
 	if dial == nil {
-		dial = (&net.Dialer{Timeout: 10 * time.Second}).DialContext
+		dial = netguard.Dialer(&net.Dialer{Timeout: 10 * time.Second}).DialContext
 	}
 	var last error = ErrNoServer
 	for _, h := range hosts {

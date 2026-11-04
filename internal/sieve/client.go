@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // DefaultPort is the ManageSieve port (RFC 5804).
@@ -92,7 +93,7 @@ func Dial(ctx context.Context, cfg Config) (*Client, error) {
 	}
 	d := cfg.DialContext
 	if d == nil {
-		d = (&net.Dialer{Timeout: 30 * time.Second}).DialContext
+		d = netguard.Dialer(&net.Dialer{Timeout: 30 * time.Second}).DialContext
 	}
 	nc, err := d(ctx, "tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
 	if err != nil {

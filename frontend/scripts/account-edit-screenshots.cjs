@@ -36,7 +36,7 @@ async function open(browser, opts = {}) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-  await page.goto(base + '/?api=mock#/settings');
+  await page.goto(base + '/?api=mock#/settings/accounts');
   await page.waitForSelector('.acc-row');
   return { ctx, page, errors };
 }

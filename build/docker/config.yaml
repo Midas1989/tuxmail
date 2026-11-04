@@ -37,3 +37,10 @@ auth:
 limits:
   max_upload_mb: 200
   login_rate_per_minute: 10
+
+# SSRF protection: users may only reach public addresses. Set to true (or
+# list the networks in allowed_networks) if your mail server runs in a
+# private network or another container.
+security:
+  allow_private_networks: false
+  allowed_networks: []

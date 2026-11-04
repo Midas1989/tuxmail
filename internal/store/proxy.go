@@ -73,7 +73,7 @@ func (s *Store) PurgeProxyCache(ctx context.Context, now time.Time) ([]string, e
 		var n int
 		if err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM proxy_cache WHERE blob_hash = ?)
 			+ (SELECT COUNT(*) FROM messages WHERE blob_hash = ?) + (SELECT COUNT(*) FROM attachments WHERE blob_hash = ?)
-			+ (SELECT COUNT(*) FROM uploads WHERE blob_hash = ?)`, h, h, h, h).Scan(&n); err != nil {
+			+ (SELECT COUNT(*) FROM uploads WHERE blob_hash = ?) + (SELECT COUNT(*) FROM signature_images WHERE blob_hash = ?)`, h, h, h, h, h).Scan(&n); err != nil {
 			return out, err
 		}
 		if n == 0 {

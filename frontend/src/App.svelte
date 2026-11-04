@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { app, prefs, team } from './lib/state';
   import { startRouter } from './lib/router';
+  import { parseSettingsHash } from './lib/settings/catalog';
   import { installShortcuts } from './lib/keyboard';
   import { t } from './lib/i18n/index.svelte';
   import ActivityBar from './lib/components/ActivityBar.svelte';
@@ -32,7 +33,10 @@
   });
 
   onMount(() => {
-    const stopRouter = startRouter((r) => (app.route = r));
+    const stopRouter = startRouter((r, hash) => {
+      app.route = r;
+      if (r === 'settings') app.settingsLoc = parseSettingsHash(hash);
+    });
     const stopKeys = installShortcuts(app);
     void desktopWindow.init();
     void app.init().then(() => {

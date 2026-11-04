@@ -17,6 +17,7 @@ import (
 	gosmtp "github.com/emersion/go-smtp"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // ErrAuthFailed is returned by ProbeLogin when the server rejected the
@@ -32,7 +33,7 @@ func (d *Discoverer) ProbeLogin(ctx context.Context, kind domain.AccountKind, cf
 	defer cancel()
 	dial := d.DialContext
 	if dial == nil {
-		dial = (&net.Dialer{}).DialContext
+		dial = netguard.Dialer(&net.Dialer{}).DialContext
 	}
 	conn, err := dial(ctx, "tcp", net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port)))
 	if err != nil {

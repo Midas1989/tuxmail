@@ -6,6 +6,7 @@
 import type { Api, ConversationScope, MessageScope } from '../api/api';
 import { classicSelectionFromChat, forwardSubject, messageIdFromItemId, pickFolderForMessage, replySubject } from '../conversation';
 import { fmt, t, type MessageKey } from '../i18n/index.svelte';
+import { SETTINGS_HOME, settingsHash, type SettingsCategoryId, type SettingsLocation } from '../settings/catalog';
 import {
   FLAG_FLAGGED,
   FLAG_SEEN,
@@ -246,8 +247,14 @@ export class AppState {
   chatTagId = $state<number | null>(null);
   /** Classic list: checked mails for bulk actions. */
   checked = $state<number[]>([]);
-  /** Settings section to scroll to after navigating (e.g. "set-workflows"). */
+  /**
+   * Legacy: old settings anchor (e.g. "set-workflows") to open after
+   * navigating; the settings screen redirects it to the new category/section.
+   * Prefer openSettings(category, section).
+   */
   settingsAnchor = $state<string | null>(null);
+  /** Settings page shown (#/settings/<category>/<section>); null category = overview. */
+  settingsLoc = $state<SettingsLocation>({ ...SETTINGS_HOME });
 
   composer = $state<ComposerInit | null>(null);
   paletteOpen = $state(false);
@@ -582,7 +589,23 @@ export class AppState {
 
   navigate(route: Route): void {
     this.route = route;
+    if (route === 'settings') this.settingsLoc = { ...SETTINGS_HOME };
     if (typeof location !== 'undefined' && location.hash !== '#/' + route) history.replaceState(null, '', '#/' + route);
+  }
+
+  /**
+   * Open a settings page (#/settings/<category>/<section>). Without a
+   * category: the overview (phones: the category list). Pages get their own
+   * history entry so the browser/back button returns to the previous page.
+   */
+  openSettings(category: SettingsCategoryId | null = null, section: string | null = null): void {
+    this.route = 'settings';
+    this.settingsLoc = { category, section: category ? section : null };
+    const hash = settingsHash(this.settingsLoc);
+    if (typeof location !== 'undefined' && location.hash !== hash) {
+      if (location.hash.startsWith('#/settings')) history.pushState(null, '', hash);
+      else history.replaceState(null, '', hash);
+    }
   }
 
   messageScope(): MessageScope {
@@ -1337,8 +1360,7 @@ export class AppState {
 
   /** Open Settings and scroll to the AI section. */
   openAiSettings(): void {
-    this.navigate('settings');
-    setTimeout(() => document.getElementById('set-ai')?.scrollIntoView({ behavior: 'smooth' }), 120);
+    this.openSettings('ai', 'assistant');
   }
 
   // ----- meeting proposals ----------------------------------------------------------------

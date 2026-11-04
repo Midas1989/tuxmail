@@ -89,6 +89,21 @@ type Signature struct {
 	HTML      string `json:"html"`
 	Plain     string `json:"plain"`
 	Placement string `json:"placement"` // "below_reply" | "above_quote"
+	// PlainOverride keeps Plain as entered; otherwise Plain is generated
+	// from HTML when the signature is saved.
+	PlainOverride bool `json:"plainOverride,omitempty"`
+	// Images are the inline images referenced from HTML as cid:<ContentID>
+	// (content in the blob store).
+	Images []SignatureImage `json:"images,omitempty"`
+}
+
+// SignatureImage is an image of a signature stored in the blob store.
+type SignatureImage struct {
+	ContentID string `json:"contentId"`
+	MIMEType  string `json:"mimeType"`
+	Filename  string `json:"filename,omitempty"`
+	BlobHash  string `json:"blobHash"`
+	Size      int64  `json:"size"`
 }
 
 // FolderRole marks special-use folders (RFC 6154).

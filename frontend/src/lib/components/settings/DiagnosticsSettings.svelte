@@ -2,8 +2,8 @@
 <!--
   Settings → Info & Diagnose: version, mode, data directory and log file,
   per-account sync status (state, folder, progress, last error) and the
-  diagnostics export (zip with logs and the redacted configuration). On the
-  desktop also the window setting "Systemtitelleiste verwenden".
+  diagnostics export (zip with logs and the redacted configuration). The
+  desktop window setting lives in WindowSettings.svelte (Allgemein).
 -->
 <script lang="ts">
   import Download from '@lucide/svelte/icons/download';
@@ -12,11 +12,9 @@
   import { app } from '../../state';
   import { t, formatFullDate } from '../../i18n/index.svelte';
   import type { DiagnosticsInfo } from '../../types';
-  import { desktopWindow } from '../../native/window.svelte';
 
   let info = $state<DiagnosticsInfo | null>(null);
   let busy = $state(false);
-  let restartHint = $state(false);
 
   async function load() {
     try {
@@ -54,17 +52,11 @@
       busy = false;
     }
   }
-
-  async function toggleTitleBar(e: Event) {
-    const native = (e.currentTarget as HTMLInputElement).checked;
-    await desktopWindow.setNativeTitleBar(native);
-    restartHint = true;
-  }
 </script>
 
 <section class="card wide-card" id="set-diag" aria-labelledby="set-diag-h">
   <div class="card-head">
-    <h2 id="set-diag-h">{t('settings.diag.title')}</h2>
+    <h2 id="set-diag-h">{t('settings.pages.about.sections.diagnostics')}</h2>
     <button class="icon-btn" title={t('settings.diag.refresh')} aria-label={t('settings.diag.refresh')} onclick={load}><RefreshCw size={15} /></button>
   </div>
   {#if info}
@@ -126,17 +118,6 @@
     <p class="muted">{t('settings.diag.exportHint')}</p>
   </div>
 
-  {#if desktopWindow.info}
-    <h3>{t('settings.window.title')}</h3>
-    <label class="check">
-      <input type="checkbox" checked={desktopWindow.info.nativeTitleBar} onchange={toggleTitleBar} />
-      <span>
-        {t('settings.window.nativeTitleBar')}
-        <small class="muted">{t('settings.window.nativeTitleBarHint')}</small>
-      </span>
-    </label>
-    {#if restartHint}<p class="hint" role="status">{t('settings.window.restart')}</p>{/if}
-  {/if}
 </section>
 
 <style>
@@ -248,18 +229,5 @@
     margin: 0;
     flex: 1;
     min-width: 220px;
-  }
-  .check {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
-    font-size: 13px;
-  }
-  .check small {
-    display: block;
-  }
-  .hint {
-    font-size: 12.5px;
-    color: var(--tm-warn);
   }
 </style>
