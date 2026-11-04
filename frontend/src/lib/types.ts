@@ -394,6 +394,8 @@ export interface OutgoingMessage {
   signatureId?: number | null;
   /** Schedule instead of sending now (ISO). */
   sendAt?: string;
+  /** Send checks the user confirmed after a blocked result ("send anyway", KONZEPT 8.13). */
+  confirmChecks?: string[];
 }
 
 export interface SendResult {
@@ -420,6 +422,8 @@ export interface SendFinding {
   /** English fallback text. */
   message: string;
   params?: Record<string, string>;
+  /** Ready texts by locale ("de", "en"). */
+  localized?: Record<string, string>;
 }
 
 /** Secret store of the desktop client: OS keyring (installed), master-password vault (portable) or the server. */
@@ -1218,4 +1222,227 @@ export interface FolderConfig {
   identities: IdentityFolderConfig[];
   /** Missing role folders can be created on the server. */
   canCreate: boolean;
+}
+
+// --- Cloud ---
+// Cloud files (KONZEPT 12): Nextcloud, OpenCloud/oCIS, Vaultwarden Send, WebDAV.
+// Mirrors internal/app/cloud_types.go.
+
+export type CloudAccountProvider = CloudProvider | 'webdav';
+
+export interface CloudCaps {
+  /** Browse, upload, download. */
+  files: boolean;
+  /** Public links of stored files. */
+  share: boolean;
+  /** Encrypted Sends of local files or text (Vaultwarden). */
+  send: boolean;
+}
+
+export interface CloudAccount {
+  id: number;
+  provider: CloudAccountProvider;
+  displayName: string;
+  server: string;
+  user?: string;
+  capabilities: CloudCaps;
+  /** CalDAV/CardDAV of the same Nextcloud account (offered to calendar/contacts). */
+  dav?: { caldav: string; carddav: string };
+  /** Base directory of attachments sent as links. */
+  uploadDir?: string;
+}
+
+export interface CloudLoginInput {
+  provider: CloudAccountProvider;
+  server: string;
+  displayName?: string;
+  /** OpenCloud in server mode: `<origin>/api/cloud/oauth/callback`. */
+  redirectUrl?: string;
+  clientId?: string;
+  /** Vaultwarden: e-mail + master password (+ TOTP); WebDAV: username + password. */
+  email?: string;
+  username?: string;
+  password?: string;
+  totp?: string;
+}
+
+export type CloudLoginStatus = 'pending' | 'done' | 'error' | 'two_factor';
+
+export interface CloudLoginFlow {
+  id: string;
+  provider: CloudAccountProvider;
+  status: CloudLoginStatus;
+  /** Open in the browser (Nextcloud Login Flow v2, OpenID Connect). */
+  loginUrl?: string;
+  error?: string;
+  account?: CloudAccount;
+}
+
+export interface CloudEntry {
+  name: string;
+  path: string;
+  dir: boolean;
+  size: number;
+  modified?: string;
+  contentType?: string;
+}
+
+export interface CloudListing {
+  accountId: number;
+  path: string;
+  entries: CloudEntry[];
+}
+
+/** -1 = unknown / unlimited. */
+export interface CloudQuota {
+  used: number;
+  available: number;
+}
+
+export interface CloudShareInput {
+  accountId: number;
+  /** Stored file (Nextcloud, OpenCloud). */
+  path?: string;
+  /** Vaultwarden Send: a file (Api.uploadAttachment) or a text. */
+  uploadToken?: string;
+  text?: string;
+  name?: string;
+  password?: string;
+  /** Generate a password following the server's policy. */
+  generatePassword?: boolean;
+  expiresAt?: string;
+  note?: string;
+  maxAccessCount?: number;
+  hideEmail?: boolean;
+}
+
+export type CloudShareSource = 'mail' | 'files' | 'workflow' | 'chat';
+
+export interface CloudShare {
+  id: number;
+  accountId: number;
+  provider: CloudAccountProvider;
+  fileName: string;
+  remotePath?: string;
+  url: string;
+  /** Only returned right after creation. */
+  password?: string;
+  hasPassword: boolean;
+  expiresAt?: string;
+  createdAt: string;
+  revokedAt?: string;
+  active: boolean;
+  source: CloudShareSource;
+  size?: number;
+  messageId?: number;
+}
+
+/** Save a mail/chat attachment (messageId + index) or an upload into a cloud folder. */
+export interface CloudSaveInput {
+  accountId: number;
+  dir: string;
+  messageId?: number;
+  index?: number;
+  uploadToken?: string;
+  filename?: string;
+}
+
+/** A cloud file copied into an upload, ready to attach. */
+export interface CloudImportResult {
+  uploadToken: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
+// --- OAuth/Cloud accounts ---
+// Microsoft 365 / Google sign-in, own client IDs, shared mailboxes and
+// identity delegation (internal/app/oauth_app.go, KONZEPT 7.3–7.5).
+
+export type OAuthProviderId = 'microsoft' | 'google';
+
+/** Declaration merging: discovery names the sign-in service. */
+export interface DiscoveryResult {
+  oauthProvider?: OAuthProviderId;
+}
+
+export interface OAuthClientInput {
+  provider: OAuthProviderId;
+  clientId: string;
+  /** Write only (Google desktop clients, confidential web clients). */
+  clientSecret?: string;
+  hasSecret?: boolean;
+  /** Microsoft authority: common | organizations | consumers | tenant id. */
+  tenant?: string;
+}
+
+export interface OAuthProviderInfo {
+  id: OAuthProviderId;
+  displayName: string;
+  configured: boolean;
+  /** Where the active client comes from. */
+  source?: 'env' | 'admin' | 'user' | 'builtin' | '';
+  clientId?: string;
+  tenant?: string;
+  userClient?: OAuthClientInput;
+  allowUserClients: boolean;
+  deviceFlow: boolean;
+  /** Access methods: graph | imap | eas | ews (Microsoft), gmail | imap (Google). */
+  kinds: AccountKind[];
+  /** Web redirect URI to register (server mode). */
+  redirectUri?: string;
+}
+
+export interface OAuthStartInput {
+  provider: OAuthProviderId;
+  email: string;
+  kind: AccountKind;
+  displayName?: string;
+  name?: string;
+  tenant?: string;
+  /** loopback (desktop default) | redirect (server default) | device. */
+  mode?: 'loopback' | 'redirect' | 'device';
+  /** Re-authenticate this account instead of creating one. */
+  accountId?: number;
+}
+
+export interface OAuthFlowStatus {
+  id: string;
+  provider: OAuthProviderId;
+  mode: 'loopback' | 'redirect' | 'device';
+  status: 'pending' | 'done' | 'error' | 'canceled';
+  authUrl?: string;
+  userCode?: string;
+  verificationUri?: string;
+  expiresAt?: string;
+  accountId?: number;
+  email?: string;
+  error?: string;
+  /** oauth_not_configured | oauth_consent_required | oauth_denied | oauth_reauth_required ... */
+  errorCode?: string;
+}
+
+export type SendMode = 'send_as' | 'send_on_behalf';
+
+export interface SharedMailboxInput {
+  accountId: number;
+  address: string;
+  sendMode?: SendMode | '';
+  displayName?: string;
+}
+
+export interface IdentityDelegation {
+  identityId: number;
+  mode: SendMode;
+  mailbox: string;
+  ownerAccountId?: number;
+}
+
+export interface CloudPimResult {
+  calendars: number;
+  events: number;
+  addressBooks: number;
+  contacts: number;
+  tasks: number;
+  deleted: number;
 }

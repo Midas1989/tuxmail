@@ -165,7 +165,11 @@
   });
 
   function setDraft(d: string) {
-    value = committed + d;
+    // Committed chips and the new draft are separate terms ("a" + "b" must not become "ab").
+    const c = committed;
+    const sep = c && d && !/\s$/.test(c) && !/^\s/.test(d) ? ' ' : '';
+    value = c + sep + d;
+    if (sep) editStart = c.length + 1;
   }
 
   function maybeCommit() {

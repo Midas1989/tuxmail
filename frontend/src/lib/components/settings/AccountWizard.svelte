@@ -24,11 +24,18 @@
   import type { AccountKind, AuthMethod, DiscoveryResult, ServerConfig } from '../../types';
   import Modal from '../common/Modal.svelte';
   import logoUrl from '$branding/tuxmail-logo.png';
+  import CloudConnectForm, { CLOUD_PROVIDERS } from '../cloud/CloudConnectForm.svelte';
+  import ProviderIcon from '../cloud/ProviderIcon.svelte';
+  import type { CloudAccountProvider } from '../../types';
+  import OAuthSignIn from './OAuthSignIn.svelte';
 
   interface Props {
     onclose: () => void;
   }
   let { onclose }: Props = $props();
+
+  /** Cloud accounts (KONZEPT 12) are added through their own login flows. */
+  let cloudProvider = $state<CloudAccountProvider | null>(null);
 
   type Step = 'credentials' | 'discovering' | 'discovered' | 'manual' | 'saving' | 'done';
   let step = $state<Step>('credentials');
@@ -43,6 +50,7 @@
   let outgoing = $state<ServerConfig>({ host: '', port: 465, tls: 'tls', auth: 'password', username: '' });
   let allowInsecure = $state(false);
   let easUrl = $state('');
+  let usePassword = $state(false); // OAuth/Cloud accounts: skip the sign-in step
 
   const needsOutgoing = $derived(protocol === 'imap' || protocol === 'pop3');
   const insecure = $derived(incoming.tls === 'none' || (needsOutgoing && outgoing.tls === 'none'));
@@ -118,7 +126,20 @@
   const authMethods: AuthMethod[] = ['password', 'oauth2', 'client_cert'];
 </script>
 
-<Modal title={t('onboarding.account.title')} {onclose} width="600px">
+{#snippet insecureWarning()}
+  {#if insecure}
+    <label class="warn">
+      <TriangleAlert size={16} />
+      <span>{t('onboarding.account.insecureWarning')}</span>
+      <input type="checkbox" bind:checked={allowInsecure} aria-label={t('onboarding.account.insecureConfirm')} />
+    </label>
+  {/if}
+{/snippet}
+
+<Modal title={cloudProvider ? t('cloud.connect.title') : t('onboarding.account.title')} {onclose} width="600px">
+  {#if cloudProvider}
+    <CloudConnectForm provider={cloudProvider} ondone={onclose} oncancel={() => (cloudProvider = null)} />
+  {:else}
   <ol class="steps" aria-label={t('onboarding.account.progress')}>
     {#each steps as s, i (i)}
       <li class:current={s.id.includes(step)}>{i + 1}. {s.label}</li>
@@ -146,7 +167,28 @@
           {#if step === 'discovering'}<LoaderCircle size={15} class="spin" /> {t('onboarding.account.discovering')}{:else}{t('onboarding.account.next')}{/if}
         </button>
       </div>
+      <div class="cloud-alt">
+        <span class="hint">{t('cloud.connect.wizardTitle')}</span>
+        <div class="cloud-btns">
+          {#each CLOUD_PROVIDERS as p (p)}
+            <button type="button" class="btn btn-ghost" onclick={() => (cloudProvider = p)}><ProviderIcon provider={p} /> {t(`cloud.provider.${p}`)}</button>
+          {/each}
+        </div>
+      </div>
     </form>
+  {:else if step === 'discovered' && discovery && discovery.oauthProvider && !usePassword}
+    <!-- OAuth/Cloud accounts -->
+    <OAuthSignIn
+      provider={discovery.oauthProvider}
+      {email}
+      {name}
+      ondone={() => (step = 'done')}
+      onpassword={() => (usePassword = true)}
+      onsettings={() => {
+        app.settingsAnchor = 'set-signin';
+        onclose();
+      }}
+    />
   {:else if step === 'discovered' && discovery}
     <div class="found">
       <p class="ok"><CircleCheck size={18} /> {t(`onboarding.account.source.${discovery.source}`)}</p>
@@ -161,6 +203,7 @@
         <dd>{incoming.username}</dd>
       </dl>
       {#if discovery.oauthAvailable}<p class="hint">{t('onboarding.account.oauthHint')}</p>{/if}
+      {@render insecureWarning()}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
         <button class="btn btn-ghost" onclick={() => (step = 'manual')}>{t('onboarding.account.editManually')}</button>
@@ -226,13 +269,7 @@
           </div>
         </fieldset>
       {/if}
-      {#if insecure}
-        <label class="warn">
-          <TriangleAlert size={16} />
-          <span>{t('onboarding.account.insecureWarning')}</span>
-          <input type="checkbox" bind:checked={allowInsecure} aria-label={t('onboarding.account.insecureConfirm')} />
-        </label>
-      {/if}
+      {@render insecureWarning()}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
         <button type="button" class="btn btn-ghost" onclick={() => (step = 'credentials')}>{t('common.action.back')}</button>
@@ -248,6 +285,7 @@
       <p>{t('onboarding.account.done', { email })}</p>
       <button class="btn btn-primary" onclick={onclose} data-autofocus>{t('common.action.close')}</button>
     </div>
+  {/if}
   {/if}
 </Modal>
 
@@ -292,6 +330,18 @@
     margin: 0;
     color: var(--tm-danger);
     font-size: 13px;
+  }
+  .cloud-alt {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 12px;
+    border-top: 1px solid var(--tm-line);
+  }
+  .cloud-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
   .row-actions {
     display: flex;

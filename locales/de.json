@@ -493,7 +493,60 @@
     "opencloudDesc": "OpenID Connect, Spaces und LibreGraph-Freigaben.",
     "placeholder": "Cloud-Speicher für Anhänge und Freigabelinks.",
     "vaultwardenDesc": "Ende-zu-Ende-verschlüsselte Datei-Sends.",
-    "webdavDesc": "Beliebige WebDAV-Server oder lokale Ordner."
+    "webdavDesc": "Beliebige WebDAV-Server oder lokale Ordner.",
+    "subtitle": "Cloud-Speicher, Freigabelinks und verschlüsselte Sends.",
+    "addAccount": "Cloud verbinden",
+    "noAccounts": "Noch kein Cloud-Konto verbunden. Verbinde eines, um Dateien aus der Cloud anzuhängen, große Anhänge als Link zu senden und Anhänge abzulegen.",
+    "providers": "Cloud-Konten",
+    "myShares": "Meine Freigaben",
+    "upload": "Hochladen",
+    "uploading_one": "{count} Datei wird hochgeladen…",
+    "uploading": "{count} Dateien werden hochgeladen…",
+    "uploaded": "{name} hochgeladen",
+    "uploadFailed": "Hochladen von {name} fehlgeschlagen: {error}",
+    "newFolder": "Neuer Ordner",
+    "newFolderName": "Name des neuen Ordners",
+    "refresh": "Aktualisieren",
+    "download": "Herunterladen",
+    "downloadFile": "{name} herunterladen",
+    "share": "Freigabelink",
+    "shareFile": "Freigabelink für {name} erstellen",
+    "rename": "Umbenennen",
+    "renameFile": "{name} umbenennen",
+    "renamePrompt": "Neuer Name",
+    "deleteFile": "{name} löschen",
+    "deleted": "{name} gelöscht",
+    "deleteConfirm": "„{name}“ löschen? Dateien landen im Papierkorb des Cloud-Servers.",
+    "removeAccount": "Konto trennen",
+    "removeConfirm": "„{name}“ trennen? App-Passwort bzw. Tokens werden entfernt; Dateien und Freigaben auf dem Server bleiben erhalten.",
+    "quota": "{used} von {total}",
+    "quotaUnlimited": "{used} belegt",
+    "breadcrumb": "Ordnerpfad",
+    "root": "Hauptordner",
+    "loading": "Wird geladen",
+    "empty": "Dieser Ordner ist leer.",
+    "noSubfolders": "Keine Unterordner.",
+    "loadFailed": "Ordner konnte nicht geladen werden: {error}",
+    "selectFile": "{name} auswählen",
+    "col": {
+      "select": "Auswahl",
+      "name": "Name",
+      "size": "Größe",
+      "modified": "Geändert",
+      "actions": "Aktionen"
+    },
+    "dav": {
+      "title": "Kalender und Kontakte dieses Kontos",
+      "hint": "Nextcloud bietet auch CalDAV und CardDAV an. Füge sie mit diesen Adressen als Kalender- bzw. Adressbuch-Konto hinzu.",
+      "caldav": "CalDAV",
+      "carddav": "CardDAV"
+    },
+    "send": {
+      "title": "Bitwarden Send",
+      "hint": "Dateien und Texte werden auf diesem Gerät verschlüsselt; der Schlüssel steht nur im Link und erreicht den Server nie.",
+      "file": "Datei senden",
+      "text": "Text senden"
+    }
   },
   "settings": {
     "about": "Über TuxMail",
@@ -657,6 +710,22 @@
     "workflows": {
       "title": "Workflows",
       "intro": "Automatisierungen: Auslöser → Bedingung → Aktionen. Visuell, als einzeilige Regel oder als YAML bearbeiten; vor dem Aktivieren mit einem Trockenlauf testen."
+    },
+    "signatures": {
+      "title": "Signaturen",
+      "add": "Neue Signatur",
+      "newName": "Signatur",
+      "hint": "Wird an neue Mails und Antworten angehängt; Antworten aus dem Chat folgen der Chat-Signatur-Einstellung der Identität.",
+      "name": "Name",
+      "text": "Signaturtext",
+      "delete": "Signatur {name} löschen",
+      "identity": "Identität",
+      "default": "Neue Mails",
+      "reply": "Antworten",
+      "defaultFor": "Signatur für neue Mails von {email}",
+      "replyFor": "Signatur für Antworten von {email}",
+      "none": "Keine",
+      "sameAsDefault": "Wie neue Mails"
     },
     "folders": {
       "title": "Ordner",
@@ -899,7 +968,12 @@
     "titleNew": "Neue E-Mail",
     "titleReply": "Antworten",
     "to": "An",
-    "underline": "Unterstrichen"
+    "underline": "Unterstrichen",
+    "checks": {
+      "title": "Bitte vor dem Senden prüfen",
+      "edit": "Zurück zur Nachricht",
+      "sendAnyway": "Trotzdem senden"
+    }
   },
   "workflow": {
     "placeholder": "Hier werden Regeln eingerichtet.",
@@ -1550,5 +1624,209 @@
       "title": "App-Einstellungen",
       "version": "App-Version {version}"
     }
+  },
+  "cloud": {
+    "provider": {
+      "nextcloud": "Nextcloud",
+      "opencloud": "OpenCloud",
+      "vaultwarden": "Vaultwarden Send",
+      "webdav": "WebDAV"
+    },
+    "connect": {
+      "title": "Cloud-Konto verbinden",
+      "provider": "Anbieter",
+      "lead": {
+        "nextcloud": "Anmeldung im Browser (Login Flow v2). TuxMail erhält ein App-Passwort; dein Hauptpasswort bleibt bei Nextcloud.",
+        "opencloud": "Anmeldung im Browser per OpenID Connect (funktioniert auch mit ownCloud Infinite Scale).",
+        "vaultwarden": "Das Master-Passwort wird nur auf diesem Gerät zum Entsperren des Schlüssels verwendet; TuxMail speichert eine Sitzung, nicht das Passwort.",
+        "webdav": "Beliebiger WebDAV-Server: vollständige Adresse des Ordners eingeben."
+      },
+      "server": "Server-Adresse",
+      "webdavUrl": "WebDAV-Adresse",
+      "email": "E-Mail-Adresse",
+      "masterPassword": "Master-Passwort",
+      "totp": "Zwei-Faktor-Code",
+      "totpHint": "Gib den Code deiner Authenticator-App ein.",
+      "username": "Benutzername",
+      "password": "Passwort",
+      "displayName": "Anzeigename (optional)",
+      "displayNameHint": "z. B. Familien-Cloud",
+      "signIn": "Anmelden",
+      "signInBrowser": "Im Browser anmelden",
+      "waiting": "Warte auf die Anmeldung im Browser…",
+      "loginFlowHint": "Bestätige den Zugriff für TuxMail auf der geöffneten Nextcloud-Seite. Dieser Dialog geht automatisch weiter.",
+      "oidcHint": "Melde dich auf der geöffneten Seite an und erlaube den Zugriff. Dieser Dialog geht automatisch weiter.",
+      "openAgain": "Anmeldeseite erneut öffnen",
+      "done": "{name} ist verbunden.",
+      "finish": "Fertig",
+      "failed": "Anmeldung fehlgeschlagen.",
+      "errServer": "Bitte die Server-Adresse eingeben.",
+      "errTotp": "Der Code wurde nicht akzeptiert. Bitte erneut versuchen.",
+      "wizardTitle": "Stattdessen ein Cloud-Konto hinzufügen"
+    },
+    "share": {
+      "title": "„{name}“ freigeben",
+      "textTitle": "Neues Text-Send",
+      "created": "Link erstellt",
+      "link": "Link",
+      "password": "Passwort",
+      "copyLink": "Link kopieren",
+      "copyPassword": "Passwort kopieren",
+      "linkCopied": "Link kopiert",
+      "passwordCopied": "Passwort kopiert",
+      "passwordSeparately": "Tipp: Passwort über einen anderen Kanal als den Link übermitteln.",
+      "validUntil": "Gültig bis {date}",
+      "sendHint": "Das Send ist Ende-zu-Ende-verschlüsselt; der Schlüssel steht im Link.",
+      "text": "Text",
+      "usePassword": "Mit Passwort schützen",
+      "passwordAuto": "Wird automatisch erzeugt",
+      "generate": "Erzeugen",
+      "expires": "Läuft ab am",
+      "maxAccess": "Maximale Anzahl Zugriffe",
+      "unlimited": "Unbegrenzt",
+      "hideEmail": "Meine E-Mail-Adresse vor Empfängern verbergen",
+      "note": "Notiz für Empfänger",
+      "notePlaceholder": "Optional",
+      "errText": "Bitte einen Text eingeben.",
+      "create": "Link erstellen",
+      "createSend": "Send erstellen"
+    },
+    "shares": {
+      "filter": "Anzeigen",
+      "filterActive": "Aktiv",
+      "filterAll": "Alle",
+      "count_one": "{count} Link",
+      "count": "{count} Links",
+      "empty": "Noch keine Freigaben.",
+      "statusActive": "Aktiv",
+      "statusExpired": "Abgelaufen",
+      "statusRevoked": "Widerrufen",
+      "expiresSoon_one": "Läuft in {count} Tag ab",
+      "expiresSoon": "Läuft in {count} Tagen ab",
+      "source": {
+        "mail": "Mail",
+        "files": "Dateien",
+        "workflow": "Workflow",
+        "chat": "Chat"
+      },
+      "createdAt": "erstellt {date}",
+      "revokedAt": "widerrufen {date}",
+      "expiresAt": "bis {date}",
+      "open": "Link öffnen",
+      "revoke": "Widerrufen",
+      "revokeConfirm": "Link für „{name}“ widerrufen? Empfänger können ihn danach nicht mehr öffnen.",
+      "revoked": "Link für {name} widerrufen"
+    },
+    "picker": {
+      "title": "Aus der Cloud anhängen",
+      "button": "Aus Cloud",
+      "noAccounts": "Kein Cloud-Konto mit Dateispeicher verbunden (Bereich Dateien).",
+      "account": "Cloud-Konto",
+      "selected_one": "{count} Datei ausgewählt",
+      "selected": "{count} Dateien ausgewählt",
+      "insertLinks": "Als Link einfügen",
+      "attach": "Anhängen",
+      "linkPassword": "Passwort: {password}"
+    },
+    "save": {
+      "title": "„{name}“ in der Cloud speichern",
+      "button": "In Cloud speichern",
+      "filename": "Dateiname",
+      "target": "Zielordner: {path}",
+      "saved": "Gespeichert unter {path}",
+      "action": "Hier speichern"
+    },
+    "signIn": {
+      "with": "Mit {provider} anmelden",
+      "lead": "{provider} verlangt eine Anmeldung über den Browser. TuxMail sieht Ihr Passwort nie.",
+      "method": "Zugriffsart",
+      "kind": {
+        "graph": "Microsoft Graph (empfohlen)",
+        "imap": "IMAP/SMTP mit OAuth2",
+        "eas": "Exchange ActiveSync",
+        "ews": "Exchange Web Services",
+        "gmail": "Gmail-API (empfohlen)"
+      },
+      "waiting": "Warte auf die Anmeldung im Browser …",
+      "openLink": "Browser hat sich nicht geöffnet? Anmeldeseite öffnen",
+      "deviceCode": "Öffnen Sie {url} auf einem beliebigen Gerät und geben Sie diesen Code ein:",
+      "useDevice": "Auf einem anderen Gerät anmelden (Code)",
+      "cancel": "Anmeldung abbrechen",
+      "notConfigured": "Die Anmeldung mit {provider} ist noch nicht eingerichtet. Tragen Sie unter Einstellungen → Anmeldedienste eine Client-ID ein oder fragen Sie Ihren Administrator.",
+      "openSettings": "Anmeldedienste öffnen",
+      "consent": "Ihre Organisation verlangt, dass ein Administrator TuxMail zuerst freigibt.",
+      "denied": "Die Anmeldung wurde abgebrochen oder der Zugriff verweigert.",
+      "expired": "Die Anmeldung ist abgelaufen. Bitte erneut versuchen.",
+      "failed": "Anmeldung fehlgeschlagen: {error}",
+      "done": "Angemeldet als {email}.",
+      "passwordInstead": "Stattdessen Passwort bzw. App-Passwort verwenden"
+    },
+    "services": {
+      "title": "Anmeldedienste",
+      "intro": "Client-IDs für die Anmeldung mit Microsoft und Google. Power-User und Administratoren können eine eigene Registrierung eintragen (siehe docs/MICROSOFT-GOOGLE.md).",
+      "configured": "Eingerichtet",
+      "notConfigured": "Nicht eingerichtet",
+      "source": {
+        "env": "aus der Umgebung",
+        "admin": "vom Administrator vorgegeben",
+        "user": "eigene Client-ID",
+        "builtin": "TuxMail-Registrierung"
+      },
+      "clientId": "Client-ID",
+      "clientSecret": "Client-Secret (nur Google-Desktop-Clients)",
+      "secretStored": "Ein Client-Secret ist gespeichert.",
+      "tenant": "Mandant (common, organizations oder Mandanten-ID)",
+      "save": "Eigene Client-ID speichern",
+      "remove": "Eigene Client-ID entfernen",
+      "saved": "Gespeichert.",
+      "adminOnly": "Eigene Client-IDs wurden vom Administrator deaktiviert.",
+      "redirect": "Zu registrierende Umleitungs-URI: {uri}",
+      "edit": "Eigene Client-ID …"
+    },
+    "shared": {
+      "title": "Geteilte Postfächer",
+      "intro": "Postfächer, auf die Sie in Microsoft 365 oder Exchange Zugriff haben, einbinden (geteilte Postfächer, Stellvertretung).",
+      "add": "Geteiltes Postfach hinzufügen",
+      "account": "Über Konto",
+      "address": "Adresse des Postfachs",
+      "name": "Anzeigename (optional)",
+      "sendMode": "Senden",
+      "none": "Nur lesen (keine Absender-Identität)",
+      "noAccounts": "Fügen Sie zuerst ein Microsoft-365- (Graph) oder Exchange-Konto (EWS) hinzu.",
+      "added": "Postfach {address} hinzugefügt."
+    },
+    "sendMode": {
+      "send_as": "Senden als",
+      "send_on_behalf": "Senden im Auftrag von",
+      "own": "Eigene Adresse",
+      "hint": {
+        "send_as": "Empfänger sehen nur das geteilte Postfach als Absender.",
+        "send_on_behalf": "Empfänger sehen „Sie im Auftrag des geteilten Postfachs“."
+      }
+    },
+    "identities": {
+      "title": "Identitäten und Stellvertretung",
+      "intro": "Wie jede Absenderadresse sendet: als eigene Adresse, als geteiltes Postfach (Senden als) oder in dessen Auftrag.",
+      "mode": "Sendeart von {email}"
+    },
+    "pim": {
+      "sync": "Kalender und Kontakte synchronisieren",
+      "done": "{events} Termine, {contacts} Kontakte und {tasks} Aufgaben übernommen."
+    }
+  },
+  "vault": {
+    "createTitle": "Master-Passwort festlegen",
+    "unlockTitle": "TuxMail entsperren",
+    "createLead": "Im portablen Modus werden deine Kontopasswörter verschlüsselt neben dem Programm gespeichert. Wähle ein Master-Passwort, das sie schützt.",
+    "unlockLead": "Gib dein Master-Passwort ein, um die gespeicherten Kontopasswörter zu entsperren.",
+    "password": "Master-Passwort",
+    "confirm": "Master-Passwort wiederholen",
+    "createHint": "Ein vergessenes Master-Passwort lässt sich nicht wiederherstellen.",
+    "create": "Tresor anlegen",
+    "unlock": "Entsperren",
+    "errShort": "Das Master-Passwort braucht mindestens {count} Zeichen.",
+    "errMismatch": "Die Passwörter stimmen nicht überein.",
+    "errEmpty": "Bitte das Master-Passwort eingeben.",
+    "errWrong": "Falsches Master-Passwort."
   }
 }

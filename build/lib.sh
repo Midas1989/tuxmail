@@ -27,7 +27,14 @@ die() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
 # go_ldflags [extra...]: linker flags shared by all builds.
 go_ldflags() {
-	printf '%s' "-s -w -X main.version=$VERSION $*"
+	local oauth="github.com/Midas1989/Mailclient/internal/oauth" extra=""
+	# Project-wide OAuth app registrations (docs/MICROSOFT-GOOGLE.md). They
+	# are public client IDs, not secrets; CI passes them from repository
+	# variables. Empty values keep the "not configured" behaviour.
+	[ -n "${TUXMAIL_BUILD_MS_CLIENT_ID:-}" ] && extra="$extra -X $oauth.builtinMSClientID=$TUXMAIL_BUILD_MS_CLIENT_ID"
+	[ -n "${TUXMAIL_BUILD_GOOGLE_CLIENT_ID:-}" ] && extra="$extra -X $oauth.builtinGoogleClientID=$TUXMAIL_BUILD_GOOGLE_CLIENT_ID"
+	[ -n "${TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET:-}" ] && extra="$extra -X $oauth.builtinGoogleClientSecret=$TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET"
+	printf '%s' "-s -w -X main.version=$VERSION$extra $*"
 }
 
 # check_frontend: warn loudly when web/dist holds no built frontend.
