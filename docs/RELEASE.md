@@ -51,7 +51,6 @@ ggf. das angelegte Release löschen und neu taggen. Ein Tag, der nicht zu `VERSI
 | `TuxMail-<v>-linux-<arch>-portable.tar.gz` | Desktop portabel (Binary + `plugins/` + Datei `portable` + `data/`), braucht GTK/WebKitGTK vom System | `build/linux/package-portable.sh` |
 | `TuxMail-<v>-windows-<arch>-portable.zip` | `TuxMail/TuxMail.exe` + `plugins\` + leere Datei `portable` + `data/` + README-portable.txt (de/en) | `build/windows/package-portable.sh` / *windows-desktop* |
 | `TuxMail-<v>-windows-<arch>-setup.exe` | **TuxMail-Setup** (eigenes Setup-Programm im TuxMail-Design, amd64, arm64) | `build/windows/package-setup.sh` + `cmd/tuxmail-setup` |
-| `TuxMail-<v>-windows-<arch>-setup-classic.exe` | klassischer NSIS-Installer (Rückfallebene, vorerst weiter gebaut) | `build/windows/package-installer.sh` + `installer.nsi` |
 | `tuxmail_<v>_sbom.spdx.json` | Software-Stückliste (SPDX, Go-Module und npm-Pakete), optional | *publish* (anchore/sbom-action) |
 | `checksums.txt` | SHA-256 aller Dateien oben (`sha256sum -c checksums.txt --ignore-missing`) | `build/checksums.sh` / *publish* |
 | `checksums.txt.asc`, `tuxmail-release-key.asc` | GPG-Signatur + öffentlicher Schlüssel (nur mit Secret `GPG_PRIVATE_KEY`) | `build/sign-gpg.sh` |
@@ -100,8 +99,8 @@ das Docker-Image wird als `:edge` veröffentlicht.
 - `mailto:`: Desktop-Datei und Setup registrieren TuxMail als Mailprogramm (Windows: optional, standardmäßig
   aus), übergeben die Adresse aber noch nicht, weil die Kommandozeile dafür noch keine Option hat – ein Klick auf
   einen `mailto:`-Link öffnet TuxMail. Sobald `tuxmail` eine `mailto:`-URL annimmt, in
-  `build/linux/org.tuxmail.TuxMail.desktop` `Exec=tuxmail %u`, in `internal/winsetup/registry.go` (`MailOps`) und in
-  `installer.nsi` `"%1"` ergänzen.
+  `build/linux/org.tuxmail.TuxMail.desktop` `Exec=tuxmail %u`, und in `internal/winsetup/registry.go` (`MailOps`)
+  `"%1"` ergänzen.
 
 ### Linux-Details
 
@@ -145,7 +144,7 @@ das Docker-Image wird als `:edge` veröffentlicht.
     `WEBVIEW2_BOOTSTRAPPER=download|<Datei>`, sonst Download), sonst Hinweis mit Link auf die Download-Seite.
   - **Still (Administratoren):** `TuxMail-…-setup.exe /S [--scope=user|machine|portable] [--dir=C:\Pfad | /D=C:\Pfad]
     [--desktop-shortcut] [--no-start-menu] [--default-mail] [--autostart] [--options=startmenu,desktop,mail,autostart]
-    [--no-close-apps] [--log=Datei]`; `/ALLUSERS` und `/CURRENTUSER` wie beim NSIS-Installer. Deinstallation:
+    [--no-close-apps] [--log=Datei]`; `/ALLUSERS` und `/CURRENTUSER` wie beim früheren NSIS-Installer. Deinstallation:
     `"…\TuxMail-Setup.exe" --uninstall --silent [--remove-data]`. Exit-Codes: 0 OK, 1 Fehler, 2 ungültige
     Argumente, 740 Administratorrechte verweigert. Protokoll: `%TEMP%\TuxMail-Setup.log`.
   - Aufbau: die Programmdateien (TuxMail.exe, `plugins\`, LICENSE/NOTICE) werden beim Build als zstd-Zip
@@ -156,13 +155,10 @@ das Docker-Image wird als `:edge` veröffentlicht.
     Manifest `asInvoker` (`build/windows/setup-winres.json`), damit Windows „*setup*.exe“ nicht pauschal mit UAC startet.
   - CI (`windows-desktop`, amd64) testet das Setup auf dem Windows-Runner: stille Installation, Update,
     portables Entpacken und Deinstallation aus der installierten Kopie.
-- **Klassischer Installer (`…-setup-classic.exe`, NSIS):** bleibt vorerst als Rückfallebene. Standardmäßig nur für den
-  aktuellen Benutzer, optional für alle Benutzer (Neustart mit UAC); Startmenü-Eintrag, optional Desktop-Verknüpfung
-  und `mailto:`-Registrierung, Deinstallation über „Apps“. Stille Installation: `… /S [/ALLUSERS] [/D=C:\Pfad]`.
-  Benutzerdaten (`%APPDATA%\TuxMail`) bleiben bei der Deinstallation erhalten.
+- Der frühere klassische NSIS-Installer (`…-setup-classic.exe`) wird nicht mehr gebaut. TuxMail-Setup erkennt
+  eine damit erstellte Installation weiterhin und übernimmt sie beim Update.
 - Lokaler Test unter Linux (Windows-Builds sind reines Go und lassen sich überall cross-kompilieren):
-  `build/windows/build.sh amd64 && build/windows/package-setup.sh amd64` (go-winres), klassisch zusätzlich
-  `apt install nsis` und `build/windows/package-installer.sh amd64`.
+  `build/windows/build.sh amd64 && build/windows/package-setup.sh amd64` (go-winres).
 
 ## 4. Lokal bauen
 
@@ -176,7 +172,6 @@ build/linux/package-appimage.sh            # lädt linuxdeploy/appimagetool heru
 build/windows/build.sh amd64               # TuxMail.exe + plugins; go install github.com/tc-hib/go-winres@v0.3.3
 build/windows/package-portable.sh amd64
 build/windows/package-setup.sh amd64       # TuxMail-Setup (…-setup.exe)
-build/windows/package-installer.sh amd64   # makensis (…-setup-classic.exe)
 build/checksums.sh                         # dist/checksums.txt
 docker build -f build/docker/Dockerfile -t tuxmail:local .
 ```
@@ -191,7 +186,7 @@ Alle Signaturschritte sind vorbereitet und werden übersprungen, solange die Sec
 
 | Zweck | Secrets / Variablen | Wirkung |
 |---|---|---|
-| **Windows Authenticode** über [SignPath](https://signpath.org) (für Open-Source-Projekte kostenlos über die SignPath Foundation) | Secret `SIGNPATH_API_TOKEN`; Variablen `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`; im SignPath-Projekt eine Artifact-Configuration `exe`, die alle PE-Dateien (`**/*.exe`) im ZIP signiert | `TuxMail.exe` und `plugins\*.exe` (vor dem Packen von ZIP und Setup, das die signierten Dateien einbettet) sowie `…-setup.exe`/`…-setup-classic.exe` werden signiert → keine SmartScreen-Warnung „Unbekannter Herausgeber“. Ohne Signatur erklären die README-Dateien, wie man die Warnung übergeht. |
+| **Windows Authenticode** über [SignPath](https://signpath.org) (für Open-Source-Projekte kostenlos über die SignPath Foundation) | Secret `SIGNPATH_API_TOKEN`; Variablen `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`; im SignPath-Projekt eine Artifact-Configuration `exe`, die alle PE-Dateien (`**/*.exe`) im ZIP signiert | `TuxMail.exe` und `plugins\*.exe` (vor dem Packen von ZIP und Setup, das die signierten Dateien einbettet) sowie `…-setup.exe` werden signiert → keine SmartScreen-Warnung „Unbekannter Herausgeber“. Ohne Signatur erklären die README-Dateien, wie man die Warnung übergeht. |
 | **Android** (bereits in `android.yml`) | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, optional `GOOGLE_SERVICES_JSON` | signierte APK/AAB im Release |
 | **GPG** für Linux-Pakete (optional) | `GPG_PRIVATE_KEY` (ASCII-armored, `gpg --armor --export-secret-keys KEYID`), `GPG_PASSPHRASE` | eingebettete Signaturen in `.deb` (`_gpgorigin`) und `.rpm`, dazu `checksums.txt.asc` und `tuxmail-release-key.asc` im Release |
 | Docker | – (`GITHUB_TOKEN` mit `packages: write`) | Push nach `ghcr.io/midas1989/tuxmail`; nach dem ersten Push das Paket unter *Packages* auf „public“ stellen |

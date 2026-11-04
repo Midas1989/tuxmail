@@ -97,7 +97,7 @@ jobs:
         run: build/version.sh --check-tag "v$(build/version.sh --base)"
 
   packaging-lint:
-    name: Packaging lint (workflows, scripts, Dockerfile, NSIS)
+    name: Packaging lint (workflows, scripts, Dockerfile)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7.0.1
@@ -107,7 +107,7 @@ jobs:
       - name: Install tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck yamllint nsis desktop-file-utils appstream
+          sudo apt-get install -y --no-install-recommends shellcheck yamllint desktop-file-utils appstream
           go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
       - name: actionlint
         run: actionlint
@@ -122,9 +122,3 @@ jobs:
           desktop-file-validate build/linux/org.tuxmail.TuxMail.desktop
           sed -e 's/@VERSION@/0.0.0/' -e 's/@DATE@/2026-01-01/' build/linux/org.tuxmail.TuxMail.metainfo.xml > "$RUNNER_TEMP/metainfo.xml"
           appstreamcli validate --no-net "$RUNNER_TEMP/metainfo.xml"
-      - name: NSIS script compiles
-        run: |
-          mkdir -p build/out/windows-amd64/plugins
-          cp LICENSE build/out/windows-amd64/TuxMail.exe
-          for p in whatsapp telegram matrix signal; do cp LICENSE "build/out/windows-amd64/plugins/tuxmail-plugin-$p.exe"; done
-          DIST="$RUNNER_TEMP/nsis" build/windows/package-installer.sh amd64

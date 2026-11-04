@@ -275,12 +275,8 @@ jobs:
       - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
-      - name: Install go-winres and NSIS
-        run: |
-          go install "github.com/tc-hib/go-winres@${GO_WINRES_VERSION}"
-          if ! command -v makensis > /dev/null && [ ! -x "/c/Program Files (x86)/NSIS/makensis.exe" ]; then
-            choco install nsis -y --no-progress
-          fi
+      - name: Install go-winres
+        run: go install "github.com/tc-hib/go-winres@${GO_WINRES_VERSION}"
 
       - name: Build TuxMail.exe and the messenger plugins
         run: build/windows/build.sh "${{ matrix.arch }}"
@@ -355,11 +351,6 @@ jobs:
         env:
           WEBVIEW2_BOOTSTRAPPER: download
         run: build/windows/package-setup.sh "${{ matrix.arch }}"
-
-      - name: Classic NSIS installer (fallback, ...-setup-classic.exe)
-        env:
-          WEBVIEW2_BOOTSTRAPPER: download
-        run: build/windows/package-installer.sh "${{ matrix.arch }}"
 
       # Real Windows run of the setup: silent per-user install, update,
       # portable extraction and uninstall from the installed copy.
