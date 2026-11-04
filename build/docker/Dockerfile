@@ -15,7 +15,7 @@
 
 ARG FRONTEND=build
 ARG NODE_IMAGE=docker.io/library/node:22-alpine
-ARG GO_IMAGE=docker.io/library/golang:1.24-alpine
+ARG GO_IMAGE=docker.io/library/golang:1.26-alpine
 ARG RUNTIME_IMAGE=docker.io/library/alpine:3.22
 
 # ---------------------------------------------------------------- frontend

@@ -42,7 +42,7 @@ concurrency:
 
 env:
   NODE_VERSION: '22'
-  NFPM_VERSION: v2.43.0      # last nfpm release that builds with Go 1.24
+  NFPM_VERSION: v2.43.0      # pinned; newer releases need a newer Go than older toolchains
   GO_WINRES_VERSION: v0.3.3
   IMAGE: ghcr.io/midas1989/tuxmail
   # OAuth app registrations of the project (public client IDs; set them as

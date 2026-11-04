@@ -603,7 +603,7 @@ func (p *Plugin) DownloadMedia(ctx context.Context, req wire.MediaRequest) (wire
 	if err != nil {
 		return wire.MediaResult{}, err
 	}
-	data, err := cli.DownloadMediaWithPath(ctx, r.DirectPath, r.EncSHA256, r.SHA256, r.MediaKey, r.Length, whatsmeow.MediaType(r.Type), r.MMSType)
+	data, err := cli.DownloadMediaWithPath(ctx, r.DirectPath, r.EncSHA256, r.SHA256, r.MediaKey, whatsmeow.MediaType(r.Type), r.MMSType, false)
 	if err != nil {
 		return wire.MediaResult{}, err
 	}

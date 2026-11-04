@@ -572,7 +572,7 @@ func TestStaticSPA(t *testing.T) {
 	if code, _, _ := get("/assets/missing.js"); code != 404 {
 		t.Fatal(code)
 	}
-	if code, _, _ := get("/../../etc/passwd"); code != 200 && code != http.StatusSeeOther && code != http.StatusMovedPermanently {
+	if code, _, _ := get("/../../etc/passwd"); code != 200 && code != http.StatusSeeOther && code != http.StatusMovedPermanently && code != http.StatusTemporaryRedirect {
 		t.Fatal(code)
 	}
 }
