@@ -1096,6 +1096,8 @@ type Event struct {
 	ProjectID      int64               `json:"projectId,omitempty"`
 	WorkflowID     string              `json:"workflowId,omitempty"`
 	Run            *WorkflowRunSummary `json:"run,omitempty"`
+	// Team is the payload of team.* events (team_events.go).
+	Team any `json:"team,omitempty"`
 }
 
 // ApiEvent type names.

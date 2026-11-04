@@ -47,6 +47,10 @@ type Options struct {
 	// AppOptions adjusts the per-user application layer options (sync,
 	// sender, renderer ...) before the App of a user is created.
 	AppOptions func(userID int64, o *app.Options)
+	// TeamAppOptions adjusts the options of team mailbox runtimes (team.go).
+	TeamAppOptions func(teamID int64, o *app.Options)
+	// FCM replaces the Firebase client configured by push.fcm (tests).
+	FCM push.FCMClient
 }
 
 // Server is the HTTP server of the server mode.
@@ -66,6 +70,9 @@ type Server struct {
 
 	push      *push.Sender
 	pushStore *push.Store
+
+	team           *teamState // team.go
+	teamAppOptions func(teamID int64, o *app.Options)
 
 	ipLimiter   *rateLimiter
 	userLimiter *rateLimiter
@@ -101,6 +108,10 @@ func New(cfg *config.Config, svc *auth.Service, opts Options) (*Server, error) {
 		subscriber = cfg.PublicOrigin()
 	}
 	s.push = &push.Sender{Store: s.pushStore, Keys: keys, Subscriber: subscriber, HTTPClient: opts.PushClient, Log: s.log}
+	if err := s.initFCM(opts); err != nil { // push_notify.go
+		return nil, err
+	}
+	s.initTeam(opts) // team.go
 
 	perMin := float64(cfg.Limits.LoginRatePerMinute)
 	s.userLimiter = newRateLimiter(perMin, perMin)   // per IP + username
@@ -158,6 +169,7 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 		BaseContext:       func(net.Listener) context.Context { return context.WithoutCancel(ctx) },
 	}
 	go s.housekeeping(ctx)
+	s.startTeam(ctx) // team.go
 	errc := make(chan error, 1)
 	go func() {
 		s.log.Info("tuxmail server listening", "addr", l.Addr().String(), "public_url", s.cfg.PublicURL, "version", s.version)
@@ -177,6 +189,7 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 	defer cancel()
 	err := hs.Shutdown(sctx)
 	s.apps.closeAll()
+	s.stopTeam()
 	if sock, ok := s.cfg.UnixSocket(); ok {
 		os.Remove(sock)
 	}
@@ -280,7 +293,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/provisioning/profile", s.user(s.handleProvisioningProfile))
 	mux.HandleFunc("GET /api/provisioning/secrets", s.device(s.handleProvisioningSecrets))
 
-	s.mountOAuth(mux) // oauth.go: Graph change notifications
+	s.mountOAuth(mux)     // oauth.go: Graph change notifications
+	s.mountTeamAdmin(mux) // team_admin.go
 
 	// Frontend API (frontend/src/lib/api/http.ts) on the per-user App.
 	// The Web Push routes above are served by this package directly.

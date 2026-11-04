@@ -69,7 +69,8 @@ func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
 	opts := app.Options{Store: st, DataDir: dir, Mode: app.ModeServer, Version: p.s.version, Secrets: secrets,
 		Logger: p.s.log.With("user", userID), Locales: p.s.locales, LocaleDir: filepath.Join(p.s.cfg.DataDir, "locales"),
 		Push: &pushBackend{s: p.s, userID: userID}, Sync: &app.SyncOptions{}, Send: &app.SendOptions{}}
-	opts.OAuth = p.s.oauthAppOptions() // oauth.go
+	opts.OAuth = p.s.oauthAppOptions()  // oauth.go
+	p.s.configureUserApp(userID, &opts) // team.go: team mailboxes, workflow notifier
 	if p.s.appOptions != nil {
 		p.s.appOptions(userID, &opts)
 	}
@@ -79,6 +80,7 @@ func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
 		return nil, err
 	}
 	a.Start()
+	go p.s.watchUserApp(userID, a) // push_notify.go
 	p.m[userID] = &appEntry{app: a, st: st, lastUsed: time.Now()}
 	return a, nil
 }

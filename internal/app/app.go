@@ -62,6 +62,13 @@ type Options struct {
 	// loop (CalDAV/CardDAV sync, reminders, invitations) runs when PIM or
 	// Sync is set and PIM.Disabled is false.
 	PIM *PIMOptions
+	// Team gives access to shared team mailboxes (server mode, team_source.go).
+	Team TeamSource
+	// WorkflowActions are registered in addition to the built-in actions
+	// (e.g. the team action "assign" of a team mailbox runtime).
+	WorkflowActions []workflow.ActionType
+	// Notifier delivers the workflow action notify (channel "push" ...).
+	Notifier workflow.Notifier
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -204,8 +211,13 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.sync = &localSyncer{st: a.st}
 	}
 	a.wfReg = workflow.DefaultRegistry()
+	for _, t := range opts.WorkflowActions {
+		if err := a.wfReg.Register(t); err != nil {
+			return nil, err
+		}
+	}
 	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient,
-		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}}
+		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}, Notifier: opts.Notifier}
 	a.proj.Workflow().Deps(&deps)
 	loc := workflow.RunLocal
 	if opts.Mode == ModeServer {

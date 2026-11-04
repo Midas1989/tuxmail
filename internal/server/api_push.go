@@ -47,6 +47,7 @@ type subscribeReq struct {
 	DeviceName string `json:"deviceName"`
 	Type       string `json:"type"`
 	Token      string `json:"token"`
+	AppID      string `json:"appId"`
 }
 
 func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request, a *authInfo) {
@@ -57,8 +58,17 @@ func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request, a *
 	switch req.Type {
 	case "", push.KindWebPush, push.KindUnifiedPush:
 	case push.KindFCM:
-		writeError(w, http.StatusNotImplemented, "not_configured", "Firebase Cloud Messaging is not configured on this server")
-		return
+		if !s.fcmEnabled() {
+			writeError(w, http.StatusNotImplemented, "not_configured", "Firebase Cloud Messaging is not configured on this server")
+			return
+		}
+		// FCM registrations have no endpoint/keys: store the token as the
+		// pseudo endpoint "fcm:<token>" (sender_fcm.go).
+		req.Endpoint = push.FCMEndpoint(req.Token)
+		req.Keys.P256dh, req.Keys.Auth = "", ""
+		if req.AppID != "" && req.DeviceName == "" {
+			req.DeviceName = req.AppID
+		}
 	default:
 		writeError(w, http.StatusBadRequest, "invalid_subscription", "unknown push type")
 		return
@@ -82,9 +92,14 @@ func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request, a *
 func (s *Server) handlePushUnsubscribe(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	var req struct {
 		Endpoint string `json:"endpoint"`
+		Type     string `json:"type"`
+		Token    string `json:"token"`
 	}
 	if !readJSON(w, r, &req) {
 		return
+	}
+	if req.Token != "" { // FCM: unsubscribe by token (the app may also send "fcm:<token>")
+		req.Endpoint = push.FCMEndpoint(req.Token)
 	}
 	if err := s.pushStore.Delete(r.Context(), a.User.ID, req.Endpoint); err != nil {
 		s.writeAuthError(w, err)

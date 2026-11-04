@@ -36,6 +36,14 @@ type Payload struct {
 	Tag            string `json:"tag,omitempty"`
 	AccountID      string `json:"accountId,omitempty"`
 	ConversationID string `json:"conversationId,omitempty"`
+	// Optional fields for native notifications (mobile/SERVER_TODO.md 2).
+	Sender string `json:"sender,omitempty"` // display name of the sender (MessagingStyle)
+	ItemID string `json:"itemId,omitempty"` // item a quick reply answers
+	// TeamID is set for conversations of a shared team mailbox: the
+	// conversation id then refers to the team store (KONZEPT 8.14).
+	TeamID string `json:"teamId,omitempty"`
+	// Badge is the unread counter for the app icon (Badging API); 0 = unchanged.
+	Badge int `json:"badge,omitempty"`
 }
 
 // Urgency values (RFC 8030 section 5.3).
@@ -110,6 +118,12 @@ type Sender struct {
 	HTTPClient *http.Client
 	Log        *slog.Logger
 	Now        func() time.Time
+	// FCM delivers to Firebase Cloud Messaging registrations (sender_fcm.go);
+	// nil when push.fcm is not configured.
+	FCM FCMClient
+	// dedupe suppresses the same notification (user + tag) within a short
+	// window, e.g. when two producers report the same mail (dedupe.go).
+	dedupe deduper
 }
 
 var _ Notifier = (*Sender)(nil)
@@ -135,10 +149,14 @@ func (s *Sender) Notify(ctx context.Context, userID int64, n Notification) error
 		return ErrSuppressed
 	}
 	n.Payload = p
+	if !s.dedupe.first(userID, n.Tag, now) {
+		return ErrDuplicate
+	}
 	subs, err := s.Store.List(ctx, userID)
 	if err != nil {
 		return err
 	}
+	subs = OnePerSession(subs)
 	var errs []error
 	for _, sub := range subs {
 		if err := s.send(ctx, sub, n); err != nil {
@@ -154,6 +172,9 @@ func (s *Sender) SendTo(ctx context.Context, sub Subscription, n Notification) e
 }
 
 func (s *Sender) send(ctx context.Context, sub Subscription, n Notification) error {
+	if sub.Kind == KindFCM {
+		return s.sendFCM(ctx, sub, n)
+	}
 	body, err := json.Marshal(n.Payload)
 	if err != nil {
 		return err

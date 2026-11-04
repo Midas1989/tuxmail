@@ -228,5 +228,8 @@ func (e Event) MarshalJSON() ([]byte, error) {
 	case EventWorkflowRun:
 		m["workflowId"], m["run"] = e.WorkflowID, e.Run
 	}
+	if e.Team != nil { // team.* events (team_events.go)
+		m["team"] = e.Team
+	}
 	return json.Marshal(m)
 }
