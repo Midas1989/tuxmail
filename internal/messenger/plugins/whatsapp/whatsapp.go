@@ -82,11 +82,7 @@ func (p *Plugin) Init(ctx context.Context, env *sdk.Env) error {
 	p.mu.Unlock()
 	store.DeviceProps.Os = ptr("TuxMail")
 	// WhatsApp rejects outdated web versions: fetch the current one.
-	vctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	if v, err := whatsmeow.GetLatestVersion(vctx, &http.Client{Timeout: 10 * time.Second}); err == nil && v != nil {
-		store.SetWAVersion(*v)
-	}
-	cancel()
+	p.refreshVersion(ctx)
 	dirs, err := env.AccountDirs()
 	if err != nil {
 		return err
@@ -286,9 +282,54 @@ func (p *Plugin) Shutdown(context.Context) error {
 	return nil
 }
 
+// refreshVersion asks web.whatsapp.com for the current client version and
+// uses it for new connections. WhatsApp rejects outdated versions with
+// "err-client-outdated"; the version compiled into whatsmeow is only a
+// fallback. Errors are kept so the UI can show an update hint.
+func (p *Plugin) refreshVersion(ctx context.Context) error {
+	var lastErr error
+	for attempt := 0; attempt < 3; attempt++ {
+		vctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		v, err := whatsmeow.GetLatestVersion(vctx, &http.Client{Timeout: 10 * time.Second})
+		cancel()
+		if err == nil && v != nil {
+			store.SetWAVersion(*v)
+			return nil
+		}
+		lastErr = err
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(attempt+1) * time.Second):
+		}
+	}
+	return lastErr
+}
+
+// errOutdated is returned when WhatsApp rejects the client version.
+var errOutdated = errors.New("WhatsApp rejected the client version (err-client-outdated): update TuxMail; if it persists, check that web.whatsapp.com is reachable")
+
 // Pair implements sdk.Plugin: QR code (refreshed by WhatsApp) or phone
 // pairing code ("Link with phone number" on the phone).
 func (p *Plugin) Pair(ctx context.Context, req wire.PairRequest, pr *sdk.Pairing) (wire.Account, error) {
+	// Always pair with the newest version WhatsApp announces; retry once
+	// after a fresh version lookup when WhatsApp says the client is outdated.
+	_ = p.refreshVersion(ctx)
+	acc, err := p.pairOnce(ctx, req, pr)
+	if errors.Is(err, errOutdated) {
+		if verr := p.refreshVersion(ctx); verr == nil {
+			acc, err = p.pairOnce(ctx, req, pr)
+		}
+	}
+	if errors.Is(err, errOutdated) {
+		p.mu.Lock()
+		p.outdated = "WhatsApp hat die Client-Version abgelehnt – bitte TuxMail aktualisieren."
+		p.mu.Unlock()
+	}
+	return acc, err
+}
+
+func (p *Plugin) pairOnce(ctx context.Context, req wire.PairRequest, pr *sdk.Pairing) (wire.Account, error) {
 	dir, err := p.env.AccountDir(req.Account)
 	if err != nil {
 		return wire.Account{}, err
@@ -346,6 +387,8 @@ func (p *Plugin) Pair(ctx context.Context, req wire.PairRequest, pr *sdk.Pairing
 			return wire.Account{}, errors.New("QR code expired")
 		case "error":
 			return wire.Account{}, fmt.Errorf("pairing failed: %v", item.Error)
+		case "err-client-outdated":
+			return wire.Account{}, errOutdated
 		default:
 			if item.Error != nil {
 				return wire.Account{}, item.Error
