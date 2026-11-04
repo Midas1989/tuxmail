@@ -64,9 +64,11 @@ const ROUTES = new Set(['mail', 'search', 'calendar', 'contacts', 'files', 'sett
 function sanitizeHash(h: string): string {
   const raw = h.replace(/^#?\/?/, '');
   const [route, query = ''] = raw.split('?');
-  const seg = route.split('/')[0];
+  const [seg, ...rest] = route.split('/');
   if (!ROUTES.has(seg)) return '#/mail';
-  return '#/' + seg + (query ? '?' + query : '');
+  // Settings deep links: #/settings/<category>/<section> (plain slugs only).
+  const sub = seg === 'settings' && rest.length <= 2 && rest.every((r) => /^[a-z0-9-]+$/.test(r)) ? rest.map((r) => '/' + r).join('') : '';
+  return '#/' + seg + sub + (query ? '?' + query : '');
 }
 
 function num(v: string | null): number | undefined {

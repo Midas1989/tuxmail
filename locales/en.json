@@ -1051,7 +1051,54 @@
       "defaultFor": "Signature for new mails from {email}",
       "replyFor": "Signature for replies from {email}",
       "none": "None",
-      "sameAsDefault": "Same as new mails"
+      "sameAsDefault": "Same as new mails",
+      "placement": "Position in replies",
+      "placementBelow": "Below my reply",
+      "placementAbove": "Directly above the quoted text",
+      "saveFailed": "Could not save the signature: {error}",
+      "editor": {
+        "toolbar": "Signature formatting",
+        "area": "Signature",
+        "fontSize": "Size",
+        "sizeTiny": "Very small",
+        "sizeSmall": "Small",
+        "sizeNormal": "Normal",
+        "sizeLarge": "Large",
+        "sizeHuge": "Very large",
+        "color": "Text color",
+        "alignLeft": "Align left",
+        "alignCenter": "Center",
+        "alignRight": "Align right",
+        "clearFormat": "Clear formatting",
+        "link": "Insert or edit link",
+        "linkRemove": "Remove link",
+        "linkUrl": "Address (web, e-mail or phone)",
+        "linkText": "Text",
+        "linkInsert": "Insert link",
+        "linkUpdate": "Update link",
+        "linkInvalid": "Only web (https://), e-mail (mailto:) and phone (tel:) links are allowed.",
+        "imageUpload": "Insert image from file",
+        "imageUrl": "Image from web address",
+        "imageInsert": "Insert image",
+        "imageUrlInvalid": "Enter an https:// address of an image.",
+        "imageTooLarge": "The image is larger than {size}. Please use a smaller image.",
+        "imageType": "Only PNG, JPEG, GIF and WebP images can be used.",
+        "imageWidth": "Image width: {width} px",
+        "imageWidthPx": "Image width in pixels",
+        "imageRemove": "Remove image",
+        "oversized": "Images larger than {size} were removed.",
+        "remoteHint": "Images from a web address are loaded by the recipient's mail program; many block them until the recipient allows images. Uploaded images are embedded in the mail.",
+        "remoteCount": "Remote images in this signature: {count}. Recipients may block them.",
+        "source": "HTML source",
+        "visual": "Visual editor",
+        "sourceHint": "Paste complete HTML, e.g. from a signature generator. Scripts, forms, event handlers and external style sheets are removed; embedded images (data:) are stored with the signature.",
+        "preview": "Preview",
+        "previewLight": "Preview on light background",
+        "previewDark": "Preview on dark background",
+        "plain": "Plain-text version",
+        "plainAuto": "Generated from the HTML signature (links as text <address>):",
+        "plainOverride": "Write the plain-text version myself"
+      }
     },
     "folders": {
       "title": "Folders",
@@ -1332,6 +1379,203 @@
       "sendAs": "Send as",
       "sendOnBehalf": "Send on behalf of",
       "mailbox": "Mailbox address"
+    },
+    "nav": {
+      "label": "Settings categories",
+      "search": "Search settings",
+      "searchPlaceholder": "Search settings",
+      "results": "Search results",
+      "noResults": "No settings match “{query}”.",
+      "back": "All settings",
+      "clearSearch": "Clear search",
+      "general": "General",
+      "accounts": "Accounts",
+      "mail": "Mail",
+      "chats": "Chats & Messengers",
+      "pim": "Calendar & Contacts",
+      "cloud": "Cloud & Files",
+      "automation": "Automation",
+      "notifications": "Notifications",
+      "ai": "AI assistant",
+      "security": "Security",
+      "data": "Data",
+      "team": "Team",
+      "about": "About"
+    },
+    "pages": {
+      "general": {
+        "title": "General",
+        "desc": "Language, formats, appearance and how TuxMail behaves.",
+        "sections": {
+          "language": "Language & region",
+          "appearance": "Appearance",
+          "window": "Window",
+          "shortcuts": "Keyboard shortcuts",
+          "app": "App"
+        },
+        "shortcutsIntro": "Keyboard shortcuts of the mail and chat views.",
+        "appearanceIntro": "Colour theme, list density and the default mail view."
+      },
+      "accounts": {
+        "title": "Accounts",
+        "desc": "Mail and messenger accounts, sender addresses, signatures and folders.",
+        "sections": {
+          "list": "Accounts",
+          "signatures": "Signatures",
+          "shared": "Shared mailboxes",
+          "folders": "Folders",
+          "server": "TuxMail server",
+          "sieve": "Server rules (Sieve)"
+        }
+      },
+      "mail": {
+        "title": "Mail",
+        "desc": "Reading, writing and automatic replies.",
+        "sections": {
+          "reading": "Spam, categories & newsletters",
+          "remote": "Remote images",
+          "compose": "Spelling, meetings & mail merge",
+          "snippets": "Quick replies",
+          "vacation": "Out of office"
+        }
+      },
+      "chats": {
+        "title": "Chats & Messengers",
+        "desc": "Messenger plugins, chat view, chat folders and focus mode.",
+        "sections": {
+          "messenger": "Messenger",
+          "chat": "Chat view",
+          "folders": "Chat folders",
+          "focus": "Focus mode"
+        },
+        "foldersIntro": "Chat folders filter the chat list by channel, account, group or unread state.",
+        "foldersEmpty": "No chat folders yet.",
+        "newFolder": "New chat folder",
+        "editFolder": "Edit {name}",
+        "focusConfigure": "Configure focus mode"
+      },
+      "pim": {
+        "title": "Calendar & Contacts",
+        "desc": "Calendars, subscriptions, CalDAV/CardDAV and address books.",
+        "sections": {
+          "calendars": "Calendars",
+          "contacts": "Address books",
+          "cloudsync": "Microsoft 365 & Google"
+        },
+        "calendarsIntro": "Local calendars, subscribed ICS/webcal feeds, CalDAV servers and birthdays from contacts.",
+        "booksIntro": "Address books of this device and of connected CardDAV servers.",
+        "booksEmpty": "No address books yet.",
+        "openContacts": "Open contacts",
+        "contactsCount": "{count} contacts",
+        "contactsCount_one": "{count} contact",
+        "cloudsyncIntro": "Calendars and contacts of Microsoft 365, Exchange and Google accounts.",
+        "cloudsyncEmpty": "No Microsoft 365, Exchange or Google account connected."
+      },
+      "cloud": {
+        "title": "Cloud & Files",
+        "desc": "Nextcloud, OpenCloud, WebDAV and Vaultwarden for attachments and share links.",
+        "sections": {
+          "storage": "Cloud accounts",
+          "shares": "Share links"
+        },
+        "intro": "Cloud accounts store large attachments as links, send files end-to-end encrypted and back up your data.",
+        "empty": "No cloud account connected yet.",
+        "openFiles": "Open files",
+        "uploadDir": "Attachments go to {dir}"
+      },
+      "automation": {
+        "title": "Automation",
+        "desc": "Workflows and tags that organise your mail and chats.",
+        "sections": {
+          "workflows": "Workflows",
+          "tags": "Tags"
+        }
+      },
+      "notifications": {
+        "title": "Notifications",
+        "desc": "Push and desktop notifications, quiet hours and privacy.",
+        "sections": {
+          "notifications": "Notifications"
+        }
+      },
+      "ai": {
+        "title": "AI assistant",
+        "desc": "Provider, permissions and masking of personal data.",
+        "sections": {
+          "assistant": "AI assistant"
+        }
+      },
+      "security": {
+        "title": "Security & privacy",
+        "desc": "Certificates, sign-in services, passwords and privacy defaults.",
+        "sections": {
+          "smime": "S/MIME certificates",
+          "signin": "Sign-in services",
+          "vault": "Master password",
+          "applock": "App lock",
+          "privacy": "Privacy"
+        }
+      },
+      "data": {
+        "title": "Data",
+        "desc": "Import and export, backup and restore.",
+        "sections": {
+          "import": "Import & Export",
+          "backup": "Backup & Restore"
+        }
+      },
+      "team": {
+        "title": "Team",
+        "desc": "Team mailboxes, members and roles.",
+        "sections": {
+          "mailboxes": "Team mailboxes"
+        }
+      },
+      "about": {
+        "title": "Info & diagnostics",
+        "desc": "Version, diagnostics and licences.",
+        "sections": {
+          "about": "About TuxMail",
+          "diagnostics": "Diagnostics",
+          "licenses": "Licences"
+        },
+        "version": "Version {version}",
+        "copyright": "Copyright © 2026 Midas Wollinger and TuxMail contributors",
+        "source": "Source code and licence",
+        "licensesIntro": "TuxMail is licensed under the GNU AGPL v3.0 or later and uses open-source components under their own licences.",
+        "showLicense": "Show licence (AGPL-3.0)",
+        "showNotices": "Show third-party notices",
+        "loading": "Loading …"
+      },
+      "groups": {
+        "reading": "Reading",
+        "compose": "Writing",
+        "absence": "Absence",
+        "advanced": "Advanced"
+      },
+      "app": {
+        "intro": "Server profile, app lock and push notifications of this device.",
+        "open": "Open app settings"
+      },
+      "vault": {
+        "intro": "In portable mode the account passwords are stored encrypted with your master password next to the program.",
+        "stateLocked": "Locked",
+        "stateUnlocked": "Unlocked",
+        "stateNew": "No master password set yet",
+        "unlock": "Unlock now",
+        "keyring": "Passwords are stored in the keyring of the operating system."
+      },
+      "applock": {
+        "intro": "Fingerprint, face or screen lock when TuxMail is opened on this device.",
+        "open": "Configure app lock"
+      },
+      "privacy": {
+        "intro": "Defaults that decide what leaves your device.",
+        "remote": "Remote images and the senders allowed to load them",
+        "notifications": "Content shown in notifications",
+        "ai": "What the AI assistant may see",
+        "open": "Open"
+      }
     }
   },
   "search": {
@@ -2814,7 +3058,37 @@
       "back": "Back",
       "done": "Done",
       "cancel": "Cancel",
-      "qrLabel": "QR code for linking"
+      "qrLabel": "QR code for linking",
+      "reason": {
+        "component_missing": "The Signal component (signal-cli) is missing.",
+        "unavailable": "The service is not available right now: {message}",
+        "outdated": "The network rejected this version: {message}"
+      }
+    },
+    "component": {
+      "title": "Signal component (signal-cli)",
+      "missing": "The Signal component is missing – install it now",
+      "missingText": "Signal needs the helper program signal-cli. TuxMail downloads version {version} from the official release page, verifies its checksum and installs it into its data folder. Nothing else needs to be installed.",
+      "install": "Install Signal component",
+      "installing": "Installing the Signal component …",
+      "stage": {
+        "download": "Downloading {file} … {percent}%",
+        "verify": "Verifying checksum …",
+        "unpack": "Unpacking …",
+        "done": "Finishing …"
+      },
+      "ready": "signal-cli {version} ready",
+      "readyNoVersion": "signal-cli ready",
+      "source": {
+        "bundled": "included with TuxMail",
+        "setting": "from the configured path",
+        "path": "from the system PATH",
+        "installed": "downloaded by TuxMail"
+      },
+      "failed": "Installing the Signal component failed: {error}",
+      "manual": "This build cannot download signal-cli for this platform. Install signal-cli (Java 21+) and enter its path in the Signal settings.",
+      "retryNote": "Linking starts again automatically after the installation.",
+      "note": "Note: {note}"
     }
   },
   "team": {

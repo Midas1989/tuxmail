@@ -47,6 +47,11 @@ type Installer struct {
 	Description string
 	Now         func() time.Time
 	Logf        func(format string, args ...any)
+	// Protect replaces the ACL of an all-users installation folder outside
+	// Program Files (ProtectInstallDir on Windows; AUDIT-D D-05). Env
+	// resolves the Program Files folders for NeedsProtectedACL.
+	Protect func(dir string) error
+	Env     Env
 }
 
 // Request is an installation request.
@@ -122,6 +127,12 @@ func (in *Installer) Install(ctx context.Context, req Request, report func(Progr
 	hadApp := StatDir(dir).HasApp
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
+	}
+	if in.Protect != nil && in.Env != nil && NeedsProtectedACL(req.Scope, dir, in.Env) {
+		// Before any file is written, so every file inherits the ACL.
+		if err := in.Protect(dir); err != nil {
+			return fmt.Errorf("protect installation folder: %w", err)
+		}
 	}
 	old, _ := ReadRecord(dir)
 	existing, hadEntry := FindExisting(DetectExisting(in.Reg), req.Scope)

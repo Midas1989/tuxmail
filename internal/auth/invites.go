@@ -151,6 +151,9 @@ func (s *Service) Register(ctx context.Context, token string, nu NewUser) (*User
 		return nil, ErrInvalidCode
 	}
 	nu.Role = inv.Role
+	// An address the invitee typed in is unverified: it must not let a
+	// later OIDC login with that address land in this account (A-05).
+	nu.emailUnverified = inv.Email == ""
 	u, err := s.CreateUser(ctx, nu)
 	if err != nil {
 		s.db.ExecContext(context.WithoutCancel(ctx), `UPDATE invites SET used_at = NULL WHERE id = ?`, inv.ID)

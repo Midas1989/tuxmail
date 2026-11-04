@@ -21,7 +21,10 @@ import java.util.concurrent.Executors
  * intents. Shared content URIs are copied into cache/shared/<uuid>/ so the
  * WebView can read them (Capacitor.convertFileSrc). Only content:// URIs are
  * accepted: file:// URIs from other apps could point into TuxMail's private
- * data directory and leak it as an "attachment".
+ * data directory and leak it as an "attachment". URIs of TuxMail's own
+ * FileProvider are refused for the same reason: TuxMail can always read
+ * them, so another app could make it attach cached attachments of other
+ * mails (AUDIT-D D-08).
  */
 object ShareInbox {
     private const val TAG = "TuxMailShare"
@@ -54,7 +57,7 @@ object ShareInbox {
         val to = mutableListOf<String>()
         intent.getStringArrayExtra(Intent.EXTRA_EMAIL)?.let { to += it }
         if (action == Intent.ACTION_SENDTO) intent.data?.let { to += mailtoRecipients(it) }
-        val uris = streams(intent)
+        val uris = streams(intent).filter { it.authority != "${app.packageName}.fileprovider" }
         // Consume the intent so a configuration change does not share twice.
         intent.action = null
         executor.execute {

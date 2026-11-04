@@ -78,8 +78,14 @@ const WebView2DownloadPage = "https://developer.microsoft.com/microsoft-edge/web
 // the setup carries one, else a download. The bootstrapper elevates
 // itself when needed and installs per machine (per user without rights).
 func InstallWebView2(ctx context.Context, embedded []byte) error {
-	path := filepath.Join(os.TempDir(), fmt.Sprintf("MicrosoftEdgeWebview2Setup-%d.exe", os.Getpid()))
-	defer os.Remove(path)
+	// Private folder: an elevated setup must not run a program from the
+	// user-writable %TEMP% (AUDIT-D D-03).
+	dir, err := PrivateTempDir("TuxMail-WebView2-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(dir)
+	path := filepath.Join(dir, "MicrosoftEdgeWebview2Setup.exe")
 	if len(embedded) > 0 {
 		if err := os.WriteFile(path, embedded, 0o755); err != nil {
 			return err

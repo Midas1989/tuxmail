@@ -877,7 +877,7 @@ func (a *App) createTBAccount(ctx context.Context, acc thunderbird.Account) erro
 	for i, tid := range acc.Identities {
 		var sigID int64
 		if tid.SignatureHTML != "" || tid.SignatureText != "" {
-			sigID, _ = a.st.CreateSignature(ctx, domain.Signature{Name: tid.Email, HTML: tid.SignatureHTML, Plain: tid.SignatureText})
+			sigID, _ = a.createImportedSignature(ctx, domain.Signature{Name: tid.Email, HTML: tid.SignatureHTML, Plain: tid.SignatureText})
 		}
 		if i == 0 && len(ids) > 0 {
 			id := ids[0]

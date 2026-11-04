@@ -1050,7 +1050,54 @@
       "defaultFor": "Signatur für neue Mails von {email}",
       "replyFor": "Signatur für Antworten von {email}",
       "none": "Keine",
-      "sameAsDefault": "Wie neue Mails"
+      "sameAsDefault": "Wie neue Mails",
+      "placement": "Position in Antworten",
+      "placementBelow": "Unter meiner Antwort",
+      "placementAbove": "Direkt über dem zitierten Text",
+      "saveFailed": "Signatur konnte nicht gespeichert werden: {error}",
+      "editor": {
+        "toolbar": "Signatur-Formatierung",
+        "area": "Signatur",
+        "fontSize": "Größe",
+        "sizeTiny": "Sehr klein",
+        "sizeSmall": "Klein",
+        "sizeNormal": "Normal",
+        "sizeLarge": "Groß",
+        "sizeHuge": "Sehr groß",
+        "color": "Textfarbe",
+        "alignLeft": "Linksbündig",
+        "alignCenter": "Zentriert",
+        "alignRight": "Rechtsbündig",
+        "clearFormat": "Formatierung entfernen",
+        "link": "Link einfügen oder bearbeiten",
+        "linkRemove": "Link entfernen",
+        "linkUrl": "Adresse (Web, E-Mail oder Telefon)",
+        "linkText": "Text",
+        "linkInsert": "Link einfügen",
+        "linkUpdate": "Link ändern",
+        "linkInvalid": "Erlaubt sind nur Web- (https://), E-Mail- (mailto:) und Telefon-Links (tel:).",
+        "imageUpload": "Bild aus Datei einfügen",
+        "imageUrl": "Bild von Webadresse",
+        "imageInsert": "Bild einfügen",
+        "imageUrlInvalid": "Gib eine https://-Adresse eines Bildes ein.",
+        "imageTooLarge": "Das Bild ist größer als {size}. Bitte verwende ein kleineres Bild.",
+        "imageType": "Nur PNG-, JPEG-, GIF- und WebP-Bilder können verwendet werden.",
+        "imageWidth": "Bildbreite: {width} px",
+        "imageWidthPx": "Bildbreite in Pixeln",
+        "imageRemove": "Bild entfernen",
+        "oversized": "Bilder über {size} wurden entfernt.",
+        "remoteHint": "Bilder von einer Webadresse lädt das Mailprogramm des Empfängers nach; viele blockieren sie, bis der Empfänger Bilder erlaubt. Hochgeladene Bilder werden in die Mail eingebettet.",
+        "remoteCount": "Externe Bilder in dieser Signatur: {count}. Empfänger blockieren sie eventuell.",
+        "source": "HTML-Quelltext",
+        "visual": "Visueller Editor",
+        "sourceHint": "Füge vollständiges HTML ein, z. B. aus einem Signatur-Generator. Skripte, Formulare, Event-Handler und externe Stylesheets werden entfernt; eingebettete Bilder (data:) werden mit der Signatur gespeichert.",
+        "preview": "Vorschau",
+        "previewLight": "Vorschau auf hellem Hintergrund",
+        "previewDark": "Vorschau auf dunklem Hintergrund",
+        "plain": "Nur-Text-Version",
+        "plainAuto": "Aus der HTML-Signatur erzeugt (Links als Text <Adresse>):",
+        "plainOverride": "Nur-Text-Version selbst schreiben"
+      }
     },
     "folders": {
       "title": "Ordner",
@@ -1331,6 +1378,203 @@
       "sendAs": "Senden als",
       "sendOnBehalf": "Senden im Auftrag von",
       "mailbox": "Postfachadresse"
+    },
+    "nav": {
+      "label": "Einstellungsbereiche",
+      "search": "Einstellungen durchsuchen",
+      "searchPlaceholder": "Einstellungen durchsuchen",
+      "results": "Suchergebnisse",
+      "noResults": "Keine Einstellung passt zu „{query}“.",
+      "back": "Alle Einstellungen",
+      "clearSearch": "Suche leeren",
+      "general": "Allgemein",
+      "accounts": "Konten",
+      "mail": "Mail",
+      "chats": "Chats & Messenger",
+      "pim": "Kalender & Kontakte",
+      "cloud": "Cloud & Dateien",
+      "automation": "Automatisierung",
+      "notifications": "Benachrichtigungen",
+      "ai": "KI-Assistent",
+      "security": "Sicherheit",
+      "data": "Daten",
+      "team": "Team",
+      "about": "Info & Diagnose"
+    },
+    "pages": {
+      "general": {
+        "title": "Allgemein",
+        "desc": "Sprache, Formate, Darstellung und Verhalten von TuxMail.",
+        "sections": {
+          "language": "Sprache & Region",
+          "appearance": "Darstellung",
+          "window": "Fenster",
+          "shortcuts": "Tastenkürzel",
+          "app": "App"
+        },
+        "shortcutsIntro": "Tastenkürzel der Mail- und Chat-Ansicht.",
+        "appearanceIntro": "Farbschema, Listendichte und die Standardansicht für Mails."
+      },
+      "accounts": {
+        "title": "Konten",
+        "desc": "Mail- und Messenger-Konten, Absenderadressen, Signaturen und Ordner.",
+        "sections": {
+          "list": "Konten",
+          "signatures": "Signaturen",
+          "shared": "Freigegebene Postfächer",
+          "folders": "Ordner",
+          "server": "TuxMail-Server",
+          "sieve": "Serverregeln (Sieve)"
+        }
+      },
+      "mail": {
+        "title": "Mail",
+        "desc": "Lesen, Verfassen und automatische Antworten.",
+        "sections": {
+          "reading": "Spam, Kategorien & Newsletter",
+          "remote": "Externe Bilder",
+          "compose": "Rechtschreibung, Meetings & Serienmail",
+          "snippets": "Schnellantworten",
+          "vacation": "Abwesenheitsnotiz"
+        }
+      },
+      "chats": {
+        "title": "Chats & Messenger",
+        "desc": "Messenger-Plugins, Chat-Ansicht, Chat-Ordner und Fokusmodus.",
+        "sections": {
+          "messenger": "Messenger",
+          "chat": "Chat-Ansicht",
+          "folders": "Chat-Ordner",
+          "focus": "Fokusmodus"
+        },
+        "foldersIntro": "Chat-Ordner filtern die Chatliste nach Kanal, Konto, Gruppe oder Ungelesen.",
+        "foldersEmpty": "Noch keine Chat-Ordner.",
+        "newFolder": "Neuer Chat-Ordner",
+        "editFolder": "{name} bearbeiten",
+        "focusConfigure": "Fokusmodus einrichten"
+      },
+      "pim": {
+        "title": "Kalender & Kontakte",
+        "desc": "Kalender, Abonnements, CalDAV/CardDAV und Adressbücher.",
+        "sections": {
+          "calendars": "Kalender",
+          "contacts": "Adressbücher",
+          "cloudsync": "Microsoft 365 & Google"
+        },
+        "calendarsIntro": "Lokale Kalender, abonnierte ICS/webcal-Feeds, CalDAV-Server und Geburtstage aus den Kontakten.",
+        "booksIntro": "Adressbücher dieses Geräts und verbundener CardDAV-Server.",
+        "booksEmpty": "Noch keine Adressbücher.",
+        "openContacts": "Kontakte öffnen",
+        "contactsCount": "{count} Kontakte",
+        "contactsCount_one": "{count} Kontakt",
+        "cloudsyncIntro": "Kalender und Kontakte von Microsoft-365-, Exchange- und Google-Konten.",
+        "cloudsyncEmpty": "Kein Microsoft-365-, Exchange- oder Google-Konto verbunden."
+      },
+      "cloud": {
+        "title": "Cloud & Dateien",
+        "desc": "Nextcloud, OpenCloud, WebDAV und Vaultwarden für Anhänge und Freigabelinks.",
+        "sections": {
+          "storage": "Cloud-Konten",
+          "shares": "Freigabelinks"
+        },
+        "intro": "Cloud-Konten speichern große Anhänge als Link, senden Dateien Ende-zu-Ende-verschlüsselt und sichern Ihre Daten.",
+        "empty": "Noch kein Cloud-Konto verbunden.",
+        "openFiles": "Dateien öffnen",
+        "uploadDir": "Anhänge landen in {dir}"
+      },
+      "automation": {
+        "title": "Automatisierung",
+        "desc": "Workflows und Tags, die Mails und Chats ordnen.",
+        "sections": {
+          "workflows": "Workflows",
+          "tags": "Tags"
+        }
+      },
+      "notifications": {
+        "title": "Benachrichtigungen",
+        "desc": "Push- und Desktop-Benachrichtigungen, Ruhezeiten und Datenschutz.",
+        "sections": {
+          "notifications": "Benachrichtigungen"
+        }
+      },
+      "ai": {
+        "title": "KI-Assistent",
+        "desc": "Anbieter, Berechtigungen und Maskierung persönlicher Daten.",
+        "sections": {
+          "assistant": "KI-Assistent"
+        }
+      },
+      "security": {
+        "title": "Sicherheit & Datenschutz",
+        "desc": "Zertifikate, Anmeldedienste, Passwörter und Datenschutz-Vorgaben.",
+        "sections": {
+          "smime": "S/MIME-Zertifikate",
+          "signin": "Anmeldedienste",
+          "vault": "Master-Passwort",
+          "applock": "App-Sperre",
+          "privacy": "Datenschutz"
+        }
+      },
+      "data": {
+        "title": "Daten",
+        "desc": "Import und Export, Sicherung und Wiederherstellung.",
+        "sections": {
+          "import": "Import & Export",
+          "backup": "Sicherung & Wiederherstellung"
+        }
+      },
+      "team": {
+        "title": "Team",
+        "desc": "Team-Postfächer, Mitglieder und Rollen.",
+        "sections": {
+          "mailboxes": "Team-Postfächer"
+        }
+      },
+      "about": {
+        "title": "Info & Diagnose",
+        "desc": "Version, Diagnose und Lizenzen.",
+        "sections": {
+          "about": "Über TuxMail",
+          "diagnostics": "Diagnose",
+          "licenses": "Lizenzen"
+        },
+        "version": "Version {version}",
+        "copyright": "Copyright © 2026 Midas Wollinger und TuxMail-Mitwirkende",
+        "source": "Quellcode und Lizenz",
+        "licensesIntro": "TuxMail steht unter der GNU AGPL v3.0 oder neuer und nutzt Open-Source-Komponenten unter deren eigenen Lizenzen.",
+        "showLicense": "Lizenz anzeigen (AGPL-3.0)",
+        "showNotices": "Hinweise zu Drittkomponenten anzeigen",
+        "loading": "Wird geladen …"
+      },
+      "groups": {
+        "reading": "Lesen",
+        "compose": "Verfassen",
+        "absence": "Abwesenheit",
+        "advanced": "Erweitert"
+      },
+      "app": {
+        "intro": "Serverprofil, App-Sperre und Push-Benachrichtigungen dieses Geräts.",
+        "open": "App-Einstellungen öffnen"
+      },
+      "vault": {
+        "intro": "Im portablen Modus werden die Kontopasswörter mit Ihrem Master-Passwort verschlüsselt neben dem Programm gespeichert.",
+        "stateLocked": "Gesperrt",
+        "stateUnlocked": "Entsperrt",
+        "stateNew": "Noch kein Master-Passwort festgelegt",
+        "unlock": "Jetzt entsperren",
+        "keyring": "Passwörter liegen im Schlüsselbund des Betriebssystems."
+      },
+      "applock": {
+        "intro": "Fingerabdruck, Gesicht oder Displaysperre beim Öffnen von TuxMail auf diesem Gerät.",
+        "open": "App-Sperre einrichten"
+      },
+      "privacy": {
+        "intro": "Vorgaben, die bestimmen, was Ihr Gerät verlässt.",
+        "remote": "Externe Bilder und die Absender, die sie laden dürfen",
+        "notifications": "Inhalte in Benachrichtigungen",
+        "ai": "Was der KI-Assistent sehen darf",
+        "open": "Öffnen"
+      }
     }
   },
   "search": {
@@ -2813,7 +3057,37 @@
       "back": "Zurück",
       "done": "Fertig",
       "cancel": "Abbrechen",
-      "qrLabel": "QR-Code zum Koppeln"
+      "qrLabel": "QR-Code zum Koppeln",
+      "reason": {
+        "component_missing": "Die Signal-Komponente (signal-cli) fehlt.",
+        "unavailable": "Der Dienst ist gerade nicht erreichbar: {message}",
+        "outdated": "Das Netzwerk lehnt diese Version ab: {message}"
+      }
+    },
+    "component": {
+      "title": "Signal-Komponente (signal-cli)",
+      "missing": "Signal-Komponente fehlt – jetzt installieren",
+      "missingText": "Signal braucht das Hilfsprogramm signal-cli. TuxMail lädt Version {version} von der offiziellen Release-Seite, prüft die Prüfsumme und installiert es in seinen Datenordner. Sonst muss nichts installiert werden.",
+      "install": "Signal-Komponente installieren",
+      "installing": "Signal-Komponente wird installiert …",
+      "stage": {
+        "download": "Lade {file} … {percent} %",
+        "verify": "Prüfe Prüfsumme …",
+        "unpack": "Entpacke …",
+        "done": "Schließe ab …"
+      },
+      "ready": "signal-cli {version} bereit",
+      "readyNoVersion": "signal-cli bereit",
+      "source": {
+        "bundled": "mit TuxMail ausgeliefert",
+        "setting": "aus dem eingestellten Pfad",
+        "path": "aus dem System-PATH",
+        "installed": "von TuxMail heruntergeladen"
+      },
+      "failed": "Installation der Signal-Komponente fehlgeschlagen: {error}",
+      "manual": "Dieser Build kann signal-cli für diese Plattform nicht herunterladen. Installiere signal-cli (Java 21+) und trage den Pfad in den Signal-Einstellungen ein.",
+      "retryNote": "Die Kopplung startet nach der Installation automatisch neu.",
+      "note": "Hinweis: {note}"
     }
   },
   "team": {

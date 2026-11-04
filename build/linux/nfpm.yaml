@@ -51,7 +51,8 @@ contents:
     dst: /usr/bin/tuxmail
     file_info: { mode: 0755 }
   # Messenger plugins (build/plugins.sh), found by the plugin host as
-  # <exe dir>/../lib/tuxmail/plugins.
+  # <exe dir>/../lib/tuxmail/plugins. signal-cli (plugins/signal-cli) is
+  # added by package-nfpm.sh when it was bundled.
   - dst: /usr/lib/tuxmail
     type: dir
     file_info: { mode: 0755 }

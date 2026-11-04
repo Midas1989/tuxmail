@@ -290,8 +290,7 @@ func (a *App) ImportProvisioning(ctx context.Context, in ProvisioningImport) err
 			continue
 		}
 		old := sig.ID
-		sig.ID = 0
-		id, err := a.st.CreateSignature(ctx, sig)
+		id, err := a.createImportedSignature(ctx, sig) // images arrive as data: URIs
 		if err != nil {
 			return err
 		}

@@ -73,6 +73,10 @@ type errorBody struct {
 
 // writeErr writes an application error.
 func writeErr(w http.ResponseWriter, err error) {
+	if mb := (*http.MaxBytesError)(nil); errors.As(err, &mb) {
+		writeJSON(w, http.StatusRequestEntityTooLarge, errorBody{Error: "too_large", Message: fmt.Sprintf("request body exceeds %d bytes", mb.Limit)})
+		return
+	}
 	e := app.AsError(err)
 	status := e.Status
 	if status == 0 {

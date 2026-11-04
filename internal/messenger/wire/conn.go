@@ -29,6 +29,9 @@ const (
 	CodeNotFound     = 5
 	CodeUnavailable  = 6 // network offline, try again
 	CodeOutdated     = 7 // the network rejected the client version: update the plugin
+	// CodeComponentMissing: an external program the plugin needs is missing
+	// (e.g. signal-cli); the host can offer to install it.
+	CodeComponentMissing = 8
 )
 
 // Error is an error returned by the remote side.

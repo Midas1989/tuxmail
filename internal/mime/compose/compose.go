@@ -14,6 +14,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/core/threading"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/mime/parse"
+	"github.com/Midas1989/Mailclient/internal/mime/signature"
 )
 
 // Errors returned by Compose.
@@ -264,6 +265,28 @@ func buildEntity(ctx context.Context, d *Draft, b bodies, opts Options) ([]byte,
 			name = "message"
 		}
 		attached = append(attached, attachmentPart(Attachment{Filename: name + ".eml", ContentType: "message/rfc822"}, d.Original.Raw))
+	}
+	// Stored signature images referenced by the HTML (cid:).
+	if len(b.sigImages) > 0 {
+		used := map[string]bool{}
+		for _, c := range signature.CIDs(b.html) {
+			used[c] = true
+		}
+		for _, im := range b.sigImages {
+			if !used[im.ContentID] {
+				continue
+			}
+			a := Attachment{Filename: im.Filename, ContentType: im.MIMEType, ContentID: im.ContentID, Inline: true, BlobRef: im.BlobHash}
+			data, err := attachmentData(ctx, a, opts.Blobs)
+			if err != nil {
+				// A missing image must not stop the mail.
+				continue
+			}
+			inline = append(inline, attachmentPart(a, data))
+		}
+	}
+	for _, a := range b.dataImages {
+		inline = append(inline, attachmentPart(a, a.Data))
 	}
 	for _, a := range d.Attachments {
 		data, err := attachmentData(ctx, a, opts.Blobs)

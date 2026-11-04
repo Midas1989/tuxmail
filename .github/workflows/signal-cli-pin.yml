@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Computes new pins for signal-cli and the Temurin JRE
+# (internal/messenger/signalcli/pins.env, see build/signal-cli.sh pin).
+# Every checksum is cross-checked against GitHub's asset digest (signal-cli)
+# or Adoptium's .sha256.txt (Temurin). The result is shown in the job summary
+# and uploaded as artifact; review it and commit pins.env (no write access).
+
+name: Pin signal-cli
+
+on:
+  workflow_dispatch:
+    inputs:
+      signal_cli:
+        description: signal-cli version (e.g. 0.13.18) or "latest"
+        default: latest
+        required: true
+      temurin:
+        description: Temurin JRE version (e.g. 21.0.8+9); empty keeps the pinned one
+        default: ''
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  pin:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Pin
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          SIGNAL_CLI: ${{ inputs.signal_cli }}
+          TEMURIN: ${{ inputs.temurin }}
+        run: build/signal-cli.sh pin "$SIGNAL_CLI" "$TEMURIN"
+      - name: Bundle and smoke test (linux/amd64 native, linux/arm64 JVM layout)
+        run: |
+          go run ./build/signalcli bundle -pins internal/messenger/signalcli/pins.env -os linux -arch amd64 -out "$RUNNER_TEMP/sc-amd64"
+          go run ./build/signalcli smoke -dir "$RUNNER_TEMP/sc-amd64" -link || go run ./build/signalcli smoke -dir "$RUNNER_TEMP/sc-amd64"
+          go run ./build/signalcli bundle -pins internal/messenger/signalcli/pins.env -os windows -arch amd64 -out "$RUNNER_TEMP/sc-win"
+          du -sh "$RUNNER_TEMP"/sc-*
+      - name: Summary
+        run: |
+          {
+            echo '### internal/messenger/signalcli/pins.env'
+            echo '```diff'
+            git diff -- internal/messenger/signalcli/pins.env
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: signal-cli-pins
+          path: internal/messenger/signalcli/pins.env

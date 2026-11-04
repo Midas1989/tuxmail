@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"sort"
 	"strings"
 	"time"
@@ -46,52 +45,6 @@ func (a *App) ListIdentities(ctx context.Context) ([]Identity, error) {
 		}
 	}
 	return out, nil
-}
-
-// ListSignatures returns all signatures.
-func (a *App) ListSignatures(ctx context.Context) ([]Signature, error) {
-	sigs, err := a.st.ListSignatures(ctx)
-	if sigs == nil {
-		sigs = []Signature{}
-	}
-	return sigs, err
-}
-
-// SaveSignature creates (ID 0) or updates a signature. A missing HTML
-// version is generated from the plain text.
-func (a *App) SaveSignature(ctx context.Context, sig Signature) (Signature, error) {
-	sig.Name = strings.TrimSpace(sig.Name)
-	if sig.Name == "" {
-		return Signature{}, invalid("signature name required")
-	}
-	switch sig.Placement {
-	case "", "below_reply", "above_quote":
-	default:
-		return Signature{}, invalid("invalid placement %q", sig.Placement)
-	}
-	if strings.TrimSpace(sig.HTML) == "" && sig.Plain != "" {
-		sig.HTML = strings.ReplaceAll(html.EscapeString(strings.TrimRight(sig.Plain, "\n")), "\n", "<br>")
-	}
-	if sig.ID == 0 {
-		id, err := a.st.CreateSignature(ctx, sig)
-		if err != nil {
-			return Signature{}, err
-		}
-		sig.ID = id
-	} else if err := a.st.UpdateSignature(ctx, sig); err != nil {
-		return Signature{}, err
-	}
-	a.hub.Publish(Event{Type: EventAccountUpdated})
-	return a.st.GetSignature(ctx, sig.ID)
-}
-
-// DeleteSignature deletes a signature; identities using it fall back to none.
-func (a *App) DeleteSignature(ctx context.Context, id int64) error {
-	if err := a.st.DeleteSignature(ctx, id); err != nil {
-		return err
-	}
-	a.hub.Publish(Event{Type: EventAccountUpdated})
-	return nil
 }
 
 var frontendHandleKinds = map[string]bool{"email": true, "phone": true, "whatsapp": true, "signal": true, "telegram": true}

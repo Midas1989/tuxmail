@@ -75,7 +75,7 @@ describe('bootNative', () => {
     expect(mounted.some((n) => /ServerConnect/.test(n))).toBe(true);
     expect(document.documentElement.classList.contains('tm-native')).toBe(true);
     expect(TuxMail.authenticate).not.toHaveBeenCalled();
-  });
+  }, 20_000); // first import compiles the Svelte connect screen (slow on busy CI runners)
 
   it('mounts the app with the token from secure storage', async () => {
     const { ProfileStore } = await import('./profiles');

@@ -42,6 +42,9 @@ type MessengerPlugin struct {
 	Settings       map[string]string     `json:"settings"`
 	Accounts       int                   `json:"accounts"`
 	Status         MessengerPluginStatus `json:"status"`
+	// Component is the external program the plugin needs (signal-cli),
+	// nil for plugins without one.
+	Component *messenger.ComponentStatus `json:"component,omitempty"`
 }
 
 // MessengerPluginPatch changes a plugin.
@@ -67,15 +70,17 @@ type MessengerPairingInput struct {
 
 // MessengerPairing is the live state of a pairing.
 type MessengerPairing struct {
-	ID        string `json:"id"`
-	Plugin    string `json:"plugin"`
-	Method    string `json:"method"`
-	Network   string `json:"network,omitempty"`
-	State     string `json:"state"` // waiting | qr | code | input | success | error | cancelled
-	QR        string `json:"qr,omitempty"`
-	Code      string `json:"code,omitempty"`
-	Field     string `json:"field,omitempty"`
-	Message   string `json:"message,omitempty"`
+	ID      string `json:"id"`
+	Plugin  string `json:"plugin"`
+	Method  string `json:"method"`
+	Network string `json:"network,omitempty"`
+	State   string `json:"state"` // waiting | qr | code | input | success | error | cancelled
+	QR      string `json:"qr,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Field   string `json:"field,omitempty"`
+	Message string `json:"message,omitempty"`
+	// Reason classifies an error: component_missing | unavailable | outdated.
+	Reason    string `json:"reason,omitempty"`
 	ExpiresAt string `json:"expiresAt,omitempty"`
 	AccountID int64  `json:"accountId,omitempty"`
 }
@@ -92,7 +97,7 @@ type MessengerAccount struct {
 
 func pairingDTO(p messenger.Pairing) MessengerPairing {
 	return MessengerPairing{ID: p.ID, Plugin: p.Plugin, Method: p.Method, Network: p.Network, State: p.State, QR: p.QR, Code: p.Code,
-		Field: p.Field, Message: p.Message, ExpiresAt: rfc3339(p.ExpiresAt), AccountID: p.AccountID}
+		Field: p.Field, Message: p.Message, Reason: p.Reason, ExpiresAt: rfc3339(p.ExpiresAt), AccountID: p.AccountID}
 }
 
 func pluginDTO(p messenger.PluginInfo) MessengerPlugin {
@@ -142,7 +147,9 @@ func (a *App) ListMessengerPlugins(ctx context.Context) ([]MessengerPlugin, erro
 	}
 	out := make([]MessengerPlugin, 0, len(ps))
 	for _, p := range ps {
-		out = append(out, pluginDTO(p))
+		d := pluginDTO(p)
+		d.Component = a.msgr.Component(p.Spec.Name)
+		out = append(out, d)
 	}
 	return out, nil
 }
@@ -187,6 +194,17 @@ func (a *App) RestartMessengerPlugin(ctx context.Context, name string) error {
 		return err
 	}
 	return msgrErr(m.RestartPlugin(ctx, name))
+}
+
+// InstallMessengerComponent downloads and installs the external program a
+// plugin needs (signal-cli, pinned and checksum-verified) in the
+// background; progress arrives as messenger.plugin events.
+func (a *App) InstallMessengerComponent(ctx context.Context, name string) error {
+	m, err := a.messengerOrError()
+	if err != nil {
+		return err
+	}
+	return msgrErr(m.InstallComponent(ctx, name))
 }
 
 // StartMessengerPairing starts linking a messenger account.
@@ -340,6 +358,9 @@ func (x *Api) UpdateMessengerPlugin(name string, patch MessengerPluginPatch) (Me
 }
 func (x *Api) RestartMessengerPlugin(name string) error {
 	return werr(x.app.RestartMessengerPlugin(x.ctx, name))
+}
+func (x *Api) InstallMessengerComponent(name string) error {
+	return werr(x.app.InstallMessengerComponent(x.ctx, name))
 }
 func (x *Api) StartMessengerPairing(in MessengerPairingInput) (MessengerPairing, error) {
 	return r1(x.app.StartMessengerPairing(x.ctx, in))

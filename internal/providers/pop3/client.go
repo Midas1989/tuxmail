@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // ErrServer is wrapped by every negative (-ERR) server response.
@@ -49,7 +50,7 @@ func dial(ctx context.Context, dc dialConfig) (*conn, error) {
 	addr := net.JoinHostPort(dc.server.Host, strconv.Itoa(dc.server.Port))
 	d := dc.dial
 	if d == nil {
-		nd := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}
+		nd := netguard.Dialer(&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second})
 		d = nd.DialContext
 	}
 	nc, err := d(ctx, "tcp", addr)
