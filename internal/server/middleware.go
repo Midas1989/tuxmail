@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -186,6 +187,23 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		}
 		if isAPI(r.URL.Path) || r.URL.Path == "/healthz" {
 			h.Set("Cache-Control", "no-store")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// limitBody enforces limits.max_upload_mb for every request body, also
+// without a reverse proxy in front (nginx applies client_max_body_size);
+// individual endpoints may limit further (A-09).
+func (s *Server) limitBody(next http.Handler) http.Handler {
+	limit := int64(s.cfg.Limits.MaxUploadMB) << 20
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.ContentLength > limit {
+			writeError(w, http.StatusRequestEntityTooLarge, "too_large", fmt.Sprintf("request body exceeds %d MB", s.cfg.Limits.MaxUploadMB))
+			return
+		}
+		if r.Body != nil && r.Body != http.NoBody {
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 		}
 		next.ServeHTTP(w, r)
 	})

@@ -22,6 +22,7 @@ import (
 	gosmtp "github.com/emersion/go-smtp"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // TokenSource returns a currently valid OAuth2 access token.
@@ -288,7 +289,7 @@ func (t *Transport) dial(ctx context.Context) (net.Conn, error) {
 	addr := net.JoinHostPort(t.cfg.Server.Host, strconv.Itoa(t.cfg.Server.Port))
 	dial := t.cfg.DialContext
 	if dial == nil {
-		d := &net.Dialer{Timeout: 30 * time.Second}
+		d := netguard.Dialer(&net.Dialer{Timeout: 30 * time.Second})
 		dial = d.DialContext
 	}
 	return dial(ctx, "tcp", addr)

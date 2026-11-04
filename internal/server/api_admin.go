@@ -131,10 +131,18 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request, a
 		return
 	}
 	keep := r.URL.Query().Get("keepData") == "true"
+	if _, err := s.auth.GetUser(r.Context(), id); err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	// Stop the user's App (sync, timers, open store) before the account and
+	// its data go away; a cached App must never outlive its user (A-01).
+	s.apps.drop(id)
 	if err := s.auth.DeleteUser(r.Context(), id, !keep); err != nil {
 		s.writeAuthError(w, err)
 		return
 	}
+	s.apps.drop(id) // a request may have reopened it meanwhile
 	w.WriteHeader(http.StatusNoContent)
 }
 

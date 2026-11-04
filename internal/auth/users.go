@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net/mail"
 	"os"
 	"regexp"
@@ -46,6 +47,32 @@ type NewUser struct {
 	Password    string // empty = no local password (OIDC-only or set later)
 
 	oidcIssuer, oidcSubject string
+	// emailUnverified marks an address chosen by the user (invite without
+	// fixed address, unverified OIDC claim): it is not used to link OIDC
+	// logins to this account.
+	emailUnverified bool
+}
+
+// nextUserID allocates a user id that was never used before: SQLite would
+// reuse the largest id after a delete, and a new user must never inherit
+// the data directory or the cached App of a deleted user. Ids whose data
+// directory still exists (deleted with keepData) are skipped as well.
+func (s *Service) nextUserID(ctx context.Context, tx *sql.Tx) (int64, error) {
+	var hw, maxID int64
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE((SELECT value FROM id_highwater WHERE name = 'users'), 0),
+		COALESCE((SELECT MAX(id) FROM users), 0)`).Scan(&hw, &maxID); err != nil {
+		return 0, err
+	}
+	id := max(hw, maxID) + 1
+	for {
+		if _, err := os.Lstat(s.UserDir(id)); errors.Is(err, fs.ErrNotExist) {
+			break
+		}
+		id++
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO id_highwater(name, value) VALUES ('users', ?)
+		ON CONFLICT(name) DO UPDATE SET value = excluded.value`, id)
+	return id, err
 }
 
 var usernameRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$`)
@@ -148,17 +175,17 @@ func (s *Service) CreateUser(ctx context.Context, nu NewUser) (*User, error) {
 		if nu.oidcSubject != "" {
 			iss, sub = nu.oidcIssuer, nu.oidcSubject
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO users(username, email, display_name, role, password_hash,
-			dek_wrapped, oidc_issuer, oidc_subject, created_at, updated_at, password_changed_at)
-			VALUES (?,?,?,?,?,X'',?,?,?,?,?)`,
-			nu.Username, email, strings.TrimSpace(nu.DisplayName), nu.Role, hash, iss, sub, now, now, now)
+		if id, err = s.nextUserID(ctx, tx); err != nil {
+			return err
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO users(id, username, email, display_name, role, password_hash,
+			dek_wrapped, oidc_issuer, oidc_subject, created_at, updated_at, password_changed_at, email_verified)
+			VALUES (?,?,?,?,?,?,X'',?,?,?,?,?,?)`,
+			id, nu.Username, email, strings.TrimSpace(nu.DisplayName), nu.Role, hash, iss, sub, now, now, now, !nu.emailUnverified)
 		if err != nil {
 			if isUniqueErr(err) {
 				return fmt.Errorf("%w: username or email already in use", ErrExists)
 			}
-			return err
-		}
-		if id, err = res.LastInsertId(); err != nil {
 			return err
 		}
 		// The wrapped key is bound to the user id, which is known only now.
@@ -241,8 +268,12 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, up UserUpdate) (*Use
 	if up.DisplayName != nil {
 		name = strings.TrimSpace(*up.DisplayName)
 	}
-	_, err = s.db.ExecContext(ctx, `UPDATE users SET email = ?, display_name = ?, updated_at = ? WHERE id = ?`,
-		email, name, s.now().Unix(), id)
+	// Addresses set through UpdateUser come from an administrator or a
+	// verified OIDC claim.
+	keepFlag := up.Email == nil
+	_, err = s.db.ExecContext(ctx, `UPDATE users SET email = ?, display_name = ?, updated_at = ?,
+		email_verified = CASE WHEN ? THEN email_verified ELSE 1 END WHERE id = ?`,
+		email, name, s.now().Unix(), keepFlag, id)
 	if isUniqueErr(err) {
 		return nil, fmt.Errorf("%w: email already in use", ErrExists)
 	}

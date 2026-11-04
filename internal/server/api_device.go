@@ -143,6 +143,9 @@ func (s *Server) handleDeviceLogin(w http.ResponseWriter, r *http.Request) {
 
 // handleDeviceRequest shows the approval page what is being approved.
 func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	if !s.limitLogin(w, r, "device-request") { // no user code enumeration (A-10)
+		return
+	}
 	req, err := s.auth.LookupDeviceRequest(r.Context(), r.URL.Query().Get("user_code"))
 	if err != nil {
 		s.writeAuthError(w, err)

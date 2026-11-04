@@ -59,7 +59,7 @@ func (d authDirectory) User(ctx context.Context, id int64) (team.DirUser, error)
 	if err != nil {
 		return team.DirUser{}, team.ErrNotFound
 	}
-	return team.DirUser{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Admin: u.IsAdmin(), Disabled: u.Disabled}, nil
+	return team.DirUser{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Admin: u.IsAdmin(), Disabled: u.Disabled, ReadOnly: u.Role == auth.RoleReadonly}, nil
 }
 
 func (d authDirectory) Users(ctx context.Context) ([]team.DirUser, error) {
@@ -69,7 +69,7 @@ func (d authDirectory) Users(ctx context.Context) ([]team.DirUser, error) {
 	}
 	out := make([]team.DirUser, 0, len(us))
 	for _, u := range us {
-		out = append(out, team.DirUser{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Admin: u.IsAdmin(), Disabled: u.Disabled})
+		out = append(out, team.DirUser{ID: u.ID, Username: u.Username, DisplayName: u.DisplayName, Admin: u.IsAdmin(), Disabled: u.Disabled, ReadOnly: u.Role == auth.RoleReadonly})
 	}
 	return out, nil
 }

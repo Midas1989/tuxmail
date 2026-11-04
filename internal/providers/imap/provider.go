@@ -27,6 +27,7 @@ import (
 	"github.com/emersion/go-imap/v2/imapclient"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // TokenSource returns a currently valid OAuth2 access token.
@@ -205,7 +206,7 @@ func (p *Provider) tlsConfig() *tls.Config {
 func (p *Provider) dialRaw(ctx context.Context) (net.Conn, error) {
 	dial := p.cfg.DialContext
 	if dial == nil {
-		dial = (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
+		dial = netguard.Dialer(&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	}
 	conn, err := dial(ctx, "tcp", p.addr())
 	if err != nil {
