@@ -53,7 +53,7 @@ func (a *App) initMessenger() error {
 	}
 	mo := messenger.Options{Store: a.st, Blobs: a.blobs, Bus: a.bus, DataDir: a.opts.DataDir, Dirs: o.Dirs, Static: o.Static,
 		Launcher: o.Launcher, HostVersion: a.opts.Version, Env: messenger.EnvConfig, Notifier: appNotifier{a: a}, Logger: a.log,
-		Now: a.opts.Now}
+		Now: a.opts.Now, RestrictHostSettings: a.opts.Mode == ModeServer}
 	if o.Configure != nil {
 		o.Configure(&mo)
 	}
@@ -91,6 +91,8 @@ func msgrErr(err error) error {
 		return &Error{Code: CodeRiskNotAccepted, Status: http.StatusConflict, Message: err.Error(), Err: err}
 	case errors.Is(err, messenger.ErrUnknownPair), errors.Is(err, messenger.ErrNotMessenger):
 		return &Error{Code: CodeNotFound, Status: http.StatusNotFound, Message: err.Error(), Err: err}
+	case errors.Is(err, messenger.ErrHostSetting):
+		return &Error{Code: "forbidden", Status: http.StatusForbidden, Message: err.Error(), Err: err}
 	case errors.Is(err, messenger.ErrNoChat):
 		return &Error{Code: CodeInvalidInput, Status: http.StatusBadRequest, Message: err.Error(), Err: err}
 	case errors.Is(err, host.ErrUnavailable):

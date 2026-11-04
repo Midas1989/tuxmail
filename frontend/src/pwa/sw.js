@@ -108,7 +108,9 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = new URL((event.notification.data && event.notification.data.url) || './', self.registration.scope).href;
+  let target = new URL((event.notification.data && event.notification.data.url) || './', self.registration.scope).href;
+  // Only pages of this app: a push payload must not open foreign sites (AUDIT-D D-11).
+  if (!target.startsWith(self.registration.scope)) target = self.registration.scope;
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (list) => {
       const scope = self.registration.scope;

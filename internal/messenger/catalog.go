@@ -31,6 +31,21 @@ type Spec struct {
 	Pairing []string
 	// Settings are the setting keys the plugin understands.
 	Settings []string
+	// HostSettings are settings that name programs or paths on the host
+	// (signal_cli_path). Where users do not own the machine (server mode,
+	// Options.RestrictHostSettings) only the administrator may set them,
+	// through the environment (TUXMAIL_<PLUGIN>_<KEY>).
+	HostSettings []string
+}
+
+// IsHostSetting reports whether key is one of s.HostSettings.
+func (s Spec) IsHostSetting(key string) bool {
+	for _, k := range s.HostSettings {
+		if k == key {
+			return true
+		}
+	}
+	return false
 }
 
 // Catalog lists the plugins shipped with TuxMail.
@@ -38,7 +53,7 @@ var Catalog = []Spec{
 	{Name: "whatsapp", Channel: "whatsapp", DisplayName: "WhatsApp", Kind: domain.KindWhatsApp, Risk: wire.RiskMedium,
 		Pairing: []string{wire.PairQR, wire.PairPhone}},
 	{Name: "signal", Channel: "signal", DisplayName: "Signal", Kind: domain.KindSignal, Risk: wire.RiskLow,
-		Pairing: []string{wire.PairQR}, Settings: []string{"signal_cli_path"}},
+		Pairing: []string{wire.PairQR}, Settings: []string{"signal_cli_path"}, HostSettings: []string{"signal_cli_path"}},
 	{Name: "telegram", Channel: "telegram", DisplayName: "Telegram", Kind: KindTelegram, Risk: wire.RiskLow, Official: true,
 		Pairing: []string{wire.PairQR, wire.PairPhone}, Settings: []string{"api_id", "api_hash"}},
 	{Name: "matrix", Channel: "matrix", DisplayName: "Matrix", Kind: KindMatrix, Risk: wire.RiskLow, Official: true,

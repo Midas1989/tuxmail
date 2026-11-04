@@ -97,7 +97,15 @@ type Options struct {
 	HistoryMessages int
 	// HostOptions may adjust the plugin host (timeouts, backoff).
 	HostOptions func(*host.Options)
+	// RestrictHostSettings: users may not set Spec.HostSettings (e.g. the
+	// signal-cli executable); stored values are ignored. Set in server
+	// mode, where the user does not own the machine the plugins run on.
+	RestrictHostSettings bool
 }
+
+// ErrHostSetting is returned when a user tries to change a setting that
+// names a program on the server (RestrictHostSettings).
+var ErrHostSetting = errors.New("messenger: this setting can only be changed by the administrator (environment variable)")
 
 // Service is the messenger integration of one user.
 type Service struct {
@@ -219,8 +227,12 @@ func (s *Service) pluginConfig(name string) map[string]string {
 	if s.opts.Env != nil {
 		maps.Copy(cfg, s.opts.Env(name))
 	}
+	spec := SpecFor(name)
 	if p, err := s.st.GetMessengerPlugin(context.Background(), name); err == nil {
 		for k, v := range p.Settings {
+			if s.opts.RestrictHostSettings && spec.IsHostSetting(k) {
+				continue // e.g. a signal_cli_path stored before the restriction
+			}
 			if v != "" {
 				cfg[k] = v
 			}
@@ -282,8 +294,25 @@ func (s *Service) Plugins(ctx context.Context) ([]PluginInfo, error) {
 			return nil, err
 		}
 		st := s.host.Status(n)
-		out = append(out, PluginInfo{Spec: SpecFor(n), Installed: st.State != host.StateMissing, Enabled: p.Enabled,
-			RiskAcceptedAt: p.RiskAcceptedAt, Settings: p.Settings, Status: st, Accounts: count[n]})
+		spec, settings := SpecFor(n), p.Settings
+		if s.opts.RestrictHostSettings && len(spec.HostSettings) > 0 {
+			// Not offered to (and not shown to) users who do not own the host.
+			var keys []string
+			for _, k := range spec.Settings {
+				if !spec.IsHostSetting(k) {
+					keys = append(keys, k)
+				}
+			}
+			spec.Settings = keys
+			settings = map[string]string{}
+			for k, v := range p.Settings {
+				if !spec.IsHostSetting(k) {
+					settings[k] = v
+				}
+			}
+		}
+		out = append(out, PluginInfo{Spec: spec, Installed: st.State != host.StateMissing, Enabled: p.Enabled,
+			RiskAcceptedAt: p.RiskAcceptedAt, Settings: settings, Status: st, Accounts: count[n]})
 	}
 	return out, nil
 }
@@ -307,6 +336,18 @@ func (s *Service) UpdatePlugin(ctx context.Context, name string, patch PluginPat
 		return err
 	}
 	spec := SpecFor(name)
+	if s.opts.RestrictHostSettings {
+		for k := range patch.Settings {
+			if spec.IsHostSetting(k) {
+				return ErrHostSetting
+			}
+		}
+		for _, k := range patch.ResetSetting {
+			if spec.IsHostSetting(k) {
+				return ErrHostSetting
+			}
+		}
+	}
 	if patch.AcceptRisk && p.RiskAcceptedAt.IsZero() {
 		p.RiskAcceptedAt = s.now()
 	}

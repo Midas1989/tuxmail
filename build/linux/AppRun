@@ -16,7 +16,10 @@
 set -e
 
 this_dir=$(readlink -f "$(dirname "$0")")
-export APPDIR=${APPDIR:-$this_dir}
+# Always our own mount: an APPDIR inherited from another AppImage (or set by
+# a caller) would make the window start WebKit helper processes from that
+# foreign directory (relative helper path, see below; AUDIT-D D-12).
+export APPDIR=$this_dir
 owd=${OWD:-$PWD}
 
 for hook in "$this_dir"/apprun-hooks/*.sh; do

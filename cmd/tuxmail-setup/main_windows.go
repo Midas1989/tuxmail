@@ -22,6 +22,9 @@ import (
 
 	"golang.org/x/sys/windows"
 
+	// Restrict the DLL search path before any GUI DLL is loaded: the setup
+	// usually runs from the Downloads folder (AUDIT-D D-02).
+	_ "github.com/Midas1989/Mailclient/internal/dllsafe"
 	"github.com/Midas1989/Mailclient/internal/winsetup"
 )
 
@@ -115,6 +118,14 @@ func newApp(cfg winsetup.Config, lang string) *app {
 	a.logPath = cfg.LogFile
 	if a.logPath == "" {
 		a.logPath = filepath.Join(os.TempDir(), "TuxMail-Setup.log")
+		if a.elevated {
+			// Not the predictable, user-writable %TEMP%\TuxMail-Setup.log:
+			// an elevated append to a file the user prepared (link) would
+			// write anywhere (AUDIT-D D-03).
+			if dir, err := winsetup.PrivateTempDir("TuxMail-Setup-log-"); err == nil {
+				a.logPath = filepath.Join(dir, "TuxMail-Setup.log")
+			}
+		}
 	}
 	var w io.Writer = io.Discard
 	if f, err := os.OpenFile(a.logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
@@ -147,6 +158,7 @@ func newApp(cfg winsetup.Config, lang string) *app {
 		Reg: a.reg, Links: winsetup.ShellLinker{}, Folders: winsetup.ShellFolders,
 		Payload: a.payload, Version: version, SetupPath: a.self,
 		Description: description(lang), Logf: a.log.Printf,
+		Protect: winsetup.ProtectInstallDir, Env: a.env,
 	}
 	return a
 }
@@ -191,9 +203,34 @@ func (a *app) uninstallTarget() (winsetup.Scope, string, string) {
 // relaunchFromTemp: the uninstaller cannot delete the folder it runs from,
 // so a copy in %TEMP% does the work.
 func (a *app) relaunchFromTemp() (int, bool) {
-	_, dir, _ := a.uninstallTarget()
+	scope, dir, _ := a.uninstallTarget()
 	if dir == "" || !winsetup.WinWithin(dir, a.self) {
 		return 0, false
+	}
+	if winsetup.ElevateBeforeTempCopy(scope, a.elevated) {
+		// Elevate the copy in the (administrator-only) installation folder;
+		// the elevated instance copies itself into a private temp folder.
+		// Copying first would elevate a file in the user's %TEMP% that
+		// another process could replace before the UAC prompt (AUDIT-D D-04).
+		args := append(append([]string{}, os.Args[1:]...), "--elevated", "--lang="+a.lang)
+		h, err := winsetup.RunElevated(a.self, args)
+		if errors.Is(err, winsetup.ErrCancelled) {
+			a.log.Printf("elevation cancelled")
+			return exitCancelled, true
+		}
+		if err != nil {
+			a.log.Printf("elevation: %v", err)
+			return exitElevation, true
+		}
+		if !a.cfg.Silent {
+			_ = windows.CloseHandle(h)
+			return exitOK, true
+		}
+		code, err := winsetup.WaitProcess(h, nil)
+		if err != nil {
+			return exitError, true
+		}
+		return int(code), true
 	}
 	tmp, err := winsetup.CopyToTemp(a.self)
 	if err != nil {
@@ -409,12 +446,14 @@ func (a *app) uninstall(ctx context.Context, req winsetup.UninstallRequest, repo
 	for _, f := range failed {
 		files = append(files, filepath.Join(req.Dir, filepath.FromSlash(f)))
 	}
+	dirs := []string{filepath.Join(req.Dir, winsetup.PluginsSubdir), req.Dir}
 	if a.cfg.TempCopy && strings.HasPrefix(strings.ToLower(a.self), strings.ToLower(os.TempDir())) {
 		files = append(files, a.self)
+		dirs = append(dirs, filepath.Dir(a.self)) // the private TuxMail-Uninstall-* folder
 	}
 	if len(files) > 0 {
 		a.log.Printf("scheduling deletion of %v", files)
-		return winsetup.ScheduleDelete(files, []string{filepath.Join(req.Dir, winsetup.PluginsSubdir), req.Dir})
+		return winsetup.ScheduleDelete(files, dirs)
 	}
 	return nil
 }

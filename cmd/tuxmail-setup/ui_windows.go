@@ -117,7 +117,7 @@ func (a *app) runUI() int {
 		return exitError
 	}
 	if a.cfg.TempCopy {
-		_ = winsetup.ScheduleDelete([]string{a.self}, nil)
+		_ = winsetup.ScheduleDelete([]string{a.self}, []string{filepath.Dir(a.self)})
 	}
 	return exitOK
 }
