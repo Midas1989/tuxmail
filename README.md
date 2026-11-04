@@ -21,6 +21,7 @@ Messenger als separate Plugin-Prozesse (gRPC) · portabel lauffähig (Windows-ZI
 Fertige Pakete stehen unter [Releases](https://github.com/Midas1989/Mailclient/releases):
 Windows (Installer, portables ZIP), Linux (AppImage, `.deb`, `.rpm`, portables Archiv),
 Server-Archive für Linux/Windows, Android-APK und das Docker-Image `ghcr.io/midas1989/tuxmail`.
+**Installationsanleitung für alle Pakete: [docs/INSTALLATION.md](docs/INSTALLATION.md)** ·
 Server-Installation: [deploy/README.md](deploy/README.md) (Ansible, Docker) ·
 Release erstellen: [docs/RELEASE.md](docs/RELEASE.md).
 

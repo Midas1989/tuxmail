@@ -565,6 +565,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+      - name: Release notes (download table + installation guide)
+        if: needs.version.outputs.release == 'true'
+        run: sed "s/<v>/$TUXMAIL_VERSION/g" build/release-notes.md > "$RUNNER_TEMP/release-notes.md"
+
       - name: GitHub release
         if: needs.version.outputs.release == 'true'
         uses: softprops/action-gh-release@v3.0.3
@@ -572,6 +576,7 @@ jobs:
           name: TuxMail ${{ needs.version.outputs.version }}
           files: dist/*
           fail_on_unmatched_files: true
+          body_path: ${{ runner.temp }}/release-notes.md
           generate_release_notes: true
           # 0.x releases are alpha/beta builds: marked as pre-release.
           prerelease: ${{ startsWith(needs.version.outputs.version, '0.') }}

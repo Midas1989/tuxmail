@@ -249,8 +249,10 @@ jobs:
           path: dist-android/*
           if-no-files-found: error
 
+      # Same tag as release.yml: the APKs land in the one release of this version.
       - uses: softprops/action-gh-release@v3.0.3
         with:
+          name: TuxMail ${{ steps.version.outputs.version }}
           files: dist-android/*
           fail_on_unmatched_files: true
           prerelease: ${{ startsWith(steps.version.outputs.version, '0.') }}
