@@ -24,6 +24,7 @@ auth:
   totp_required_for_admins: false
   oidc: { enabled: false, issuer: "", client_id: "", client_secret_file: "", admin_group: "", user_group: "", groups_claim: groups }
 limits: { max_upload_mb: 200, login_rate_per_minute: 10 }
+security: { allow_private_networks: false, allowed_networks: ["127.0.0.1:8008"] }
 `
 
 func TestParseContract(t *testing.T) {
@@ -111,6 +112,7 @@ func TestValidation(t *testing.T) {
 		"limits":        "limits: {max_upload_mb: 0}\n",
 		"bg max users":  "limits: {background_sync_max_users: 0}\n",
 		"bg sync type":  "limits: {background_sync: maybe}\n",
+		"bad network":   "security: {allowed_networks: [intranet.example]}\n",
 	}
 	for name, y := range cases {
 		if _, err := Parse([]byte(y)); err == nil {
@@ -137,5 +139,20 @@ func TestLoadFileAndSecret(t *testing.T) {
 	}
 	if _, err := Load(filepath.Join(dir, "missing.yaml")); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestSecurityPolicy(t *testing.T) {
+	c, err := Parse([]byte("security: {allow_private_networks: true, allowed_networks: [\"127.0.0.1:8008\", \"10.0.0.0/8\"]}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := c.NetPolicy()
+	if err != nil || !p.AllowPrivate || len(p.Allowed) != 2 {
+		t.Fatal(p, err)
+	}
+	d := Default()
+	if p, _ := d.NetPolicy(); p.AllowPrivate || len(p.Allowed) != 0 {
+		t.Fatal("default policy must block private networks", p)
 	}
 }

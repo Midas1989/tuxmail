@@ -135,6 +135,15 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 	if err != nil {
 		return nil, err
 	}
+	// Logins by e-mail address share the counter of the username, otherwise
+	// every alias would add another set of free attempts (A-07).
+	if canon := throttleKey(u.Username); canon != key {
+		key = canon
+		if err := s.checkThrottle(ctx, key); err != nil {
+			s.Audit(ctx, "login", u.Username, false, "throttled")
+			return nil, err
+		}
+	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: req.Client.IP})
 	if u.passwordHash == "" {
 		s.dummyVerify(req.Password)
@@ -199,9 +208,12 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 	var userID int64
 	var attempts int
 	var exp int64
-	err := s.db.QueryRowContext(ctx, `SELECT user_id, attempts, expires_at FROM mfa_challenges WHERE token_hash = ?`, h).
-		Scan(&userID, &attempts, &exp)
-	if errors.Is(err, sql.ErrNoRows) || (err == nil && (s.now().Unix() >= exp || attempts >= mfaChallengeMaxTry)) {
+	// Take an attempt atomically before checking the code: concurrent
+	// requests must not get more than mfaChallengeMaxTry guesses (A-08).
+	err := s.db.QueryRowContext(ctx, `UPDATE mfa_challenges SET attempts = attempts + 1
+		WHERE token_hash = ? AND attempts < ? AND expires_at > ? RETURNING user_id, attempts, expires_at`,
+		h, mfaChallengeMaxTry, s.now().Unix()).Scan(&userID, &attempts, &exp)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidCode
 	}
 	if err != nil {
@@ -216,7 +228,6 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 		return nil, ErrUserDisabled
 	}
 	if err := s.VerifySecondFactor(ctx, u.ID, totpCode, recoveryCode); err != nil {
-		s.db.ExecContext(ctx, `UPDATE mfa_challenges SET attempts = attempts + 1 WHERE token_hash = ?`, h)
 		s.recordFailure(ctx, throttleKey(u.Username))
 		s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 		return nil, err

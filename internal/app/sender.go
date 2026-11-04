@@ -14,6 +14,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/mime/compose"
+	"github.com/Midas1989/Mailclient/internal/mime/signature"
 	"github.com/Midas1989/Mailclient/internal/send"
 	"github.com/Midas1989/Mailclient/internal/store"
 	"github.com/Midas1989/Mailclient/internal/workflow"
@@ -96,7 +97,12 @@ func (s *MailSender) Send(ctx context.Context, r SendRequest) (SendResult, error
 			d.Quote.Mode = compose.QuoteNone // chat mode: the bubble shows the thread
 		}
 	}
-	if msg.ConversationID != 0 && msg.SignatureID == nil {
+	switch {
+	case msg.SignatureID != nil, signature.HasBlock(msg.HTML):
+		// The composer (or the chat view) already placed the signature
+		// in the body; compose re-sanitizes that block.
+		d.SignatureMode = compose.SignatureNone
+	case msg.ConversationID != 0:
 		d.SignatureMode = compose.SignatureNone // resolved by the UI in chat mode
 	}
 	for _, at := range r.Attachments {

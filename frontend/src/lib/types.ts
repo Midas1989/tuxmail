@@ -84,6 +84,18 @@ export interface Signature {
   html: string;
   plain: string;
   placement: 'below_reply' | 'above_quote';
+  /** Keep `plain` as written instead of generating it from `html`. */
+  plainOverride?: boolean;
+  /** Stored inline images (the UI receives them as data: URIs inside `html`). */
+  images?: SignatureImage[];
+}
+
+export interface SignatureImage {
+  contentId: string;
+  mimeType: string;
+  filename?: string;
+  blobHash: string;
+  size: number;
 }
 
 export type FolderRole = '' | 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'templates';

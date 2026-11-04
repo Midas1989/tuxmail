@@ -190,11 +190,13 @@ func (s *Store) SetIdentityFolders(ctx context.Context, identityID, sent, drafts
 
 // ==== Signatures ==============================================================
 
-const signatureCols = `id, name, html, plain, placement`
+const signatureCols = `id, name, html, plain, placement, plain_override`
 
 func scanSignature(sc scanner) (domain.Signature, error) {
 	var sig domain.Signature
-	err := sc.Scan(&sig.ID, &sig.Name, &sig.HTML, &sig.Plain, &sig.Placement)
+	var override int
+	err := sc.Scan(&sig.ID, &sig.Name, &sig.HTML, &sig.Plain, &sig.Placement, &override)
+	sig.PlainOverride = override != 0
 	return sig, err
 }
 
@@ -205,26 +207,93 @@ func placementOrDefault(p string) string {
 	return p
 }
 
-// CreateSignature inserts a signature and returns its id.
+// CreateSignature inserts a signature (with its images) and returns its id.
 func (s *Store) CreateSignature(ctx context.Context, sig domain.Signature) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO signatures(name, html, plain, placement) VALUES (?, ?, ?, ?)`,
-		sig.Name, sig.HTML, sig.Plain, placementOrDefault(sig.Placement))
+	var id int64
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `INSERT INTO signatures(name, html, plain, placement, plain_override) VALUES (?, ?, ?, ?, ?)`,
+			sig.Name, sig.HTML, sig.Plain, placementOrDefault(sig.Placement), boolInt(sig.PlainOverride))
+		if err != nil {
+			return err
+		}
+		if id, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		return putSignatureImages(ctx, tx, id, sig.Images)
+	})
 	if err != nil {
 		return 0, fmt.Errorf("store: create signature: %w", err)
 	}
-	return res.LastInsertId()
+	return id, nil
 }
 
-// UpdateSignature overwrites the signature sig.ID.
+// UpdateSignature overwrites the signature sig.ID including its image set.
 func (s *Store) UpdateSignature(ctx context.Context, sig domain.Signature) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE signatures SET name = ?, html = ?, plain = ?, placement = ? WHERE id = ?`,
-		sig.Name, sig.HTML, sig.Plain, placementOrDefault(sig.Placement), sig.ID))
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		if err := checkAffected(tx.ExecContext(ctx, `UPDATE signatures SET name = ?, html = ?, plain = ?, placement = ?, plain_override = ? WHERE id = ?`,
+			sig.Name, sig.HTML, sig.Plain, placementOrDefault(sig.Placement), boolInt(sig.PlainOverride), sig.ID)); err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM signature_images WHERE signature_id = ?`, sig.ID); err != nil {
+			return err
+		}
+		return putSignatureImages(ctx, tx, sig.ID, sig.Images)
+	})
+}
+
+func putSignatureImages(ctx context.Context, tx *sql.Tx, id int64, imgs []domain.SignatureImage) error {
+	for _, im := range imgs {
+		if _, err := tx.ExecContext(ctx, `INSERT INTO signature_images(signature_id, content_id, blob_hash, mime_type, filename, size)
+			VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(signature_id, content_id) DO NOTHING`,
+			id, im.ContentID, im.BlobHash, im.MIMEType, im.Filename, im.Size); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// signatureImages loads the images of the given signatures.
+func (s *Store) signatureImages(ctx context.Context, sigs []domain.Signature) error {
+	if len(sigs) == 0 {
+		return nil
+	}
+	idx := make(map[int64]int, len(sigs))
+	for i, sig := range sigs {
+		idx[sig.ID] = i
+	}
+	q := `SELECT signature_id, content_id, blob_hash, mime_type, filename, size FROM signature_images`
+	var args []any
+	if len(sigs) == 1 {
+		q += ` WHERE signature_id = ?`
+		args = append(args, sigs[0].ID)
+	}
+	rows, err := s.db.QueryContext(ctx, q+` ORDER BY signature_id, content_id`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sid int64
+		var im domain.SignatureImage
+		if err := rows.Scan(&sid, &im.ContentID, &im.BlobHash, &im.MIMEType, &im.Filename, &im.Size); err != nil {
+			return err
+		}
+		if i, ok := idx[sid]; ok {
+			sigs[i].Images = append(sigs[i].Images, im)
+		}
+	}
+	return rows.Err()
 }
 
 // GetSignature returns the signature with the given id.
 func (s *Store) GetSignature(ctx context.Context, id int64) (domain.Signature, error) {
 	sig, err := scanSignature(s.db.QueryRowContext(ctx, `SELECT `+signatureCols+` FROM signatures WHERE id = ?`, id))
-	return sig, notFound(err)
+	if err != nil {
+		return sig, notFound(err)
+	}
+	one := []domain.Signature{sig}
+	err = s.signatureImages(ctx, one)
+	return one[0], err
 }
 
 // ListSignatures returns all signatures ordered by name.
@@ -233,12 +302,51 @@ func (s *Store) ListSignatures(ctx context.Context) ([]domain.Signature, error) 
 	if err != nil {
 		return nil, err
 	}
-	return collect(rows, scanSignature)
+	sigs, err := collect(rows, scanSignature)
+	if err != nil {
+		return nil, err
+	}
+	return sigs, s.signatureImages(ctx, sigs)
+}
+
+// SignatureImageByCID returns a stored signature image with the given
+// Content-ID (of any signature).
+func (s *Store) SignatureImageByCID(ctx context.Context, cid string) (domain.SignatureImage, error) {
+	var im domain.SignatureImage
+	err := s.db.QueryRowContext(ctx, `SELECT content_id, blob_hash, mime_type, filename, size FROM signature_images WHERE content_id = ? LIMIT 1`, cid).
+		Scan(&im.ContentID, &im.BlobHash, &im.MIMEType, &im.Filename, &im.Size)
+	return im, notFound(err)
 }
 
 // DeleteSignature deletes a signature; identities referencing it fall back to none.
 func (s *Store) DeleteSignature(ctx context.Context, id int64) error {
 	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM signatures WHERE id = ?`, id))
+}
+
+// blobRefsQuery counts the references to a blob hash from all tables that
+// store blob hashes.
+const blobRefsQuery = `SELECT (SELECT COUNT(*) FROM messages WHERE blob_hash = ?1)
+	+ (SELECT COUNT(*) FROM attachments WHERE blob_hash = ?1)
+	+ (SELECT COUNT(*) FROM uploads WHERE blob_hash = ?1)
+	+ (SELECT COUNT(*) FROM proxy_cache WHERE blob_hash = ?1)
+	+ (SELECT COUNT(*) FROM signature_images WHERE blob_hash = ?1)
+	+ (SELECT COUNT(*) FROM chat_messages WHERE media_blob = ?1)
+	+ (SELECT COUNT(*) FROM persons WHERE avatar_blob = ?1)`
+
+// UnreferencedBlobs returns the hashes of hashes that no row references any
+// more (safe to delete from the blob store).
+func (s *Store) UnreferencedBlobs(ctx context.Context, hashes []string) ([]string, error) {
+	var out []string
+	for _, h := range hashes {
+		var n int
+		if err := s.db.QueryRowContext(ctx, blobRefsQuery, h).Scan(&n); err != nil {
+			return out, err
+		}
+		if n == 0 {
+			out = append(out, h)
+		}
+	}
+	return out, nil
 }
 
 // collect scans all rows with fn and closes rows.

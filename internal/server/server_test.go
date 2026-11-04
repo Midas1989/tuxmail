@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -30,6 +31,17 @@ import (
 )
 
 const pw = "correct horse battery"
+
+// testTransport is the transport of the test clients: New installs the
+// SSRF policy (internal/netguard), which also applies to
+// http.DefaultTransport and would block the test clients' requests to
+// the loopback test server.
+var testTransport = &http.Transport{}
+
+func TestMain(m *testing.M) {
+	http.DefaultClient = &http.Client{Transport: testTransport}
+	os.Exit(m.Run())
+}
 
 type env struct {
 	t   *testing.T
@@ -84,7 +96,7 @@ type browser struct {
 
 func (e *env) browser() *browser {
 	jar, _ := cookiejar.New(nil)
-	return &browser{e: e, c: &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	return &browser{e: e, c: &http.Client{Jar: jar, Transport: testTransport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
 }
 
 func (b *browser) do(method, path string, body any) (*http.Response, map[string]any) {

@@ -58,6 +58,7 @@
   import type { ComposerInit } from '../../state';
   import { messengerChannel, type Address, type OutgoingAttachment, type PasswordDelivery, type PasswordDeliveryMode, type SendFinding } from '../../types';
   import { formatSize, t } from '../../i18n/index.svelte';
+  import { htmlToPlain, normalizeLink } from '../../signature';
   import Modal from '../common/Modal.svelte';
   import RecipientInput, { isValidEmail } from './RecipientInput.svelte';
   import SendChecks from './SendChecks.svelte';
@@ -106,6 +107,29 @@
     return sig ? `-- <br>${sig.html}` : '';
   }
 
+  /** The signature block as inserted (to detect edits in the mail). */
+  let insertedSignature = '';
+  function rememberSignature() {
+    insertedSignature = editor?.querySelector<HTMLElement>('[data-signature]')?.innerHTML ?? '';
+  }
+
+  /**
+   * Plain-text alternative: the editor text with the signature block
+   * replaced by the signature's plain version (links as "text <url>"),
+   * or by text generated from the block if it was edited in this mail.
+   */
+  function plainBody(): string {
+    if (!editor) return '';
+    const text = editor.innerText;
+    const block = editor.querySelector<HTMLElement>('[data-signature]');
+    if (!block) return text;
+    const sig = app.signatureFor(identityId, isReply);
+    const sigPlain = sig && block.innerHTML === insertedSignature ? `-- \n${sig.plain}` : htmlToPlain(block.innerHTML).replace(/^--\n/, '-- \n');
+    const blockText = block.innerText;
+    const i = blockText ? text.lastIndexOf(blockText) : -1;
+    return i < 0 ? text : text.slice(0, i) + sigPlain + text.slice(i + blockText.length);
+  }
+
   // Initial editor content: text, signature block, quote.
   $effect(() => {
     if (!editor || editor.dataset.ready) return;
@@ -113,6 +137,7 @@
     const sig = signatureHtml(identityId);
     editor.innerHTML =
       (start.bodyHtml || '<p><br></p>') + (sig ? `<div data-signature="1" class="sig">${sig}</div>` : '') + (start.quoteHtml ? `<div data-quote="1">${start.quoteHtml}</div>` : '');
+    rememberSignature();
   });
 
   // Signature follows the selected identity.
@@ -132,6 +157,7 @@
       editor.insertBefore(block, quote);
     }
     block.innerHTML = html;
+    rememberSignature();
   }
 
   function insertSignature() {
@@ -144,8 +170,8 @@
   }
 
   function addLink() {
-    const url = prompt(t('compose.linkPrompt'), 'https://');
-    if (url && /^(https?:|mailto:)/i.test(url)) exec('createLink', url);
+    const url = normalizeLink(prompt(t('compose.linkPrompt'), 'https://') ?? '');
+    if (url) exec('createLink', url);
   }
 
   function addFiles(files: FileList | File[] | null) {
@@ -257,7 +283,9 @@
         outgoing.push({ uploadToken: token, filename: a.filename, mimeType: a.mimeType, size: a.size, delivery: a.delivery });
       }
       const html = editor?.innerHTML ?? '';
-      const text = editor?.innerText ?? '';
+      const text = plainBody();
+      // The signature is part of the body: the server must not add one.
+      const placed = editor?.querySelector('[data-signature]') ? app.signatureFor(identityId, isReply) : undefined;
       const res = await app.api.send({
         channel: 'email',
         identityId,
@@ -270,6 +298,7 @@
         inReplyToMessageId: start.inReplyToMessageId,
         forwardOfMessageId: start.forwardOfMessageId,
         attachments: outgoing,
+        signatureId: placed?.id ?? 0,
         passwordDelivery: pw,
         confirmChecks,
         crypto,

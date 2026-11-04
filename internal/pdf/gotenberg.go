@@ -12,6 +12,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // GotenbergURL returns TUXMAIL_GOTENBERG_URL (server deployments run a
@@ -43,7 +45,9 @@ func GotenbergToPDF(ctx context.Context, client *http.Client, base string, html 
 	if err := mw.Close(); err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// The Gotenberg URL is set by the administrator (environment) and usually
+	// points to localhost: it is exempt from the server-mode SSRF policy.
+	ctx, cancel := context.WithTimeout(netguard.Trusted(ctx), 60*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(base, "/")+"/forms/chromium/convert/html", &body)
 	if err != nil {

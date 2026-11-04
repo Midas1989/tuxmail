@@ -486,6 +486,18 @@ func restoreMerge(ctx context.Context, ex *Extracted, opts RestoreOptions, res *
 	}
 	have, _ := dst.ListSignatures(ctx)
 	for _, s := range sigs {
+		// Signature images live in the blob store.
+		if opts.Blobs != nil && ex.Blobs != nil && len(s.Images) > 0 {
+			hashes := make([]string, 0, len(s.Images))
+			for _, im := range s.Images {
+				if ok, _ := ex.Blobs.Has(im.BlobHash); ok {
+					hashes = append(hashes, im.BlobHash)
+				}
+			}
+			if _, err := copyBlobs(ex.Blobs, opts.Blobs, hashes); err != nil {
+				return err
+			}
+		}
 		var id int64
 		for _, h := range have {
 			if h.Name == s.Name && h.HTML == s.HTML && h.Plain == s.Plain {
