@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Messenger-style chat list: search, filter pills, archived row, pinned on top. -->
 <script lang="ts">
+  import { comfort } from '../../state';
+  import CategoryTabs from '../comfort/CategoryTabs.svelte';
   import TeamSection from '../team/TeamSection.svelte';
   import TeamBadge from '../team/TeamBadge.svelte';
   import Search from '@lucide/svelte/icons/search';
@@ -196,6 +198,7 @@
         <button class="pill" role="radio" aria-checked={app.chatFilter === f} onclick={() => app.setChatFilter(f)}>{t(`chat.filter.${f}`)}</button>
       {/each}
     </div>
+    <CategoryTabs variant="pills" />
     {#if app.tags.length}
       <div class="pills tag-pills" role="group" aria-label={t('organize.tags.filter')}>
         {#each app.tags.filter((x) => x.total > 0) as x (x.tag.id)}
@@ -224,7 +227,7 @@
         <span class="arch-count">{app.archivedCount}</span>
       </button>
     {/if}
-    {#each app.conversations as c (c.id)}
+    {#each comfort.filterConversations(app.conversations) as c (c.id)}
       {@render chatRow(c)}
     {:else}
       {#if !app.conversationsLoading && !(app.focusActive && app.waitingCount)}

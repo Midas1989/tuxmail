@@ -174,6 +174,9 @@ type Request struct {
 
 	Cloud CloudOptions `json:"cloud"`
 	PGP   PGPOptions   `json:"pgp"`
+	// SMIME configures S/MIME (smime.go); when it signs or encrypts,
+	// OpenPGP is not applied to the same message.
+	SMIME SMIMEOptions `json:"smime"`
 
 	// SendAt delays the send until the given time ("send later").
 	SendAt time.Time `json:"sendAt,omitempty"`
@@ -212,6 +215,8 @@ type Result struct {
 	Sent      bool `json:"sent,omitempty"`
 	Encrypted bool `json:"encrypted,omitempty"`
 	Signed    bool `json:"signed,omitempty"`
+	// SMIME is true when Encrypted/Signed refer to S/MIME instead of OpenPGP.
+	SMIME bool `json:"smime,omitempty"`
 	// SentAppended is true if the message was stored in the Sent folder
 	// (or the provider stores it itself: SentByProvider).
 	SentAppended   bool `json:"sentAppended,omitempty"`
@@ -246,6 +251,8 @@ type Config struct {
 	Blobs      BlobResolver
 	// PGP enables OpenPGP (Planner.Ring must hold the own secret keys).
 	PGP *pgp.Planner
+	// SMIME provides S/MIME identities and recipient certificates (optional).
+	SMIME SMIMEKeys
 	// Locale for generated texts (cloud link block, password mail) when
 	// the draft has none.
 	Locale string
@@ -580,6 +587,15 @@ func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Resul
 		insertLinkBlock(d, shares, req.Cloud.Delivery, locale)
 	}
 
+	// S/MIME plan (takes precedence over OpenPGP when active).
+	smPlan, err := s.planSMIME(ctx, &req)
+	if err != nil {
+		return res, err
+	}
+	if smPlan.active() {
+		req.PGP.Sign, req.PGP.Encrypt = PGPOff, PGPOff
+	}
+
 	// PGP plan and Autocrypt.
 	plan, err := s.planPGP(ctx, &req, true)
 	if err != nil {
@@ -597,6 +613,9 @@ func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Resul
 	}
 	res.MessageID = msg.MessageID
 	if err := s.protect(ctx, msg, plan, req.PGP, res); err != nil {
+		return res, err
+	}
+	if err := s.protectSMIME(msg, smPlan, res); err != nil {
 		return res, err
 	}
 	raw := msg.Bytes()

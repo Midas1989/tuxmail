@@ -34,6 +34,8 @@
   import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
   import BackupSettings from '../components/settings/BackupSettings.svelte';
   import CloudAccountsSettings from '../components/settings/CloudAccountsSettings.svelte'; // OAuth/Cloud accounts
+  import ComfortSettingsCard from '../components/comfort/ComfortSettingsCard.svelte'; // spam, categories, spell, merge, PDF
+  import SmimeSettingsCard from '../components/comfort/SmimeSettingsCard.svelte';
   import TeamSettings from '../components/team/TeamSettings.svelte'; // team mailboxes (server mode)
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
@@ -131,6 +133,10 @@
     <AiSettingsCard />
 
     <CloudAccountsSettings />
+
+    <ComfortSettingsCard />
+
+    <SmimeSettingsCard />
 
     <TagSettings />
 

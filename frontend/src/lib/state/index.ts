@@ -24,3 +24,8 @@ export const cloud = new CloudState(app.api);
 
 // --- Team mailboxes (server mode) ---
 export const team = new TeamState(rootApi, workspace, app, isNativeShell() ? nativeHttpOptions() : {});
+
+// --- Mail comfort features (spam, categories, S/MIME, PDF, merge ...) ---
+// Per user, so it uses the root transport (not the team mailbox switch).
+import { ComfortState } from './comfort.svelte';
+export const comfort = new ComfortState(rootApi);

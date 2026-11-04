@@ -2714,5 +2714,228 @@
       "imapPh": "imap.company.com",
       "smtpPh": "smtp.company.com"
     }
+  },
+  "comfort": {
+    "loading": "Loading…",
+    "add": "Add",
+    "category": {
+      "tabs": "Smart categories",
+      "all": "All",
+      "personal": "Important/Personal",
+      "newsletter": "Newsletters",
+      "invoice": "Invoices & orders",
+      "notification": "Notifications",
+      "social": "Social",
+      "appointment": "Appointments",
+      "label": "Category",
+      "manual": "set manually"
+    },
+    "spam": {
+      "isSpam": "This mail is probably spam (score {score}).",
+      "suspicious": "This mail looks suspicious (spam score {score}).",
+      "notSpam": "Not spam",
+      "spam": "Spam",
+      "markedSpam": "Marked as spam – the filter learns from it.",
+      "markedHam": "Marked as not spam."
+    },
+    "smime": {
+      "decrypted": "Decrypted (S/MIME).",
+      "cannotDecrypt": "Encrypted with S/MIME – no matching certificate to decrypt.",
+      "sig": {
+        "trusted": "Signed by {name} (trusted certificate).",
+        "untrusted": "Signed by {name} – the issuer is not trusted.",
+        "mismatch": "Signed by {name}, but the certificate does not belong to the sender address.",
+        "expired": "Signed by {name} with an expired certificate.",
+        "invalid": "Invalid signature – the content may have been changed."
+      },
+      "issuer": "issuer: {issuer}",
+      "title": "S/MIME certificates",
+      "intro": "Import your own certificate (.p12/.pfx) to sign and decrypt. Certificates of others are collected from signed mails automatically.",
+      "import": "Import",
+      "importNow": "Import certificate",
+      "password": "Password of the certificate file",
+      "imported": "Certificate for {email} imported.",
+      "confirmDelete": "Delete the certificate of {email}?",
+      "delete": "Delete certificate",
+      "trust": "Trust",
+      "untrust": "Revoke trust",
+      "trusted": "trusted",
+      "expired": "expired",
+      "validUntil": "valid until {date}",
+      "none": "No certificates yet.",
+      "source": {
+        "own": "own",
+        "imported": "imported",
+        "collected": "from mail"
+      },
+      "signByDefault": "Sign every mail when a certificate exists",
+      "encryptAuto": "Encrypt automatically when all recipients have certificates",
+      "prefer": "If both are possible:",
+      "preferPgp": "prefer OpenPGP",
+      "preferSmime": "prefer S/MIME"
+    },
+    "newsletter": {
+      "bar": "Newsletter from {name}",
+      "alreadyUnsubscribed": "You unsubscribed from {name}.",
+      "unsubscribe": "Unsubscribe",
+      "archiveAll": "Archive all",
+      "autoArchive": "Archive automatically in future",
+      "unsubscribed": "Unsubscribed.",
+      "unsubscribedMail": "Unsubscribe mail sent.",
+      "openedLink": "The unsubscribe page was opened in the browser.",
+      "failed": "Unsubscribing failed: {error}",
+      "archived": "{count} mails archived.",
+      "autoArchiveCreated": "Workflow created: future mails are archived automatically."
+    },
+    "subscriptions": {
+      "title": "Subscriptions",
+      "open": "Open subscriptions",
+      "intro": "Newsletters and mailing lists detected in your mailboxes.",
+      "filter": "Filter subscriptions",
+      "empty": "No newsletters detected yet.",
+      "sender": "Sender",
+      "frequency": "Frequency",
+      "lastMail": "Last mail",
+      "inInbox": "In inbox",
+      "perMonth": "{n}/month",
+      "oneClick": "Unsubscribe (one click)",
+      "unsubscribedBadge": "unsubscribed",
+      "autoArchiveOn": "archived automatically"
+    },
+    "invoice": {
+      "title": "E-invoice",
+      "format": {
+        "facturx": "ZUGFeRD / Factur-X",
+        "zugferd1": "ZUGFeRD 1.0",
+        "cii": "XRechnung (CII)",
+        "ubl": "XRechnung (UBL)"
+      },
+      "seller": "Seller",
+      "number": "Invoice number",
+      "amount": "Amount",
+      "issued": "Invoice date",
+      "due": "Due",
+      "iban": "IBAN",
+      "copyIban": "Copy IBAN",
+      "reference": "Payment reference",
+      "payBy": "Task: pay by {date}",
+      "payTask": "Create payment task",
+      "taskCreated": "Task created."
+    },
+    "print": {
+      "print": "Print (Shift: whole conversation)",
+      "pdf": "Save as archive PDF (PDF/A-3)",
+      "popupBlocked": "The print view was blocked by the browser."
+    },
+    "spell": {
+      "toggle": "Spell check",
+      "language": "Spell check language",
+      "auto": "Automatic",
+      "autoDetected": "Auto ({lang})",
+      "lang": {
+        "de": "German",
+        "en": "English"
+      },
+      "errors": "{count} possible spelling mistakes",
+      "menu": "Spelling suggestions",
+      "noSuggestions": "No suggestions",
+      "addToDictionary": "Add “{word}” to dictionary",
+      "ignore": "Ignore",
+      "added": "“{word}” added to your dictionary."
+    },
+    "meeting": {
+      "add": "Add video conference link",
+      "create": "Create online meeting",
+      "providerLabel": "Video conference service",
+      "provider": {
+        "jitsi": "Jitsi Meet",
+        "nextcloud_talk": "Nextcloud Talk",
+        "teams": "Microsoft Teams"
+      },
+      "defaultTitle": "Online meeting",
+      "join": "Join the meeting ({provider})",
+      "password": "Password: {password}",
+      "failed": "The meeting could not be created: {error}"
+    },
+    "crypto": {
+      "title": "Signing and encryption",
+      "auto": "Automatic",
+      "smimeSign": "S/MIME: sign",
+      "smimeEncrypt": "S/MIME: sign + encrypt",
+      "pgpEncrypt": "OpenPGP: sign + encrypt",
+      "none": "Unencrypted"
+    },
+    "merge": {
+      "open": "Mail merge",
+      "title": "Mail merge",
+      "step": {
+        "recipients": "Recipients",
+        "template": "Text",
+        "preview": "Preview",
+        "send": "Sending"
+      },
+      "fromGroup": "From a contact group",
+      "chooseGroup": "Choose group…",
+      "load": "Load",
+      "fromFile": "From a CSV or Excel file",
+      "chooseFile": "Choose file…",
+      "recipientsLoaded": "{count} recipients loaded.",
+      "placeholders": "Placeholders:",
+      "text": "Text",
+      "useHtml": "Send the formatted composer text (HTML)",
+      "perMinute": "Mails per minute",
+      "unsubscribe": "Unsubscribe address (List-Unsubscribe, optional)",
+      "unsubscribePlaceholder": "mailto:unsubscribe@example.org or https://…",
+      "encrypt": "Encrypt for recipients with a key (OpenPGP/S/MIME)",
+      "next": "Next",
+      "prev": "Previous recipient",
+      "toPreview": "Preview",
+      "previewOf": "{n} of {total}: {email}",
+      "missing": "Missing values: {fields}",
+      "duration": "{count} individual mails, about {minutes} min.",
+      "send": "Send {count} mails",
+      "status": "{sent} sent, {failed} failed, {pending} pending",
+      "state": {
+        "draft": "prepared",
+        "running": "sending…",
+        "done": "done",
+        "cancelled": "stopped"
+      },
+      "entry": {
+        "pending": "pending",
+        "sent": "sent",
+        "failed": "failed",
+        "skipped": "skipped"
+      },
+      "retry": "Retry failed",
+      "stop": "Stop"
+    },
+    "settings": {
+      "title": "Mail comfort",
+      "spam": "Spam filter",
+      "spamEnabled": "Learning spam filter (local)",
+      "unsure": "Suspicious from score {n}",
+      "spamThreshold": "Spam from score {n}",
+      "moveToJunk": "Move spam to the junk folder automatically",
+      "serverLearn": "Teach the server too ($Junk/$NotJunk)",
+      "categories": "Smart categories",
+      "categoriesEnabled": "Sort mail into categories (local)",
+      "aiRefine": "Let the AI assistant refine uncertain cases",
+      "categoriesHint": "Moving a mail to another category trains the classifier. Search with category:rechnung.",
+      "newsletter": "Newsletters",
+      "newsletterBar": "Show the newsletter bar in the reading pane",
+      "spell": "Spell checking",
+      "spellEnabled": "Check spelling while writing",
+      "userDictionary": "Your dictionary",
+      "addWord": "Add a word",
+      "removeWord": "Remove “{word}”",
+      "meeting": "Video conferences",
+      "jitsiUrl": "Jitsi server",
+      "mergePdf": "Mail merge & PDF",
+      "pdfName": "PDF file name",
+      "useChromium": "Render HTML mails with Chromium when installed",
+      "chromiumPath": "Chromium / Chrome / Edge",
+      "chromiumAuto": "detected automatically"
+    }
   }
 }

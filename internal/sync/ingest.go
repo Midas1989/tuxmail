@@ -279,6 +279,9 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 	}
 	b.conv(row.ConversationID)
 	if created {
+		if m.cfg.Comfort != nil && raw != nil {
+			m.cfg.Comfort.ProcessNewMail(ctx, row, raw, f.Role) // comfort.go
+		}
 		if m.cfg.Projects != nil {
 			if err := m.cfg.Projects.ProcessNewItem(ctx, store.Item{Kind: store.ItemMessage, ID: id}); err != nil {
 				w.log.Warn("sync: project rules", "message", id, "err", err)
@@ -560,6 +563,9 @@ func (m *Manager) mailEvent(ctx context.Context, typ events.Type, msg store.Mess
 		for _, a := range ct.Attachments {
 			mail.Attachments = append(mail.Attachments, events.Attachment{Name: a.Name, MIME: a.MIME, Size: a.Size})
 		}
+	}
+	if m.cfg.Comfort != nil {
+		m.cfg.Comfort.EnrichMailEvent(ctx, msg, mail)
 	}
 	return events.Event{Type: typ, AccountID: msg.AccountID, Ref: mail.Key, Mail: mail}
 }

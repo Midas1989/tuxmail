@@ -70,6 +70,24 @@ type MailEnv struct {
 	IsInvoice       bool              `expr:"isInvoice"`
 	PGP             PGPEnv            `expr:"pgp"`
 	ReplyAll        bool              `expr:"replyAll"` // drafts only
+	// Comfort analysis: spam score 0..100, spam decision, e-invoice data.
+	SpamScore float64    `expr:"spamScore"`
+	IsSpam    bool       `expr:"isSpam"`
+	Invoice   InvoiceEnv `expr:"invoice"`
+}
+
+// InvoiceEnv is a structured e-invoice in conditions (mail.invoice.*);
+// Present is false when the mail has none.
+type InvoiceEnv struct {
+	Present  bool      `expr:"present"`
+	Format   string    `expr:"format"`
+	Number   string    `expr:"number"`
+	Issued   time.Time `expr:"issued"`
+	Due      time.Time `expr:"due"`
+	Amount   float64   `expr:"amount"`
+	Currency string    `expr:"currency"`
+	Seller   string    `expr:"seller"`
+	IBAN     string    `expr:"iban"`
 }
 
 // AttachmentEnv is an attachment in conditions.
@@ -233,7 +251,13 @@ func mailEnv(m *events.Mail) MailEnv {
 		Subject: m.Subject, Body: m.Body, Headers: map[string]string{}, Account: m.Account, AccountID: m.AccountID,
 		Folder: m.Folder, OldFolder: m.OldFolder, Category: m.Category, Flags: m.Flags, Labels: m.Labels,
 		Size: m.Size, Date: m.Date, IsInvoice: m.IsInvoice,
-		PGP: PGPEnv{Encrypted: m.PGP.Encrypted, Signed: m.PGP.Signed, Verified: m.PGP.Verified},
+		PGP:       PGPEnv{Encrypted: m.PGP.Encrypted, Signed: m.PGP.Signed, Verified: m.PGP.Verified},
+		SpamScore: m.SpamScore, IsSpam: m.IsSpam,
+	}
+	if inv := m.Invoice; inv != nil {
+		me.IsInvoice = true
+		me.Invoice = InvoiceEnv{Present: true, Format: inv.Format, Number: inv.Number, Issued: inv.Issued, Due: inv.Due,
+			Amount: inv.Amount, Currency: inv.Currency, Seller: inv.Seller, IBAN: inv.IBAN}
 	}
 	for k, v := range m.Headers {
 		if len(v) > 0 {

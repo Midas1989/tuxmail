@@ -46,6 +46,8 @@ type Options struct {
 	KeyRing *pgp.KeyRing
 	// PGP are options passed to KeyRing.ReadMessage.
 	PGP pgp.ReadOptions
+	// SMIME, if set, verifies and decrypts S/MIME messages (smime.go).
+	SMIME SMIMEReader
 	// FallbackCharset decodes 8-bit text without (valid) charset label
 	// (default windows-1252).
 	FallbackCharset string
@@ -174,9 +176,10 @@ type Message struct {
 	AttachedMessages   []AttachedMessage `json:"attachedMessages,omitempty"`
 	AttachedMessageIDs []string          `json:"attachedMessageIds,omitempty"`
 
-	Autocrypt       []string `json:"-"` // raw Autocrypt header values
-	AutocryptGossip []string `json:"-"` // gossip headers of the decrypted part
-	PGP             PGPInfo  `json:"pgp"`
+	Autocrypt       []string  `json:"-"` // raw Autocrypt header values
+	AutocryptGossip []string  `json:"-"` // gossip headers of the decrypted part
+	PGP             PGPInfo   `json:"pgp"`
+	SMIME           SMIMEInfo `json:"smime"`
 
 	List          ListInfo    `json:"list"`
 	Auth          AuthSummary `json:"auth"`
@@ -263,6 +266,7 @@ func ParseContext(ctx context.Context, raw []byte, opts Options) (*Message, erro
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	p.applySMIME(raw)
 	p.finishBody()
 	p.list(hdr)
 	m.Auth = parseAuthResults(hdr.Values("Authentication-Results"))

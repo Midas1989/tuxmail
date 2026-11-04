@@ -141,6 +141,7 @@ type App struct {
 	vac       vacationState     // vacation.go
 	pimOnce   sync.Once
 	pim       *pimService
+	comfort   *comfortState // comfort_state.go (spam, categories, S/MIME, PDF, ...)
 }
 
 // New creates the application layer.
@@ -197,6 +198,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.opts.Discoverer = autoconfigDiscoverer{}
 	}
 	a.proj = project.New(a.st, a.bus, project.Options{Now: opts.Now, Logger: opts.Logger})
+	a.comfort = newComfortState(a)
 	a.sync = opts.Syncer
 	var mail workflow.MailActions = &workflowMail{a: a}
 	if a.opts.Sender == nil && opts.Send != nil {
@@ -214,6 +216,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		}
 		a.configureEASSync(&cfg)
 		a.configureOAuthSync(&cfg)
+		a.configureComfortSync(&cfg)
 		if opts.Sync.Configure != nil {
 			opts.Sync.Configure(&cfg)
 		}
@@ -276,6 +279,8 @@ func (a *App) Start() {
 			}
 		}()
 		go func() { defer a.wg.Done(); a.timers(ctx) }()
+		a.wg.Add(1)
+		go func() { defer a.wg.Done(); a.comfortLoop(ctx) }()
 		a.wg.Add(1)
 		go func() { defer a.wg.Done(); a.loadVacation(ctx) }() // vacation.go
 		if a.opts.PIM != nil || a.opts.Sync != nil {

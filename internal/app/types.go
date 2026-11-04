@@ -298,6 +298,9 @@ type OutgoingMessage struct {
 	// ConfirmChecks are send checks (SendFinding.Check) the user confirmed
 	// after a blocked SendResult ("send anyway").
 	ConfirmChecks []string `json:"confirmChecks,omitempty"`
+	// Crypto selects S/MIME or OpenPGP signing/encryption (comfort_crypto.go);
+	// nil = settings defaults.
+	Crypto *OutgoingCrypto `json:"crypto,omitempty"`
 }
 
 // SharePassword is a generated cloud share password.

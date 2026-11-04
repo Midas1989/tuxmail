@@ -24,6 +24,8 @@
   import MailFrame from './MailFrame.svelte';
   import MoveMenu from './MoveMenu.svelte';
   import MessageInvitations from '../calendar/MessageInvitations.svelte';
+  import MessageComfort from '../comfort/MessageComfort.svelte'; // spam, S/MIME, newsletter, e-invoice
+  import ComfortToolbar from '../comfort/ComfortToolbar.svelte';
 
   let allowRemote = $state(false);
   let showAllRecipients = $state(false);
@@ -82,6 +84,7 @@
       <button class="icon-btn" title={t('common.action.markUnread')} aria-label={t('common.action.markUnread')} onclick={() => app.toggleRead(m.id)}><Mail size={17} /></button>
       <button class="icon-btn" title={t('organize.tags.menu') + ' (T)'} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker([{ kind: 'message', id: m.id }], m.tagIds ?? [])}><Tags size={17} /></button>
       <button class="icon-btn" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker([{ kind: 'message', id: m.id }])}><FolderKanban size={17} /></button>
+      <ComfortToolbar messageId={m.id} conversationId={m.conversationId} />
       <span class="grow"></span>
       <button class="btn btn-ghost conv" onclick={() => app.setViewMode('chat')} title={t('mail.view.showAsConversation') + ' (Ctrl+Shift+V)'}>
         <MessagesSquare size={16} /> <span class="hide-sm">{t('mail.view.showAsConversation')}</span>
@@ -137,6 +140,7 @@
       {/if}
 
       {#key m.id}<MessageInvitations messageId={m.id} />{/key}
+      <MessageComfort messageId={m.id} />
 
       {#if m.attachments.length}
         <div class="atts" aria-label={t('mail.reader.attachments', { count: m.attachments.length })}>

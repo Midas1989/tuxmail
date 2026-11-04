@@ -61,12 +61,13 @@ var ruleFields = func() map[string]FieldInfo {
 		"chat.channel", "chat.chat", "chat.sender", "chat.text",
 		"calendar.summary", "calendar.location", "calendar.organizer", "calendar.answer", "calendar.responder",
 		"contact.displayName", "file.provider", "file.path", "file.name", "file.mime",
+		"mail.invoice.format", "mail.invoice.number", "mail.invoice.currency", "mail.invoice.seller", "mail.invoice.iban",
 		"schedule", "webhook.name", "noreply.subject", "time.clock", "time.date")
 	add(KindList, "mail.to", "mail.cc", "mail.bcc", "mail.recipients", "mail.attachmentNames",
 		"mail.flags", "mail.labels", "calendar.attendees", "contact.emails", "contact.groups", "noreply.recipients")
-	add(KindNumber, "mail.size", "mail.maxAttachmentSize", "mail.accountId", "file.size",
+	add(KindNumber, "mail.size", "mail.maxAttachmentSize", "mail.accountId", "file.size", "mail.spamScore", "mail.invoice.amount",
 		"calendar.minutesBefore", "noreply.daysWaited", "time.hour", "time.minute", "time.weekday")
-	add(KindBool, "mail.isInvoice", "mail.hasAttachments", "mail.pgp.encrypted", "mail.pgp.signed",
+	add(KindBool, "mail.isInvoice", "mail.isSpam", "mail.invoice.present", "mail.hasAttachments", "mail.pgp.encrypted", "mail.pgp.signed",
 		"mail.pgp.verified", "mail.replyAll", "chat.group", "chat.hasMedia", "time.weekend", "time.workday")
 	m["mail.attachmentCount"] = FieldInfo{Name: "mail.attachmentCount", Kind: KindNumber, expr: "len(mail.attachments)"}
 	return m
