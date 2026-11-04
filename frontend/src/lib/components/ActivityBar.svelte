@@ -11,17 +11,18 @@
   import { app, prefs } from '../state';
   import { t, i18n } from '../i18n/index.svelte';
 
-  // Labels may wrap to two lines; long words break at the soft hyphens of
-  // nav.rail.* ("Ein\u00adstel\u00adlun\u00adgen") instead of being cut off
-  // ("Einstellu…"). The full label is always the tooltip.
+  // Labels are always a single line - never hyphenated or wrapped. Settings
+  // is an icon-only item at the bottom (common pattern), with tooltip and
+  // aria-label. If a translation is too long for the rail, the label is
+  // hidden for that item instead of being broken up (icon + tooltip remain).
   let rail = $state<HTMLElement>();
   $effect(() => {
     void i18n.locale;
+    void items;
     if (!rail) return;
-    // Auto-fit: shrink a label that still overflows two lines.
     for (const el of rail.querySelectorAll<HTMLElement>('.lbl')) {
-      el.style.fontSize = '';
-      if (el.scrollHeight > el.clientHeight + 1 || el.scrollWidth > el.clientWidth + 1) el.style.fontSize = '9px';
+      el.hidden = false;
+      if (el.scrollWidth > el.clientWidth + 1) el.hidden = true;
     }
   });
 
@@ -69,9 +70,8 @@
     {/each}
   </ul>
   <div class="spacer"></div>
-  <button class="item settings" aria-current={app.route === 'settings' ? 'page' : undefined} onclick={() => app.navigate('settings')} title={t('nav.settings')}>
-    <Settings size={21} strokeWidth={1.8} aria-hidden="true" />
-    <span class="lbl">{t('nav.rail.settings')}</span>
+  <button class="item settings" aria-current={app.route === 'settings' ? 'page' : undefined} onclick={() => app.navigate('settings')} title={t('nav.settings')} aria-label={t('nav.settings')}>
+    <Settings size={22} strokeWidth={1.8} aria-hidden="true" />
   </button>
 </nav>
 
@@ -80,7 +80,7 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 64px;
+    width: 72px;
     flex: none;
     padding: 10px 0;
     background: var(--tm-rail);
@@ -113,9 +113,9 @@
     align-items: center;
     justify-content: center;
     gap: 2px;
-    width: 56px;
+    width: 64px;
     min-height: 50px;
-    padding: 4px 1px;
+    padding: 4px 2px;
     border: none;
     border-radius: 12px;
     background: transparent;
@@ -143,20 +143,17 @@
     background: var(--tm-brand);
   }
   .lbl {
-    font-size: 10px;
+    font-size: 10.5px;
     font-weight: 500;
-    line-height: 1.12;
-    max-width: 54px;
-    max-height: 2.3em;
+    line-height: 1.2;
+    max-width: 60px;
     overflow: hidden;
     text-align: center;
-    white-space: normal;
-    hyphens: manual;
-    overflow-wrap: anywhere;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
+    white-space: nowrap;
+    letter-spacing: 0.01em;
+  }
+  .item.settings {
+    min-height: 44px;
   }
   .dot {
     position: absolute;
@@ -209,7 +206,7 @@
       display: flex;
       justify-content: center;
     }
-    /* Eight destinations share the width; labels wrap (soft hyphens). */
+    /* Eight destinations share the width; labels stay on one line (hidden if too long). */
     .item {
       width: 100%;
       max-width: 64px;
