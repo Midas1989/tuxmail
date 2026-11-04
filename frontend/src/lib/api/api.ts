@@ -510,7 +510,7 @@ export interface Api {
 // Remote content and server rules (KONZEPT 8.3, 8.5), another part of the
 // Api interface (declaration merging).
 
-import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
 
 export interface Api {
   /** Re-render a mail with remote images through the image proxy ("Bilder laden"). */
@@ -527,4 +527,9 @@ export interface Api {
   activateSieveScript(accountId: number, name: string): Promise<void>;
   deleteSieveScript(accountId: number, name: string): Promise<void>;
   setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus>;
+  getSieveConfig(accountId: number): Promise<SieveConfig>;
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig>;
+  /** Out-of-office: pushed to servers that can answer themselves, local replies otherwise. */
+  getVacationSettings(): Promise<VacationSettings>;
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings>;
 }

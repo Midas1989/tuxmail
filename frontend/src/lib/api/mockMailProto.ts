@@ -4,7 +4,7 @@
 import { ApiError } from './api';
 import { restoreRemoteImages } from '../remote';
 import { lintSieve } from '../sieve';
-import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
 
 const DEMO_SCRIPT = `require ["fileinto", "imap4flags"];
 
@@ -113,5 +113,27 @@ export class MockMailProto {
     );
     if (!r.active) r.active = 'tuxmail';
     return this.status(accountId);
+  }
+
+  private readonly configs = new Map<number, SieveConfig>();
+  private vacation: VacationSettings = { enabled: false, oncePerDays: 4, serverAccounts: [] };
+
+  config(accountId: number): SieveConfig {
+    return this.configs.get(accountId) ?? { host: 'imap.example.org', port: 4190, tls: 'starttls', disabled: false, separate: false };
+  }
+  setConfig(accountId: number, c: SieveConfig): SieveConfig {
+    if (c.port < 0 || c.port > 65535) throw new ApiError('invalid port', 400, 'invalid_input');
+    this.configs.set(accountId, { ...c });
+    return this.config(accountId);
+  }
+  vacationSettings(): VacationSettings {
+    return this.vacation;
+  }
+  saveVacation(s: VacationSettings): VacationSettings {
+    if (s.enabled && !(s.externalText ?? '').trim() && !(s.internalText ?? '').trim()) throw new ApiError('a reply text is required', 400, 'invalid_input');
+    if (s.start && s.end && s.end <= s.start) throw new ApiError('end must be after start', 400, 'invalid_input');
+    // Demo: the first account's server answers itself (Sieve).
+    this.vacation = { ...s, serverAccounts: s.enabled ? [1] : [] };
+    return this.vacation;
   }
 }

@@ -166,6 +166,8 @@
 //   POST /api/accounts/{id}/sieve/check         {script} -> SieveCheckResult
 //   POST /api/accounts/{id}/sieve/activate      {name}
 //   GET/PUT/DELETE /api/accounts/{id}/sieve/scripts/{name}   SieveScript / {script, activate}
+//   GET/PUT /api/accounts/{id}/sieve/config     SieveConfig
+//   GET/PUT /api/vacation                       VacationSettings (out of office)
 //   GET  /api/proxy/image?url=&e=&s=&u=         remote image (signed link or session)
 //
 // Device flow (RFC 8628) against a *remote* TuxMail server (`serverUrl`),
@@ -258,7 +260,7 @@ Account,
 } from '../types';
 
 // --- Mail protocols ---
-import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
 
 // --- Cloud ---
 import type {
@@ -1186,6 +1188,18 @@ export class HttpTransport implements Api {
   }
   setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
     return this.request('PUT', `/api/accounts/${accountId}/sieve/workflows`, { enabled });
+  }
+  getSieveConfig(accountId: number): Promise<SieveConfig> {
+    return this.request('GET', `/api/accounts/${accountId}/sieve/config`);
+  }
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig> {
+    return this.request('PUT', `/api/accounts/${accountId}/sieve/config`, config);
+  }
+  getVacationSettings(): Promise<VacationSettings> {
+    return this.request('GET', '/api/vacation');
+  }
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
+    return this.request('PUT', '/api/vacation', settings);
   }
 }
 

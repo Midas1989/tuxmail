@@ -89,7 +89,7 @@ Account,
 import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 
 // --- Mail protocols ---
-import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
 
 // --- Cloud ---
 import type {
@@ -791,6 +791,18 @@ export class WailsTransport implements Api {
   }
   setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
     return this.call('SetSieveWorkflowSync', accountId, enabled);
+  }
+  getSieveConfig(accountId: number): Promise<SieveConfig> {
+    return this.call('GetSieveConfig', accountId);
+  }
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig> {
+    return this.call('SetSieveConfig', accountId, config);
+  }
+  getVacationSettings(): Promise<VacationSettings> {
+    return this.call('GetVacationSettings');
+  }
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
+    return this.call('SaveVacationSettings', settings);
   }
 }
 

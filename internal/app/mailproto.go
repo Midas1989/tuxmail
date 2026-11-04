@@ -69,6 +69,29 @@ type mailProtoState struct {
 	proxy     *imageproxy.Proxy
 	purgeMu   stdsync.Mutex
 	lastPurge time.Time
+
+	sieveMu    stdsync.Mutex
+	sieveTimer *time.Timer
+}
+
+// sieveSyncDelay debounces the re-transfer of server rules after workflow
+// changes.
+var sieveSyncDelay = 3 * time.Second
+
+// sieveSyncSoon schedules SyncSieveWorkflows (debounced).
+func (a *App) sieveSyncSoon() {
+	a.mp.sieveMu.Lock()
+	defer a.mp.sieveMu.Unlock()
+	if a.mp.sieveTimer != nil {
+		a.mp.sieveTimer.Stop()
+	}
+	a.mp.sieveTimer = time.AfterFunc(sieveSyncDelay, func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+		if err := a.SyncSieveWorkflows(ctx); err != nil {
+			a.log.Warn("app: transferring workflows as server rules failed", "err", err)
+		}
+	})
 }
 
 // ==== image proxy ==============================================================
@@ -279,6 +302,96 @@ func (a *App) sieveManager(ctx context.Context, accountID int64) (*sieve.Manager
 	m := &sieve.Manager{Dial: func(ctx context.Context) (*sieve.Client, error) { return sieve.Dial(ctx, cfg) },
 		Separate: acc.Extra != nil && acc.Extra["sieveSeparate"] == "true"}
 	return m, acc, nil
+}
+
+// SieveConfig are the ManageSieve settings of an IMAP account (advanced
+// account settings; defaults: IMAP host, port 4190, STARTTLS).
+type SieveConfig struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	TLS      string `json:"tls"`
+	Disabled bool   `json:"disabled"`
+	// Separate keeps TuxMail's rules in an own script included from the
+	// active one (needs the "include" extension).
+	Separate bool `json:"separate"`
+}
+
+// GetSieveConfig returns the effective ManageSieve settings of an account.
+func (a *App) GetSieveConfig(ctx context.Context, accountID int64) (SieveConfig, error) {
+	acc, err := a.st.GetAccount(ctx, accountID)
+	if err != nil {
+		return SieveConfig{}, err
+	}
+	out := SieveConfig{Port: sieve.DefaultPort, TLS: string(domain.TLSStartTLS)}
+	probe := acc
+	if acc.Extra != nil {
+		out.Disabled = acc.Extra["sieve"] == "off"
+		out.Separate = acc.Extra["sieveSeparate"] == "true"
+		probe.Extra = map[string]string{"sieveHost": acc.Extra["sieveHost"], "sievePort": acc.Extra["sievePort"], "sieveTLS": acc.Extra["sieveTLS"]}
+	}
+	if cfg, ok := sieve.ConfigFor(probe); ok {
+		out.Host, out.Port, out.TLS = cfg.Host, cfg.Port, string(cfg.TLS)
+	}
+	return out, nil
+}
+
+// SetSieveConfig stores the ManageSieve settings of an IMAP account.
+func (a *App) SetSieveConfig(ctx context.Context, accountID int64, c SieveConfig) (SieveConfig, error) {
+	acc, err := a.st.GetAccount(ctx, accountID)
+	if err != nil {
+		return SieveConfig{}, err
+	}
+	if acc.Kind != domain.KindIMAP {
+		return SieveConfig{}, invalid("server rules (Sieve) are only available for IMAP accounts")
+	}
+	switch domain.TLSMode(c.TLS) {
+	case domain.TLSStartTLS, domain.TLSImplicit, domain.TLSNone, "":
+	default:
+		return SieveConfig{}, invalid("tls must be starttls, tls or none")
+	}
+	if c.Port < 0 || c.Port > 65535 {
+		return SieveConfig{}, invalid("invalid port")
+	}
+	if acc.Extra == nil {
+		acc.Extra = map[string]string{}
+	}
+	set := func(k, v string) {
+		if v == "" {
+			delete(acc.Extra, k)
+		} else {
+			acc.Extra[k] = v
+		}
+	}
+	host := strings.TrimSpace(c.Host)
+	if acc.Incoming != nil && strings.EqualFold(host, acc.Incoming.Host) {
+		host = ""
+	}
+	set("sieveHost", host)
+	port := ""
+	if c.Port > 0 && c.Port != sieve.DefaultPort {
+		port = strconv.Itoa(c.Port)
+	}
+	set("sievePort", port)
+	mode := c.TLS
+	if mode == string(domain.TLSStartTLS) {
+		mode = ""
+	}
+	set("sieveTLS", mode)
+	off := ""
+	if c.Disabled {
+		off = "off"
+	}
+	set("sieve", off)
+	sep := ""
+	if c.Separate {
+		sep = "true"
+	}
+	set("sieveSeparate", sep)
+	if err := a.st.UpdateAccount(ctx, acc); err != nil {
+		return SieveConfig{}, err
+	}
+	a.hub.Publish(Event{Type: EventAccountUpdated, AccountID: accountID})
+	return a.GetSieveConfig(ctx, accountID)
 }
 
 // SieveStatus describes the server rules of an account.
@@ -563,6 +676,12 @@ func (x *Api) ActivateSieveScript(accountID int64, name string) error {
 }
 func (x *Api) DeleteSieveScript(accountID int64, name string) error {
 	return werr(x.app.DeleteSieveScript(x.ctx, accountID, name))
+}
+func (x *Api) GetSieveConfig(accountID int64) (SieveConfig, error) {
+	return r1(x.app.GetSieveConfig(x.ctx, accountID))
+}
+func (x *Api) SetSieveConfig(accountID int64, c SieveConfig) (SieveConfig, error) {
+	return r1(x.app.SetSieveConfig(x.ctx, accountID, c))
 }
 func (x *Api) SetSieveWorkflowSync(accountID int64, enabled bool) (SieveStatus, error) {
 	return r1(x.app.SetSieveWorkflowSync(x.ctx, accountID, enabled))

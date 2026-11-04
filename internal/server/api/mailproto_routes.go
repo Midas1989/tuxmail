@@ -2,6 +2,11 @@
 
 package api
 
+import (
+	"github.com/Midas1989/Mailclient/internal/app"
+	"github.com/Midas1989/Mailclient/internal/workflow/vacation"
+)
+
 // mailProtoRoutes are the remote content and Sieve endpoints (http.ts
 // section "Mail protocols").
 func mailProtoRoutes() []Route {
@@ -48,6 +53,17 @@ func mailProtoRoutes() []Route {
 			if readJSON(w, r, &in) {
 				done(w, a.PutSieveScript(r.Context(), id, r.PathValue("name"), in.Script, in.Activate))
 			}
+		})},
+		{"GET /api/accounts/{id}/sieve/config", withID(func(w w, r r, a A, id int64) { send(w)(a.GetSieveConfig(r.Context(), id)) })},
+		{"PUT /api/accounts/{id}/sieve/config", withID(func(w w, r r, a A, id int64) {
+			var in app.SieveConfig
+			if readJSON(w, r, &in) {
+				send(w)(a.SetSieveConfig(r.Context(), id, in))
+			}
+		})},
+		{"GET /api/vacation", func(w w, r r, a A) { send(w)(a.GetVacationSettings(r.Context())) }},
+		{"PUT /api/vacation", jsonHandler(func(w w, r r, a A, in vacation.Settings) {
+			send(w)(a.SaveVacationSettings(r.Context(), in))
 		})},
 		{"DELETE /api/accounts/{id}/sieve/scripts/{name}", withID(func(w w, r r, a A, id int64) {
 			done(w, a.DeleteSieveScript(r.Context(), id, r.PathValue("name")))

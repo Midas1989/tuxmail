@@ -1106,7 +1106,40 @@
       "check": "Check",
       "checkOk": "The server accepts the script.",
       "saveActivate": "Save and activate",
-      "managedHint": "TuxMail only changes the section between \"# BEGIN TuxMail\" and \"# END TuxMail\"; your own rules stay untouched."
+      "managedHint": "TuxMail only changes the section between \"# BEGIN TuxMail\" and \"# END TuxMail\"; your own rules stay untouched.",
+      "advanced": "ManageSieve server (advanced)",
+      "disabled": "Do not use server rules for this account",
+      "separate": "Keep TuxMail rules in an own script (include)",
+      "configSaved": "Saved."
+    },
+    "vacation": {
+      "title": "Out of office",
+      "intro": "Automatic reply while you are away. Mail servers that can answer themselves (Sieve, JMAP, Exchange, Gmail) get the reply, so it works with TuxMail closed; other accounts are answered by TuxMail once per sender.",
+      "enabled": "Send out-of-office replies",
+      "start": "From",
+      "end": "Until",
+      "subject": "Subject",
+      "subjectDefault": "Abwesenheitsnotiz: {{betreff}}",
+      "externalText": "Reply text",
+      "internalText": "Text for colleagues (own domains, optional)",
+      "ownDomains": "Own domains",
+      "oncePerDays": "At most one reply per sender within (days)",
+      "forwardTo": "Forward to deputy (optional)",
+      "placeholders": "Placeholders such as {{betreff}} are filled in by TuxMail; servers use the subject \"Auto: <subject>\" instead.",
+      "serverHandled": "Answered by the server: {accounts}",
+      "saved": "Out-of-office settings saved."
+    },
+    "remote": {
+      "title": "Remote images",
+      "intro": "Images of these senders and domains are loaded automatically - through the TuxMail image proxy, so senders never see your IP address.",
+      "placeholder": "Address or domain, e.g. news@shop.example or shop.example",
+      "add": "Add",
+      "remove": "Remove {value}",
+      "empty": "No senders allowed yet. Use \"Always load for this sender\" in the reading pane.",
+      "kind": {
+        "sender": "Sender",
+        "domain": "Domain"
+      }
     }
   },
   "search": {

@@ -157,7 +157,7 @@ function waveform(seed: number, n = 40): number[] {
 
 // --- Mail protocols ---
 import { MockMailProto } from './mockMailProto';
-import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveScript, SieveStatus } from '../types';
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
 
 // --- Cloud ---
 import { MockCloud } from './mockCloud';
@@ -2537,6 +2537,18 @@ export class MockTransport implements Api {
   }
   setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
     return this.run(() => this.mailProto.setWorkflowSync(accountId, enabled));
+  }
+  getSieveConfig(accountId: number): Promise<SieveConfig> {
+    return this.run(() => this.mailProto.config(accountId));
+  }
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig> {
+    return this.run(() => this.mailProto.setConfig(accountId, config));
+  }
+  getVacationSettings(): Promise<VacationSettings> {
+    return this.run(() => this.mailProto.vacationSettings());
+  }
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
+    return this.run(() => this.mailProto.saveVacation(settings));
   }
 }
 

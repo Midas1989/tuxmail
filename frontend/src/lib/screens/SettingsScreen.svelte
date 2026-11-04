@@ -23,6 +23,8 @@
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
   import SieveSettings from '../components/settings/SieveSettings.svelte';
+  import VacationSettings from '../components/settings/VacationSettings.svelte';
+  import RemoteContentSettings from '../components/settings/RemoteContentSettings.svelte';
   import FolderSettings from '../components/settings/FolderSettings.svelte';
   import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
   import BackupSettings from '../components/settings/BackupSettings.svelte';
@@ -124,6 +126,10 @@
       <p class="about">{t('settings.workflows.intro')}</p>
       <WorkflowList />
     </section>
+
+    <VacationSettings />
+
+    <RemoteContentSettings />
 
     <SieveSettings />
 

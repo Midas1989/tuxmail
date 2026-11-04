@@ -1105,7 +1105,40 @@
       "check": "Prüfen",
       "checkOk": "Der Server akzeptiert das Skript.",
       "saveActivate": "Speichern und aktivieren",
-      "managedHint": "TuxMail ändert nur den Abschnitt zwischen „# BEGIN TuxMail“ und „# END TuxMail“; deine eigenen Regeln bleiben unverändert."
+      "managedHint": "TuxMail ändert nur den Abschnitt zwischen „# BEGIN TuxMail“ und „# END TuxMail“; deine eigenen Regeln bleiben unverändert.",
+      "advanced": "ManageSieve-Server (erweitert)",
+      "disabled": "Für dieses Konto keine Serverregeln verwenden",
+      "separate": "TuxMail-Regeln in eigenem Skript ablegen (include)",
+      "configSaved": "Gespeichert."
+    },
+    "vacation": {
+      "title": "Abwesenheitsnotiz",
+      "intro": "Automatische Antwort während deiner Abwesenheit. Mailserver, die selbst antworten können (Sieve, JMAP, Exchange, Gmail), übernehmen die Antwort – sie greift dann auch bei geschlossenem TuxMail; andere Konten beantwortet TuxMail einmal pro Absender.",
+      "enabled": "Abwesenheitsnotiz senden",
+      "start": "Von",
+      "end": "Bis",
+      "subject": "Betreff",
+      "subjectDefault": "Abwesenheitsnotiz: {{betreff}}",
+      "externalText": "Antworttext",
+      "internalText": "Text für Kollegen (eigene Domains, optional)",
+      "ownDomains": "Eigene Domains",
+      "oncePerDays": "Höchstens eine Antwort pro Absender innerhalb von (Tagen)",
+      "forwardTo": "An Vertretung weiterleiten (optional)",
+      "placeholders": "Platzhalter wie {{betreff}} füllt TuxMail aus; Server verwenden stattdessen den Betreff „Auto: <Betreff>“.",
+      "serverHandled": "Vom Server beantwortet: {accounts}",
+      "saved": "Abwesenheitsnotiz gespeichert."
+    },
+    "remote": {
+      "title": "Externe Bilder",
+      "intro": "Bilder dieser Absender und Domains werden automatisch geladen – über den Bild-Proxy von TuxMail, damit Absender deine IP-Adresse nicht sehen.",
+      "placeholder": "Adresse oder Domain, z. B. news@shop.example oder shop.example",
+      "add": "Hinzufügen",
+      "remove": "{value} entfernen",
+      "empty": "Noch keine Absender freigegeben. Nutze „Immer für Absender laden“ in der Leseansicht.",
+      "kind": {
+        "sender": "Absender",
+        "domain": "Domain"
+      }
     }
   },
   "search": {

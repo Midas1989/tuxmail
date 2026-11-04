@@ -2127,3 +2127,34 @@ export interface SieveCheckResult {
   error?: string;
   line?: number;
 }
+
+/** ManageSieve settings of an IMAP account (advanced; defaults: IMAP host, 4190, STARTTLS). */
+export interface SieveConfig {
+  host: string;
+  port: number;
+  tls: TLSMode;
+  disabled: boolean;
+  /** Keep TuxMail's rules in an own script included from the active one. */
+  separate: boolean;
+}
+
+/** Out-of-office settings ("Abwesenheitsnotiz", KONZEPT 8.5). Times RFC 3339; zero/empty = open. */
+export interface VacationSettings {
+  enabled: boolean;
+  start?: string | null;
+  end?: string | null;
+  accountIds?: number[];
+  identities?: string[];
+  subject?: string;
+  internalText?: string;
+  externalText?: string;
+  ownDomains?: string[];
+  ownAddresses?: string[];
+  oncePerDays?: number;
+  forwardTo?: string[];
+  chatAutoReply?: boolean;
+  chatText?: string;
+  chatChannels?: string[];
+  /** Accounts whose mail server answers itself (read only). */
+  serverAccounts?: number[];
+}

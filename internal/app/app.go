@@ -27,6 +27,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/store/blob"
 	tsync "github.com/Midas1989/Mailclient/internal/sync"
 	"github.com/Midas1989/Mailclient/internal/workflow"
+	"github.com/Midas1989/Mailclient/internal/workflow/vacation"
 )
 
 // Modes of operation.
@@ -62,6 +63,12 @@ type Options struct {
 	// ImageSigner signs remote image proxy URLs (server mode: server key,
 	// subject = user id); default: per-installation key, mailproto.go.
 	ImageSigner *imageproxy.Signer
+	// VacationServers overrides the server-side out-of-office backends
+	// (default: EAS + Graph/EWS/Gmail + Sieve/JMAP), VacationMail the mail
+	// backend of the local responder (default: the workflow mail actions);
+	// both mainly for tests, vacation.go.
+	VacationServers func(ctx context.Context) (map[int64]vacation.ServerVacationSync, error)
+	VacationMail    workflow.MailActions
 	// PIM configures calendars, tasks and contacts (pim.go). The background
 	// loop (CalDAV/CardDAV sync, reminders, invitations) runs when PIM or
 	// Sync is set and PIM.Disabled is false.
@@ -120,6 +127,7 @@ type App struct {
 	cloud     cloudState        // cloud_accounts.go
 	oauth     *oauthState       // oauth_app.go
 	mp        mailProtoState    // mailproto.go
+	vac       vacationState     // vacation.go
 	pimOnce   sync.Once
 	pim       *pimService
 }
@@ -212,6 +220,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient,
 		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}}
 	a.proj.Workflow().Deps(&deps)
+	a.vac.mail, deps.Vacation = mail, vacationProxy{a: a} // vacation.go
 	loc := workflow.RunLocal
 	if opts.Mode == ModeServer {
 		loc = workflow.RunServer
@@ -248,6 +257,8 @@ func (a *App) Start() {
 			}
 		}()
 		go func() { defer a.wg.Done(); a.timers(ctx) }()
+		a.wg.Add(1)
+		go func() { defer a.wg.Done(); a.loadVacation(ctx) }() // vacation.go
 		if a.opts.PIM != nil || a.opts.Sync != nil {
 			a.wg.Add(1)
 			go func() { defer a.wg.Done(); a.runPIM(ctx) }()

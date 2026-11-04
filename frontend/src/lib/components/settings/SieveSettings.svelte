@@ -13,7 +13,7 @@
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
   import { highlightSieve, lintSieve } from '../../sieve';
-  import type { SieveCheckResult, SieveStatus } from '../../types';
+  import type { SieveCheckResult, SieveConfig, SieveStatus, TLSMode } from '../../types';
 
   const accounts = $derived(app.accounts.filter((a) => a.kind === 'imap'));
   let accountId = $state<number | null>(null);
@@ -43,10 +43,27 @@
     return err instanceof Error ? err.message : String(err);
   }
 
+  let config = $state<SieveConfig | null>(null);
+  let configMsg = $state<string | null>(null);
+  const tlsModes: TLSMode[] = ['starttls', 'tls', 'none'];
+
+  async function saveConfig() {
+    if (accountId === null || !config) return;
+    configMsg = null;
+    try {
+      config = await app.api.setSieveConfig(accountId, { ...config, port: Number(config.port) || 4190 });
+      configMsg = t('settings.sieve.configSaved');
+      await load(accountId);
+    } catch (err) {
+      configMsg = msg(err);
+    }
+  }
+
   async function load(id: number) {
     loading = true;
     error = null;
     try {
+      config = await app.api.getSieveConfig(id).catch(() => null);
       status = await app.api.getSieveStatus(id);
       const first = status.scripts.find((s) => s.active) ?? status.scripts[0];
       if (first) await open(first.name);
@@ -171,6 +188,27 @@
       {#if loading}<LoaderCircle size={16} class="spin" />{/if}
     </div>
     {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if config}
+      <details class="advanced">
+        <summary>{t('settings.sieve.advanced')}</summary>
+        <div class="cfg">
+          <label class="wide"><span class="label">{t('onboarding.account.host')}</span><input class="input" bind:value={config.host} /></label>
+          <label><span class="label">{t('onboarding.account.port')}</span><input class="input" type="number" min="1" max="65535" bind:value={config.port} /></label>
+          <label>
+            <span class="label">{t('onboarding.account.tls')}</span>
+            <select class="input" bind:value={config.tls}>
+              {#each tlsModes as m (m)}<option value={m}>{t(`settings.tls.${m}`)}</option>{/each}
+            </select>
+          </label>
+        </div>
+        <label class="check"><input type="checkbox" bind:checked={config.disabled} /> {t('settings.sieve.disabled')}</label>
+        <label class="check"><input type="checkbox" bind:checked={config.separate} /> {t('settings.sieve.separate')}</label>
+        <div class="actions">
+          <button class="btn" onclick={saveConfig}>{t('common.action.save')}</button>
+          {#if configMsg}<span class="hint">{configMsg}</span>{/if}
+        </div>
+      </details>
+    {/if}
     {#if status && !status.available}
       <p class="warn"><TriangleAlert size={15} /> {t('settings.sieve.unavailable')}{status.error ? `: ${status.error}` : ''}</p>
     {:else if status}
@@ -286,6 +324,16 @@
     color: var(--tm-success);
     font-size: 13px;
     margin: 4px 0;
+  }
+  .advanced {
+    font-size: 13px;
+    margin-bottom: 10px;
+  }
+  .cfg {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 8px;
+    margin: 8px 0;
   }
   .preview {
     font-size: 12.5px;
