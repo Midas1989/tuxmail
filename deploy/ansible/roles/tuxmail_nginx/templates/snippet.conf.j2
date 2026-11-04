@@ -1,4 +1,4 @@
-{% from '_tuxmail_macros.j2' import locations with context %}
+{% from '_tuxmail_macros.j2' import locations, matrix_locations with context %}
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # {{ tuxmail_nginx_marker }} – {{ ansible_managed }}
 #
@@ -12,3 +12,8 @@
 #
 # Danach: nginx -t && systemctl reload nginx
 {{ locations(true, '$scheme', tuxmail_nginx_snippet_hsts | bool) }}
+{% if tuxmail_matrix_nginx_enabled | bool %}
+
+    # Matrix (Bridge-Modus) liegt immer unter /_matrix/ an der Wurzel dieses server-Blocks.
+{{ matrix_locations('$scheme', tuxmail_nginx_snippet_hsts | bool) }}
+{% endif %}

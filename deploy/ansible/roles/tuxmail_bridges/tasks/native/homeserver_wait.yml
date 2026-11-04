@@ -1,0 +1,11 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Warten, bis der Matrix-Homeserver antwortet (/_matrix/client/versions)
+  ansible.builtin.uri:
+    url: "{{ tuxmail_bridges_homeserver_url }}/_matrix/client/versions"
+    status_code: 200
+  register: tuxmail_bridges_hs_versions
+  until: tuxmail_bridges_hs_versions.status == 200
+  retries: 60
+  delay: 2
+  changed_when: false

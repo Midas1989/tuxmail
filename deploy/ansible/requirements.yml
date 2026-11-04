@@ -7,3 +7,5 @@ collections:
     version: ">=1.5.0"
   - name: community.general # ufw
     version: ">=7.0.0"
+  - name: community.postgresql # nur bei tuxmail_bridges_db=postgres
+    version: ">=3.0.0"

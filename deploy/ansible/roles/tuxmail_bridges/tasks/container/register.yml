@@ -1,7 +1,7 @@
 ---
 # SPDX-License-Identifier: AGPL-3.0-or-later
 - name: Bridges bei Synapse eintragen
-  when: tuxmail_bridges_homeserver == 'synapse'
+  when: tuxmail_matrix_server == 'synapse'
   block:
     - name: Datei homeserver.yaml lesen
       ansible.builtin.slurp:
@@ -33,12 +33,12 @@
   ansible.builtin.debug:
     msg:
       - "Continuwuity liest Appservice-Registrierungen nicht aus Dateien. Einmalig im Admin-Raum"
-      - "(#admins:{{ tuxmail_bridges_matrix_server_name }}) für jede Bridge senden:"
+      - "(#admins:{{ tuxmail_matrix_server_name }}) für jede Bridge senden:"
       - "  !admin appservices register"
       - "  ```"
       - "  <Inhalt von {{ tuxmail_bridges_dir }}/<bridge>/registration.yaml>"
       - "  ```"
       - "Bridges: {{ tuxmail_bridges_mautrix | map(attribute='name') | join(', ') }}"
   when:
-    - tuxmail_bridges_homeserver == 'continuwuity'
+    - tuxmail_matrix_server == 'continuwuity'
     - tuxmail_bridges_mautrix | length > 0

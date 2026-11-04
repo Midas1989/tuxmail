@@ -1,0 +1,84 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Erstes Konto auf Continuwuity anlegen. Das erste registrierte Konto wird
+# automatisch Server-Admin und Mitglied des Admin-Raums #admins:<server_name>.
+# Ablauf: Konfiguration enthält beim ersten Lauf allow_registration=true mit einem
+# zufälligen, einmaligen registration_token -> Registrierung über die Client-API
+# (UIA m.login.registration_token) -> Konfiguration ohne Registrierung -> Neustart.
+# Das Zugriffstoken wird nur auf dem Server gespeichert (/etc/continuwuity/admin.token,
+# root 0600) und für die Registrierung der Bridges im Admin-Raum verwendet.
+
+- name: Passwort bestimmen
+  ansible.builtin.include_tasks: native/admin_password.yml
+
+- name: Registrierung beginnen (Sitzung der UIA anfordern)
+  ansible.builtin.uri:
+    url: "{{ tuxmail_bridges_homeserver_url }}/_matrix/client/v3/register"
+    method: POST
+    body_format: json
+    body:
+      username: "{{ tuxmail_matrix_admin_user }}"
+      password: "{{ tuxmail_bridges_admin_password }}"
+      initial_device_display_name: "TuxMail Ansible"
+    status_code: [200, 401]
+  register: tuxmail_bridges_cw_reg1
+  no_log: true
+
+- name: Registrierung mit dem einmaligen Token abschließen
+  ansible.builtin.uri:
+    url: "{{ tuxmail_bridges_homeserver_url }}/_matrix/client/v3/register"
+    method: POST
+    body_format: json
+    body:
+      username: "{{ tuxmail_matrix_admin_user }}"
+      password: "{{ tuxmail_bridges_admin_password }}"
+      initial_device_display_name: "TuxMail Ansible"
+      auth:
+        type: m.login.registration_token
+        token: "{{ tuxmail_bridges_cw_bootstrap_token }}"
+        session: "{{ tuxmail_bridges_cw_reg1.json.session | default('') }}"
+    status_code: 200
+  register: tuxmail_bridges_cw_reg2
+  when: tuxmail_bridges_cw_reg1.status == 401
+  no_log: true
+
+- name: Zugriffstoken des Admin-Kontos auf dem Server ablegen
+  ansible.builtin.copy:
+    content: "{{ (tuxmail_bridges_cw_reg2.json | default(tuxmail_bridges_cw_reg1.json)).access_token }}\n"
+    dest: /etc/continuwuity/admin.token
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+
+- name: Registrierung wieder abschalten
+  ansible.builtin.set_fact:
+    tuxmail_bridges_cw_bootstrap: false
+
+- name: Konfiguration ohne Registrierung schreiben
+  ansible.builtin.template:
+    src: continuwuity.toml.j2
+    dest: /etc/continuwuity/continuwuity.toml
+    owner: root
+    group: continuwuity
+    mode: "0640"
+  diff: false
+
+- name: Continuwuity neu starten (Registrierung aus)
+  ansible.builtin.systemd_service:
+    name: continuwuity.service
+    state: restarted
+
+- name: Warten, bis der Homeserver wieder antwortet
+  ansible.builtin.include_tasks: native/homeserver_wait.yml
+
+- name: Markierung setzen
+  ansible.builtin.copy:
+    content: "Erstes Matrix-Konto {{ tuxmail_bridges_matrix_admin }} wurde von Ansible angelegt.\n"
+    dest: /etc/continuwuity/.admin-initialized
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: Zugangsdaten anzeigen (nur einmal)
+  ansible.builtin.include_tasks: native/admin_show.yml

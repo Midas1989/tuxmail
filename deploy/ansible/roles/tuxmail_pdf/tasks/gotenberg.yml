@@ -1,0 +1,68 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Gotenberg als einzelner Container, gestartet von einer eigenen systemd-Unit
+# (kein Compose nötig). Nur bei tuxmail_pdf_renderer=gotenberg_container.
+
+- name: Container-Engine ist gültig
+  ansible.builtin.assert:
+    that: tuxmail_pdf_container_engine in ['podman', 'docker']
+    fail_msg: "tuxmail_pdf_container_engine muss podman oder docker sein."
+    quiet: true
+
+- name: Podman installieren
+  ansible.builtin.package:
+    name: podman
+    state: present
+  when: tuxmail_pdf_container_engine == 'podman'
+
+- name: Container-Engine ist verfügbar
+  ansible.builtin.command:
+    argv: ["{{ tuxmail_pdf_container_engine }}", "--version"]
+  changed_when: false
+
+- name: Docker-Dienst aktivieren
+  ansible.builtin.systemd_service:
+    name: docker
+    enabled: true
+    state: started
+  when: tuxmail_pdf_container_engine == 'docker'
+
+- name: Vorhandenes Image prüfen
+  ansible.builtin.command:
+    argv: ["{{ tuxmail_pdf_container_engine }}", "image", "inspect", "--format", "{{ '{{' }}.Id{{ '}}' }}", "{{ tuxmail_gotenberg_image }}"]
+  register: tuxmail_pdf_image_before
+  changed_when: false
+  failed_when: false
+
+- name: Image laden (nur wenn noch nicht vorhanden – feste Tags ändern sich nicht)
+  ansible.builtin.command:
+    argv: ["{{ tuxmail_pdf_container_engine }}", "pull", "{{ tuxmail_gotenberg_image }}"]
+  register: tuxmail_pdf_pull
+  changed_when: true
+  when: tuxmail_pdf_image_before.rc != 0
+
+- name: Systemd-Unit für Gotenberg
+  ansible.builtin.template:
+    src: tuxmail-gotenberg.service.j2
+    dest: "/etc/systemd/system/{{ tuxmail_gotenberg_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  register: tuxmail_pdf_gotenberg_unit
+
+- name: Gotenberg aktivieren und (neu) starten
+  ansible.builtin.systemd_service:
+    name: "{{ tuxmail_gotenberg_service_name }}"
+    enabled: true
+    state: "{{ 'restarted' if (tuxmail_pdf_pull is changed or tuxmail_pdf_gotenberg_unit is changed) else 'started' }}"
+    daemon_reload: "{{ tuxmail_pdf_gotenberg_unit is changed }}"
+
+- name: Warten, bis Gotenberg antwortet (/health)
+  ansible.builtin.uri:
+    url: "{{ tuxmail_pdf_gotenberg_url }}/health"
+    status_code: 200
+  register: tuxmail_pdf_gotenberg_health
+  until: tuxmail_pdf_gotenberg_health.status == 200
+  retries: 30
+  delay: 2
+  changed_when: false

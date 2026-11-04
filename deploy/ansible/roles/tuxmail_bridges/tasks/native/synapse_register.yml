@@ -1,0 +1,53 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Synapse liest Appservice-Registrierungen aus app_service_config_files.
+- name: Registrierungen nach /etc/matrix-synapse/appservices kopieren
+  ansible.builtin.copy:
+    src: "/etc/mautrix-{{ item.name }}/registration.yaml"
+    dest: "/etc/matrix-synapse/appservices/{{ item.name }}.yaml"
+    remote_src: true
+    owner: root
+    group: matrix-synapse
+    mode: "0640"
+  loop: "{{ tuxmail_bridges_mautrix }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: tuxmail_bridges_synapse_as_copy
+
+- name: Registrierungen abgeschalteter Bridges entfernen
+  ansible.builtin.file:
+    path: "/etc/matrix-synapse/appservices/{{ item.name }}.yaml"
+    state: absent
+  loop: "{{ tuxmail_bridges_mautrix_all | rejectattr('name', 'in', tuxmail_bridges_mautrix | map(attribute='name') | list) | list }}"
+  loop_control:
+    label: "{{ item.name }}"
+  register: tuxmail_bridges_synapse_as_removed
+
+- name: Appservice-Dateien für die Konfiguration festlegen
+  ansible.builtin.set_fact:
+    tuxmail_bridges_synapse_as_files: >-
+      {{ tuxmail_bridges_mautrix | map(attribute='name')
+         | map('regex_replace', '^(.*)$', '/etc/matrix-synapse/appservices/\1.yaml') | sort | list }}
+
+- name: Datei conf.d/tuxmail.yaml mit app_service_config_files schreiben
+  ansible.builtin.template:
+    src: synapse-tuxmail.yaml.j2
+    dest: /etc/matrix-synapse/conf.d/tuxmail.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  register: tuxmail_bridges_synapse_conf2
+
+- name: Synapse neu starten (Registrierungen geändert)
+  ansible.builtin.systemd_service:
+    name: matrix-synapse.service
+    state: restarted
+  when: >-
+    tuxmail_bridges_synapse_conf2 is changed or tuxmail_bridges_synapse_as_copy is changed
+    or tuxmail_bridges_synapse_as_removed is changed
+
+- name: Warten, bis der Homeserver wieder antwortet
+  ansible.builtin.include_tasks: native/homeserver_wait.yml
+  when: >-
+    tuxmail_bridges_synapse_conf2 is changed or tuxmail_bridges_synapse_as_copy is changed
+    or tuxmail_bridges_synapse_as_removed is changed

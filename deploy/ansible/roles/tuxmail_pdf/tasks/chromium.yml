@@ -1,0 +1,64 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Ubuntu – Chromium-Pfad muss angegeben werden
+  ansible.builtin.assert:
+    that: tuxmail_pdf_chromium_path | length > 0
+    fail_msg: >-
+      Ubuntu stellt Chromium nur als Snap bereit; Snaps laufen nicht unter der gehärteten
+      tuxmail.service. Bitte ein Chromium/Chrome als .deb installieren (z. B. google-chrome-stable
+      oder chromium aus einem vertrauenswürdigen Repository) und tuxmail_pdf_chromium_path
+      setzen – oder tuxmail_pdf_renderer=none bzw. gotenberg_container verwenden.
+    quiet: true
+  when: ansible_facts['distribution'] == 'Ubuntu'
+
+- name: EPEL bereitstellen (RHEL-Familie, für Chromium)
+  ansible.builtin.include_role:
+    name: tuxmail_common
+    tasks_from: epel.yml
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - tuxmail_pdf_chromium_install | bool
+
+- name: Chromium und Schriftarten installieren
+  ansible.builtin.package:
+    name: >-
+      {{ (tuxmail_pdf_chromium_packages if tuxmail_pdf_chromium_packages | length > 0 else tuxmail_pdf_os_chromium_packages)
+         + (tuxmail_pdf_font_packages if tuxmail_pdf_font_packages | length > 0 else tuxmail_pdf_os_font_packages) }}
+    state: present
+  when:
+    - tuxmail_pdf_chromium_install | bool
+    - ansible_facts['distribution'] != 'Ubuntu'
+
+- name: Chromium-Binary suchen
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop: "{{ [tuxmail_pdf_chromium_path] if tuxmail_pdf_chromium_path | length > 0 else tuxmail_pdf_chromium_candidates }}"
+  register: tuxmail_pdf_chromium_stat
+
+- name: Chromium-Pfad festlegen
+  ansible.builtin.set_fact:
+    tuxmail_pdf_chromium_effective: >-
+      {{ tuxmail_pdf_chromium_stat.results | selectattr('stat.exists') | selectattr('stat.executable')
+         | map(attribute='item') | first | default('') }}
+
+- name: Chromium ist vorhanden
+  ansible.builtin.assert:
+    that: tuxmail_pdf_chromium_effective | length > 0
+    fail_msg: >-
+      Kein ausführbares Chromium gefunden (geprüft: {{ tuxmail_pdf_chromium_stat.results | map(attribute='item') | join(', ') }}).
+      tuxmail_pdf_chromium_path setzen.
+    quiet: true
+
+- name: Chromium startet (--version)
+  ansible.builtin.command:
+    argv: ["{{ tuxmail_pdf_chromium_effective }}", "--headless", "--version"]
+  register: tuxmail_pdf_chromium_version
+  changed_when: false
+  failed_when: false
+
+- name: Chromium-Version ausgeben
+  ansible.builtin.debug:
+    msg: >-
+      PDF-Renderer: {{ tuxmail_pdf_chromium_effective }}
+      ({{ tuxmail_pdf_chromium_version.stdout | default('') | trim
+          if tuxmail_pdf_chromium_version.rc == 0 else 'Version nicht ermittelbar: ' ~ (tuxmail_pdf_chromium_version.stderr | default('') | trim) }})

@@ -1,0 +1,155 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Synapse aus dem offiziellen matrix.org-apt-Repository (Debian/Ubuntu).
+# Das Paket bringt Benutzer matrix-synapse, /etc/matrix-synapse, /var/lib/matrix-synapse
+# und matrix-synapse.service mit. Eigene Einstellungen ausschließlich in
+# /etc/matrix-synapse/conf.d/ (homeserver.yaml bleibt unverändert -> keine
+# Konfigurationsdatei-Rückfragen bei Paket-Updates).
+
+- name: Voraussetzungen für das apt-Repository
+  ansible.builtin.apt:
+    name: [gpg, ca-certificates, python3-debian] # python3-debian: deb822_repository
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Signaturschlüssel von packages.matrix.org laden
+  ansible.builtin.get_url:
+    url: "{{ tuxmail_synapse_apt_key_url }}"
+    dest: "{{ tuxmail_synapse_apt_keyring }}"
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Fingerabdruck des Signaturschlüssels lesen
+  ansible.builtin.command:
+    argv: [gpg, --batch, --no-default-keyring, --with-colons, --show-keys, "{{ tuxmail_synapse_apt_keyring }}"]
+  register: tuxmail_bridges_synapse_key
+  changed_when: false
+
+- name: Fingerabdruck des Signaturschlüssels prüfen
+  ansible.builtin.assert:
+    that: >-
+      tuxmail_synapse_apt_key_fingerprint | upper in
+      (tuxmail_bridges_synapse_key.stdout_lines | select('match', '^fpr:') | map('split', ':') | map(attribute=9) | list)
+    fail_msg: "Der Schlüssel {{ tuxmail_synapse_apt_keyring }} hat nicht den erwarteten Fingerabdruck {{ tuxmail_synapse_apt_key_fingerprint }}."
+    quiet: true
+
+- name: Paketquelle packages.matrix.org eintragen
+  ansible.builtin.deb822_repository:
+    name: matrix-org
+    types: [deb]
+    uris: ["{{ tuxmail_synapse_apt_repo }}"]
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: [main]
+    signed_by: "{{ tuxmail_synapse_apt_keyring }}"
+    state: present
+  register: tuxmail_bridges_synapse_repo
+
+- name: Debconf – Servername (wird nur bei der Erstinstallation gelesen)
+  ansible.builtin.debconf:
+    name: matrix-synapse-py3
+    question: matrix-synapse/server-name
+    value: "{{ tuxmail_matrix_server_name }}"
+    vtype: string
+
+- name: Debconf – keine Statistik an matrix.org
+  ansible.builtin.debconf:
+    name: matrix-synapse-py3
+    question: matrix-synapse/report-stats
+    value: "false"
+    vtype: boolean
+
+- name: Konfigurationsverzeichnisse vor der Installation anlegen
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - /etc/matrix-synapse
+    - /etc/matrix-synapse/conf.d
+    - /etc/matrix-synapse/appservices
+
+- name: Vorhandene Appservice-Registrierungen ermitteln
+  ansible.builtin.find:
+    paths: /etc/matrix-synapse/appservices
+    patterns: "*.yaml"
+  register: tuxmail_bridges_synapse_as_found
+
+- name: Appservice-Dateien für die Konfiguration festlegen
+  ansible.builtin.set_fact:
+    tuxmail_bridges_synapse_as_files: "{{ tuxmail_bridges_synapse_as_found.files | map(attribute='path') | sort | list }}"
+
+# Vor dem Paket schreiben, damit Synapse schon beim ersten Start (postinst)
+# mit Listener 127.0.0.1, ohne Registrierung und ggf. mit PostgreSQL läuft.
+- name: Datei conf.d/tuxmail.yaml schreiben
+  ansible.builtin.template:
+    src: synapse-tuxmail.yaml.j2
+    dest: /etc/matrix-synapse/conf.d/tuxmail.yaml
+    owner: root
+    group: root
+    mode: "0644"
+  register: tuxmail_bridges_synapse_conf
+
+- name: Synapse installieren
+  ansible.builtin.apt:
+    name: "{{ 'matrix-synapse-py3=' ~ tuxmail_synapse_version if tuxmail_synapse_version | length > 0 else 'matrix-synapse-py3' }}"
+    state: present
+    allow_downgrade: "{{ tuxmail_synapse_version | length > 0 }}"
+    # Nach dem Eintragen der Paketquelle die Paketlisten neu laden.
+    update_cache: "{{ tuxmail_bridges_synapse_repo is changed }}"
+  register: tuxmail_bridges_synapse_pkg
+
+- name: Gemeinsames Geheimnis für register_new_matrix_user erzeugen (einmalig, wird nie überschrieben)
+  ansible.builtin.copy:
+    content: "registration_shared_secret: \"{{ lookup('ansible.builtin.password', '/dev/null length=48 chars=ascii_letters,digits') }}\"\n"
+    dest: /etc/matrix-synapse/conf.d/tuxmail-secret.yaml
+    owner: root
+    group: matrix-synapse
+    mode: "0640"
+    force: false
+  no_log: true
+
+- name: Rechte des Geheimnisses
+  ansible.builtin.file:
+    path: /etc/matrix-synapse/conf.d/tuxmail-secret.yaml
+    owner: root
+    group: matrix-synapse
+    mode: "0640"
+
+- name: Zusätzliche Härtung für matrix-synapse.service (Drop-in)
+  block:
+    - name: Drop-in-Verzeichnis
+      ansible.builtin.file:
+        path: /etc/systemd/system/matrix-synapse.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Drop-in tuxmail-hardening.conf
+      ansible.builtin.template:
+        src: synapse-hardening.conf.j2
+        dest: /etc/systemd/system/matrix-synapse.service.d/tuxmail-hardening.conf
+        owner: root
+        group: root
+        mode: "0644"
+      register: tuxmail_bridges_synapse_dropin
+
+- name: Synapse aktivieren und (neu) starten
+  ansible.builtin.systemd_service:
+    name: matrix-synapse.service
+    enabled: true
+    state: >-
+      {{ 'restarted' if (tuxmail_bridges_synapse_conf is changed or tuxmail_bridges_synapse_dropin is changed
+                         or tuxmail_bridges_synapse_pkg is changed) else 'started' }}
+    daemon_reload: "{{ tuxmail_bridges_synapse_dropin is changed }}"
+
+- name: Warten, bis der Homeserver antwortet
+  ansible.builtin.include_tasks: native/homeserver_wait.yml
+
+- name: Erstes Konto (Server-Admin) anlegen
+  ansible.builtin.include_tasks: native/synapse_admin.yml
+  when: tuxmail_matrix_admin_create | bool

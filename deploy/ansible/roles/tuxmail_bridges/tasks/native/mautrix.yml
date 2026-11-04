@@ -1,0 +1,152 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Eine mautrix-Bridge (bridgev2) nativ einrichten:
+#   Benutzer/Gruppe mautrix-<name>, /opt/mautrix-<name>/{versions,current}
+#   /etc/mautrix-<name>/config.yaml + registration.yaml (root:mautrix-<name> 0640)
+#   /var/lib/mautrix-<name> (SQLite-Datenbank, Arbeitsverzeichnis)
+# Ablauf wie in der mautrix-Dokumentation:
+#   1. "-e" erzeugt die Beispielkonfiguration (nur wenn noch keine existiert)
+#   2. Ansible setzt Homeserver, Appservice-Adresse, Datenbank, Rechte, Logging
+#   3. "-g" erzeugt registration.yaml und trägt as_token/hs_token in config.yaml ein
+#   4. Start mit "--no-update": die Bridge schreibt ihre Konfiguration nie selbst um
+
+- name: "Gruppe mautrix-{{ tuxmail_bridge.name }}"
+  ansible.builtin.group:
+    name: "mautrix-{{ tuxmail_bridge.name }}"
+    system: true
+    state: present
+
+- name: "Systembenutzer mautrix-{{ tuxmail_bridge.name }}"
+  ansible.builtin.user:
+    name: "mautrix-{{ tuxmail_bridge.name }}"
+    group: "mautrix-{{ tuxmail_bridge.name }}"
+    system: true
+    shell: /usr/sbin/nologin
+    home: "/var/lib/mautrix-{{ tuxmail_bridge.name }}"
+    create_home: false
+    comment: "mautrix-{{ tuxmail_bridge.name }} Matrix bridge"
+    state: present
+
+- name: "Verzeichnisse (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "mautrix-{{ tuxmail_bridge.name }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: "/etc/mautrix-{{ tuxmail_bridge.name }}", owner: root, mode: "0750"}
+    - {path: "/var/lib/mautrix-{{ tuxmail_bridge.name }}", owner: "mautrix-{{ tuxmail_bridge.name }}", mode: "0700"}
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: "Binary installieren – mautrix-{{ tuxmail_bridge.name ~ ' ' ~ tuxmail_bridge.version }}"
+  ansible.builtin.include_tasks: native/binary.yml
+  vars:
+    tuxmail_bin_name: "mautrix-{{ tuxmail_bridge.name }}"
+    tuxmail_bin_version: "{{ tuxmail_bridge.version }}"
+    tuxmail_bin_url: >-
+      {{ tuxmail_mautrix_release_base_url }}/{{ tuxmail_bridge.name }}/releases/download/v{{ tuxmail_bridge.version
+      }}/mautrix-{{ tuxmail_bridge.name }}-{{ tuxmail_bridges_arch }}
+    tuxmail_bin_checksum: >-
+      {{ ('sha256:' ~ tuxmail_bridge.sha256[tuxmail_bridges_arch]) if tuxmail_bridge.sha256.get(tuxmail_bridges_arch, '') | length > 0 else '' }}
+    tuxmail_bin_src: ""
+    tuxmail_bin_data_dir: "/var/lib/mautrix-{{ tuxmail_bridge.name }}"
+
+- name: "Beispielkonfiguration einmalig erzeugen – mautrix-{{ tuxmail_bridge.name }}"
+  ansible.builtin.command:
+    argv:
+      - "/opt/mautrix-{{ tuxmail_bridge.name }}/current/mautrix-{{ tuxmail_bridge.name }}"
+      - --generate-example-config
+      - --config
+      - "/etc/mautrix-{{ tuxmail_bridge.name }}/config.yaml"
+    creates: "/etc/mautrix-{{ tuxmail_bridge.name }}/config.yaml"
+
+- name: "Konfiguration lesen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.slurp:
+    src: "/etc/mautrix-{{ tuxmail_bridge.name }}/config.yaml"
+  register: tuxmail_bridges_cfg_raw
+  no_log: true
+
+- name: "Gewünschte Konfiguration berechnen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_cfg_current: "{{ tuxmail_bridges_cfg_raw.content | b64decode | from_yaml }}"
+    tuxmail_bridges_cfg_overrides:
+      homeserver:
+        address: "{{ tuxmail_bridges_homeserver_url }}"
+        domain: "{{ tuxmail_matrix_server_name }}"
+        software: standard
+      appservice:
+        address: "http://127.0.0.1:{{ tuxmail_bridge.port }}"
+        hostname: "127.0.0.1"
+        port: "{{ tuxmail_bridge.port | int }}"
+      database:
+        type: "{{ 'postgres' if tuxmail_bridges_db == 'postgres' else 'sqlite3-fk-wal' }}"
+        uri: >-
+          {{ ('postgres:///mautrix_' ~ tuxmail_bridge.name ~ '?host=/run/postgresql&user=mautrix-' ~ tuxmail_bridge.name
+              ~ '&sslmode=disable')
+             if tuxmail_bridges_db == 'postgres'
+             else ('file:/var/lib/mautrix-' ~ tuxmail_bridge.name ~ '/mautrix-' ~ tuxmail_bridge.name ~ '.db?_txlock=immediate') }}
+      logging:
+        min_level: "{{ tuxmail_mautrix_log_level }}"
+        writers:
+          - type: stdout
+            format: json
+  no_log: true
+
+- name: "Konfiguration zusammenführen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_cfg_desired: >-
+      {{ (tuxmail_bridges_cfg_current | combine(tuxmail_bridges_cfg_overrides, recursive=True))
+         | combine({'bridge': (tuxmail_bridges_cfg_current.bridge | default({}))
+                              | combine({'permissions': tuxmail_bridges_permissions})})
+         | combine(tuxmail_mautrix_config_overrides.get(tuxmail_bridge.name, {}), recursive=True) }}
+  no_log: true
+
+- name: "Konfiguration schreiben (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.copy:
+    content: "{{ tuxmail_bridges_cfg_desired | to_nice_yaml(indent=4, width=1000) }}"
+    dest: "/etc/mautrix-{{ tuxmail_bridge.name }}/config.yaml"
+    owner: root
+    group: "mautrix-{{ tuxmail_bridge.name }}"
+    mode: "0640"
+  register: tuxmail_bridges_cfg_written
+  # Vergleich auf Datenebene: "-g" formatiert die Datei beim Eintragen der Tokens um.
+  when: tuxmail_bridges_cfg_desired != tuxmail_bridges_cfg_current
+  no_log: true
+
+- name: "Registrierung einmalig erzeugen – mautrix-{{ tuxmail_bridge.name }}"
+  ansible.builtin.command:
+    argv:
+      - "/opt/mautrix-{{ tuxmail_bridge.name }}/current/mautrix-{{ tuxmail_bridge.name }}"
+      - --generate-registration
+      - --config
+      - "/etc/mautrix-{{ tuxmail_bridge.name }}/config.yaml"
+      - --registration
+      - "/etc/mautrix-{{ tuxmail_bridge.name }}/registration.yaml"
+    creates: "/etc/mautrix-{{ tuxmail_bridge.name }}/registration.yaml"
+  register: tuxmail_bridges_reg_generated
+
+- name: "Rechte von Konfiguration und Registrierung (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.file:
+    path: "/etc/mautrix-{{ tuxmail_bridge.name }}/{{ item }}"
+    owner: root
+    group: "mautrix-{{ tuxmail_bridge.name }}"
+    mode: "0640"
+  loop: [config.yaml, registration.yaml]
+
+- name: "Systemd-Unit (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.template:
+    src: mautrix.service.j2
+    dest: "/etc/systemd/system/mautrix-{{ tuxmail_bridge.name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  register: tuxmail_bridges_unit_written
+
+- name: "Neustart vormerken (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_restart: "{{ (tuxmail_bridges_restart | default([])) + ['mautrix-' ~ tuxmail_bridge.name] }}"
+  when: >-
+    tuxmail_bridges_cfg_written is changed or tuxmail_bridges_reg_generated is changed
+    or tuxmail_bridges_unit_written is changed
