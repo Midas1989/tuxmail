@@ -19,8 +19,8 @@ jobs:
     name: Frontend (check, test, build)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.1.0
         with:
           node-version: "22"
           cache: npm
@@ -33,7 +33,7 @@ jobs:
         working-directory: frontend
       - run: npm run build
         working-directory: frontend
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: frontend-dist
           path: frontend/dist
@@ -43,8 +43,8 @@ jobs:
     name: Go (vet, test)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
       - run: go vet ./...
@@ -63,8 +63,8 @@ jobs:
           - { goos: windows, goarch: amd64 }
           - { goos: windows, goarch: arm64 }
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
       - name: Build
@@ -74,12 +74,52 @@ jobs:
           CGO_ENABLED: "0"
         run: |
           ext=""; [ "$GOOS" = windows ] && ext=".exe"
-          version="0.0.0-${GITHUB_SHA::7}"
+          version="$(build/version.sh)"
           mkdir -p dist
           go build -trimpath -ldflags "-s -w -X main.version=${version}" -o "dist/tuxmail${ext}" ./cmd/tuxmail
           cp LICENSE NOTICE README.md dist/
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: tuxmail-server-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist
           retention-days: 14
+
+  versions:
+    name: Version consistency (VERSION, mobile/package.json)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: VERSION must match mobile/package.json (docs/RELEASE.md)
+        run: build/version.sh --check-tag "v$(build/version.sh --base)"
+
+  packaging-lint:
+    name: Packaging lint (workflows, scripts, Dockerfile, NSIS)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck yamllint nsis desktop-file-utils appstream
+          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
+      - name: actionlint
+        run: actionlint
+      - name: yamllint
+        run: yamllint -c .yamllint.yml .github build/linux/nfpm.yaml build/docker deploy/docker
+      - name: shellcheck
+        run: shellcheck -x build/*.sh build/linux/*.sh build/linux/AppRun build/windows/*.sh web/build.sh
+      - name: hadolint
+        run: docker run --rm -i docker.io/hadolint/hadolint:v2.12.0 hadolint --failure-threshold warning - < build/docker/Dockerfile
+      - name: Desktop file and AppStream metadata
+        run: |
+          desktop-file-validate build/linux/org.tuxmail.TuxMail.desktop
+          sed -e 's/@VERSION@/0.0.0/' -e 's/@DATE@/2026-01-01/' build/linux/org.tuxmail.TuxMail.metainfo.xml > "$RUNNER_TEMP/metainfo.xml"
+          appstreamcli validate --no-net "$RUNNER_TEMP/metainfo.xml"
+      - name: NSIS script compiles
+        run: |
+          mkdir -p build/out/windows-amd64
+          cp LICENSE build/out/windows-amd64/TuxMail.exe
+          DIST="$RUNNER_TEMP/nsis" build/windows/package-installer.sh amd64

@@ -22,7 +22,8 @@
 
 <script lang="ts">
   import X from '@lucide/svelte/icons/x';
-  import type { Address, Person } from '../../types';
+  import type { Address, AddressSuggestion, Person } from '../../types';
+  import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
   import Avatar from '../common/Avatar.svelte';
 
@@ -40,10 +41,28 @@
   let focused = $state(false);
   const listId = `rcpt-${Math.random().toString(36).slice(2, 8)}`;
 
+  // Contacts and recently used addresses from the core (debounced).
+  let remote = $state<AddressSuggestion[]>([]);
+  let remoteTimer: ReturnType<typeof setTimeout> | undefined;
+  $effect(() => {
+    const q = query.trim();
+    clearTimeout(remoteTimer);
+    if (q.length < 2) {
+      remote = [];
+      return;
+    }
+    remoteTimer = setTimeout(() => {
+      void app.api
+        .autocompleteAddresses(q, 8)
+        .then((r) => query.trim() === q && (remote = r))
+        .catch(() => (remote = []));
+    }, 120);
+  });
+
   const suggestions = $derived.by(() => {
     const q = query.trim().toLowerCase();
     if (q.length < 1) return [];
-    const out: { name: string; email: string; person: Person }[] = [];
+    const out: { name: string; email: string; person?: Person }[] = [];
     for (const p of persons) {
       if (p.isMe) continue;
       for (const h of p.handles) {
@@ -52,7 +71,11 @@
         if (p.displayName.toLowerCase().includes(q) || h.value.includes(q)) out.push({ name: p.displayName, email: h.value, person: p });
       }
     }
-    return out.slice(0, 6);
+    for (const r of remote) {
+      if (out.some((o) => o.email.toLowerCase() === r.email.toLowerCase()) || value.some((v) => v.email.toLowerCase() === r.email.toLowerCase())) continue;
+      out.push({ name: r.name || r.email, email: r.email });
+    }
+    return out.slice(0, 8);
   });
 
   $effect(() => {

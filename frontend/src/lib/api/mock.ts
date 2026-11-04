@@ -6,6 +6,8 @@
 // provide (conversation grouping, person views, selection mapping, events).
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
+import { MockPim } from './mockPim';
+import type * as pim from '../types';
 import { ApiError, EventHub } from './api';
 import { chatItemId, mailItemId, normalizeSubject, splitMail, splitQuoted } from '../conversation';
 import type {
@@ -86,6 +88,19 @@ import type {
   WorkflowValidation,
 } from '../types';
 import type { ConversationScope } from './api';
+import type { AssignableRole, FolderBehaviour, FolderConfig, FolderRole } from '../types';
+import { applyOverrides, roleEntries, type ServerRole } from '../folderconfig';
+// --- OAuth/Cloud accounts ---
+import { MockOAuth, mockOAuthProvider } from './mockOAuth';
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
+} from '../types';
 
 const SEEN: Flag = '\\Seen';
 const ANSWERED: Flag = '\\Answered';
@@ -139,6 +154,25 @@ function waveform(seed: number, n = 40): number[] {
     return 0.2 + (x / 233280) * 0.8;
   });
 }
+
+// --- Mail protocols ---
+import { MockMailProto } from './mockMailProto';
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
+
+// --- Cloud ---
+import { MockCloud } from './mockCloud';
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
+} from '../types';
 
 export interface MockOptions {
   latencyMs?: number;
@@ -673,6 +707,12 @@ export class MockTransport implements Api {
     };
     const k = known[domain];
     if (!domain) return this.reply({ source: 'none', kind: 'imap', displayName: email });
+    const oauthProvider = mockOAuthProvider(domain); // OAuth/Cloud accounts
+    if (oauthProvider === 'microsoft') {
+      return this.reply({ source: 'autoconfig', kind: 'imap', displayName: 'Microsoft 365', oauthAvailable: true, oauthProvider,
+        incoming: { host: 'outlook.office365.com', port: 993, tls: 'tls', auth: 'oauth2', username: email },
+        outgoing: { host: 'smtp.office365.com', port: 587, tls: 'starttls', auth: 'oauth2', username: email } });
+    }
     const [inHost, outHost, inPort, outPort, outTls] = k ?? [`imap.${domain}`, `smtp.${domain}`, 993, 587, 'starttls'];
     return this.reply({
       source: k ? 'autoconfig' : 'guess',
@@ -681,6 +721,7 @@ export class MockTransport implements Api {
       incoming: { host: inHost, port: inPort, tls: 'tls', auth: 'password', username: email },
       outgoing: { host: outHost, port: outPort, tls: outTls, auth: 'password', username: email },
       oauthAvailable: domain === 'gmail.com',
+      oauthProvider,
     });
   }
 
@@ -1044,6 +1085,19 @@ export class MockTransport implements Api {
     await this.reply(null);
   }
 
+  async saveSignature(signature: Signature): Promise<Signature> {
+    const s = clone(signature);
+    if (!s.html && s.plain) s.html = s.plain.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!).replace(/\n/g, '<br>');
+    if (!s.id) {
+      s.id = Math.max(0, ...this.signatures.map((x) => x.id)) + 1;
+      this.signatures.push(s);
+    } else this.signatures = this.signatures.map((x) => (x.id === s.id ? s : x));
+    return this.reply(s);
+  }
+  async deleteSignature(id: number): Promise<void> {
+    this.signatures = this.signatures.filter((x) => x.id !== id);
+    return this.reply(undefined);
+  }
   async updateIdentity(identity: Identity): Promise<Identity> {
     this.identities = this.identities.map((i) => (i.id === identity.id ? clone(identity) : i));
     return this.reply(identity);
@@ -1998,6 +2052,7 @@ export class MockTransport implements Api {
     return this.run(() => ({ added: this.org.applyProjectRules(projectId) }));
   }
   setTaskDone(taskId: number, done: boolean): Promise<void> {
+    if (this.pim.setTaskDone(taskId, done)) return this.run(() => undefined);
     return this.run(() => this.org.setTaskDone(taskId, done));
   }
 
@@ -2043,6 +2098,171 @@ export class MockTransport implements Api {
   }
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
     return this.run(() => this.org.complete(src, offset, mode));
+  }
+
+  // --- Folder config ---
+  private folderCfg = new Map<
+    number,
+    { server: Partial<Record<FolderRole, ServerRole>>; overrides: Partial<Record<AssignableRole, number>>; behaviour: FolderBehaviour }
+  >();
+  private identityFolders = new Map<number, { sent?: number; drafts?: number }>();
+
+  private folderState(accountId: number) {
+    let st = this.folderCfg.get(accountId);
+    if (!st) {
+      const acc = this.accounts.find((a) => a.id === accountId);
+      if (!acc) throw new ApiError('Konto nicht gefunden', 404, 'not_found');
+      const server: Partial<Record<FolderRole, ServerRole>> = {};
+      for (const f of this.folders.filter((x) => x.accountId === accountId && x.role)) {
+        server[f.role!] = { folderId: f.id, source: f.roleSource ?? 'server' };
+      }
+      const saves = acc.kind === 'eas' || acc.kind === 'graph' || acc.kind === 'gmail';
+      st = { server, overrides: {}, behaviour: { saveSent: !saves, saveSentAuto: true, providerSavesSent: saves, trashMode: 'move', archiveMode: 'single' } };
+      this.folderCfg.set(accountId, st);
+    }
+    return st;
+  }
+
+  private folderConfig(accountId: number): FolderConfig {
+    const st = this.folderState(accountId);
+    const own = this.folders.filter((f) => f.accountId === accountId);
+    return {
+      accountId,
+      roles: roleEntries(own, st.server, st.overrides),
+      behaviour: { ...st.behaviour },
+      identities: this.identities
+        .filter((i) => i.accountId === accountId)
+        .map((i) => ({ identityId: i.id, name: i.name, email: i.email, sentFolderId: this.identityFolders.get(i.id)?.sent, draftsFolderId: this.identityFolders.get(i.id)?.drafts })),
+      canCreate: true,
+    };
+  }
+
+  private applyFolderRoles(accountId: number): FolderConfig {
+    const st = this.folderState(accountId);
+    const own = applyOverrides(
+      this.folders.filter((f) => f.accountId === accountId),
+      st.server,
+      st.overrides,
+    );
+    const byId = new Map(own.map((f) => [f.id, f]));
+    this.folders = this.folders.map((f) => byId.get(f.id) ?? f);
+    this.emit({ type: 'account.updated', accountId });
+    return this.folderConfig(accountId);
+  }
+
+  getFolderConfig(accountId: number): Promise<FolderConfig> {
+    return this.run(() => this.folderConfig(accountId));
+  }
+  setFolderRole(accountId: number, role: AssignableRole, folderId: number): Promise<FolderConfig> {
+    return this.run(() => {
+      const st = this.folderState(accountId);
+      if (folderId) {
+        const f = this.folders.find((x) => x.id === folderId && x.accountId === accountId);
+        if (!f || f.role === 'inbox') throw new ApiError('Ordner kann diese Rolle nicht erhalten', 400, 'invalid_input');
+        for (const [r, id] of Object.entries(st.overrides)) if (id === folderId) delete st.overrides[r as AssignableRole];
+        st.overrides[role] = folderId;
+      } else {
+        delete st.overrides[role];
+      }
+      return this.applyFolderRoles(accountId);
+    });
+  }
+  resetFolderRoles(accountId: number): Promise<FolderConfig> {
+    return this.run(() => {
+      this.folderState(accountId).overrides = {};
+      return this.applyFolderRoles(accountId);
+    });
+  }
+  createRoleFolder(accountId: number, role: AssignableRole, name: string): Promise<FolderConfig> {
+    return this.run(() => {
+      const st = this.folderState(accountId);
+      const id = this.nextId++;
+      this.folders.push({ id, accountId, name, remoteId: name, subscribed: true, unread: 0, total: 0 });
+      st.overrides[role] = id;
+      return this.applyFolderRoles(accountId);
+    });
+  }
+  saveFolderBehaviour(accountId: number, behaviour: FolderBehaviour): Promise<FolderConfig> {
+    return this.run(() => {
+      const st = this.folderState(accountId);
+      const saveSent = behaviour.saveSentAuto ? !st.behaviour.providerSavesSent : behaviour.saveSent;
+      st.behaviour = { ...behaviour, saveSent, providerSavesSent: st.behaviour.providerSavesSent };
+      return this.folderConfig(accountId);
+    });
+  }
+  setIdentityFolders(identityId: number, sentFolderId: number, draftsFolderId: number): Promise<FolderConfig> {
+    return this.run(() => {
+      const ident = this.identities.find((i) => i.id === identityId);
+      if (!ident) throw new ApiError('Identität nicht gefunden', 404, 'not_found');
+      this.identityFolders.set(identityId, { sent: sentFolderId || undefined, drafts: draftsFolderId || undefined });
+      return this.folderConfig(ident.accountId);
+    });
+  }
+  expungeFolder(folderId: number): Promise<number> {
+    return this.run(() => {
+      let n = 0;
+      for (const [id, m] of this.messages) {
+        if (m.folderIds.includes(folderId) && m.flags.includes('\\Deleted')) {
+          this.messages.delete(id);
+          n++;
+        }
+      }
+      return n;
+    });
+  }
+
+  // --- Import/Export/Backup --- (state and logic in mockIO.ts)
+  private ioMock = new MockIO(this.emit.bind(this));
+  listIOFormats(): Promise<IO.IOFormats> {
+    return this.run(() => this.ioMock.formats());
+  }
+  uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload> {
+    return this.run(() => this.ioMock.upload(file, filename));
+  }
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview> {
+    return this.run(() => this.ioMock.inspect(source));
+  }
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startImport(request));
+  }
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startExport(request));
+  }
+  listIOJobs(): Promise<IO.IOJob[]> {
+    return this.run(() => this.ioMock.jobsList());
+  }
+  getIOJob(id: string): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.job(id));
+  }
+  cancelIOJob(id: string): Promise<void> {
+    return this.run(() => this.ioMock.cancel(id));
+  }
+  ioDownloadUrl(token: string): string {
+    return this.ioMock.downloadUrl(token);
+  }
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.createBackup(request, this.accounts));
+  }
+  inspectBackup(source: IO.BackupSource, passphrase = ''): Promise<IO.BackupInspection> {
+    return this.run(() => this.ioMock.inspectBackup(source, passphrase, this.accounts));
+  }
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startRestore(request));
+  }
+  listBackupSchedules(): Promise<IO.BackupSchedule[]> {
+    return this.run(() => this.ioMock.schedulesList());
+  }
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule> {
+    return this.run(() => this.ioMock.saveSchedule(schedule));
+  }
+  deleteBackupSchedule(id: string): Promise<void> {
+    return this.run(() => this.ioMock.deleteSchedule(id));
+  }
+  runBackupSchedule(id: string): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.runSchedule(id, this.accounts));
+  }
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]> {
+    return this.run(() => this.ioMock.archives(scheduleId));
   }
 
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
@@ -2117,7 +2337,282 @@ export class MockTransport implements Api {
   setMessengerTyping(_conversationId: number, _active: boolean): Promise<void> {
     return this.run(() => undefined);
   }
+
+  // --- PIM --- (mockPim.ts)
+  private pimState?: MockPim;
+  private get pim(): MockPim {
+    this.pimState ??= new MockPim({
+      now: () => this.opts.now ?? new Date(),
+      persons: () => this.persons,
+      notify: (kind) => this.emit({ type: kind === 'calendar' ? 'calendar.changed' : 'contacts.changed' }),
+    });
+    return this.pimState;
+  }
+  listCalendars(): Promise<pim.PimCalendar[]> {
+    return this.run(() => this.pim.listCalendars());
+  }
+  saveCalendar(input: pim.CalendarInput): Promise<pim.PimCalendar> {
+    return this.run(() => this.pim.saveCalendar(clone(input)));
+  }
+  deleteCalendar(id: number): Promise<void> {
+    return this.run(() => this.pim.deleteCalendar(id));
+  }
+  syncCalendars(): Promise<void> {
+    return this.run(() => undefined);
+  }
+  importCalendarFile(_calendarId: number, ics: string): Promise<{ added: number }> {
+    return this.run(() => ({ added: (ics.match(/BEGIN:VEVENT/g) ?? []).length }));
+  }
+  listEvents(query: pim.EventQuery): Promise<pim.CalendarEvent[]> {
+    return this.run(() => this.pim.listEvents(query));
+  }
+  getEvent(id: string): Promise<pim.CalendarEvent> {
+    return this.run(() => this.pim.getEvent(id));
+  }
+  createEvent(input: pim.EventInput): Promise<pim.CalendarEvent> {
+    return this.run(() => this.pim.createEvent(clone(input)));
+  }
+  updateEvent(id: string, input: pim.EventInput, scope: pim.RecurrenceScope): Promise<pim.CalendarEvent> {
+    return this.run(() => this.pim.updateEvent(id, clone(input), scope));
+  }
+  deleteEvent(id: string, scope: pim.RecurrenceScope): Promise<void> {
+    return this.run(() => this.pim.deleteEvent(id, scope));
+  }
+  resolveEventConflict(): Promise<void> {
+    return this.run(() => undefined);
+  }
+  getFreeBusy(query: { attendees: string[]; from: string; to: string }): Promise<pim.FreeBusy[]> {
+    return this.run(() => this.pim.freeBusy(query));
+  }
+  snoozeReminder(): Promise<void> {
+    return this.run(() => undefined);
+  }
+  addDavAccount(input: pim.DavAccountInput): Promise<Account> {
+    return this.run(() => {
+      const acc: Account = { id: ++this.nextId, kind: 'caldav', displayName: input.displayName || input.url, enabled: true, sortOrder: this.accounts.length };
+      this.accounts.push(acc);
+      return acc;
+    });
+  }
+  listTasks(query: pim.TaskQuery): Promise<pim.PimTask[]> {
+    return this.run(() => this.pim.listTasks(query));
+  }
+  saveTask(input: pim.TaskInput): Promise<pim.PimTask> {
+    return this.run(() => this.pim.saveTask(clone(input)));
+  }
+  deleteTask(id: number): Promise<void> {
+    return this.run(() => this.pim.deleteTask(id));
+  }
+  getMessageInvitations(messageId: number): Promise<pim.Invitation[]> {
+    return this.run(() => this.pim.messageInvitations(messageId));
+  }
+  listInvitations(): Promise<pim.Invitation[]> {
+    return this.run(() => this.pim.listInvitations());
+  }
+  respondInvitation(id: number, response: pim.InvitationResponse): Promise<pim.Invitation> {
+    return this.run(() => this.pim.respond(id, clone(response)));
+  }
+  listAddressBooks(): Promise<pim.PimAddressBook[]> {
+    return this.run(() => this.pim.listBooks());
+  }
+  saveAddressBook(input: pim.AddressBookInput): Promise<pim.PimAddressBook> {
+    return this.run(() => this.pim.saveBook(clone(input)));
+  }
+  deleteAddressBook(id: number): Promise<void> {
+    return this.run(() => this.pim.deleteBook(id));
+  }
+  listContacts(query: pim.ContactQuery): Promise<pim.PimContact[]> {
+    return this.run(() => this.pim.listContacts(query));
+  }
+  getContact(id: number): Promise<pim.PimContact> {
+    return this.run(() => this.pim.getContact(id));
+  }
+  saveContact(contact: pim.PimContact): Promise<pim.PimContact> {
+    return this.run(() => this.pim.saveContact(clone(contact)));
+  }
+  deleteContact(id: number): Promise<void> {
+    return this.run(() => this.pim.deleteContact(id));
+  }
+  listContactGroups(): Promise<pim.ContactGroup[]> {
+    return this.run(() => this.pim.groups());
+  }
+  findDuplicateContacts(): Promise<pim.DuplicateGroup[]> {
+    return this.run(() => this.pim.duplicates());
+  }
+  mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact> {
+    return this.run(() => this.pim.merge(ids, merged ? clone(merged) : undefined));
+  }
+  autocompleteAddresses(query: string, limit = 8): Promise<pim.AddressSuggestion[]> {
+    return this.run(() => this.pim.autocomplete(query, limit));
+  }
+
+  // --- Cloud ---
+  /** In-memory cloud accounts, files and shares (mockCloud.ts). */
+  readonly cloud = new MockCloud();
+
+  listCloudAccounts(): Promise<CloudAccount[]> {
+    return this.run(() => this.cloud.listAccounts());
+  }
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow> {
+    return this.run(() => this.cloud.startLogin(input));
+  }
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow> {
+    return this.run(() => this.cloud.pollLogin(flowId));
+  }
+  cancelCloudLogin(flowId: string): Promise<void> {
+    return this.run(() => this.cloud.cancelLogin(flowId));
+  }
+  deleteCloudAccount(id: number): Promise<void> {
+    return this.run(() => this.cloud.deleteAccount(id));
+  }
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing> {
+    return this.run(() => this.cloud.list(accountId, path));
+  }
+  cloudQuota(accountId: number): Promise<CloudQuota> {
+    return this.run(() => this.cloud.quota(accountId));
+  }
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry> {
+    return this.run(() => this.cloud.mkdir(accountId, path));
+  }
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void> {
+    return this.run(() => this.cloud.move(accountId, from, to));
+  }
+  deleteCloudFile(accountId: number, path: string): Promise<void> {
+    return this.run(() => this.cloud.remove(accountId, path));
+  }
+  uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry> {
+    return this.run(() => this.cloud.store(accountId, dir, filename, file.size, file.type || undefined));
+  }
+  async downloadCloudFile(accountId: number, path: string): Promise<Blob> {
+    const { entry, data } = await this.run(() => this.cloud.read(accountId, path));
+    return new Blob([data], { type: entry.contentType ?? 'application/octet-stream' });
+  }
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult> {
+    return this.run(() => this.cloud.importFile(accountId, path));
+  }
+  async saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry> {
+    let name = input.filename ?? 'Datei';
+    let size = 0;
+    let type: string | undefined;
+    if (input.messageId != null) {
+      const m = await this.getMessage(input.messageId);
+      const a = m.attachments.find((x) => x.id === input.index) ?? m.attachments[input.index ?? 0];
+      if (!a) throw new ApiError('Anhang nicht gefunden', 404, 'not_found');
+      name = input.filename ?? a.filename;
+      size = a.size;
+      type = a.mimeType;
+    }
+    return this.run(() => this.cloud.save(input, name, size, type));
+  }
+  createCloudShare(input: CloudShareInput): Promise<CloudShare> {
+    const m = input.uploadToken?.match(/^mock-upload-\d+-(.*)-(\d+)$/);
+    const file = m ? { name: decodeURIComponent(m[1]), size: Number(m[2]) } : input.uploadToken ? { name: input.name ?? 'Datei', size: 0 } : undefined;
+    return this.run(() => this.cloud.createShare(input, file));
+  }
+  listCloudShares(): Promise<CloudShare[]> {
+    return this.run(() => this.cloud.listShares());
+  }
+  revokeCloudShare(id: number): Promise<CloudShare> {
+    return this.run(() => this.cloud.revoke(id));
+  }
+  cloudSharePassword(id: number): Promise<{ password: string }> {
+    return this.run(() => this.cloud.password(id));
+  }
+  generateCloudPassword(accountId: number): Promise<{ password: string }> {
+    return this.run(() => this.cloud.generatePassword(accountId));
+  }
+
+  // --- OAuth/Cloud accounts --- (mockOAuth.ts)
+  private oauthMock?: MockOAuth;
+  /** In-memory OAuth sign-in flows, client IDs and delegations (mockOAuth.ts). */
+  get oauth(): MockOAuth {
+    this.oauthMock ??= new MockOAuth({ accounts: () => this.accounts, identities: () => this.identities, createAccount: (i) => this.createAccount(i) });
+    return this.oauthMock;
+  }
+  listOAuthProviders(): Promise<OAuthProviderInfo[]> {
+    return this.reply(this.oauth.providers());
+  }
+  saveOAuthClient(input: OAuthClientInput): Promise<void> {
+    return this.run(() => this.oauth.saveClient(input));
+  }
+  deleteOAuthClient(provider: string): Promise<void> {
+    return this.run(() => this.oauth.deleteClient(provider));
+  }
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus> {
+    return this.run(() => this.oauth.start(input));
+  }
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus> {
+    return this.run(() => this.oauth.flow(id));
+  }
+  cancelOAuth(id: string): Promise<void> {
+    return this.run(() => this.oauth.cancel(id));
+  }
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account> {
+    return this.oauth.addShared(input);
+  }
+  listIdentityDelegations(): Promise<IdentityDelegation[]> {
+    return this.reply(this.oauth.listDelegations());
+  }
+  setIdentityDelegation(d: { identityId: number; mode: string; mailbox?: string }): Promise<void> {
+    return this.run(() => this.oauth.setDelegation(d));
+  }
+  syncCloudPim(accountId: number): Promise<CloudPimResult> {
+    return this.run(() => this.oauth.syncPim(accountId));
+  }
+
+  // --- Mail protocols (mockMailProto.ts) ---
+  readonly mailProto = new MockMailProto();
+
+  loadRemoteContent(messageId: number): Promise<RemoteContent> {
+    return this.getMessage(messageId).then((m) => this.run(() => this.mailProto.remoteContent(m.html ?? '')));
+  }
+  listRemoteAllow(): Promise<RemoteAllowEntry[]> {
+    return this.run(() => this.mailProto.listAllow());
+  }
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.run(() => this.mailProto.allow(kind, value));
+  }
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.run(() => this.mailProto.removeAllow(kind, value));
+  }
+  getSieveStatus(accountId: number): Promise<SieveStatus> {
+    return this.run(() => this.mailProto.status(accountId));
+  }
+  getSieveScript(accountId: number, name: string): Promise<SieveScript> {
+    return this.run(() => this.mailProto.script(accountId, name));
+  }
+  checkSieveScript(_accountId: number, script: string): Promise<SieveCheckResult> {
+    return this.run(() => this.mailProto.check(script));
+  }
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void> {
+    return this.run(() => this.mailProto.put(accountId, name, script, activate));
+  }
+  activateSieveScript(accountId: number, name: string): Promise<void> {
+    return this.run(() => this.mailProto.activate(accountId, name));
+  }
+  deleteSieveScript(accountId: number, name: string): Promise<void> {
+    return this.run(() => this.mailProto.remove(accountId, name));
+  }
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
+    return this.run(() => this.mailProto.setWorkflowSync(accountId, enabled));
+  }
+  getSieveConfig(accountId: number): Promise<SieveConfig> {
+    return this.run(() => this.mailProto.config(accountId));
+  }
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig> {
+    return this.run(() => this.mailProto.setConfig(accountId, config));
+  }
+  getVacationSettings(): Promise<VacationSettings> {
+    return this.run(() => this.mailProto.vacationSettings());
+  }
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
+    return this.run(() => this.mailProto.saveVacation(settings));
+  }
 }
 
 import { MockMessenger } from './mockMessenger';
 import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';
+import { MockIO } from './mockIO';

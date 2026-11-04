@@ -12,6 +12,17 @@
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
+import type * as pim from '../types';
+// --- OAuth/Cloud accounts ---
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
+} from '../types';
 import type {
   ItemRef,
   Project,
@@ -74,6 +85,24 @@ Account,
   ServerLoginInput,
   Signature,
   UserPreferences,
+} from '../types';
+import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
+
+// --- Mail protocols ---
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
+
+// --- Cloud ---
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
 } from '../types';
 
 type BoundFn = (...args: unknown[]) => Promise<unknown>;
@@ -181,6 +210,12 @@ export class WailsTransport implements Api {
   }
   saveContactCard(personId: number, card: ContactCard): Promise<void> {
     return this.call('SaveContactCard', personId, card);
+  }
+  saveSignature(signature: Signature): Promise<Signature> {
+    return this.call('SaveSignature', signature);
+  }
+  deleteSignature(id: number): Promise<void> {
+    return this.call('DeleteSignature', id);
   }
   updateIdentity(identity: Identity): Promise<Identity> {
     return this.call('UpdateIdentity', identity);
@@ -436,6 +471,86 @@ export class WailsTransport implements Api {
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion> {
     return this.call('CompleteWorkflow', src, offset, mode);
   }
+  // --- Folder config ---
+  getFolderConfig(accountId: number): Promise<FolderConfig> {
+    return this.call('GetFolderConfig', accountId);
+  }
+  setFolderRole(accountId: number, role: AssignableRole, folderId: number): Promise<FolderConfig> {
+    return this.call('SetFolderRole', accountId, role, folderId);
+  }
+  resetFolderRoles(accountId: number): Promise<FolderConfig> {
+    return this.call('ResetFolderRoles', accountId);
+  }
+  createRoleFolder(accountId: number, role: AssignableRole, name: string): Promise<FolderConfig> {
+    return this.call('CreateRoleFolder', accountId, role, name);
+  }
+  saveFolderBehaviour(accountId: number, behaviour: FolderBehaviour): Promise<FolderConfig> {
+    return this.call('SaveFolderBehaviour', accountId, behaviour);
+  }
+  setIdentityFolders(identityId: number, sentFolderId: number, draftsFolderId: number): Promise<FolderConfig> {
+    return this.call('SetIdentityFolders', identityId, sentFolderId, draftsFolderId);
+  }
+  expungeFolder(folderId: number): Promise<number> {
+    return this.call('ExpungeFolder', folderId);
+  }
+
+  // --- Import/Export/Backup ---
+  // Uploads and downloads use the desktop asset handler (/api/io/...),
+  // which serves the same routes as the web server.
+  listIOFormats(): Promise<IO.IOFormats> {
+    return this.call('ListIOFormats');
+  }
+  async uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload> {
+    const res = await fetch('/api/io/uploads', { method: 'POST', body: file, headers: { 'X-Filename': encodeURIComponent(filename) } });
+    if (!res.ok) throw new ApiError(res.statusText, res.status, 'upload_failed');
+    return (await res.json()) as IO.IOUpload;
+  }
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview> {
+    return this.call('InspectImport', source);
+  }
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob> {
+    return this.call('StartImport', request);
+  }
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob> {
+    return this.call('StartExport', request);
+  }
+  listIOJobs(): Promise<IO.IOJob[]> {
+    return this.call('ListIOJobs');
+  }
+  getIOJob(id: string): Promise<IO.IOJob> {
+    return this.call('GetIOJob', id);
+  }
+  cancelIOJob(id: string): Promise<void> {
+    return this.call('CancelIOJob', id);
+  }
+  ioDownloadUrl(token: string): string {
+    return `/api/io/downloads/${encodeURIComponent(token)}`;
+  }
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob> {
+    return this.call('CreateBackup', request);
+  }
+  inspectBackup(source: IO.BackupSource, passphrase = ''): Promise<IO.BackupInspection> {
+    return this.call('InspectBackup', source, passphrase);
+  }
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob> {
+    return this.call('StartRestore', request);
+  }
+  listBackupSchedules(): Promise<IO.BackupSchedule[]> {
+    return this.call('ListBackupSchedules');
+  }
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule> {
+    return this.call('SaveBackupSchedule', schedule);
+  }
+  deleteBackupSchedule(id: string): Promise<void> {
+    return this.call('DeleteBackupSchedule', id);
+  }
+  runBackupSchedule(id: string): Promise<IO.IOJob> {
+    return this.call('RunBackupSchedule', id);
+  }
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]> {
+    return this.call('ListBackupArchives', scheduleId);
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     if (!this.offRuntime && this.win.runtime?.EventsOn) {
@@ -486,6 +601,247 @@ export class WailsTransport implements Api {
   setMessengerTyping(conversationId: number, active: boolean): Promise<void> {
     return this.call('SetMessengerTyping', conversationId, active);
   }
+
+  // --- PIM --- (internal/app/pim_api.go)
+  listCalendars(): Promise<pim.PimCalendar[]> {
+    return this.call('ListCalendars');
+  }
+  saveCalendar(input: pim.CalendarInput): Promise<pim.PimCalendar> {
+    return this.call('SaveCalendar', input);
+  }
+  deleteCalendar(id: number): Promise<void> {
+    return this.call('DeleteCalendar', id);
+  }
+  syncCalendars(): Promise<void> {
+    return this.call('SyncCalendars');
+  }
+  importCalendarFile(calendarId: number, ics: string): Promise<{ added: number }> {
+    return this.call('ImportCalendarFile', calendarId, ics);
+  }
+  listEvents(query: pim.EventQuery): Promise<pim.CalendarEvent[]> {
+    return this.call('ListEvents', query);
+  }
+  getEvent(id: string): Promise<pim.CalendarEvent> {
+    return this.call('GetEvent', id);
+  }
+  createEvent(input: pim.EventInput): Promise<pim.CalendarEvent> {
+    return this.call('CreateEvent', input);
+  }
+  updateEvent(id: string, input: pim.EventInput, scope: pim.RecurrenceScope): Promise<pim.CalendarEvent> {
+    return this.call('UpdateEvent', id, input, scope);
+  }
+  deleteEvent(id: string, scope: pim.RecurrenceScope): Promise<void> {
+    return this.call('DeleteEvent', id, scope);
+  }
+  resolveEventConflict(objectId: number, keep: boolean): Promise<void> {
+    return this.call('ResolveEventConflict', objectId, keep);
+  }
+  getFreeBusy(query: { attendees: string[]; from: string; to: string }): Promise<pim.FreeBusy[]> {
+    return this.call('GetFreeBusy', query);
+  }
+  snoozeReminder(eventId: string, trigger: string, minutes: number): Promise<void> {
+    return this.call('SnoozeReminder', eventId, trigger, minutes);
+  }
+  addDavAccount(input: pim.DavAccountInput): Promise<Account> {
+    return this.call('AddDavAccount', input);
+  }
+  listTasks(query: pim.TaskQuery): Promise<pim.PimTask[]> {
+    return this.call('ListTasks', query);
+  }
+  saveTask(input: pim.TaskInput): Promise<pim.PimTask> {
+    return this.call('SaveTask', input);
+  }
+  deleteTask(id: number): Promise<void> {
+    return this.call('DeleteTask', id);
+  }
+  getMessageInvitations(messageId: number): Promise<pim.Invitation[]> {
+    return this.call('GetMessageInvitations', messageId);
+  }
+  listInvitations(): Promise<pim.Invitation[]> {
+    return this.call('ListInvitations');
+  }
+  respondInvitation(id: number, response: pim.InvitationResponse): Promise<pim.Invitation> {
+    return this.call('RespondInvitation', id, response);
+  }
+  listAddressBooks(): Promise<pim.PimAddressBook[]> {
+    return this.call('ListAddressBooks');
+  }
+  saveAddressBook(input: pim.AddressBookInput): Promise<pim.PimAddressBook> {
+    return this.call('SaveAddressBook', input);
+  }
+  deleteAddressBook(id: number): Promise<void> {
+    return this.call('DeleteAddressBook', id);
+  }
+  listContacts(query: pim.ContactQuery): Promise<pim.PimContact[]> {
+    return this.call('ListContacts', query);
+  }
+  getContact(id: number): Promise<pim.PimContact> {
+    return this.call('GetContact', id);
+  }
+  saveContact(contact: pim.PimContact): Promise<pim.PimContact> {
+    return this.call('SaveContact', contact);
+  }
+  deleteContact(id: number): Promise<void> {
+    return this.call('DeleteContact', id);
+  }
+  listContactGroups(): Promise<pim.ContactGroup[]> {
+    return this.call('ListContactGroups');
+  }
+  findDuplicateContacts(): Promise<pim.DuplicateGroup[]> {
+    return this.call('FindDuplicateContacts');
+  }
+  mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact> {
+    return this.call('MergeContacts', ids, merged ?? null);
+  }
+  autocompleteAddresses(query: string, limit = 8): Promise<pim.AddressSuggestion[]> {
+    return this.call('AutocompleteAddresses', query, limit);
+  }
+
+  // --- Cloud ---
+  listCloudAccounts(): Promise<CloudAccount[]> {
+    return this.call('ListCloudAccounts');
+  }
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow> {
+    return this.call('StartCloudLogin', input);
+  }
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow> {
+    return this.call('PollCloudLogin', flowId);
+  }
+  cancelCloudLogin(flowId: string): Promise<void> {
+    return this.call('CancelCloudLogin', flowId);
+  }
+  deleteCloudAccount(id: number): Promise<void> {
+    return this.call('DeleteCloudAccount', id);
+  }
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing> {
+    return this.call('ListCloudFiles', accountId, path);
+  }
+  cloudQuota(accountId: number): Promise<CloudQuota> {
+    return this.call('CloudQuota', accountId);
+  }
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry> {
+    return this.call('CreateCloudFolder', accountId, path);
+  }
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void> {
+    return this.call('MoveCloudFile', accountId, from, to);
+  }
+  deleteCloudFile(accountId: number, path: string): Promise<void> {
+    return this.call('DeleteCloudFile', accountId, path);
+  }
+  async uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry> {
+    const { uploadToken } = await this.uploadAttachment(file, filename);
+    return this.call('UploadCloudFile', accountId, dir, uploadToken);
+  }
+  async downloadCloudFile(accountId: number, path: string): Promise<Blob> {
+    const d = await this.call<{ filename: string; mimeType: string; data: string }>('DownloadCloudFile', accountId, path);
+    const bin = atob(d.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return new Blob([bytes], { type: d.mimeType || 'application/octet-stream' });
+  }
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult> {
+    return this.call('ImportCloudFile', accountId, path);
+  }
+  saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry> {
+    return this.call('SaveAttachmentToCloud', input);
+  }
+  createCloudShare(input: CloudShareInput): Promise<CloudShare> {
+    return this.call('CreateCloudShare', input);
+  }
+  listCloudShares(): Promise<CloudShare[]> {
+    return this.call('ListCloudShares');
+  }
+  revokeCloudShare(id: number): Promise<CloudShare> {
+    return this.call('RevokeCloudShare', id);
+  }
+  cloudSharePassword(id: number): Promise<{ password: string }> {
+    return this.call('CloudSharePassword', id);
+  }
+  generateCloudPassword(accountId: number): Promise<{ password: string }> {
+    return this.call('GenerateCloudPassword', accountId);
+  }
+
+  // --- OAuth/Cloud accounts --- (internal/app/oauth_api.go)
+  listOAuthProviders(): Promise<OAuthProviderInfo[]> {
+    return this.call('ListOAuthProviders');
+  }
+  saveOAuthClient(input: OAuthClientInput): Promise<void> {
+    return this.call('SaveOAuthClient', input);
+  }
+  deleteOAuthClient(provider: string): Promise<void> {
+    return this.call('DeleteOAuthClient', provider);
+  }
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus> {
+    return this.call('StartOAuth', input);
+  }
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus> {
+    return this.call('GetOAuthFlow', id);
+  }
+  cancelOAuth(id: string): Promise<void> {
+    return this.call('CancelOAuth', id);
+  }
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account> {
+    return this.call('AddSharedMailbox', input);
+  }
+  listIdentityDelegations(): Promise<IdentityDelegation[]> {
+    return this.call('ListIdentityDelegations');
+  }
+  setIdentityDelegation(d: { identityId: number; mode: string; mailbox?: string }): Promise<void> {
+    return this.call('SetIdentityDelegation', d);
+  }
+  syncCloudPim(accountId: number): Promise<CloudPimResult> {
+    return this.call('SyncCloudPim', accountId);
+  }
+
+  // --- Mail protocols ---
+  loadRemoteContent(messageId: number): Promise<RemoteContent> {
+    return this.call('LoadRemoteContent', messageId);
+  }
+  listRemoteAllow(): Promise<RemoteAllowEntry[]> {
+    return this.call('ListRemoteAllow');
+  }
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.call('AllowRemoteContent', kind, value);
+  }
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void> {
+    return this.call('RemoveRemoteAllow', kind, value);
+  }
+  getSieveStatus(accountId: number): Promise<SieveStatus> {
+    return this.call('GetSieveStatus', accountId);
+  }
+  getSieveScript(accountId: number, name: string): Promise<SieveScript> {
+    return this.call('GetSieveScript', accountId, name);
+  }
+  checkSieveScript(accountId: number, script: string): Promise<SieveCheckResult> {
+    return this.call('CheckSieveScript', accountId, script);
+  }
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void> {
+    return this.call('PutSieveScript', accountId, name, script, activate);
+  }
+  activateSieveScript(accountId: number, name: string): Promise<void> {
+    return this.call('ActivateSieveScript', accountId, name);
+  }
+  deleteSieveScript(accountId: number, name: string): Promise<void> {
+    return this.call('DeleteSieveScript', accountId, name);
+  }
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus> {
+    return this.call('SetSieveWorkflowSync', accountId, enabled);
+  }
+  getSieveConfig(accountId: number): Promise<SieveConfig> {
+    return this.call('GetSieveConfig', accountId);
+  }
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig> {
+    return this.call('SetSieveConfig', accountId, config);
+  }
+  getVacationSettings(): Promise<VacationSettings> {
+    return this.call('GetVacationSettings');
+  }
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings> {
+    return this.call('SaveVacationSettings', settings);
+  }
 }
 
 import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';

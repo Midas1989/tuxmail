@@ -7,6 +7,8 @@
 
 export type AccountKind =
   | 'imap'
+  /** Local Folders: mail stored only in TuxMail (imports, archives). */
+  | 'local'
   | 'pop3'
   | 'smtp'
   | 'jmap'
@@ -84,7 +86,9 @@ export interface Signature {
   placement: 'below_reply' | 'above_quote';
 }
 
-export type FolderRole = '' | 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive';
+export type FolderRole = '' | 'inbox' | 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'templates';
+/** How a folder's role was determined (see FolderConfig). */
+export type RoleSource = 'server' | 'name' | 'user';
 
 export interface Folder {
   id: number;
@@ -94,6 +98,7 @@ export interface Folder {
   name: string;
   delimiter?: string;
   role?: FolderRole;
+  roleSource?: RoleSource;
   subscribed: boolean;
   unread: number;
   total: number;
@@ -196,6 +201,8 @@ export interface MessageDetail extends MessageSummary {
   attachments: Attachment[];
   /** Whether the HTML references remote content that was blocked. */
   hasRemoteContent?: boolean;
+  /** Remote images are already loaded through the image proxy (sender/domain allowlisted). */
+  remoteLoaded?: boolean;
 }
 
 export type ConversationKind = 'email_thread' | 'chat' | 'person_view';
@@ -393,6 +400,8 @@ export interface OutgoingMessage {
   signatureId?: number | null;
   /** Schedule instead of sending now (ISO). */
   sendAt?: string;
+  /** Send checks the user confirmed after a blocked result ("send anyway", KONZEPT 8.13). */
+  confirmChecks?: string[];
 }
 
 export interface SendResult {
@@ -419,6 +428,8 @@ export interface SendFinding {
   /** English fallback text. */
   message: string;
   params?: Record<string, string>;
+  /** Ready texts by locale ("de", "en"). */
+  localized?: Record<string, string>;
 }
 
 /** Secret store of the desktop client: OS keyring (installed), master-password vault (portable) or the server. */
@@ -442,6 +453,8 @@ export interface DiscoveryResult {
   incoming?: ServerConfig;
   outgoing?: ServerConfig;
   oauthAvailable?: boolean;
+  /** ActiveSync endpoint found by Autodiscover (kind "eas"). */
+  easUrl?: string;
 }
 
 export interface NewAccountInput {
@@ -452,6 +465,12 @@ export interface NewAccountInput {
   password?: string;
   incoming?: ServerConfig;
   outgoing?: ServerConfig;
+  /** ActiveSync server URL (kind "eas"); username may be DOMAIN\\user. */
+  easUrl?: string;
+  /** POP3: server deletion policy (default: leave on server). */
+  pop3?: Pop3Options;
+  /** JMAP: session URL (default https://<incoming host>/.well-known/jmap). */
+  jmapUrl?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -473,6 +492,9 @@ export type ApiEvent =
   | { type: 'workflow.run'; workflowId: string; run: WorkflowRunSummary }
   /** Desktop portable mode: the secret vault needs the master password (Api.unlockVault). */
   | { type: 'vault.locked' }
+  | PimEvent
+  /** Import/export/backup job changed (poll Api.getIOJob). */
+  | { type: 'io.job'; itemId: string; state: string }
   | MessengerApiEvent;
 
 export type ApiEventType = ApiEvent['type'];
@@ -1264,3 +1286,975 @@ export type MessengerApiEvent =
   | { type: 'messenger.pairing'; pairing: MessengerPairing }
   /** Ephemeral: somebody types in a conversation. */
   | { type: 'messenger.typing'; conversationId: number; accountId: number; personId?: number; name: string; active: boolean };
+// --- Folder config ---
+// Settings → account → "Ordner" (internal/app/folderconfig.go).
+
+/** Roles the user can assign (the inbox is fixed). */
+export type AssignableRole = 'sent' | 'drafts' | 'trash' | 'junk' | 'archive' | 'templates';
+export type TrashMode = 'move' | 'mark' | 'delete';
+export type ArchiveMode = 'single' | 'yearly' | 'monthly';
+
+export interface FolderRoleEntry {
+  role: AssignableRole;
+  /** Folder that has the role now (absent = none). */
+  folderId?: number;
+  source?: RoleSource;
+  /** What automatic detection chose. */
+  serverFolderId?: number;
+  serverSource?: RoleSource;
+  overridden: boolean;
+  /** The overridden folder vanished on the server (kept until it returns). */
+  unresolved?: boolean;
+  overrideRemoteId?: string;
+}
+
+export interface FolderBehaviour {
+  saveSent: boolean;
+  /** Follow the provider default (providerSavesSent). */
+  saveSentAuto: boolean;
+  /** EAS / Graph / Gmail file sent mail themselves. */
+  providerSavesSent: boolean;
+  trashMode: TrashMode;
+  archiveMode: ArchiveMode;
+}
+
+export interface IdentityFolderConfig {
+  identityId: number;
+  name: string;
+  email: string;
+  sentFolderId?: number;
+  draftsFolderId?: number;
+}
+
+export interface FolderConfig {
+  accountId: number;
+  roles: FolderRoleEntry[];
+  behaviour: FolderBehaviour;
+  identities: IdentityFolderConfig[];
+  /** Missing role folders can be created on the server. */
+  canCreate: boolean;
+}
+
+// --- PIM ---
+// Calendars, tasks and contacts (KONZEPT 9, 10). Times are RFC 3339 (UTC);
+// all-day values are dates "YYYY-MM-DD" with an exclusive end.
+
+/** Live events of the PIM area. calendar.reminder: itemId = event id, state = trigger time. */
+export type PimEvent =
+  | { type: 'calendar.changed' }
+  | { type: 'contacts.changed' }
+  | { type: 'calendar.reminder'; itemId: string; state: string }
+  | { type: 'calendar.invitation'; messageId: number };
+
+export type CalendarKind = 'local' | 'caldav' | 'subscription' | 'birthdays';
+
+export interface PimCalendar {
+  id: number;
+  accountId?: number;
+  accountName?: string;
+  name: string;
+  color: string;
+  kind: CalendarKind;
+  readOnly: boolean;
+  visible: boolean;
+  isDefault: boolean;
+  /** Supported components: 'VEVENT', 'VTODO'. */
+  components: string[];
+  url?: string;
+  refreshMinutes?: number;
+  description?: string;
+  lastSync?: string;
+  error?: string;
+}
+
+export interface CalendarInput {
+  id?: number;
+  name: string;
+  color?: string;
+  kind?: 'local' | 'subscription';
+  url?: string;
+  refreshMinutes?: number;
+  visible?: boolean;
+  isDefault?: boolean;
+  components?: string[];
+}
+
+export type RecurrenceFreq = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+export interface RecurrenceRule {
+  freq: RecurrenceFreq | string;
+  interval?: number;
+  count?: number;
+  /** Inclusive end date YYYY-MM-DD. */
+  until?: string;
+  /** "MO", "1MO", "-1FR" */
+  byDay?: string[];
+  byMonthDay?: number[];
+  byMonth?: number[];
+  bySetPos?: number[];
+  /** Raw RRULE (read-only). */
+  raw?: string;
+}
+
+export type PartStat = 'NEEDS-ACTION' | 'ACCEPTED' | 'TENTATIVE' | 'DECLINED' | 'DELEGATED';
+
+export interface Attendee {
+  email: string;
+  name?: string;
+  role?: string;
+  partStat?: PartStat | string;
+  rsvp?: boolean;
+  cuType?: string;
+}
+
+export interface EventAlarm {
+  minutesBefore: number;
+  action?: string;
+}
+
+export type RecurrenceScope = 'this' | 'following' | 'all';
+
+export interface CalendarEvent {
+  /** "<objectId>", "<objectId>/<instance>", "bday/<contact>/<year>", "inv/<invitation>". */
+  id: string;
+  objectId: number;
+  calendarId: number;
+  uid: string;
+  recurrenceId?: string;
+  kind: 'event' | 'birthday' | 'invitation';
+  title: string;
+  description?: string;
+  location?: string;
+  url?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  timeZone?: string;
+  recurrence?: RecurrenceRule;
+  recurring: boolean;
+  exception?: boolean;
+  organizer?: Attendee;
+  attendees: Attendee[];
+  alarms: EventAlarm[];
+  isOrganizer?: boolean;
+  myPartStat?: string;
+  status?: string;
+  busy: boolean;
+  categories: string[];
+  color?: string;
+  readOnly?: boolean;
+  conflict?: boolean;
+  invitationId?: number;
+  birthYear?: number;
+}
+
+export interface EventInput {
+  calendarId: number;
+  title: string;
+  description?: string;
+  location?: string;
+  url?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  timeZone?: string;
+  /** null/absent keeps the rule on updates; { freq: '' } removes it. */
+  recurrence?: RecurrenceRule | null;
+  attendees?: Attendee[];
+  alarms?: EventAlarm[];
+  busy?: boolean;
+  categories?: string[];
+  status?: string;
+  notifyAttendees?: boolean;
+}
+
+export interface EventQuery {
+  from: string;
+  to: string;
+  calendarIds?: number[];
+  includeHidden?: boolean;
+}
+
+export interface PimTask {
+  id: number;
+  calendarId: number;
+  uid: string;
+  title: string;
+  description?: string;
+  start?: string;
+  due?: string;
+  dueAllDay?: boolean;
+  /** 0 = none, 1 = highest ... 9 = lowest. */
+  priority: number;
+  progress: number;
+  status: string;
+  done: boolean;
+  completed?: string;
+  parentId?: number;
+  parentUid?: string;
+  categories: string[];
+  recurrence?: RecurrenceRule;
+  overdue?: boolean;
+  readOnly?: boolean;
+  color?: string;
+}
+
+export interface TaskInput {
+  id?: number;
+  calendarId?: number;
+  title: string;
+  description?: string;
+  due?: string;
+  dueAllDay?: boolean;
+  priority?: number;
+  progress?: number;
+  status?: string;
+  done?: boolean;
+  parentId?: number;
+  categories?: string[];
+  recurrence?: RecurrenceRule | null;
+}
+
+export type TaskFilter = 'open' | 'today' | 'overdue' | 'upcoming' | 'completed' | 'all';
+
+export interface TaskQuery {
+  filter?: TaskFilter;
+  calendarIds?: number[];
+  search?: string;
+}
+
+export interface Invitation {
+  id: number;
+  messageId?: number;
+  method: 'REQUEST' | 'REPLY' | 'CANCEL' | 'COUNTER' | 'DECLINECOUNTER' | 'PUBLISH' | string;
+  status: 'pending' | 'accepted' | 'tentative' | 'declined' | 'applied' | 'cancelled' | 'obsolete' | string;
+  uid: string;
+  title: string;
+  description?: string;
+  location?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  recurring: boolean;
+  organizer?: Attendee;
+  attendees: Attendee[];
+  myPartStat?: string;
+  sender?: string;
+  comment?: string;
+  eventId?: string;
+  conflicts: string[];
+  canRespond: boolean;
+  replyPartStat?: string;
+}
+
+export interface InvitationResponse {
+  partStat: 'ACCEPTED' | 'TENTATIVE' | 'DECLINED';
+  comment?: string;
+  calendarId?: number;
+  sendReply?: boolean;
+  proposeStart?: string;
+  proposeEnd?: string;
+}
+
+export interface FreeBusy {
+  email: string;
+  source: 'local' | 'caldav' | 'unknown';
+  busy: TimeSlot[];
+}
+
+export interface DavAccountInput {
+  displayName: string;
+  url: string;
+  carddavUrl?: string;
+  username: string;
+  password: string;
+  email?: string;
+}
+
+export interface PimAddressBook {
+  id: number;
+  accountId?: number;
+  accountName?: string;
+  name: string;
+  kind: 'local' | 'carddav';
+  isDefault: boolean;
+  count: number;
+  url?: string;
+  lastSync?: string;
+  error?: string;
+}
+
+export interface AddressBookInput {
+  id?: number;
+  name: string;
+  isDefault?: boolean;
+}
+
+export interface ContactValue {
+  type?: string;
+  label?: string;
+  value: string;
+  pref?: boolean;
+}
+
+export interface ContactAddress {
+  type?: string;
+  label?: string;
+  poBox?: string;
+  extended?: string;
+  street?: string;
+  locality?: string;
+  region?: string;
+  postalCode?: string;
+  country?: string;
+}
+
+export interface ContactName {
+  family?: string;
+  given?: string;
+  additional?: string;
+  prefix?: string;
+  suffix?: string;
+}
+
+export interface PimContact {
+  id: number;
+  addressBookId: number;
+  personId?: number;
+  displayName: string;
+  hasPhoto: boolean;
+  photoUrl?: string;
+  /** Input only: data: URL sets the photo, "-" removes it. */
+  photo?: string;
+  /** Channels of the linked person (e-mail, phone, messengers). */
+  channels: PersonHandle[];
+  uid: string;
+  version?: string;
+  kind?: string;
+  fn: string;
+  n: ContactName;
+  nickname?: string;
+  org?: string;
+  department?: string;
+  title?: string;
+  emails: ContactValue[];
+  phones: ContactValue[];
+  addresses: ContactAddress[];
+  urls: ContactValue[];
+  impp: ContactValue[];
+  social: ContactValue[];
+  /** YYYY-MM-DD or --MM-DD */
+  birthday?: string;
+  anniversary?: string;
+  note?: string;
+  categories: string[];
+  custom: { name: string; value: string }[];
+}
+
+export interface ContactQuery {
+  addressBookId?: number;
+  search?: string;
+  group?: string;
+}
+
+export interface ContactGroup {
+  name: string;
+  count: number;
+}
+
+export interface DuplicateGroup {
+  contacts: PimContact[];
+  preview: PimContact;
+}
+
+export interface AddressSuggestion {
+  name: string;
+  email: string;
+  contactId?: number;
+  personId?: number;
+  source: 'contact' | 'recent';
+}
+
+// --- Import/Export/Backup ---
+// KONZEPT 13 (import & export) and 14 (backup & restore); Go: internal/app/io_*.go.
+
+export type ImportFormat = 'eml' | 'mbox' | 'maildir' | 'pst' | 'thunderbird' | 'ics' | 'vcf' | 'csv' | 'ldif';
+export type ExportFormat = 'eml' | 'mbox' | 'maildir' | 'ics' | 'vcf' | 'csv' | 'ldif' | 'pdf';
+
+export interface IOFormats {
+  import: ImportFormat[];
+  export: ExportFormat[];
+  pst: boolean;
+}
+
+/** An import file: a local path (desktop) or an uploaded file (uploadImportFile). */
+export interface IOSource {
+  format: ImportFormat;
+  path?: string;
+  uploadToken?: string;
+}
+
+export interface IOUpload {
+  token: string;
+  name: string;
+  size: number;
+}
+
+export interface ImportTarget {
+  /** local: "Local Folders" account; folder: an existing server folder (IMAP APPEND). */
+  kind: 'local' | 'folder';
+  accountId?: number;
+  folderId?: number;
+  folderName?: string;
+  calendarId?: number;
+  addressbookId?: number;
+}
+
+export interface ImportOptions {
+  keepStructure: boolean;
+  dedupe: boolean;
+  keepFlags: boolean;
+  keepDates: boolean;
+  throttleMs?: number;
+  mboxVariant?: 'mboxrd' | 'mboxo';
+  duplicateMode?: 'skip' | 'overwrite' | 'copy';
+  csvMapping?: string[];
+  csvPreset?: string;
+  tbAccounts: boolean;
+  tbMail: boolean;
+  tbAddressBooks: boolean;
+}
+
+export interface ImportRequest {
+  source: IOSource;
+  target: ImportTarget;
+  options: ImportOptions;
+  resumeJobId?: string;
+}
+
+export interface ThunderbirdProfile {
+  dir: string;
+  accounts: {
+    key: string;
+    name: string;
+    incoming: { kind: string; host?: string; port?: number; username?: string };
+    identities: { name: string; email: string }[] | null;
+    mailDir?: string;
+  }[];
+  addressBooks: { name: string; file: string; count: number }[] | null;
+  tbsync?: string[];
+  warnings?: string[];
+}
+
+export interface ImportPreview {
+  format: ImportFormat;
+  items: number;
+  header?: string[];
+  preset?: string;
+  mapping?: string[];
+  sample?: string[][];
+  fields?: string[];
+  problems?: string[];
+  profile?: ThunderbirdProfile;
+}
+
+export interface MailSelection {
+  folderIds?: number[];
+  query?: string;
+  conversationId?: number;
+  projectId?: number;
+  messageIds?: number[];
+}
+
+export interface ExportRequest {
+  format: ExportFormat;
+  selection?: MailSelection;
+  calendarIds?: number[];
+  from?: string;
+  to?: string;
+  addressbookIds?: number[];
+  vcardVersion?: '3.0' | '4.0';
+  csvPreset?: 'outlook' | 'google';
+}
+
+export interface IOProblem {
+  item: string;
+  error: string;
+}
+
+export interface IOJob {
+  id: string;
+  kind: 'import' | 'export' | 'backup' | 'restore';
+  format: string;
+  status: 'running' | 'done' | 'failed' | 'canceled';
+  done: number;
+  total: number;
+  skipped: number;
+  failed: number;
+  current?: string;
+  started: string;
+  finished?: string;
+  error?: string;
+  problems?: IOProblem[];
+  summary?: Record<string, number>;
+  /** Export result: GET /api/io/downloads/{download}. */
+  download?: string;
+  downloadName?: string;
+  result?: BackupManifest | RestoreResult;
+  resumable?: boolean;
+}
+
+export type BackupMode = 'config' | 'local' | 'full' | 'custom';
+export type BackupArea = 'mail' | 'calendar' | 'contacts' | 'chats' | 'settings';
+
+export interface BackupScope {
+  mode: BackupMode;
+  accounts?: number[];
+  areas?: BackupArea[];
+  secrets?: boolean;
+}
+
+export interface BackupTarget {
+  kind: 'download' | 'local' | 'webdav';
+  path?: string;
+  url?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface BackupRequest {
+  scope: BackupScope;
+  passphrase?: string;
+  target: BackupTarget;
+}
+
+export interface BackupAccountInfo {
+  id: number;
+  kind: string;
+  name: string;
+  address?: string;
+  messenger?: boolean;
+  messages: number;
+}
+
+export interface BackupManifest {
+  format: number;
+  id: string;
+  created: string;
+  appVersion?: string;
+  schemaVersion: number;
+  scope: BackupScope;
+  encrypted: boolean;
+  secrets: boolean;
+  baseId?: string;
+  files: { path: string; size: number; sha256: string }[];
+  blobs: string[] | null;
+  blobsIncluded: number;
+  accounts: BackupAccountInfo[] | null;
+  counts?: Record<string, number>;
+  warnings?: string[];
+  server?: boolean;
+}
+
+export interface BackupSource {
+  uploadToken?: string;
+  path?: string;
+  scheduleId?: string;
+  name?: string;
+}
+
+export interface BackupInspection {
+  manifest: BackupManifest | null;
+  encrypted: boolean;
+  messenger: boolean;
+}
+
+export interface RestoreRequest {
+  source: BackupSource;
+  bases?: BackupSource[];
+  passphrase?: string;
+  mode: 'replace' | 'merge';
+  accounts?: number[];
+  configOnly?: boolean;
+  secrets?: boolean;
+}
+
+export interface RestoreResult {
+  mode: 'replace' | 'merge';
+  accounts: number;
+  messages: number;
+  blobs: number;
+  secrets: number;
+  schemaFrom: number;
+  schemaTo: number;
+  warnings?: string[];
+  restartRequired?: boolean;
+}
+
+export interface BackupSchedule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  frequency: 'daily' | 'weekly';
+  hour: number;
+  minute: number;
+  /** 0 = Sunday. */
+  weekday: number;
+  scope: BackupScope;
+  target: { kind: 'local' | 'webdav'; path?: string; url?: string; username?: string; passwordRef?: string };
+  passphraseRef?: string;
+  incremental: boolean;
+  fullEvery?: number;
+  keepDaily: number;
+  keepWeekly: number;
+  lastRun?: string;
+  lastResult?: string;
+  lastError?: string;
+  nextRun?: string;
+}
+
+export interface BackupScheduleInput extends BackupSchedule {
+  passphrase?: string;
+  targetPassword?: string;
+}
+
+export interface BackupArchive {
+  name: string;
+  size: number;
+  modified: string;
+}
+
+// --- Cloud ---
+// Cloud files (KONZEPT 12): Nextcloud, OpenCloud/oCIS, Vaultwarden Send, WebDAV.
+// Mirrors internal/app/cloud_types.go.
+
+export type CloudAccountProvider = CloudProvider | 'webdav';
+
+export interface CloudCaps {
+  /** Browse, upload, download. */
+  files: boolean;
+  /** Public links of stored files. */
+  share: boolean;
+  /** Encrypted Sends of local files or text (Vaultwarden). */
+  send: boolean;
+}
+
+export interface CloudAccount {
+  id: number;
+  provider: CloudAccountProvider;
+  displayName: string;
+  server: string;
+  user?: string;
+  capabilities: CloudCaps;
+  /** CalDAV/CardDAV of the same Nextcloud account (offered to calendar/contacts). */
+  dav?: { caldav: string; carddav: string };
+  /** Base directory of attachments sent as links. */
+  uploadDir?: string;
+}
+
+export interface CloudLoginInput {
+  provider: CloudAccountProvider;
+  server: string;
+  displayName?: string;
+  /** OpenCloud in server mode: `<origin>/api/cloud/oauth/callback`. */
+  redirectUrl?: string;
+  clientId?: string;
+  /** Vaultwarden: e-mail + master password (+ TOTP); WebDAV: username + password. */
+  email?: string;
+  username?: string;
+  password?: string;
+  totp?: string;
+}
+
+export type CloudLoginStatus = 'pending' | 'done' | 'error' | 'two_factor';
+
+export interface CloudLoginFlow {
+  id: string;
+  provider: CloudAccountProvider;
+  status: CloudLoginStatus;
+  /** Open in the browser (Nextcloud Login Flow v2, OpenID Connect). */
+  loginUrl?: string;
+  error?: string;
+  account?: CloudAccount;
+}
+
+export interface CloudEntry {
+  name: string;
+  path: string;
+  dir: boolean;
+  size: number;
+  modified?: string;
+  contentType?: string;
+}
+
+export interface CloudListing {
+  accountId: number;
+  path: string;
+  entries: CloudEntry[];
+}
+
+/** -1 = unknown / unlimited. */
+export interface CloudQuota {
+  used: number;
+  available: number;
+}
+
+export interface CloudShareInput {
+  accountId: number;
+  /** Stored file (Nextcloud, OpenCloud). */
+  path?: string;
+  /** Vaultwarden Send: a file (Api.uploadAttachment) or a text. */
+  uploadToken?: string;
+  text?: string;
+  name?: string;
+  password?: string;
+  /** Generate a password following the server's policy. */
+  generatePassword?: boolean;
+  expiresAt?: string;
+  note?: string;
+  maxAccessCount?: number;
+  hideEmail?: boolean;
+}
+
+export type CloudShareSource = 'mail' | 'files' | 'workflow' | 'chat';
+
+export interface CloudShare {
+  id: number;
+  accountId: number;
+  provider: CloudAccountProvider;
+  fileName: string;
+  remotePath?: string;
+  url: string;
+  /** Only returned right after creation. */
+  password?: string;
+  hasPassword: boolean;
+  expiresAt?: string;
+  createdAt: string;
+  revokedAt?: string;
+  active: boolean;
+  source: CloudShareSource;
+  size?: number;
+  messageId?: number;
+}
+
+/** Save a mail/chat attachment (messageId + index) or an upload into a cloud folder. */
+export interface CloudSaveInput {
+  accountId: number;
+  dir: string;
+  messageId?: number;
+  index?: number;
+  uploadToken?: string;
+  filename?: string;
+}
+
+/** A cloud file copied into an upload, ready to attach. */
+export interface CloudImportResult {
+  uploadToken: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
+// --- OAuth/Cloud accounts ---
+// Microsoft 365 / Google sign-in, own client IDs, shared mailboxes and
+// identity delegation (internal/app/oauth_app.go, KONZEPT 7.3–7.5).
+
+export type OAuthProviderId = 'microsoft' | 'google';
+
+/** Declaration merging: discovery names the sign-in service. */
+export interface DiscoveryResult {
+  oauthProvider?: OAuthProviderId;
+}
+
+export interface OAuthClientInput {
+  provider: OAuthProviderId;
+  clientId: string;
+  /** Write only (Google desktop clients, confidential web clients). */
+  clientSecret?: string;
+  hasSecret?: boolean;
+  /** Microsoft authority: common | organizations | consumers | tenant id. */
+  tenant?: string;
+}
+
+export interface OAuthProviderInfo {
+  id: OAuthProviderId;
+  displayName: string;
+  configured: boolean;
+  /** Where the active client comes from. */
+  source?: 'env' | 'admin' | 'user' | 'builtin' | '';
+  clientId?: string;
+  tenant?: string;
+  userClient?: OAuthClientInput;
+  allowUserClients: boolean;
+  deviceFlow: boolean;
+  /** Access methods: graph | imap | eas | ews (Microsoft), gmail | imap (Google). */
+  kinds: AccountKind[];
+  /** Web redirect URI to register (server mode). */
+  redirectUri?: string;
+}
+
+export interface OAuthStartInput {
+  provider: OAuthProviderId;
+  email: string;
+  kind: AccountKind;
+  displayName?: string;
+  name?: string;
+  tenant?: string;
+  /** loopback (desktop default) | redirect (server default) | device. */
+  mode?: 'loopback' | 'redirect' | 'device';
+  /** Re-authenticate this account instead of creating one. */
+  accountId?: number;
+}
+
+export interface OAuthFlowStatus {
+  id: string;
+  provider: OAuthProviderId;
+  mode: 'loopback' | 'redirect' | 'device';
+  status: 'pending' | 'done' | 'error' | 'canceled';
+  authUrl?: string;
+  userCode?: string;
+  verificationUri?: string;
+  expiresAt?: string;
+  accountId?: number;
+  email?: string;
+  error?: string;
+  /** oauth_not_configured | oauth_consent_required | oauth_denied | oauth_reauth_required ... */
+  errorCode?: string;
+}
+
+export type SendMode = 'send_as' | 'send_on_behalf';
+
+export interface SharedMailboxInput {
+  accountId: number;
+  address: string;
+  sendMode?: SendMode | '';
+  displayName?: string;
+}
+
+export interface IdentityDelegation {
+  identityId: number;
+  mode: SendMode;
+  mailbox: string;
+  ownerAccountId?: number;
+}
+
+export interface CloudPimResult {
+  calendars: number;
+  events: number;
+  addressBooks: number;
+  contacts: number;
+  tasks: number;
+  deleted: number;
+}
+
+// ---------------------------------------------------------------------------
+// Mail protocols: POP3, JMAP, Sieve, remote image proxy (KONZEPT 7.1, 8.3, 8.5)
+// ---------------------------------------------------------------------------
+
+export interface Pop3Options {
+  leaveOnServer: boolean;
+  /** Delete on the server this many days after download (0 = never). */
+  deleteAfterDays?: number;
+  /** Delete on the server when the mail is deleted permanently in TuxMail. */
+  deleteOnLocalDelete?: boolean;
+}
+
+export interface RemoteContent {
+  /** Sanitized HTML with remote images routed through the image proxy. */
+  html: string;
+}
+
+export interface RemoteAllowEntry {
+  kind: 'sender' | 'domain';
+  value: string;
+  createdAt: string;
+}
+
+export interface SieveScriptInfo {
+  name: string;
+  active: boolean;
+}
+
+export interface SieveSkipped {
+  id: string;
+  name: string;
+  reason: string;
+}
+
+export interface SieveStatus {
+  accountId: number;
+  /** ManageSieve reachable and logged in. */
+  available: boolean;
+  error?: string;
+  extensions: string[];
+  scripts: SieveScriptInfo[];
+  /** "Workflows als Serverregeln übertragen". */
+  syncWorkflows: boolean;
+  /** Workflow ids that run on the server / that cannot. */
+  included: string[];
+  skipped: SieveSkipped[];
+}
+
+export interface SieveCommand {
+  name: string;
+  line: number;
+  args?: string[];
+  children?: SieveCommand[];
+  comment?: string;
+}
+
+export interface SieveParse {
+  commands: SieveCommand[];
+  requires: string[];
+  managed: boolean;
+  error?: string;
+  errorLine?: number;
+}
+
+export interface SieveScript {
+  name: string;
+  script: string;
+  active: boolean;
+  parse: SieveParse;
+}
+
+export interface SieveCheckResult {
+  ok: boolean;
+  warnings?: string;
+  error?: string;
+  line?: number;
+}
+
+/** ManageSieve settings of an IMAP account (advanced; defaults: IMAP host, 4190, STARTTLS). */
+export interface SieveConfig {
+  host: string;
+  port: number;
+  tls: TLSMode;
+  disabled: boolean;
+  /** Keep TuxMail's rules in an own script included from the active one. */
+  separate: boolean;
+}
+
+/** Out-of-office settings ("Abwesenheitsnotiz", KONZEPT 8.5). Times RFC 3339; zero/empty = open. */
+export interface VacationSettings {
+  enabled: boolean;
+  start?: string | null;
+  end?: string | null;
+  accountIds?: number[];
+  identities?: string[];
+  subject?: string;
+  internalText?: string;
+  externalText?: string;
+  ownDomains?: string[];
+  ownAddresses?: string[];
+  oncePerDays?: number;
+  forwardTo?: string[];
+  chatAutoReply?: boolean;
+  chatText?: string;
+  chatChannels?: string[];
+  /** Accounts whose mail server answers itself (read only). */
+  serverAccounts?: number[];
+}

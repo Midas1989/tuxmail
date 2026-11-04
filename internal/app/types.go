@@ -102,6 +102,9 @@ type MessageDetail struct {
 	Text             string       `json:"text,omitempty"`
 	Attachments      []Attachment `json:"attachments"`
 	HasRemoteContent bool         `json:"hasRemoteContent,omitempty"`
+	// RemoteLoaded is set when HTML already references remote images through
+	// the image proxy (sender/domain on the allowlist), mailproto.go.
+	RemoteLoaded bool `json:"remoteLoaded,omitempty"`
 }
 
 // Conversation is a row of the chat list.
@@ -292,6 +295,9 @@ type OutgoingMessage struct {
 	ReplyToItemID      string               `json:"replyToItemId,omitempty"`
 	SignatureID        *int64               `json:"signatureId,omitempty"`
 	SendAt             string               `json:"sendAt,omitempty"`
+	// ConfirmChecks are send checks (SendFinding.Check) the user confirmed
+	// after a blocked SendResult ("send anyway").
+	ConfirmChecks []string `json:"confirmChecks,omitempty"`
 }
 
 // SharePassword is a generated cloud share password.
@@ -321,6 +327,8 @@ type SendFinding struct {
 	Key      string            `json:"key"`      // i18n key, e.g. sendcheck.missing_subject
 	Message  string            `json:"message"`  // English fallback
 	Params   map[string]string `json:"params,omitempty"`
+	// Localized holds the ready texts by locale ("de", "en").
+	Localized map[string]string `json:"localized,omitempty"`
 }
 
 // DiscoveryResult is the result of account autodiscovery.
@@ -331,6 +339,10 @@ type DiscoveryResult struct {
 	Incoming       *ServerConfig `json:"incoming,omitempty"`
 	Outgoing       *ServerConfig `json:"outgoing,omitempty"`
 	OAuthAvailable bool          `json:"oauthAvailable,omitempty"`
+	// EASURL is the ActiveSync endpoint found by Autodiscover (kind "eas").
+	EASURL string `json:"easUrl,omitempty"`
+	// OAuthProvider names the sign-in service ("microsoft", "google").
+	OAuthProvider string `json:"oauthProvider,omitempty"`
 }
 
 // NewAccountInput creates an account.
@@ -342,6 +354,13 @@ type NewAccountInput struct {
 	Password    string        `json:"password,omitempty"`
 	Incoming    *ServerConfig `json:"incoming,omitempty"`
 	Outgoing    *ServerConfig `json:"outgoing,omitempty"`
+	// EASURL is the ActiveSync server URL of kind "eas" accounts (optional
+	// when incoming.host is set; the username may be DOMAIN\user).
+	EASURL string `json:"easUrl,omitempty"`
+	// POP3 holds the server deletion policy of kind "pop3" accounts and
+	// JMAPURL the session URL of kind "jmap" accounts (mailproto.go).
+	POP3    *POP3Options `json:"pop3,omitempty"`
+	JMAPURL string       `json:"jmapUrl,omitempty"`
 }
 
 // ==== Push / notifications =====================================================

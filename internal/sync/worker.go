@@ -213,7 +213,8 @@ func (w *Worker) withProvider(ctx context.Context, fn func(p domain.MailProvider
 	w.provMu.Lock()
 	defer w.provMu.Unlock()
 	if w.prov == nil {
-		p, err := w.m.cfg.Providers.Build(ctx, w.acc, w.m.cfg.Credentials, w.m.cfg.ProviderOptions)
+		bctx := WithProviderEnv(ctx, ProviderEnv{Store: w.m.st, AccountID: w.acc.ID})
+		p, err := w.m.cfg.Providers.Build(bctx, w.acc, w.m.cfg.Credentials, w.m.cfg.ProviderOptions)
 		if err != nil {
 			return err
 		}
@@ -436,7 +437,19 @@ func (w *Worker) dueFolders(ctx context.Context) ([]domain.Folder, error) {
 
 // ==== folder list ==============================================================
 
-func (w *Worker) syncFolderList(ctx context.Context) error {
+func (w *Worker) syncFolderList(ctx context.Context) (err error) {
+	// Clear the request before listing so that a request arriving while
+	// the list is processed is not lost; restore it if the sync fails.
+	w.mu.Lock()
+	w.listFolders = false
+	w.mu.Unlock()
+	defer func() {
+		if err != nil {
+			w.mu.Lock()
+			w.listFolders = true
+			w.mu.Unlock()
+		}
+	}()
 	var remote []domain.Folder
 	if err := w.withProvider(ctx, func(p domain.MailProvider) error {
 		var err error
@@ -455,11 +468,13 @@ func (w *Worker) syncFolderList(ctx context.Context) error {
 		localByRemote[f.RemoteID] = f
 	}
 	localProt, remoteProt := w.protectedFolders()
+	dedupeRoles(remote)
 
 	// Parents first so that their ids are known.
 	sort.SliceStable(remote, func(i, j int) bool { return depth(remote[i]) < depth(remote[j]) })
 	ids := map[string]int64{}
 	changed := false
+	var appeared []domain.Folder
 	for _, f := range remote {
 		if remoteProt[f.RemoteID] {
 			continue
@@ -478,14 +493,27 @@ func (w *Worker) syncFolderList(ctx context.Context) error {
 			return err
 		}
 		ids[f.RemoteID] = id
-		if !exists || old.Name != f.Name || old.Role != f.Role || old.ParentID != f.ParentID {
+		if !exists {
+			f.ID = id
+			appeared = append(appeared, f)
+		}
+		if !exists || old.Name != f.Name || old.ParentID != f.ParentID {
 			changed = true
 		}
 	}
+	var vanished []domain.Folder
 	for _, f := range local {
-		if _, ok := ids[f.RemoteID]; ok || localProt[f.ID] || remoteProt[f.RemoteID] {
-			continue
+		if _, ok := ids[f.RemoteID]; !ok && !localProt[f.ID] && !remoteProt[f.RemoteID] {
+			vanished = append(vanished, f)
 		}
+	}
+	// Keep role overrides and identity folders across renames on the server.
+	for from, to := range renamedFolders(vanished, appeared) {
+		if err := st.MoveFolderReferences(ctx, from, to); err != nil {
+			w.log.Warn("sync: retarget folder references", "err", err)
+		}
+	}
+	for _, f := range vanished {
 		w.log.Info("sync: folder vanished on server", "folder", f.RemoteID)
 		if err := st.DeleteFolder(ctx, f.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
@@ -495,8 +523,14 @@ func (w *Worker) syncFolderList(ctx context.Context) error {
 		w.mu.Unlock()
 		changed = true
 	}
+	if err := st.ApplyFolderRoles(ctx, w.acc.ID); err != nil {
+		return err
+	}
+	if rolesChanged(ctx, st, w.acc.ID, local) {
+		changed = true
+	}
 	w.mu.Lock()
-	w.listFolders, w.lastList = false, w.m.now()
+	w.lastList = w.m.now()
 	w.mu.Unlock()
 	if changed {
 		w.m.publish(ctx, folderListEvent(w.acc.ID))

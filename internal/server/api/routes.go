@@ -3,7 +3,6 @@
 package api
 
 import (
-	"fmt"
 	"mime"
 	"net/http"
 	"net/url"
@@ -23,7 +22,7 @@ type (
 // vault endpoints). Keep in sync with the route list at the top of http.ts;
 // the contract test in internal/server checks every documented route.
 func Routes(opts Options) []Route {
-	return []Route{
+	routes := []Route{
 		// Accounts & identities
 		{"GET /api/accounts", func(w w, r r, a A) { send(w)(a.ListAccounts(r.Context())) }},
 		{"POST /api/accounts", jsonHandler(func(w w, r r, a A, in app.NewAccountInput) {
@@ -47,6 +46,21 @@ func Routes(opts Options) []Route {
 			}
 		})},
 		{"GET /api/signatures", func(w w, r r, a A) { send(w)(a.ListSignatures(r.Context())) }},
+		{"POST /api/signatures", func(w w, r r, a A) {
+			var in app.Signature
+			if readJSON(w, r, &in) {
+				in.ID = 0
+				send(w)(a.SaveSignature(r.Context(), in))
+			}
+		}},
+		{"PUT /api/signatures/{id}", withID(func(w w, r r, a A, id int64) {
+			var in app.Signature
+			if readJSON(w, r, &in) {
+				in.ID = id
+				send(w)(a.SaveSignature(r.Context(), in))
+			}
+		})},
+		{"DELETE /api/signatures/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DeleteSignature(r.Context(), id)) })},
 		{"GET /api/persons", func(w w, r r, a A) { send(w)(a.ListPersons(r.Context())) }},
 		{"GET /api/persons/frequent", func(w w, r r, a A) { send(w)(a.FrequentContacts(r.Context())) }},
 		{"PUT /api/persons/{id}/card", withID(func(w w, r r, a A, id int64) {
@@ -423,6 +437,15 @@ func Routes(opts Options) []Route {
 			send(w)(a.CompleteWorkflow(r.Context(), in.Src, in.Offset, in.Mode))
 		})},
 
+		// Folder config (routes_folderconfig.go)
+		{"GET /api/accounts/{id}/folder-config", getFolderConfig},
+		{"PUT /api/accounts/{id}/folder-config/roles/{role}", putFolderRole},
+		{"POST /api/accounts/{id}/folder-config/reset", resetFolderRoles},
+		{"POST /api/accounts/{id}/folder-config/create", createRoleFolder},
+		{"PUT /api/accounts/{id}/folder-config/behaviour", putFolderBehaviour},
+		{"PUT /api/identities/{id}/folders", putIdentityFolders},
+		{"POST /api/folders/{id}/expunge", expungeFolder},
+
 		// Portable vault (desktop; in server mode always unlocked)
 		{"GET /api/vault/status", func(w w, r r, a A) { send(w)(a.VaultStatus(r.Context())) }},
 		{"POST /api/vault/unlock", jsonHandler(func(w w, r r, a A, in struct{ Password string }) {
@@ -432,6 +455,12 @@ func Routes(opts Options) []Route {
 		// Live events
 		{"GET /api/events", eventsHandler(opts)},
 	}
+	routes = append(routes, cloudRoutes()...)     // cloud routes
+	routes = append(routes, ioRoutes()...)        // io_routes.go
+	routes = append(routes, mailProtoRoutes()...) // mailproto_routes.go
+	routes = append(routes, oauthRoutes()...)     // oauth_routes.go
+	routes = append(routes, MessengerRoutes()...) // messenger_routes.go
+	return append(routes, pimRoutes()...)         // pim_routes.go
 }
 
 // send returns a function writing (value, error) results:
@@ -483,18 +512,10 @@ func serveCID(w http.ResponseWriter, r *http.Request, a *app.App, id int64) {
 	serveBlob(w, c, true)
 }
 
-// serveImageProxy is the remote-image proxy for HTML mails. Remote content
-// is blocked until the proxy (fetch, size limit, type check, no cookies,
-// tracking-pixel filter) is implemented.
-//
-// TODO(proxy): fetch the image server-side so the sender never learns the
-// reader's IP, with an allow-list per sender and a cache.
-func serveImageProxy(w http.ResponseWriter, r *http.Request, _ *app.App) {
-	u, err := url.Parse(r.URL.Query().Get("url"))
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		badRequest(w, "invalid url")
-		return
-	}
-	writeJSON(w, http.StatusNotImplemented, errorBody{Error: "remote_content_blocked",
-		Message: fmt.Sprintf("loading remote images (%s) is not available yet", u.Host)})
+// serveImageProxy is the remote-image proxy for HTML mails
+// (internal/imageproxy): signed URLs work without a session (sandboxed mail
+// frames); routes mounted here sit behind the embedding server's
+// authentication, so unsigned requests are accepted as authenticated.
+func serveImageProxy(w http.ResponseWriter, r *http.Request, a *app.App) {
+	a.ServeImageProxy(w, r, true)
 }

@@ -36,6 +36,9 @@ var roleNames = map[string]domain.FolderRole{
 	"spamverdacht": domain.RoleJunk, "unerwünscht": domain.RoleJunk,
 
 	"archive": domain.RoleArchive, "archives": domain.RoleArchive, "archiv": domain.RoleArchive,
+
+	"templates": domain.RoleTemplates, "template": domain.RoleTemplates, "vorlagen": domain.RoleTemplates,
+	"modèles": domain.RoleTemplates,
 }
 
 // roleFromAttrs maps RFC 6154 attributes. \All (Gmail "All Mail") is only
@@ -99,18 +102,26 @@ func leafName(name string, delim rune) string {
 // assignRoles computes folder roles: SPECIAL-USE first, then the name
 // fallback for roles no folder claimed, then \All as archive fallback.
 func assignRoles(list []*imap.ListData) []domain.FolderRole {
+	roles, _ := assignRolesWithSource(list)
+	return roles
+}
+
+// assignRolesWithSource is assignRoles that also reports how each role was
+// found (attribute = server, name fallback = name).
+func assignRolesWithSource(list []*imap.ListData) ([]domain.FolderRole, []domain.RoleSource) {
 	roles := make([]domain.FolderRole, len(list))
+	srcs := make([]domain.RoleSource, len(list))
 	taken := map[domain.FolderRole]bool{}
 	allIdx := -1
 	for i, d := range list {
 		if strings.EqualFold(d.Mailbox, "INBOX") {
-			roles[i] = domain.RoleInbox
+			roles[i], srcs[i] = domain.RoleInbox, domain.RoleSourceServer
 			taken[domain.RoleInbox] = true
 			continue
 		}
 		r, all := roleFromAttrs(d.Attrs)
 		if r != domain.RoleNone {
-			roles[i] = r
+			roles[i], srcs[i] = r, domain.RoleSourceServer
 			taken[r] = true
 		} else if all && allIdx < 0 {
 			allIdx = i
@@ -128,14 +139,14 @@ func assignRoles(list []*imap.ListData) []domain.FolderRole {
 		}
 		r := roleFromName(list[i].Mailbox, list[i].Delim)
 		if r != domain.RoleNone && !taken[r] {
-			roles[i] = r
+			roles[i], srcs[i] = r, domain.RoleSourceName
 			taken[r] = true
 		}
 	}
 	if allIdx >= 0 && !taken[domain.RoleArchive] && roles[allIdx] == domain.RoleNone {
-		roles[allIdx] = domain.RoleArchive
+		roles[allIdx], srcs[allIdx] = domain.RoleArchive, domain.RoleSourceServer
 	}
-	return roles
+	return roles, srcs
 }
 
 // ListFolders lists all selectable mailboxes. Unread/Total are filled when
@@ -173,12 +184,13 @@ func (p *Provider) ListFolders(ctx context.Context) ([]domain.Folder, error) {
 			}
 			usable = append(usable, d)
 		}
-		roles := assignRoles(usable)
+		roles, srcs := assignRolesWithSource(usable)
 		for i, d := range usable {
 			f := domain.Folder{
 				RemoteID:   d.Mailbox,
 				Name:       leafName(d.Mailbox, d.Delim),
 				Role:       roles[i],
+				RoleSource: srcs[i],
 				Subscribed: !ext || hasAttr(d.Attrs, imap.MailboxAttrSubscribed),
 			}
 			if d.Delim != 0 {

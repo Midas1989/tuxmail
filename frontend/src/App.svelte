@@ -18,7 +18,10 @@
   import ProjectsScreen from './lib/screens/ProjectsScreen.svelte';
   import OrganizeDialogs from './lib/components/organize/OrganizeDialogs.svelte';
   import IosInstallHint from './lib/components/IosInstallHint.svelte';
+  import Reminders from './lib/components/calendar/Reminders.svelte';
+  import VaultUnlock from './lib/components/settings/VaultUnlock.svelte';
   import { registerServiceWorker } from './lib/pwa';
+  import CloudDialogs from './lib/components/cloud/CloudDialogs.svelte';
 
   // Theme + density tokens on <html>.
   $effect(() => {
@@ -76,6 +79,9 @@
   </main>
 </div>
 
+{#if app.vault?.locked}
+  <VaultUnlock />
+{/if}
 {#if app.paletteOpen}
   <CommandPalette />
 {/if}
@@ -83,7 +89,9 @@
   <Composer init={app.composer} onclose={() => (app.composer = null)} />
 {/if}
 <OrganizeDialogs />
+<CloudDialogs />
 <Toasts />
+{#if app.ready}<Reminders />{/if}
 <IosInstallHint />
 
 <style>

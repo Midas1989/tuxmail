@@ -830,11 +830,8 @@ func (a *App) archiveMails(ctx context.Context, conv store.Conversation) error {
 	}
 	var errs []error
 	for acc, ids := range byAccount {
-		f, err := a.st.FolderByRole(ctx, acc, domain.RoleArchive)
-		if err != nil {
-			continue
-		}
-		errs = append(errs, a.Move(ctx, ids, f.ID))
+		_, err := a.archiveMessages(ctx, acc, ids) // folderconfig.go: archive mode
+		errs = append(errs, err)
 	}
 	return errors.Join(errs...)
 }

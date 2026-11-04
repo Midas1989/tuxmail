@@ -93,7 +93,7 @@ Ziel ist ein **lokal laufender Desktop-Client**, der klassische E-Mail-Arbeit (O
 | C-03 | Kontakte | Zusammenführen von Personen über alle Kanäle (Mail, Telefon, WhatsApp, Signal …) | Soll |
 | X-01 | Messenger | WhatsApp (mehrere Konten) | Soll |
 | X-02 | Messenger | Signal (mehrere Konten) | Soll |
-| X-03 | Messenger | Instagram, Facebook Messenger | Kann (experimentell) |
+| X-03 | Messenger | Instagram, Facebook Messenger | **Vorerst gestrichen** (Entscheidung Projektinhaber) |
 | X-04 | Messenger | Google Messages (RCS/SMS), Google Chat (Workspace) | Kann |
 | X-05 | Messenger | Telegram, Matrix | Muss |
 | F-01 | Dateien | Nextcloud & OpenCloud: Dateien als Anhang holen und Anhänge dort speichern | Muss |
@@ -884,8 +884,8 @@ Keiner der großen Messenger bietet eine offizielle API für **private Konten** 
 |---|---|---|---|---|
 | **WhatsApp** | `go.mau.fi/whatsmeow` (MPL-2.0) | QR-Code oder Kopplungscode wie WhatsApp Web | Einzel-/Gruppenchats, Medien, Sprachnachrichten (Wiedergabe), Reaktionen, Antworten, Lesebestätigungen, Status lesen | Mittel – Verstoß gegen ToS, Kontosperre möglich (selten bei normaler Nutzung) |
 | **Signal** | `signalmeow` aus mautrix-signal (AGPL-3.0, nutzt libsignal) | QR-Code als verknüpftes Gerät | Chats, Gruppen, Medien, Reaktionen, verschwindende Nachrichten | Gering – „verknüpfte Geräte" sind ein vorgesehenes Konzept. Alternative: `signal-cli` (Java) als Sidecar |
-| **Instagram** | `messagix` aus mautrix-meta (AGPL-3.0) | Login per eingebettetem Browser (Cookies) | Direktnachrichten, Medien, Reaktionen | **Hoch** – Meta erkennt inoffizielle Clients, Konto-Checkpoints möglich |
-| **Facebook Messenger** | `messagix` (mautrix-meta) | wie Instagram | Chats, Gruppen, Medien | **Hoch** |
+| ~~**Instagram**~~ *(vorerst gestrichen)* | `messagix` aus mautrix-meta (AGPL-3.0) | Login per eingebettetem Browser (Cookies) | Direktnachrichten, Medien, Reaktionen | **Hoch** – Meta erkennt inoffizielle Clients, Konto-Checkpoints möglich |
+| ~~**Facebook Messenger**~~ *(vorerst gestrichen)* | `messagix` (mautrix-meta) | wie Instagram | Chats, Gruppen, Medien | **Hoch** |
 | **Google Messages** (RCS/SMS des Android-Handys) | `libgm` aus mautrix-gmessages (AGPL-3.0) | QR-Code / Google-Konto-Kopplung | SMS/RCS über das eigene Smartphone | Mittel |
 | **Google Chat** (Workspace) | Offizielle Google Chat API | OAuth2 | Spaces, Direktnachrichten | Gering (nur Workspace) |
 | **Telegram** (Version 1.0) | `gotd/td` (offizielle MTProto-API, Drittclients ausdrücklich erlaubt; eigene `api_id` des Projekts) | Telefonnummer + Code bzw. QR-Code, 2FA-Passwort | Chats, Gruppen, Kanäle, Medien, Reaktionen, Antworten, Bearbeiten | Gering |
@@ -1380,7 +1380,7 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | **9c – Android-App** | Thin Client mit Capacitor: Server verbinden + Geräte-Anmeldung, Push (FCM / UnifiedPush), Teilen-Menü, App-Sperre, Build per GitHub Actions, F-Droid-/Play-Vorbereitung | APK für Android | 1,5 PM |
 | **10 – Feinschliff & Release 1.0** | Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (lokal + Cloud-Anbieter), S/MIME, Regeln/Sieve, Barrierefreiheit, Übersetzungen, Code-Signierung, OAuth-Verifizierungen, Sicherheitsprüfung des Web-Modus, Dokumentation | Release | 5 PM |
 | | | **Summe 1.0** | **≈ 50,5 PM** |
-| *nach 1.0* | Instagram/Facebook (experimentell), Google Messages, Google Chat | Optionale Kanäle | *≈ 3–4 PM* |
+| *nach 1.0* | Google Messages, Google Chat | Optionale Kanäle | *≈ 2 PM* |
 | *nach 1.0* | iOS-App (Capacitor); eigenständiger Android-Modus mit Go-Kern | Mobil-Apps | *≈ 1 PM (iOS) + 3–4 PM (eigenständig)* |
 
 - Mit 3 Entwicklern: **ca. 16–18 Monate** bis Version 1.0 (mit 4 Entwicklern ca. 12–14 Monate); ein nutzbarer Mail-Client mit PGP und Konversationsansicht (Phasen 0–2) nach **ca. 5 Monaten**.
@@ -1424,7 +1424,8 @@ Die Schätzung gilt für ein kleines Team (2–3 Entwickler); PM = Personenmonat
 | 5 | Bridge-Modus | **Bestandteil von Version 1.0** | Kapitel 11.3, Phase 8 der Roadmap |
 | 6 | Web-/Mobil-Client | **Web-Client in Version 1.0**, Mobil-App später über dieselbe API | Kapitel 4.2, 4.5, Phase 9 der Roadmap |
 | 7 | Cloud-Link-Passwort | **Bei jedem Versand fragen** (Wahl pro Empfänger merkbar) | Kapitel 12.2 |
-| 8 | Messenger für 1.0 | **WhatsApp, Signal, Telegram, Matrix**; Instagram, Facebook, Google Messages/Chat nach 1.0 | Kapitel 11, Roadmap |
+| 8 | Messenger für 1.0 | **WhatsApp, Signal, Telegram, Matrix**; Google Messages/Chat nach 1.0 | Kapitel 11, Roadmap |
+| 13 | Instagram & Facebook | **Vorerst gestrichen** – hohes Sperrrisiko, kein offizieller Zugang für Privatkonten. Die Plugin-Architektur erlaubt eine spätere Ergänzung. | Kapitel 11.2 |
 | 9 | OpenPGP | **Bereits im Mail-MVP** (inkl. Autocrypt, WKD, geschützte Header) | Kapitel 8.6, Phase 1 |
 | 10 | Zusatzfunktionen 1.0 | Spam-Filter & Newsletter-Abmeldung, smarte Kategorien, Rechtschreibprüfung & Serienmails, Videokonferenz-Links, Exchange-Delegation, KI-Assistenz (optional; lokal oder OpenAI/Gemini/DeepSeek) | Kapitel 7.3a, 8.7–8.10, 9.1 |
 | 12 | Weitere Funktionen 1.0 | **Workflow-System** (ersetzt reine Regeln), Druck & PDF/A-Archivierung, „Warten auf Antwort", Versand-Prüfungen, gemeinsame Postfächer (Server-Modus), **Telegram und Matrix** als zusätzliche Messenger | Kapitel 8.5, 8.11–8.14, 11.2 |

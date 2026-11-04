@@ -89,6 +89,11 @@ func (s *Store) UpdateFolderPath(ctx context.Context, folderID int64, remoteID, 
 			remoteID, name, nullID(parentID), folderID); err != nil {
 			return fmt.Errorf("store: update folder path: %w", err)
 		}
+		if oldRemote != remoteID {
+			if err := renameOverrides(ctx, tx, acc, oldRemote, remoteID, delim.String); err != nil {
+				return err
+			}
+		}
 		if delim.String == "" || oldRemote == remoteID {
 			return nil
 		}

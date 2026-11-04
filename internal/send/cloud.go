@@ -97,7 +97,11 @@ func (s *Service) uploadCloud(ctx context.Context, req *Request, res *Result) ([
 			}
 			size, body = int64(len(data)), bytes.NewReader(data)
 		}
-		share, err := s.cfg.Cloud.Upload(ctx, c.AccountID, UploadFile{
+		account := c.AccountID
+		if i < len(c.FileAccounts) && c.FileAccounts[i] != 0 {
+			account = c.FileAccounts[i]
+		}
+		share, err := s.cfg.Cloud.Upload(ctx, account, UploadFile{
 			Name: f.Filename, ContentType: f.ContentType, Size: size, Body: body,
 			Subject: req.Draft.Subject, Expiry: expiry,
 		})
@@ -118,7 +122,7 @@ func (s *Service) uploadCloud(ctx context.Context, req *Request, res *Result) ([
 				}
 			}
 			id, err := s.cfg.CloudLinks.CreateCloudLink(ctx, store.CloudLink{
-				AccountID: c.AccountID, Provider: share.Provider, RemotePath: share.RemotePath, ShareID: share.ShareID,
+				AccountID: account, Provider: share.Provider, RemotePath: share.RemotePath, ShareID: share.ShareID,
 				URL: share.URL, PasswordRef: ref, FileName: f.Filename, ExpiresAt: share.Expires,
 			})
 			if err == nil {

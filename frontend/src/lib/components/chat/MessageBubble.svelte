@@ -5,6 +5,7 @@
   "Show original e-mail"). Newsletters/HTML mails render as a compact card.
 -->
 <script lang="ts">
+  import MessageInvitations from '../calendar/MessageInvitations.svelte';
   import Check from '@lucide/svelte/icons/check';
   import CheckCheck from '@lucide/svelte/icons/check-check';
   import Clock from '@lucide/svelte/icons/clock';
@@ -166,6 +167,7 @@
           {/each}
         </div>
       {/if}
+      {#if item.messageId != null && item.channel === 'email'}<MessageInvitations messageId={item.messageId} compact />{/if}
       {#if item.body}
         <div class="text">{#each segments as seg, i (i)}{#if seg.href}<a href={seg.href} target="_blank" rel="noopener noreferrer" class:hit={seg.hit} onclick={(e) => e.stopPropagation()}>{seg.text}</a>{:else if seg.hit}<mark>{seg.text}</mark>{:else}{seg.text}{/if}{/each}{#if hasHidden}<button class="hidden-more" onclick={(e) => (e.stopPropagation(), onoriginal(item))} title={t('chat.menu.original')} aria-label={t('chat.menu.original')}><Ellipsis size={14} /></button>{/if}</div>
       {:else if item.relation === 'forward' && !item.attachments.length}

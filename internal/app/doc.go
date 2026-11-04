@@ -19,7 +19,9 @@
 // organize.go (tags, projects, search folders), workflows.go, settings.go
 // (preferences, locales, notifications, Web Push passthrough, vault),
 // ai.go (OpenAI-compatible/Anthropic/Gemini via internal/ai),
-// provisioning.go (desktop: connect to a TuxMail server). Additional state
+// provisioning.go (desktop: connect to a TuxMail server), pim*.go
+// (calendars, tasks, contacts, invitations, CalDAV/CardDAV sync; see
+// pim.go). Additional state
 // lives in migration store/migrations/0005_app.sql (store/appstate.go,
 // store/appviews.go).
 //
@@ -46,13 +48,26 @@
 // send.OpKind, account 0) are executed by runSendOps; chat-mode scheduled
 // messages are kept in scheduled_messages and sent when due. Send-check
 // blocks are returned as SendResult{blocked, findings}; too large mails as
-// error code "too_large".
+// error code "too_large". The built-in checks (workflow/sendcheck) run as
+// mail.before_send hook; composer sends also wait for warnings to be
+// confirmed (OutgoingMessage.ConfirmChecks), due scheduled messages do not.
 //
 // Rendering (internal/mime/parse + internal/mime/sanitize): MIMERenderer
 // (default) sanitizes HTML with cid URLs /api/messages/{id}/cid/{cid} and
 // the remote-image proxy /api/proxy/image?url= (blocked for now);
 // bubbles use internal/mime/quote. BasicRenderer is a dependency-free
 // fallback that never returns HTML.
+//
+// Import/export/backup (io_*.go, KONZEPT 13/14): background jobs with
+// progress and cancel (io_jobs.go; resumable imports keep a checkpoint in
+// DataDir/io/jobs), mail import into "Local Folders" (account kind "local",
+// ingested like sync: blob, index, threading engine) or into server folders
+// via sync Actions.Append (io_mail.go), ICS/vCard/CSV/LDIF on the store
+// through the ics.CalendarImporter/Exporter interfaces (io_pim.go; the PIM
+// module may replace them), backups/restores/schedules on internal/backup
+// (io_backup.go; RunDueBackups is called by the application timer). The
+// formats live in internal/importexport/*. Export formats of other modules
+// (PDF) register with RegisterExportFormat.
 //
 // Messenger plugins (internal/messenger, KONZEPT 11): Options.Messenger
 // creates a messenger.Service with its plugin host (messenger_wiring.go,
@@ -62,4 +77,19 @@
 // through the plugin; share passwords can be delivered by messenger
 // (send.MessengerSender). Without Options.Messenger messenger channels
 // return not_supported.
+//
+// Cloud files (KONZEPT 12, cloud_*.go on internal/cloud/...): cloud
+// accounts are accounts rows of kind nextcloud, opencloud, vaultwarden or
+// webdav (Extra: server, user; the secret store keeps the app password,
+// OAuth token or Vaultwarden session). StartCloudLogin/PollCloudLogin run
+// Nextcloud Login Flow v2 and OpenID Connect (loopback redirect on the
+// desktop, /api/cloud/oauth/callback in server mode); Vaultwarden and
+// WebDAV log in directly. cloudUploader is the send.CloudUploader: every
+// attachment of the composer picks its own provider (delivery nextcloud,
+// opencloud, vaultwarden -> send.CloudOptions.FileAccounts), files go to
+// <uploadDir>/<date>/<subject>/ with a policy compliant password, links are
+// recorded in cloud_links (+ cloud_link_meta, migration 0007_cloud.sql) and
+// listed/revoked as "My shares". workflowCloud and workflowPDF implement
+// workflow.CloudActions and PDFActions (duplicate protection via
+// cloud_archive); the PDF itself comes from SetPDFRenderer.
 package app

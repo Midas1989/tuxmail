@@ -255,11 +255,11 @@ func (w *workflowMail) Archive(ctx context.Context, ref workflow.ItemRef) error 
 	if err != nil {
 		return err
 	}
-	f, err := w.a.st.FolderByRole(ctx, m.AccountID, domain.RoleArchive)
-	if err != nil {
+	ok, err := w.a.archiveMessages(ctx, m.AccountID, []int64{m.ID}) // folderconfig.go: archive mode
+	if !ok {
 		return workflow.Permanent(fmt.Errorf("account has no archive folder"))
 	}
-	return w.a.sync.Move(ctx, []int64{m.ID}, f.ID)
+	return err
 }
 
 var errNoSender = workflow.Permanent(errors.New("sending is not configured in this build (internal/send not wired)"))
@@ -278,7 +278,8 @@ func (w *workflowMail) ReplyAutomatic(context.Context, workflow.ItemRef, workflo
 type workflowTasks struct{ a *App }
 
 func (w *workflowTasks) CreateTask(ctx context.Context, t workflow.TaskRequest) (string, error) {
-	id, err := w.a.createLocalCalObject(ctx, "todo", t.Title, t.Notes, time.Time{}, time.Time{}, t.Due)
+	cal := w.a.calendarByName(ctx, t.List, "VTODO")
+	id, err := w.a.pimCreate(ctx, cal, "todo", t.Title, t.Notes, "", time.Time{}, time.Time{}, t.Due)
 	return fmt.Sprint(id), err
 }
 
@@ -287,6 +288,7 @@ func (w *workflowTasks) CreateEvent(ctx context.Context, e workflow.EventRequest
 	if d <= 0 {
 		d = time.Hour
 	}
-	id, err := w.a.createLocalCalObject(ctx, "event", e.Title, e.Notes, e.Start, e.Start.Add(d), time.Time{})
+	cal := w.a.calendarByName(ctx, e.Calendar, "VEVENT")
+	id, err := w.a.pimCreate(ctx, cal, "event", e.Title, e.Notes, e.Location, e.Start, e.Start.Add(d), time.Time{})
 	return fmt.Sprint(id), err
 }

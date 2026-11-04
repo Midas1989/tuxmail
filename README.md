@@ -16,6 +16,14 @@ jederzeit umschaltbar.
 **Geplanter Stack:** Go (Kern & Protokolle) · Wails + Svelte 5/TypeScript (Oberfläche) · SQLite (Daten) ·
 Messenger als separate Plugin-Prozesse (gRPC) · portabel lauffähig (Windows-ZIP, Linux-AppImage) oder installierbar.
 
+## Downloads
+
+Fertige Pakete stehen unter [Releases](https://github.com/Midas1989/Mailclient/releases):
+Windows (Installer, portables ZIP), Linux (AppImage, `.deb`, `.rpm`, portables Archiv),
+Server-Archive für Linux/Windows, Android-APK und das Docker-Image `ghcr.io/midas1989/tuxmail`.
+Server-Installation: [deploy/README.md](deploy/README.md) (Ansible, Docker) ·
+Release erstellen: [docs/RELEASE.md](docs/RELEASE.md).
+
 ## Lizenz / License
 
 TuxMail ist freie Software unter der **GNU Affero General Public License v3.0 (AGPLv3)** – siehe [LICENSE](LICENSE).

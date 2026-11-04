@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=TuxMail
+GenericName=Mail & Messaging Client
+GenericName[de]=E-Mail- und Messenger-Programm
+Comment=Email, calendar, contacts and messengers in one app
+Comment[de]=E-Mail, Kalender, Kontakte und Messenger in einer Anwendung
+Icon=org.tuxmail.TuxMail
+# The URL (%u) is not passed yet: the command line has no "open mailto:" option.
+# Once it exists, change this to "Exec=tuxmail %u". Until then a mailto: link
+# simply opens TuxMail.
+Exec=tuxmail
+TryExec=tuxmail
+Terminal=false
+StartupNotify=true
+Categories=Network;Email;Calendar;ContactManagement;
+Keywords=mail;email;imap;smtp;calendar;contacts;messenger;chat;
+Keywords[de]=Mail;E-Mail;IMAP;SMTP;Kalender;Kontakte;Messenger;Chat;
+MimeType=x-scheme-handler/mailto;

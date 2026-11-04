@@ -11,31 +11,58 @@ import (
 	"github.com/Midas1989/Mailclient/internal/domain"
 )
 
-const folderCols = `id, account_id, parent_id, remote_id, name, delimiter, role, subscribed, unread, total`
+const folderCols = `id, account_id, parent_id, remote_id, name, delimiter, role, role_source, subscribed, unread, total`
 
 func scanFolder(sc scanner) (domain.Folder, error) {
 	var (
-		f           domain.Folder
-		parent      sql.NullInt64
-		delim, role sql.NullString
+		f                domain.Folder
+		parent           sql.NullInt64
+		delim, role, src sql.NullString
 	)
-	err := sc.Scan(&f.ID, &f.AccountID, &parent, &f.RemoteID, &f.Name, &delim, &role, &f.Subscribed, &f.Unread, &f.Total)
+	err := sc.Scan(&f.ID, &f.AccountID, &parent, &f.RemoteID, &f.Name, &delim, &role, &src, &f.Subscribed, &f.Unread, &f.Total)
 	f.ParentID, f.Delimiter, f.Role = parent.Int64, delim.String, domain.FolderRole(role.String)
+	f.RoleSource = domain.RoleSource(src.String)
+	if f.Role != domain.RoleNone && f.RoleSource == "" {
+		f.RoleSource = domain.RoleSourceServer
+	}
 	return f, err
 }
 
 // UpsertFolder inserts or updates a folder identified by (AccountID, RemoteID)
 // and returns its id. The sync state is left untouched.
+//
+// f.Role and f.RoleSource are what the server reported. The stored
+// (effective) role also honours the user's overrides, see
+// SetFolderRoleOverride: the target folder of an override gets the
+// overridden role, and a folder whose server role is overridden elsewhere
+// loses it.
 func (s *Store) UpsertFolder(ctx context.Context, f domain.Folder) (int64, error) {
+	src := f.RoleSource
+	if f.Role == domain.RoleNone {
+		src = ""
+	} else if src == "" {
+		src = domain.RoleSourceServer
+	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO folders(account_id, parent_id, remote_id, name, delimiter, role, subscribed, unread, total)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-		ON CONFLICT(account_id, remote_id) DO UPDATE SET
-			parent_id = excluded.parent_id, name = excluded.name, delimiter = excluded.delimiter,
-			role = excluded.role, subscribed = excluded.subscribed, unread = excluded.unread, total = excluded.total
-		RETURNING id`,
-		f.AccountID, nullID(f.ParentID), f.RemoteID, f.Name, nullString(f.Delimiter), nullString(string(f.Role)),
-		boolInt(f.Subscribed), f.Unread, f.Total).Scan(&id)
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		err := tx.QueryRowContext(ctx, `INSERT INTO folders(account_id, parent_id, remote_id, name, delimiter, role, role_source,
+				server_role, server_role_source, subscribed, unread, total)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			ON CONFLICT(account_id, remote_id) DO UPDATE SET
+				parent_id = excluded.parent_id, name = excluded.name, delimiter = excluded.delimiter,
+				role = excluded.role, role_source = excluded.role_source, server_role = excluded.server_role,
+				server_role_source = excluded.server_role_source,
+				subscribed = excluded.subscribed, unread = excluded.unread, total = excluded.total
+			RETURNING id`,
+			f.AccountID, nullID(f.ParentID), f.RemoteID, f.Name, nullString(f.Delimiter), nullString(string(f.Role)),
+			nullString(string(src)), nullString(string(f.Role)), nullString(string(src)),
+			boolInt(f.Subscribed), f.Unread, f.Total).Scan(&id)
+		if err != nil {
+			return err
+		}
+		_, err = tx.ExecContext(ctx, applyRolesSQL+` WHERE id = ?`, id)
+		return err
+	})
 	if err != nil {
 		return 0, fmt.Errorf("store: upsert folder %q: %w", f.RemoteID, err)
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/ai"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
+	"github.com/Midas1989/Mailclient/internal/imageproxy"
 	"github.com/Midas1989/Mailclient/internal/messenger"
 	"github.com/Midas1989/Mailclient/internal/project"
 	"github.com/Midas1989/Mailclient/internal/send"
@@ -27,6 +28,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/store/blob"
 	tsync "github.com/Midas1989/Mailclient/internal/sync"
 	"github.com/Midas1989/Mailclient/internal/workflow"
+	"github.com/Midas1989/Mailclient/internal/workflow/vacation"
 )
 
 // Modes of operation.
@@ -60,6 +62,20 @@ type Options struct {
 	AI         AIFactory       // default: no provider (ai_not_configured)
 	// Messenger enables the messenger plugins (messenger_wiring.go).
 	Messenger *MessengerOptions
+	OAuth     *OAuthOptions // OAuth clients/redirect (default: environment), oauth_app.go
+	// ImageSigner signs remote image proxy URLs (server mode: server key,
+	// subject = user id); default: per-installation key, mailproto.go.
+	ImageSigner *imageproxy.Signer
+	// VacationServers overrides the server-side out-of-office backends
+	// (default: EAS + Graph/EWS/Gmail + Sieve/JMAP), VacationMail the mail
+	// backend of the local responder (default: the workflow mail actions);
+	// both mainly for tests, vacation.go.
+	VacationServers func(ctx context.Context) (map[int64]vacation.ServerVacationSync, error)
+	VacationMail    workflow.MailActions
+	// PIM configures calendars, tasks and contacts (pim.go). The background
+	// loop (CalDAV/CardDAV sync, reminders, invitations) runs when PIM or
+	// Sync is set and PIM.Disabled is false.
+	PIM *PIMOptions
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -82,6 +98,7 @@ type Options struct {
 // (api.ts) on top of the store and the core services. It is safe for
 // concurrent use.
 type App struct {
+	kick    chan struct{} // wakes the timer loop early (e.g. after adding an account)
 	opts    Options
 	st      *store.Store
 	blobs   *blob.Store
@@ -108,6 +125,15 @@ type App struct {
 
 	remoteMu sync.Mutex
 	remote   map[string]*remoteSession // provisioning sessions by server URL
+
+	syncCreds tsync.Credentials // credentials of the sync engine (EAS PIM, OOF)
+	easPIM    easPIM            // EAS calendar/contacts scheduling (eas.go)
+	cloud     cloudState        // cloud_accounts.go
+	oauth     *oauthState       // oauth_app.go
+	mp        mailProtoState    // mailproto.go
+	vac       vacationState     // vacation.go
+	pimOnce   sync.Once
+	pim       *pimService
 }
 
 // New creates the application layer.
@@ -130,7 +156,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{Timeout: 60 * time.Second}
 	}
-	a := &App{opts: opts, st: opts.Store, bus: opts.Bus, hub: NewHub(), log: opts.Logger, idxDirty: true,
+	a := &App{kick: make(chan struct{}, 1), opts: opts, st: opts.Store, bus: opts.Bus, hub: NewHub(), log: opts.Logger, idxDirty: true,
 		remote: map[string]*remoteSession{}}
 	if a.bus == nil {
 		a.bus, a.ownsBus = events.New(), true
@@ -146,6 +172,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if a.opts.Secrets == nil {
 		a.opts.Secrets = newMemorySecrets()
 	}
+	a.oauth = newOAuthState(a)
 	a.render = opts.Renderer
 	if a.render == nil {
 		a.render = NewMIMERenderer()
@@ -178,9 +205,12 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		if ms, ok := a.opts.Sender.(*MailSender); ok {
 			cfg.Sender = syncSender{act: func() *send.Actions { return ms.Actions }}
 		}
+		a.configureEASSync(&cfg)
+		a.configureOAuthSync(&cfg)
 		if opts.Sync.Configure != nil {
 			opts.Sync.Configure(&cfg)
 		}
+		a.syncCreds = cfg.Credentials
 		m, err := tsync.New(cfg)
 		if err != nil {
 			return nil, err
@@ -191,8 +221,10 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.sync = &localSyncer{st: a.st}
 	}
 	a.wfReg = workflow.DefaultRegistry()
-	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient}
+	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient,
+		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}}
 	a.proj.Workflow().Deps(&deps)
+	a.vac.mail, deps.Vacation = mail, vacationProxy{a: a} // vacation.go
 	loc := workflow.RunLocal
 	if opts.Mode == ModeServer {
 		loc = workflow.RunServer
@@ -232,6 +264,12 @@ func (a *App) Start() {
 			}
 		}()
 		go func() { defer a.wg.Done(); a.timers(ctx) }()
+		a.wg.Add(1)
+		go func() { defer a.wg.Done(); a.loadVacation(ctx) }() // vacation.go
+		if a.opts.PIM != nil || a.opts.Sync != nil {
+			a.wg.Add(1)
+			go func() { defer a.wg.Done(); a.runPIM(ctx) }()
+		}
 		if a.msgr != nil {
 			a.msgr.Start()
 		}
@@ -284,7 +322,16 @@ func (a *App) timers(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-a.kick:
 		}
+	}
+}
+
+// kickTimers runs the timer loop's work now instead of at the next tick.
+func (a *App) kickTimers() {
+	select {
+	case a.kick <- struct{}{}:
+	default:
 	}
 }
 
@@ -296,6 +343,8 @@ func (a *App) tick(ctx context.Context) {
 	}
 	a.sendDueScheduled(ctx)
 	a.runSendOps(ctx)
+	a.RunDueBackups(ctx)
+	a.syncEASPIMDue(ctx)
 	if hashes, err := a.st.PurgeUploads(ctx, a.now().Add(-24*time.Hour)); err == nil && a.blobs != nil {
 		for _, h := range hashes {
 			_ = a.blobs.Delete(h)

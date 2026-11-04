@@ -19,6 +19,7 @@
   import ServerConnectWizard from '../components/settings/ServerConnectWizard.svelte';
   import Server from '@lucide/svelte/icons/server';
   import ScreenShell from './ScreenShell.svelte';
+  import SignatureSettings from '../components/settings/SignatureSettings.svelte';
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
   import MessengerSettings from '../components/settings/MessengerSettings.svelte';
@@ -26,6 +27,13 @@
   import MessageCircle from '@lucide/svelte/icons/message-circle';
 
   let messengerWizardOpen = $state(false);
+  import SieveSettings from '../components/settings/SieveSettings.svelte';
+  import VacationSettings from '../components/settings/VacationSettings.svelte';
+  import RemoteContentSettings from '../components/settings/RemoteContentSettings.svelte';
+  import FolderSettings from '../components/settings/FolderSettings.svelte';
+  import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
+  import BackupSettings from '../components/settings/BackupSettings.svelte';
+  import CloudAccountsSettings from '../components/settings/CloudAccountsSettings.svelte'; // OAuth/Cloud accounts
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
   $effect(() => {
@@ -97,6 +105,8 @@
       </ul>
     </section>
 
+    <FolderSettings />
+
     <section class="card" aria-labelledby="set-server">
       <h2 id="set-server">{t('onboarding.connect.cardTitle')}</h2>
       <p class="about">{t('onboarding.connect.cardText')}</p>
@@ -111,9 +121,13 @@
 
     <ChatSettings />
 
+    <SignatureSettings />
+
     <SnippetSettings />
 
     <AiSettingsCard />
+
+    <CloudAccountsSettings />
 
     <TagSettings />
 
@@ -122,6 +136,16 @@
       <p class="about">{t('settings.workflows.intro')}</p>
       <WorkflowList />
     </section>
+
+    <VacationSettings />
+
+    <RemoteContentSettings />
+
+    <SieveSettings />
+
+    <ImportExportSettings />
+
+    <BackupSettings />
 
     <section class="card" aria-labelledby="set-look">
       <h2 id="set-look">{t('settings.appearance')}</h2>

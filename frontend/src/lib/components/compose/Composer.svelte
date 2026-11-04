@@ -14,6 +14,8 @@
     file?: File;
     /** Forwarded attachments already stored in the core. */
     existingId?: number;
+    /** Already uploaded (e.g. picked from the cloud). */
+    uploadToken?: string;
   }
 
   const REMEMBER_KEY = 'tuxmail.pwdelivery.v1';
@@ -49,12 +51,16 @@
   import SendIcon from '@lucide/svelte/icons/send';
   import Signature from '@lucide/svelte/icons/signature';
   import Cloud from '@lucide/svelte/icons/cloud';
-  import { app } from '../../state';
+  import CloudDownload from '@lucide/svelte/icons/cloud-download';
+  import { app, cloud } from '../../state';
+  import CloudPickerDialog from '../cloud/CloudPickerDialog.svelte';
+  import type { CloudImportResult, CloudShare } from '../../types';
   import type { ComposerInit } from '../../state';
-  import { messengerChannel, type Address, type OutgoingAttachment, type PasswordDelivery, type PasswordDeliveryMode } from '../../types';
+  import { messengerChannel, type Address, type OutgoingAttachment, type PasswordDelivery, type PasswordDeliveryMode, type SendFinding } from '../../types';
   import { formatSize, t } from '../../i18n/index.svelte';
   import Modal from '../common/Modal.svelte';
   import RecipientInput, { isValidEmail } from './RecipientInput.svelte';
+  import SendChecks from './SendChecks.svelte';
   import PasswordDeliveryDialog, { type MessengerTarget } from './PasswordDeliveryDialog.svelte';
 
   interface Props {
@@ -80,7 +86,11 @@
   let sending = $state(false);
   let error = $state<string | null>(null);
   let askPassword = $state(false);
+  /** Findings of a send blocked by send checks (KONZEPT 8.13). */
+  let checks = $state<SendFinding[] | null>(null);
+  let lastPw: PasswordDelivery | undefined;
   let dragOver = $state(false);
+  let pickCloud = $state(false);
 
   const identity = $derived(app.identities.find((i) => i.id === identityId));
   const isReply = start.mode === 'reply' || start.mode === 'replyAll';
@@ -143,10 +153,40 @@
         filename: f.name,
         mimeType: f.type || 'application/octet-stream',
         size: f.size,
-        delivery: f.size > LARGE_ATTACHMENT ? 'nextcloud' : 'attach',
+        delivery: f.size > LARGE_ATTACHMENT ? suggestedCloudDelivery() : 'attach',
         file: f,
       });
     }
+  }
+
+  /** Delivery suggested for large files: the first configured link provider. */
+  function suggestedCloudDelivery(): AttachmentDelivery {
+    return (['nextcloud', 'opencloud', 'vaultwarden'] as const).find((d) => cloud.hasDelivery(d)) ?? 'attach';
+  }
+
+  function addCloudFiles(files: CloudImportResult[]) {
+    for (const f of files) {
+      attachments.push({
+        key: `cloud-${f.uploadToken}`,
+        filename: f.filename,
+        mimeType: f.mimeType,
+        size: f.size,
+        delivery: f.size > LARGE_ATTACHMENT ? suggestedCloudDelivery() : 'attach',
+        uploadToken: f.uploadToken,
+      });
+    }
+  }
+
+  /** "Insert as link" from the cloud picker. */
+  function insertCloudLinks(shares: CloudShare[]) {
+    if (!editor) return;
+    const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
+    const items = shares
+      .map((s) => `<li>📎 <a href="${esc(s.url)}">${esc(s.fileName)}</a>${s.password ? ` – ${esc(t('cloud.picker.linkPassword', { password: s.password }))}` : ''}</li>`)
+      .join('');
+    const block = document.createElement('div');
+    block.innerHTML = `<ul>${items}</ul>`;
+    editor.insertBefore(block, editor.querySelector('[data-signature]') ?? editor.querySelector('[data-quote]'));
   }
 
   const cloudAttachments = $derived(attachments.filter((a) => a.delivery !== 'attach'));
@@ -197,10 +237,12 @@
     void doSend();
   }
 
-  async function doSend(pw?: PasswordDelivery) {
+  async function doSend(pw?: PasswordDelivery, confirmChecks?: string[]) {
     askPassword = false;
     sending = true;
     error = null;
+    checks = null;
+    lastPw = pw;
     try {
       if (pw?.rememberForRecipient) {
         const first = (to[0] ?? cc[0])?.email;
@@ -208,7 +250,7 @@
       }
       const outgoing: OutgoingAttachment[] = [];
       for (const a of attachments) {
-        const token = a.file ? (await app.api.uploadAttachment(a.file, a.filename)).uploadToken : `existing:${a.existingId}`;
+        const token = a.uploadToken ?? (a.file ? (await app.api.uploadAttachment(a.file, a.filename)).uploadToken : `existing:${a.existingId}`);
         outgoing.push({ uploadToken: token, filename: a.filename, mimeType: a.mimeType, size: a.size, delivery: a.delivery });
       }
       const html = editor?.innerHTML ?? '';
@@ -226,7 +268,12 @@
         forwardOfMessageId: start.forwardOfMessageId,
         attachments: outgoing,
         passwordDelivery: pw,
+        confirmChecks,
       });
+      if (res.blocked) {
+        checks = res.findings ?? [];
+        return;
+      }
       if (pw?.mode === 'none' && res.sharePasswords?.length) {
         try {
           await navigator.clipboard.writeText(res.sharePasswords.map((s) => `${s.filename}: ${s.password}`).join('\n'));
@@ -251,7 +298,11 @@
     }
   }
 
-  const deliveryOptions: AttachmentDelivery[] = ['attach', 'nextcloud', 'opencloud', 'vaultwarden'];
+  const allDeliveries: AttachmentDelivery[] = ['attach', 'nextcloud', 'opencloud', 'vaultwarden'];
+  /** Only providers with a configured account (plus the current choice). */
+  function deliveryOptions(current: AttachmentDelivery): AttachmentDelivery[] {
+    return allDeliveries.filter((d) => d === current || cloud.hasDelivery(d));
+  }
 </script>
 
 <Modal {title} onclose={onclose} width="860px">
@@ -307,6 +358,9 @@
       <span class="sep"></span>
       <button class="icon-btn" title={t('compose.insertSignature')} aria-label={t('compose.insertSignature')} onclick={insertSignature}><Signature size={16} /></button>
       <button class="icon-btn" title={t('compose.attach')} aria-label={t('compose.attach')} onclick={() => fileInput?.click()}><Paperclip size={16} /></button>
+      {#if cloud.storageAccounts.length}
+        <button class="icon-btn" title={t('cloud.picker.title')} aria-label={t('cloud.picker.title')} onclick={() => (pickCloud = true)}><CloudDownload size={16} /></button>
+      {/if}
       <input type="file" multiple hidden bind:this={fileInput} onchange={(e) => addFiles((e.currentTarget as HTMLInputElement).files)} />
     </div>
 
@@ -337,7 +391,7 @@
             {/if}
             <label class="sr-only" for="dlv-{a.key}">{t('compose.deliveryFor', { name: a.filename })}</label>
             <select id="dlv-{a.key}" class="input dlv" bind:value={a.delivery}>
-              {#each deliveryOptions as d (d)}
+              {#each deliveryOptions(a.delivery) as d (d)}
                 <option value={d}>{t(`compose.delivery.${d}`)}</option>
               {/each}
             </select>
@@ -345,6 +399,9 @@
           </div>
         {/each}
       </div>
+    {/if}
+    {#if checks}
+      <SendChecks findings={checks} oncancel={() => (checks = null)} onconfirm={(c) => doSend(lastPw, c)} />
     {/if}
     {#if dragOver}<div class="dropzone">{t('compose.dropHere')}</div>{/if}
   </div>
@@ -359,6 +416,10 @@
     </button>
   {/snippet}
 </Modal>
+
+{#if pickCloud}
+  <CloudPickerDialog onattach={addCloudFiles} onlinks={insertCloudLinks} onclose={() => (pickCloud = false)} />
+{/if}
 
 {#if askPassword}
   <PasswordDeliveryDialog

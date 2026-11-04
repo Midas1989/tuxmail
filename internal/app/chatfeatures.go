@@ -209,10 +209,12 @@ func (a *App) Send(ctx context.Context, msg OutgoingMessage) (SendResult, error)
 		}
 		msg.SendAt = ""
 	}
-	return a.sendNow(ctx, msg)
+	return a.sendNow(ctx, msg, false)
 }
 
-func (a *App) sendNow(ctx context.Context, msg OutgoingMessage) (SendResult, error) {
+// sendNow sends msg; unattended sends (due scheduled messages) do not wait
+// for the user to confirm send-check warnings.
+func (a *App) sendNow(ctx context.Context, msg OutgoingMessage, unattended bool) (SendResult, error) {
 	if msg.Channel != "email" && a.msgr != nil {
 		return a.sendMessenger(ctx, msg) // messenger_wiring.go
 	}
@@ -220,7 +222,7 @@ func (a *App) sendNow(ctx context.Context, msg OutgoingMessage) (SendResult, err
 	if err != nil {
 		return SendResult{}, err
 	}
-	req := SendRequest{Message: msg}
+	req := SendRequest{Message: msg, Unattended: unattended}
 	if msg.Channel == "email" {
 		if msg.IdentityID == 0 {
 			return SendResult{}, invalid("identityId is required for e-mail")
@@ -380,7 +382,10 @@ func (a *App) deliverScheduled(ctx context.Context, s store.ScheduledMessage) er
 		return err
 	}
 	msg.SendAt = ""
-	if _, err := a.sendNow(ctx, msg); err != nil {
+	if res, err := a.sendNow(ctx, msg, true); err != nil || res.Blocked {
+		if err == nil {
+			err = fmt.Errorf("blocked by send checks")
+		}
 		_ = a.st.SetScheduledState(ctx, s.ID, store.ScheduledFailed, err.Error())
 		return err
 	}
@@ -506,65 +511,15 @@ func icalEscape(s string) string {
 	return r.Replace(s)
 }
 
-// createLocalCalObject creates a local VEVENT or VTODO.
+// createLocalCalObject creates an event or task in the default calendar
+// (pim_calendar.go; CalDAV calendars are synced).
 func (a *App) createLocalCalObject(ctx context.Context, kind, title, notes string, start, end, due time.Time) (int64, error) {
-	cal, err := a.localCalendar(ctx)
-	if err != nil {
-		return 0, err
-	}
-	uid := newID("") + "@tuxmail"
-	comp := "VEVENT"
-	if kind == "todo" {
-		comp = "VTODO"
-	}
-	var b strings.Builder
-	b.WriteString("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//TuxMail//EN\r\nBEGIN:" + comp + "\r\n")
-	fmt.Fprintf(&b, "UID:%s\r\nDTSTAMP:%s\r\nSUMMARY:%s\r\n", uid, a.now().UTC().Format("20060102T150405Z"), icalEscape(title))
-	if notes != "" {
-		fmt.Fprintf(&b, "DESCRIPTION:%s\r\n", icalEscape(excerpt(notes, 2000)))
-	}
-	if !start.IsZero() {
-		fmt.Fprintf(&b, "DTSTART:%s\r\nDTEND:%s\r\n", start.UTC().Format("20060102T150405Z"), end.UTC().Format("20060102T150405Z"))
-	}
-	if !due.IsZero() {
-		fmt.Fprintf(&b, "DUE:%s\r\n", due.UTC().Format("20060102T150405Z"))
-	}
-	status := "CONFIRMED"
-	if kind == "todo" {
-		status = "NEEDS-ACTION"
-		b.WriteString("STATUS:NEEDS-ACTION\r\n")
-	}
-	b.WriteString("END:" + comp + "\r\nEND:VCALENDAR\r\n")
-	id, _, err := a.st.UpsertCalObject(ctx, store.CalObject{CalendarID: cal, UID: uid, Kind: kind, ICal: b.String(), DTStart: start,
-		DTEnd: end, Summary: title, Due: due, Status: status})
-	if err != nil {
-		return 0, err
-	}
-	if kind == "event" && !start.IsZero() {
-		if err := a.st.ReplaceInstances(ctx, id, []store.Instance{{Start: start, End: end}}); err != nil {
-			return 0, err
-		}
-	}
-	return id, nil
+	return a.pimCreate(ctx, 0, kind, title, notes, "", start, end, due)
 }
 
 // SetTaskDone completes or reopens a task.
 func (a *App) SetTaskDone(ctx context.Context, taskID int64, done bool) error {
-	o, err := a.st.GetCalObject(ctx, taskID)
-	if err != nil {
-		return err
-	}
-	if o.Kind != store.CalTodo {
-		return invalid("item %d is not a task", taskID)
-	}
-	if done {
-		o.Status, o.CompletedAt = "COMPLETED", a.now()
-		o.ICal = strings.Replace(o.ICal, "STATUS:NEEDS-ACTION", "STATUS:COMPLETED", 1)
-	} else {
-		o.Status, o.CompletedAt = "NEEDS-ACTION", time.Time{}
-		o.ICal = strings.Replace(o.ICal, "STATUS:COMPLETED", "STATUS:NEEDS-ACTION", 1)
-	}
-	if _, _, err := a.st.UpsertCalObject(ctx, o); err != nil {
+	if err := a.pimSetTaskDone(ctx, taskID, done); err != nil {
 		return err
 	}
 	if ps, err := a.st.ProjectsOfItem(ctx, store.Item{Kind: store.ItemTask, ID: taskID}); err == nil {
@@ -576,7 +531,7 @@ func (a *App) SetTaskDone(ctx context.Context, taskID int64, done bool) error {
 }
 
 // FindFreeSlots returns free slots between from and to (working hours 8-18,
-// Monday to Friday) not overlapping events of the local calendars.
+// Monday to Friday) not overlapping busy events of the user's calendars.
 func (a *App) FindFreeSlots(ctx context.Context, q FreeSlotQuery) ([]TimeSlot, error) {
 	from, err := parseTime(q.From)
 	if err != nil {
@@ -599,17 +554,9 @@ func (a *App) FindFreeSlots(ctx context.Context, q FreeSlotQuery) ([]TimeSlot, e
 	if dur <= 0 {
 		dur = 30 * time.Minute
 	}
-	evs, err := a.st.ListEventsInRange(ctx, from, to)
+	busy, err := a.pimBusy(ctx, from, to) // all own calendars, recurrences expanded
 	if err != nil {
 		return nil, err
-	}
-	busy := func(s, e time.Time) bool {
-		for _, ev := range evs {
-			if ev.Start.Before(e) && ev.End.After(s) {
-				return true
-			}
-		}
-		return false
 	}
 	loc := a.opts.Location
 	out := []TimeSlot{}

@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Build context of build/docker/Dockerfile (repository root).
+.git
+.github
+.claude
+**/node_modules
+frontend/dist
+mobile
+dist
+build/out
+data
+*.db
+*.db-wal
+*.db-shm

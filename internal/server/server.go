@@ -280,12 +280,15 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/provisioning/profile", s.user(s.handleProvisioningProfile))
 	mux.HandleFunc("GET /api/provisioning/secrets", s.device(s.handleProvisioningSecrets))
 
+	s.mountOAuth(mux) // oauth.go: Graph change notifications
+
 	// Frontend API (frontend/src/lib/api/http.ts) on the per-user App.
 	// The Web Push routes above are served by this package directly.
 	mux.HandleFunc("POST /api/conversations/{id}/reply", s.appHandler(s.handleConversationReply))
+	mux.HandleFunc("GET /api/proxy/image", s.handleImageProxy) // imageproxy.go (signed links without session)
 	api.Mount(mux, s.appHandler, api.Options{Logger: s.log, AllowOrigin: s.wsOriginAllowed, Skip: map[string]bool{
 		"GET /api/push/vapid-public-key": true, "POST /api/push/subscribe": true, "DELETE /api/push/subscribe": true,
-		"POST /api/push/test": true,
+		"POST /api/push/test": true, "GET /api/proxy/image": true,
 	}})
 
 	// Web pages served next to the SPA.

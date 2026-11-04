@@ -6,6 +6,7 @@
 // Method names map 1:1 to Go methods on the bound application service and to
 // the REST routes documented in http.ts.
 
+import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 import type {
   Account,
   ApiEvent,
@@ -69,6 +70,17 @@ import type {
   WorkflowSchema,
   WorkflowTemplate,
   WorkflowValidation,
+} from '../types';
+import type * as pim from '../types';
+// --- OAuth/Cloud accounts ---
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
 } from '../types';
 
 export type TransportKind = 'wails' | 'http' | 'mock';
@@ -170,6 +182,9 @@ export interface Api {
   createFromItem(conversationId: number, itemId: string, kind: 'task' | 'event'): Promise<{ id: string }>;
   /** Create/update the contact of a person from a parsed signature. */
   saveContactCard(personId: number, card: ContactCard): Promise<void>;
+  /** Create (id 0) or update a signature. */
+  saveSignature(signature: Signature): Promise<Signature>;
+  deleteSignature(id: number): Promise<void>;
   /** Update chat-mode signature settings of an identity. */
   updateIdentity(identity: Identity): Promise<Identity>;
 
@@ -307,8 +322,106 @@ export interface Api {
   /** Context-aware completion at a 0-based offset. */
   completeWorkflow(src: string, offset: number, mode: 'rule' | 'yaml'): Promise<WorkflowCompletion>;
 
+  // --- Folder config ---
+  getFolderConfig(accountId: number): Promise<FolderConfig>;
+  /** folderId 0 removes the override (automatic detection applies). */
+  setFolderRole(accountId: number, role: AssignableRole, folderId: number): Promise<FolderConfig>;
+  /** Remove all overrides ("detect automatically"). */
+  resetFolderRoles(accountId: number): Promise<FolderConfig>;
+  /** Create a missing role folder on the server and assign the role. */
+  createRoleFolder(accountId: number, role: AssignableRole, name: string): Promise<FolderConfig>;
+  saveFolderBehaviour(accountId: number, behaviour: FolderBehaviour): Promise<FolderConfig>;
+  /** 0 = the account's Sent / Drafts folder. */
+  setIdentityFolders(identityId: number, sentFolderId: number, draftsFolderId: number): Promise<FolderConfig>;
+  /** Permanently remove messages marked as deleted; returns their number. */
+  expungeFolder(folderId: number): Promise<number>;
+
   // Live events
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe;
+
+  // --- PIM --- calendars, tasks, contacts (KONZEPT 9, 10)
+  listCalendars(): Promise<pim.PimCalendar[]>;
+  /** Create (no id: local calendar or ICS subscription) or update name/color/visibility/default. */
+  saveCalendar(input: pim.CalendarInput): Promise<pim.PimCalendar>;
+  deleteCalendar(id: number): Promise<void>;
+  /** Sync CalDAV/CardDAV accounts and subscriptions now. */
+  syncCalendars(): Promise<void>;
+  /** Import an .ics file into a calendar; returns the number of objects. */
+  importCalendarFile(calendarId: number, ics: string): Promise<{ added: number }>;
+  /** Occurrences in [from, to) of visible calendars (recurrences expanded, birthdays, unanswered invitations). */
+  listEvents(query: pim.EventQuery): Promise<pim.CalendarEvent[]>;
+  getEvent(id: string): Promise<pim.CalendarEvent>;
+  createEvent(input: pim.EventInput): Promise<pim.CalendarEvent>;
+  /** scope applies to recurring events (this occurrence, this and following, the whole series). */
+  updateEvent(id: string, input: pim.EventInput, scope: pim.RecurrenceScope): Promise<pim.CalendarEvent>;
+  deleteEvent(id: string, scope: pim.RecurrenceScope): Promise<void>;
+  /** Keep (push as new event) or discard a local conflict copy. */
+  resolveEventConflict(objectId: number, keep: boolean): Promise<void>;
+  getFreeBusy(query: { attendees: string[]; from: string; to: string }): Promise<pim.FreeBusy[]>;
+  /** minutes <= 0 dismisses the reminder. */
+  snoozeReminder(eventId: string, trigger: string, minutes: number): Promise<void>;
+  addDavAccount(input: pim.DavAccountInput): Promise<Account>;
+  listTasks(query: pim.TaskQuery): Promise<pim.PimTask[]>;
+  saveTask(input: pim.TaskInput): Promise<pim.PimTask>;
+  deleteTask(id: number): Promise<void>;
+  /** iTIP parts of a mail (invitation card in the reading pane / bubbles). */
+  getMessageInvitations(messageId: number): Promise<pim.Invitation[]>;
+  listInvitations(): Promise<pim.Invitation[]>;
+  respondInvitation(id: number, response: pim.InvitationResponse): Promise<pim.Invitation>;
+  listAddressBooks(): Promise<pim.PimAddressBook[]>;
+  saveAddressBook(input: pim.AddressBookInput): Promise<pim.PimAddressBook>;
+  deleteAddressBook(id: number): Promise<void>;
+  listContacts(query: pim.ContactQuery): Promise<pim.PimContact[]>;
+  getContact(id: number): Promise<pim.PimContact>;
+  /** Create (id 0) or update. */
+  saveContact(contact: pim.PimContact): Promise<pim.PimContact>;
+  deleteContact(id: number): Promise<void>;
+  listContactGroups(): Promise<pim.ContactGroup[]>;
+  findDuplicateContacts(): Promise<pim.DuplicateGroup[]>;
+  /** Merge into ids[0]; merged replaces the computed preview (edited in the dialog). */
+  mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact>;
+  /** Composer recipient suggestions from contacts and recently used addresses. */
+  autocompleteAddresses(query: string, limit?: number): Promise<pim.AddressSuggestion[]>;
+  // --- Import/Export/Backup --- (KONZEPT 13/14; Go: internal/app/io_*.go)
+  listIOFormats(): Promise<IO.IOFormats>;
+  /** Upload an import file or backup archive (web mode; desktop may use local paths). */
+  uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload>;
+  /** Wizard step "mapping/options": counts, CSV header + suggested mapping, Thunderbird profile. */
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview>;
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob>;
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob>;
+  listIOJobs(): Promise<IO.IOJob[]>;
+  getIOJob(id: string): Promise<IO.IOJob>;
+  /** Cancel a running job (imports can be resumed with resumeJobId). */
+  cancelIOJob(id: string): Promise<void>;
+  /** URL of an export result or backup download. */
+  ioDownloadUrl(token: string): string;
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob>;
+  inspectBackup(source: IO.BackupSource, passphrase?: string): Promise<IO.BackupInspection>;
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob>;
+  listBackupSchedules(): Promise<IO.BackupSchedule[]>;
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule>;
+  deleteBackupSchedule(id: string): Promise<void>;
+  runBackupSchedule(id: string): Promise<IO.IOJob>;
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]>;
+  // --- OAuth/Cloud accounts --- (KONZEPT 7.3–7.5; error codes oauth_not_configured, oauth_consent_required ...)
+  /** Sign-in services (Microsoft, Google) and their client configuration. */
+  listOAuthProviders(): Promise<OAuthProviderInfo[]>;
+  /** Own client ID ("Anmeldedienste"); may be forbidden by the server admin. */
+  saveOAuthClient(input: OAuthClientInput): Promise<void>;
+  deleteOAuthClient(provider: string): Promise<void>;
+  /** Start a sign-in: the desktop opens the browser (loopback), the web client opens status.authUrl. */
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus>;
+  /** Poll until status !== 'pending'; on 'done' the account exists (accountId). */
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus>;
+  cancelOAuth(id: string): Promise<void>;
+  /** Microsoft: add a shared/delegated mailbox of a Graph/EWS account. */
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account>;
+  listIdentityDelegations(): Promise<IdentityDelegation[]>;
+  /** Change Send-As / Send-on-Behalf of an identity (mode '' removes it). */
+  setIdentityDelegation(delegation: { identityId: number; mode: string; mailbox?: string }): Promise<void>;
+  /** Import calendars, contacts and tasks of a Graph/Gmail/EWS account. */
+  syncCloudPim(accountId: number): Promise<CloudPimResult>;
 }
 
 export class ApiError extends Error {
@@ -370,4 +483,79 @@ export interface Api {
 /** Download URL of the media of a messenger chat message. */
 export function messengerMediaUrl(chatMessageId: number): string {
   return `/api/messenger/media/${chatMessageId}`;
+}
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';
+// --- Cloud ---
+// Cloud files (KONZEPT 12). Declared as a second part of the Api interface
+// (declaration merging) so that parallel feature branches merge cleanly.
+
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
+} from '../types';
+
+
+export interface Api {
+  listCloudAccounts(): Promise<CloudAccount[]>;
+  /** Nextcloud/OpenCloud: a pending flow with loginUrl (open in the browser, then poll). Vaultwarden/WebDAV: done or two_factor. */
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow>;
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow>;
+  cancelCloudLogin(flowId: string): Promise<void>;
+  deleteCloudAccount(id: number): Promise<void>;
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing>;
+  cloudQuota(accountId: number): Promise<CloudQuota>;
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry>;
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void>;
+  deleteCloudFile(accountId: number, path: string): Promise<void>;
+  /** Upload a local file into dir (unique name on conflicts). */
+  uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry>;
+  downloadCloudFile(accountId: number, path: string): Promise<Blob>;
+  /** Copy a cloud file into an upload for the composer ("Attach from cloud"). */
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult>;
+  /** "Save to cloud" for attachments of mails and chats. */
+  saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry>;
+  createCloudShare(input: CloudShareInput): Promise<CloudShare>;
+  /** "My shares": all links, newest first. */
+  listCloudShares(): Promise<CloudShare[]>;
+  revokeCloudShare(id: number): Promise<CloudShare>;
+  cloudSharePassword(id: number): Promise<{ password: string }>;
+  generateCloudPassword(accountId: number): Promise<{ password: string }>;
+}
+
+// --- Mail protocols ---
+// Remote content and server rules (KONZEPT 8.3, 8.5), another part of the
+// Api interface (declaration merging).
+
+import type { RemoteAllowEntry, RemoteContent, SieveCheckResult, SieveConfig, SieveScript, SieveStatus, VacationSettings } from '../types';
+
+export interface Api {
+  /** Re-render a mail with remote images through the image proxy ("Bilder laden"). */
+  loadRemoteContent(messageId: number): Promise<RemoteContent>;
+  listRemoteAllow(): Promise<RemoteAllowEntry[]>;
+  /** "Immer für Absender laden": kind sender (address) or domain. */
+  allowRemoteContent(kind: 'sender' | 'domain', value: string): Promise<void>;
+  removeRemoteAllow(kind: 'sender' | 'domain', value: string): Promise<void>;
+  getSieveStatus(accountId: number): Promise<SieveStatus>;
+  getSieveScript(accountId: number, name: string): Promise<SieveScript>;
+  checkSieveScript(accountId: number, script: string): Promise<SieveCheckResult>;
+  putSieveScript(accountId: number, name: string, script: string, activate: boolean): Promise<void>;
+  /** Activate a script ('' deactivates all). */
+  activateSieveScript(accountId: number, name: string): Promise<void>;
+  deleteSieveScript(accountId: number, name: string): Promise<void>;
+  setSieveWorkflowSync(accountId: number, enabled: boolean): Promise<SieveStatus>;
+  getSieveConfig(accountId: number): Promise<SieveConfig>;
+  setSieveConfig(accountId: number, config: SieveConfig): Promise<SieveConfig>;
+  /** Out-of-office: pushed to servers that can answer themselves, local replies otherwise. */
+  getVacationSettings(): Promise<VacationSettings>;
+  saveVacationSettings(settings: VacationSettings): Promise<VacationSettings>;
 }

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/app"
+	"github.com/Midas1989/Mailclient/internal/backup"
 	"github.com/Midas1989/Mailclient/internal/server/api"
 	"github.com/Midas1989/Mailclient/internal/server/push"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -53,6 +54,9 @@ func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
+	if _, err := backup.ApplyPending(dir); err != nil { // staged in-app "replace" restore
+		return nil, err
+	}
 	st, err := store.Open(ctx, filepath.Join(dir, UserStoreFile))
 	if err != nil {
 		return nil, err
@@ -65,6 +69,8 @@ func (p *appPool) get(ctx context.Context, userID int64) (*app.App, error) {
 	opts := app.Options{Store: st, DataDir: dir, Mode: app.ModeServer, Version: p.s.version, Secrets: secrets,
 		Logger: p.s.log.With("user", userID), Locales: p.s.locales, LocaleDir: filepath.Join(p.s.cfg.DataDir, "locales"),
 		Push: &pushBackend{s: p.s, userID: userID}, Sync: &app.SyncOptions{}, Send: &app.SendOptions{}, Messenger: &app.MessengerOptions{}}
+	opts.OAuth = p.s.oauthAppOptions()         // oauth.go
+	opts.ImageSigner = p.s.imageSigner(userID) // imageproxy.go
 	if p.s.appOptions != nil {
 		p.s.appOptions(userID, &opts)
 	}

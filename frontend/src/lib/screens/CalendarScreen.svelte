@@ -2,135 +2,434 @@
 <script lang="ts">
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import Plus from '@lucide/svelte/icons/plus';
+  import PanelLeft from '@lucide/svelte/icons/panel-left';
+  import Sparkles from '@lucide/svelte/icons/sparkles';
+  import { app, prefs } from '../state';
   import { fmt, t } from '../i18n/index.svelte';
-  import { prefs } from '../state';
-  import ScreenShell from './ScreenShell.svelte';
+  import { tk } from '../calendar/i18n';
+  import type { CalendarEvent, EventInput, PimCalendar, RecurrenceScope } from '../types';
+  import { dayKeyIn, rangeOf, stepAnchor, viewDays, zonedInstant, type CalendarView, type DayKey } from '../calendar/datemath';
+  import { parseQuick } from '../calendar/quickparse';
+  import TimeGrid from '../components/calendar/TimeGrid.svelte';
+  import MonthView from '../components/calendar/MonthView.svelte';
+  import AgendaView from '../components/calendar/AgendaView.svelte';
+  import MiniMonth from '../components/calendar/MiniMonth.svelte';
+  import CalendarSidebar from '../components/calendar/CalendarSidebar.svelte';
+  import EventDialog, { type EventDraft } from '../components/calendar/EventDialog.svelte';
+  import ScopeDialog from '../components/calendar/ScopeDialog.svelte';
+  import TasksView from '../components/calendar/TasksView.svelte';
 
-  // Placeholder: static week grid. Real data comes from CalendarService (KONZEPT 9).
-  let offset = $state(0);
-  const days = $derived.by(() => {
-    const now = new Date();
-    const first = fmt().weekStart();
-    const start = new Date(now);
-    start.setDate(now.getDate() - ((now.getDay() - first + 7) % 7) + offset * 7);
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      return d;
-    });
-  });
-  const secondary = $derived(prefs.region.secondaryTimeZone);
-  function hourLabel(day: Date, h: number, tz?: string): string {
-    const d = new Date(day);
-    d.setHours(h, 0, 0, 0);
-    return fmt().time(d, tz);
+  type Mode = CalendarView | 'tasks';
+  const MODES: Mode[] = ['day', 'workweek', 'week', 'month', 'agenda', 'tasks'];
+  const STORE = 'tuxmail.calendar.view';
+  const narrow = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches;
+
+  function initialMode(): Mode {
+    try {
+      const v = localStorage.getItem(STORE) as Mode | null;
+      if (v && MODES.includes(v)) return v;
+    } catch {
+      /* private mode */
+    }
+    return narrow ? 'agenda' : 'week';
   }
-  const hours = Array.from({ length: 11 }, (_, i) => 8 + i);
-  const today = new Date().toDateString();
-  // Demo events tied to the mock mails; `day` = weekday with Monday = 0.
-  const events = [
-    { day: 3, start: 10, len: 1, title: 'Teammeeting', color: '#9333ea' },
-    { day: 1, start: 8, len: 1.5, title: 'Bodenplatte – Wagner Bau', color: '#2563eb' },
-    { day: 5, start: 16, len: 3, title: 'Grillfest TSV', color: '#16a34a' },
-  ];
+
+  const tz = $derived(fmt().tz);
+  const weekStart = $derived(fmt().weekStart());
+  const secondary = $derived(prefs.region.secondaryTimeZone || undefined);
+  let mode = $state<Mode>(initialMode());
+  let today = $state(dayKeyIn(new Date(), fmt().tz));
+  let anchor = $state<DayKey>(dayKeyIn(new Date(), fmt().tz));
+  let calendars = $state<PimCalendar[]>([]);
+  let events = $state<CalendarEvent[]>([]);
+  let loading = $state(false);
+  let sidebarOpen = $state(!narrow);
+  let quick = $state('');
+  let dialog = $state<{ event: CalendarEvent | null; draft?: EventDraft } | null>(null);
+  let pendingMove = $state<{ e: CalendarEvent; start: string; end: string } | null>(null);
+  let reloadKey = $state(0);
+
+  $effect(() => {
+    try {
+      localStorage.setItem(STORE, mode);
+    } catch {
+      /* ignore */
+    }
+  });
+
+  const view = $derived<CalendarView>(mode === 'tasks' ? 'week' : mode);
+  const days = $derived(viewDays(view, anchor, weekStart));
+  const colors = $derived(Object.fromEntries(calendars.map((c) => [c.id, c.color])));
+  const marked = $derived(new Set(events.map((e) => (e.allDay ? e.start : dayKeyIn(new Date(e.start), tz)))));
+
+  const title = $derived.by(() => {
+    const mid = zonedInstant(anchor, 720, tz);
+    if (mode === 'day') return fmt().dateLong(mid);
+    if (mode === 'month' || mode === 'tasks') return fmt().pattern(mid, 'MMMM YYYY');
+    const a = zonedInstant(days[0], 720, tz);
+    const b = zonedInstant(days[days.length - 1], 720, tz);
+    return `${fmt().dateShort(a)} – ${fmt().date(b)}`;
+  });
+
+  async function loadCalendars() {
+    calendars = await app.api.listCalendars();
+  }
+
+  let seq = 0;
+  async function loadEvents() {
+    if (mode === 'tasks') return;
+    const my = ++seq;
+    loading = true;
+    try {
+      const r = rangeOf(days, tz);
+      const list = await app.api.listEvents({ from: r.from.toISOString(), to: r.to.toISOString() });
+      if (my === seq) events = list;
+    } finally {
+      if (my === seq) loading = false;
+    }
+  }
+
+  $effect(() => {
+    void loadCalendars();
+    const off = app.api.subscribe((e) => {
+      if (e.type === 'calendar.changed' || e.type === 'calendar.invitation' || e.type === 'contacts.changed') {
+        void loadCalendars();
+        void loadEvents();
+        reloadKey++;
+      }
+    });
+    const tick = setInterval(() => (today = dayKeyIn(new Date(), tz)), 60_000);
+    return () => {
+      off();
+      clearInterval(tick);
+    };
+  });
+
+  $effect(() => {
+    void days;
+    void mode;
+    void loadEvents();
+  });
+
+  function go(dir: number) {
+    anchor = stepAnchor(view, anchor, dir);
+  }
+
+  function onkey(e: KeyboardEvent) {
+    const tgt = e.target as HTMLElement;
+    if (dialog || tgt.closest('input,textarea,select,[contenteditable]')) return;
+    const keys: Record<string, Mode> = { d: 'day', w: 'week', x: 'workweek', m: 'month', a: 'agenda', t: 'tasks' };
+    if (keys[e.key]) mode = keys[e.key];
+    else if (e.key === 'ArrowLeft' || e.key === 'j') go(-1);
+    else if (e.key === 'ArrowRight' || e.key === 'k') go(1);
+    else if (e.key === 'n') openNew();
+  }
+
+  function openNew(draft?: Partial<EventDraft>) {
+    const now = new Date();
+    const m = Math.ceil((now.getHours() * 60 + now.getMinutes()) / 30) * 30;
+    dialog = { event: null, draft: { day: draft?.day ?? anchor, startMin: draft?.startMin ?? m, endMin: draft?.endMin ?? m + 60, allDay: draft?.allDay ?? false, title: draft?.title } };
+  }
+
+  function oncreate(day: DayKey, startMin: number, endMin: number, allDay: boolean) {
+    openNew({ day, startMin, endMin, allDay });
+  }
+
+  async function open(e: CalendarEvent) {
+    dialog = { event: e };
+  }
+
+  function toInput(e: CalendarEvent, start: string, end: string): EventInput {
+    return {
+      calendarId: e.calendarId,
+      title: e.title,
+      description: e.description,
+      location: e.location,
+      url: e.url,
+      meetingUrl: e.meetingUrl,
+      start,
+      end,
+      allDay: e.allDay,
+      timeZone: e.timeZone || tz,
+      recurrence: null,
+      attendees: e.attendees,
+      alarms: e.alarms,
+      busy: e.busy,
+      categories: e.categories,
+    };
+  }
+
+  async function doMove(e: CalendarEvent, start: string, end: string, scope: RecurrenceScope) {
+    pendingMove = null;
+    const before = { start: e.start, end: e.end };
+    // Optimistic update.
+    events = events.map((x) => (x.id === e.id ? { ...x, start, end } : x));
+    try {
+      const saved = await app.api.updateEvent(e.id, toInput(e, start, end), scope);
+      app.toast(t('calendar.moved', { title: e.title }), {
+        label: t('common.action.undo'),
+        run: () => void app.api.updateEvent(saved.id, toInput(saved, before.start, before.end), scope).then(loadEvents),
+      });
+    } catch (err) {
+      app.toast(err instanceof Error ? err.message : String(err), undefined, 'error');
+    }
+    await loadEvents();
+  }
+
+  function onmove(e: CalendarEvent, start: string, end: string) {
+    if (e.readOnly) return;
+    if (e.recurring && e.recurrenceId) pendingMove = { e, start, end };
+    else void doMove(e, start, end, 'all');
+  }
+
+  async function quickAdd() {
+    const text = quick.trim();
+    if (!text) return;
+    const r = parseQuick(text, today);
+    if (!r.matched || !r.title) {
+      openNew({ title: text, day: anchor });
+      quick = '';
+      return;
+    }
+    const start = r.allDay ? r.day : zonedInstant(r.day, r.startMin ?? 9 * 60, tz).toISOString();
+    const end = r.allDay ? stepAnchor('day', r.day, 1) : new Date(new Date(start).getTime() + r.durationMin * 60_000).toISOString();
+    try {
+      const ev = await app.api.createEvent({ calendarId: 0, title: r.title, start, end, allDay: r.allDay, timeZone: tz, alarms: [{ minutesBefore: 15 }] });
+      app.toast(t('calendar.created', { title: ev.title, when: r.allDay ? fmt().date(zonedInstant(r.day, 720, tz)) : fmt().dateTime(ev.start) }), {
+        label: t('common.action.edit'),
+        run: () => (dialog = { event: ev }),
+      });
+      anchor = r.day;
+      quick = '';
+      await loadEvents();
+    } catch (err) {
+      app.toast(err instanceof Error ? err.message : String(err), undefined, 'error');
+    }
+  }
+
+  const quickPreview = $derived.by(() => {
+    if (!quick.trim()) return '';
+    const r = parseQuick(quick, today);
+    if (!r.matched) return '';
+    const when = r.allDay ? fmt().date(zonedInstant(r.day, 720, tz)) : fmt().dateTime(zonedInstant(r.day, r.startMin ?? 540, tz));
+    return `${r.title || '…'} · ${when}${r.allDay ? '' : ' · ' + t('calendar.minutes', { n: r.durationMin })}`;
+  });
 </script>
 
-<ScreenShell title={t('nav.calendar')} subtitle={t('calendar.placeholder')}>
-  {#snippet actions()}
-    <button class="icon-btn" aria-label={t('calendar.prev')} onclick={() => offset--}><ChevronLeft size={18} /></button>
-    <button class="btn" onclick={() => (offset = 0)}>{t('common.date.today')}</button>
-    <button class="icon-btn" aria-label={t('calendar.next')} onclick={() => offset++}><ChevronRight size={18} /></button>
-  {/snippet}
-  <div class="week" role="grid" aria-label={t('nav.calendar')}>
-    <div class="corner"></div>
-    {#each days as d (d.toISOString())}
-      <div class="dh" class:today={d.toDateString() === today} role="columnheader">
-        <span class="wd">{fmt().pattern(d, 'ddd')}</span>
-        <span class="dn">{d.getDate()}</span>
+<svelte:window onkeydown={onkey} />
+
+<section class="cal" aria-labelledby="cal-title">
+  <header>
+    <button class="icon-btn" aria-label={t('calendar.toggleSidebar')} aria-expanded={sidebarOpen} onclick={() => (sidebarOpen = !sidebarOpen)}><PanelLeft size={18} /></button>
+    <h1 id="cal-title">{mode === 'tasks' ? t('tasks.title') : title}</h1>
+    {#if mode !== 'tasks'}
+      <div class="nav">
+        <button class="icon-btn" aria-label={t('calendar.prev')} onclick={() => go(-1)}><ChevronLeft size={18} /></button>
+        <button class="btn" onclick={() => (anchor = today)}>{t('common.date.today')}</button>
+        <button class="icon-btn" aria-label={t('calendar.next')} onclick={() => go(1)}><ChevronRight size={18} /></button>
       </div>
-    {/each}
-    {#each hours as h (h)}
-      <div class="hr">{hourLabel(days[0], h)}{#if secondary}<small>{hourLabel(days[0], h, secondary)}</small>{/if}</div>
-      {#each days as d (d.toISOString() + h)}
-        <div class="cell" role="gridcell">
-          {#if offset === 0}
-            {#each events.filter((e) => e.day === (d.getDay() + 6) % 7 && Math.floor(e.start) === h) as e (e.title)}
-              <div class="ev" style:--c={e.color} style:height="calc({e.len} * 100% - 4px)">{e.title}</div>
-            {/each}
-          {/if}
-        </div>
+    {/if}
+    <span class="sp"></span>
+    {#if mode !== 'tasks'}
+      <form
+        class="quick"
+        onsubmit={(e) => {
+          e.preventDefault();
+          void quickAdd();
+        }}
+      >
+        <Sparkles size={15} />
+        <input bind:value={quick} placeholder={t('calendar.quickPlaceholder')} aria-label={t('calendar.quickLabel')} />
+        {#if quickPreview}<span class="qp" aria-live="polite">{quickPreview}</span>{/if}
+      </form>
+    {/if}
+    <div class="seg views" role="radiogroup" aria-label={t('calendar.viewLabel')}>
+      {#each MODES as m (m)}
+        <button role="radio" aria-checked={mode === m} class:hide-narrow={m === 'workweek'} onclick={() => (mode = m)}>{tk(`calendar.view.${m}`)}</button>
       {/each}
-    {/each}
+    </div>
+    {#if mode !== 'tasks'}
+      <button class="btn btn-primary" onclick={() => openNew()}><Plus size={15} /> <span class="lbl">{t('calendar.newEvent')}</span></button>
+    {/if}
+  </header>
+  <div class="layout">
+    {#if sidebarOpen}
+      <aside>
+        <MiniMonth selected={anchor} {today} {weekStart} {tz} {marked} onselect={(d) => (anchor = d)} />
+        <CalendarSidebar
+          {calendars}
+          onchanged={() => {
+            void loadCalendars();
+            void loadEvents();
+            reloadKey++;
+          }}
+        />
+      </aside>
+    {/if}
+    <div class="main" class:loading>
+      {#if mode === 'tasks'}
+        <TasksView {calendars} {tz} {weekStart} {reloadKey} />
+      {:else if mode === 'month'}
+        <MonthView {days} month={Number(anchor.slice(5, 7))} {events} {colors} {tz} {today} onopen={open} oncreate={(d) => oncreate(d, 9 * 60, 10 * 60, false)} {onmove} onday={(d) => ((anchor = d), (mode = 'day'))} />
+      {:else if mode === 'agenda'}
+        <AgendaView {days} {events} {colors} {tz} {today} onopen={open} />
+      {:else}
+        <TimeGrid {days} {events} {colors} {tz} secondaryTz={secondary} {today} onopen={open} {oncreate} {onmove} />
+      {/if}
+    </div>
   </div>
-</ScreenShell>
+</section>
+
+{#if dialog}
+  <EventDialog event={dialog.event} draft={dialog.draft} {calendars} {tz} {weekStart} onclose={() => (dialog = null)} onsaved={loadEvents} />
+{/if}
+{#if pendingMove}
+  <ScopeDialog mode="edit" onclose={() => ((pendingMove = null), void loadEvents())} onchoose={(s) => pendingMove && doMove(pendingMove.e, pendingMove.start, pendingMove.end, s)} />
+{/if}
 
 <style>
-  .week {
-    display: grid;
-    grid-template-columns: 56px repeat(7, minmax(90px, 1fr));
-    background: var(--tm-surface);
-    border: 1px solid var(--tm-line);
-    border-radius: var(--tm-radius-lg);
-    overflow: auto;
-  }
-  .dh {
+  .cal {
+    flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--tm-line);
-    border-left: 1px solid var(--tm-line);
+    background: var(--tm-bg);
   }
-  .corner {
-    border-bottom: 1px solid var(--tm-line);
-  }
-  .wd {
-    font-size: 11.5px;
-    color: var(--tm-muted);
-    text-transform: uppercase;
-  }
-  .dn {
-    font-size: 18px;
-    font-weight: 600;
-    width: 32px;
-    height: 32px;
+  header {
     display: flex;
     align-items: center;
-    justify-content: center;
-    border-radius: 99px;
+    gap: 10px;
+    padding: 12px 20px;
+    background: var(--tm-surface);
+    border-bottom: 1px solid var(--tm-line);
+    flex-wrap: wrap;
   }
-  .dh.today .dn {
-    background: var(--tm-accent);
-    color: var(--tm-accent-fg);
-  }
-  .hr small {
-    display: block;
-    color: var(--tm-faint);
-    opacity: 0.8;
-  }
-  .hr {
-    font-size: 11px;
-    color: var(--tm-faint);
-    text-align: right;
-    padding: 2px 8px 0 0;
-    height: 48px;
-  }
-  .cell {
-    position: relative;
-    border-left: 1px solid var(--tm-line);
-    border-top: 1px solid var(--tm-line);
-  }
-  .ev {
-    position: absolute;
-    inset: 2px 4px auto;
-    z-index: 1;
-    padding: 4px 6px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 500;
-    color: var(--tm-fg);
-    background: color-mix(in srgb, var(--c) 18%, var(--tm-surface));
-    border-left: 3px solid var(--c);
+  h1 {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 650;
+    letter-spacing: -0.015em;
+    text-transform: capitalize;
+    min-width: 0;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .nav {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+  .sp {
+    flex: 1;
+  }
+  .quick {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    position: relative;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid var(--tm-line);
+    border-radius: 99px;
+    background: var(--tm-surface-2, var(--tm-bg));
+    color: var(--tm-muted);
+    width: min(320px, 32vw);
+  }
+  .quick input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    outline: none;
+    background: none;
+    font: inherit;
+    font-size: 13px;
+    color: var(--tm-fg);
+  }
+  .qp {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 10px;
+    right: 0;
+    z-index: 20;
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--tm-fg);
+    color: var(--tm-surface);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .layout {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+  }
+  aside {
+    width: 248px;
+    flex: none;
+    padding: 12px 12px 24px;
+    overflow-y: auto;
+    border-right: 1px solid var(--tm-line);
+    background: var(--tm-sidebar);
+  }
+  .main {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 16px 16px;
+    transition: opacity var(--tm-dur);
+  }
+  .main.loading {
+    opacity: 0.85;
+  }
+  @media (max-width: 1099px) {
+    .quick {
+      order: 10;
+      width: 100%;
+    }
+  }
+  @media (max-width: 639px) {
+    header {
+      padding: 10px 12px;
+      gap: 6px;
+    }
+    h1 {
+      font-size: 16px;
+      flex: 1;
+    }
+    .sp {
+      display: none;
+    }
+    .views {
+      order: 11;
+      width: 100%;
+      overflow-x: auto;
+    }
+    .hide-narrow {
+      display: none !important;
+    }
+    .lbl {
+      display: none;
+    }
+    aside {
+      position: absolute;
+      z-index: 30;
+      top: 0;
+      bottom: 0;
+      left: 0;
+      width: 82vw;
+      box-shadow: var(--tm-shadow-lg);
+    }
+    .layout {
+      position: relative;
+    }
+    .main {
+      padding: 8px 8px 72px;
+    }
   }
 </style>

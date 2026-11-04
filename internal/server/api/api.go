@@ -46,7 +46,7 @@ func Mount(mux *http.ServeMux, wrap func(AppHandler) http.HandlerFunc, opts Opti
 	if opts.Logger == nil {
 		opts.Logger = slog.Default()
 	}
-	for _, rt := range append(Routes(opts), MessengerRoutes()...) {
+	for _, rt := range Routes(opts) {
 		if opts.Skip[rt.Pattern] {
 			continue
 		}
