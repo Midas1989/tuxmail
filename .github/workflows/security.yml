@@ -62,19 +62,27 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
       # Report only: findings are triaged in docs/security/ and routed to the owners.
       - name: gosec (SARIF)
-        run: gosec -no-fail -fmt sarif -out gosec.sarif -exclude-dir=internal/devserver ./...
+        # The Telegram plugin pulls in gotd/td (a very large generated
+        # package): scanning it together with everything else exhausts the
+        # runner's memory, so it is scanned in a second, separate process.
+        env:
+          GOGC: "50"
+        run: |
+          mkdir -p sarif
+          gosec -no-fail -concurrency 2 -fmt sarif -out sarif/gosec.sarif -exclude-dir=internal/devserver -exclude-dir=cmd/plugins/telegram ./...
+          gosec -no-fail -concurrency 1 -fmt sarif -out sarif/gosec-telegram.sarif ./cmd/plugins/telegram/...
       - name: Upload gosec SARIF to code scanning
         if: env.CODE_SCANNING == 'true'
         continue-on-error: true # fork PRs get a read-only token
         uses: github/codeql-action/upload-sarif@v4.39.2
         with:
-          sarif_file: gosec.sarif
+          sarif_file: sarif
           category: gosec
       - uses: actions/upload-artifact@v7.0.2
         if: always()
         with:
           name: gosec-sarif
-          path: gosec.sarif
+          path: sarif/
           retention-days: 30
       - name: staticcheck
         run: staticcheck -f stylish ./... | tee staticcheck.txt
