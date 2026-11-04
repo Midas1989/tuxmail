@@ -23,6 +23,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/emersion/go-message/textproto"
 
@@ -932,7 +933,15 @@ func Snippet(text, html string, n int) string {
 }
 
 // cleanFilename strips directories and control characters from a name.
-func cleanFilename(name string) string {
+func cleanFilename(name string) string { return CleanFilename(name) }
+
+// CleanFilename makes an untrusted attachment name safe to display and to
+// save: directories (also Windows "..\\"), control characters and Unicode
+// bidi/format controls are removed (RTLO spoofing "invoice\u202Efdp.exe"
+// shows as "invoiceexe.pdf"), as are trailing dots and spaces (ignored by
+// Windows, "x.exe." would hide the real extension), and the name is
+// limited to 255 bytes keeping the extension.
+func CleanFilename(name string) string {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return ""
@@ -940,13 +949,30 @@ func cleanFilename(name string) string {
 	name = strings.ReplaceAll(name, "\\", "/")
 	name = path.Base(name)
 	name = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		switch {
+		case r < 0x20 || r == 0x7f || (r >= 0x80 && r < 0xa0):
 			return -1
+		case r == 0x061c || r == 0x200e || r == 0x200f || (r >= 0x202a && r <= 0x202e) || (r >= 0x2066 && r <= 0x2069),
+			r == 0x200b || r == 0x200c || r == 0x200d || r == 0x2060 || r == 0xfeff:
+			return -1 // bidi and invisible format characters
 		}
 		return r
 	}, name)
-	if name == "." || name == "/" || name == ".." {
+	name = strings.TrimRight(name, ". ")
+	name = strings.TrimSpace(name)
+	if name == "" || name == "/" {
 		return ""
+	}
+	if len(name) > 255 {
+		ext := path.Ext(name)
+		if len(ext) > 16 {
+			ext = ""
+		}
+		cut := 255 - len(ext)
+		for cut > 0 && !utf8.RuneStart(name[cut]) {
+			cut--
+		}
+		name = name[:cut] + ext
 	}
 	return name
 }

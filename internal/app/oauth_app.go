@@ -400,6 +400,7 @@ func (a *App) StartOAuth(ctx context.Context, in OAuthStartInput) (OAuthFlowStat
 		f.status.AuthURL, f.status.UserCode, f.status.VerificationURI = fl.AuthURL, fl.UserCode, fl.VerificationURI
 		f.status.ExpiresAt = rfc3339(fl.ExpiresAt)
 		a.oauth.put(f)
+		// #nosec G118 -- waits for the background sign-in flow, which has its own timeout
 		go func() {
 			<-fl.Done()
 			g, err := fl.Result()

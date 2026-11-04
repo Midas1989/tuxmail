@@ -47,7 +47,7 @@ type Server struct {
 
 // New starts a fake with PBKDF2 (1000 iterations, fast tests).
 func New() *Server {
-	s := &Server{Email: "anna@example.de", Password: "correct horse battery", KDF: vaultwarden.KDFParams{Type: vaultwarden.KDFPBKDF2, Iterations: 1000},
+	s := &Server{Email: "anna@example.de", Password: "correct horse battery", KDF: vaultwarden.KDFParams{Type: vaultwarden.KDFPBKDF2, Iterations: vaultwarden.MinPBKDF2Iterations},
 		access: "vw-access-1"}
 	s.UserKey = make([]byte, 64)
 	_, _ = rand.Read(s.UserKey)

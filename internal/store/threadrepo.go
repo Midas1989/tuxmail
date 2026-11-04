@@ -103,6 +103,7 @@ func (s *Store) MessagesByKey(ctx context.Context, key string) ([]Message, error
 	if !ok {
 		return nil, nil
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE `+where+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
@@ -142,6 +143,7 @@ func (s *Store) AlignKeyConversation(ctx context.Context, key string) (int64, er
 			return nil
 		}
 		conv = id.Int64
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		res, err := tx.ExecContext(ctx, `UPDATE messages SET conversation_id = ? WHERE `+where+` AND conversation_id IS NULL`,
 			append([]any{conv}, args...)...)
 		if err != nil {

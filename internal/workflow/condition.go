@@ -70,7 +70,15 @@ func (p *Program) Eval(env *Env) (bool, error) {
 	if p == nil || p.p == nil {
 		return true, nil
 	}
-	out, err := expr.Run(p.p, env)
+	if env == nil {
+		env = &Env{}
+	}
+	// Each evaluation gets its own resource account (sandbox.go); the copy is
+	// shallow, so the query backends in env.rt are shared.
+	run := *env
+	run.budget = &evalBudget{}
+	machine := vm.VM{MemoryBudget: MaxExprListElems}
+	out, err := machine.Run(p.p, &run)
 	if err != nil {
 		return false, fmt.Errorf("evaluate %q: %w", p.src, err)
 	}
@@ -97,7 +105,7 @@ func (c Condition) Compile() (*Program, error) {
 const MaxExprNodes = 2000
 
 var exprOptions = sync.OnceValue(func() []expr.Option {
-	return []expr.Option{
+	return append(sandboxOptions(),
 		expr.Env(&Env{}),
 		expr.AsBool(),
 		expr.MaxNodes(MaxExprNodes),
@@ -139,7 +147,7 @@ var exprOptions = sync.OnceValue(func() []expr.Option {
 		expr.Function("kb", func(p ...any) (any, error) { return toInt64(p[0]) << 10, nil }, new(func(int) int64)),
 		expr.Function("mb", func(p ...any) (any, error) { return toInt64(p[0]) << 20, nil }, new(func(int) int64)),
 		queryFunction(), searchFolderFunction(), expr.Patch(envArgPatcher{}),
-	}
+	)
 })
 
 func toStrings(v any) []string {

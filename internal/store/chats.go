@@ -137,6 +137,7 @@ func (s *Store) ListChatsByConversation(ctx context.Context, conversationID int6
 }
 
 func (s *Store) listChats(ctx context.Context, where string, args ...any) ([]Chat, error) {
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("c.", chatCols)+` FROM chats c
 		WHERE `+where+`
 		ORDER BY (SELECT MAX(sent_at) FROM chat_messages WHERE chat_id = c.id) DESC NULLS LAST, c.id`, args...)

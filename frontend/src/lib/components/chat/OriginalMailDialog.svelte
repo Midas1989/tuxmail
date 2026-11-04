@@ -8,12 +8,18 @@
   import Modal from '../common/Modal.svelte';
   import AttachmentCard from '../common/AttachmentCard.svelte';
   import MailFrame from '../mail/MailFrame.svelte';
+  import { proxiedRemoteHtml } from '../../remote';
 
   interface Props {
     message: MessageDetail;
   }
   let { message: m }: Props = $props();
   let allowRemote = $state(false);
+  let remoteHtml = $state<string | null>(null);
+  async function loadRemote() {
+    remoteHtml = await proxiedRemoteHtml(app.api, m.id);
+    allowRemote = true;
+  }
 
   const fmtList = (l: Address[]) => l.map((a) => (a.name ? `${a.name} <${a.email}>` : a.email)).join(', ');
   const close = () => (app.originalMessage = null);
@@ -32,7 +38,7 @@
   {#if m.hasRemoteContent && !allowRemote}
     <div class="notice">
       <span>{t('mail.reader.remoteBlocked')}</span>
-      <button class="btn" onclick={() => (allowRemote = true)}>{t('mail.reader.loadRemote')}</button>
+      <button class="btn" onclick={loadRemote}>{t('mail.reader.loadRemote')}</button>
     </div>
   {/if}
   {#if m.attachments.length}
@@ -41,7 +47,7 @@
     </div>
   {/if}
   <div class="frame" class:html={!!m.html}>
-    <MailFrame html={m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
+    <MailFrame html={remoteHtml ?? m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
   </div>
   {#snippet footer()}
     <button

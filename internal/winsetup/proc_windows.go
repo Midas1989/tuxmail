@@ -207,11 +207,17 @@ func Launch(exe string) error {
 func ScheduleDelete(files []string, dirs []string) error {
 	var b strings.Builder
 	b.WriteString("ping -n 4 127.0.0.1 >nul")
+	// Paths with '%' or '"' are skipped: cmd.exe would expand or unquote
+	// them (AUDIT-D D-07); such leftovers stay on disk.
 	for _, f := range files {
-		fmt.Fprintf(&b, ` & del /f /q "%s"`, f)
+		if SafeForCmd(f) {
+			fmt.Fprintf(&b, ` & del /f /q "%s"`, f)
+		}
 	}
 	for _, d := range dirs {
-		fmt.Fprintf(&b, ` & rmdir "%s"`, d)
+		if SafeForCmd(d) {
+			fmt.Fprintf(&b, ` & rmdir "%s"`, d)
+		}
 	}
 	cmd := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe"))
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW,
@@ -223,7 +229,12 @@ func ScheduleDelete(files []string, dirs []string) error {
 // CopyToTemp copies the setup program to %TEMP% so that uninstall can
 // delete the installation folder, and returns the copy's path.
 func CopyToTemp(self string) (string, error) {
-	dst := filepath.Join(os.TempDir(), fmt.Sprintf("TuxMail-Uninstall-%d.exe", os.Getpid()))
+	// Elevated: a folder only administrators can write to (AUDIT-D D-03).
+	dir, err := PrivateTempDir("TuxMail-Uninstall-")
+	if err != nil {
+		return "", err
+	}
+	dst := filepath.Join(dir, SetupExe)
 	if _, err := copySelf(self, dst); err != nil {
 		return "", err
 	}

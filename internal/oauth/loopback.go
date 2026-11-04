@@ -4,6 +4,7 @@ package oauth
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"fmt"
 	"html"
@@ -18,16 +19,22 @@ import (
 	"time"
 )
 
-// OpenBrowser opens url with the platform's default handler.
+// OpenBrowser opens url with the platform's default handler. Only
+// absolute http(s) URLs are accepted: rundll32 FileProtocolHandler, open
+// and xdg-open would also start local programs or files (AUDIT-C).
 func OpenBrowser(ctx context.Context, u string) error {
+	pu, err := url.Parse(u)
+	if err != nil || (pu.Scheme != "https" && pu.Scheme != "http") || pu.Host == "" || strings.HasPrefix(u, "-") {
+		return fmt.Errorf("oauth: refusing to open %q: not an http(s) URL", u)
+	}
 	var cmd *exec.Cmd
 	switch runtime.GOOS {
 	case "windows":
-		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", u)
+		cmd = exec.CommandContext(ctx, "rundll32", "url.dll,FileProtocolHandler", pu.String()) // #nosec G204 -- fixed program, URL validated above
 	case "darwin":
-		cmd = exec.CommandContext(ctx, "open", u)
+		cmd = exec.CommandContext(ctx, "open", pu.String()) // #nosec G204 -- fixed program, URL validated above
 	default:
-		cmd = exec.CommandContext(ctx, "xdg-open", u)
+		cmd = exec.CommandContext(ctx, "xdg-open", pu.String()) // #nosec G204 -- fixed program, URL validated above
 	}
 	return cmd.Start()
 }
@@ -136,7 +143,7 @@ func (m *Manager) StartLoopback(ctx context.Context, req StartRequest) (*Flow, e
 			return
 		}
 		q := r.URL.Query()
-		if q.Get("state") != p.state {
+		if subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(p.state)) != 1 {
 			writeCallbackPage(w, false, "Invalid state")
 			return
 		}
@@ -157,6 +164,7 @@ func (m *Manager) StartLoopback(ctx context.Context, req StartRequest) (*Flow, e
 	for _, l := range listeners {
 		go func(l net.Listener) { _ = srv.Serve(l) }(l)
 	}
+	// #nosec G118 -- the sign-in flow intentionally outlives the request; bounded by LoopbackTimeout
 	go func() {
 		select {
 		case <-f.done:

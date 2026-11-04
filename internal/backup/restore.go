@@ -168,7 +168,10 @@ func extractOne(ctx context.Context, src Source, passphrase, dir string, full bo
 			return nil, err
 		}
 		name := path.Clean(h.Name)
-		if h.Typeflag != '0' && h.Typeflag != 0 || strings.HasPrefix(name, "..") || strings.HasPrefix(name, "/") {
+		// filepath.IsLocal rejects "..", absolute, drive and UNC paths;
+		// backslashes would be separators on Windows (zip-slip, AUDIT-C).
+		if h.Typeflag != '0' && h.Typeflag != 0 || strings.HasPrefix(name, "..") || strings.HasPrefix(name, "/") ||
+			strings.Contains(name, `\`) || !filepath.IsLocal(filepath.FromSlash(name)) {
 			return nil, fmt.Errorf("%w: unexpected entry %q", ErrTampered, h.Name)
 		}
 		switch {
@@ -576,11 +579,14 @@ func restoreMerge(ctx context.Context, ex *Extracted, opts RestoreOptions, res *
 		}
 	}
 	// Settings and workflows that do not exist yet.
-	for _, q := range []struct{ table, cols string }{
-		{"app_settings", "key, value_json, updated_at"},
-		{"workflows", "id, name, enabled, yaml, external_confirmed, created_at, updated_at"},
+	// Workflows from a backup must be confirmed again before they may run
+	// external actions (webhook, send, ...): external_confirmed is reset
+	// (AUDIT-C).
+	for _, q := range []struct{ table, cols, sel string }{
+		{"app_settings", "key, value_json, updated_at", "key, value_json, updated_at"},
+		{"workflows", "id, name, enabled, yaml, external_confirmed, created_at, updated_at", "id, name, enabled, yaml, 0, created_at, updated_at"},
 	} {
-		rows, err := src.DB().QueryContext(ctx, `SELECT `+q.cols+` FROM `+q.table)
+		rows, err := src.DB().QueryContext(ctx, `SELECT `+q.sel+` FROM `+q.table) // #nosec G202 -- table and column lists are constants above
 		if err != nil {
 			continue
 		}

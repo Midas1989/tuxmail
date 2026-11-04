@@ -176,6 +176,7 @@ const (
 	ExtraProvider = "oauthProvider"
 	// ExtraSecretRef points to the grant (default Account.SecretRef); shared
 	// mailboxes reuse the grant of their owner account.
+	// #nosec G101 -- public OAuth endpoint/client metadata, not a credential
 	ExtraSecretRef = "oauthSecretRef"
 )
 

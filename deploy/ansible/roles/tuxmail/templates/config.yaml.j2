@@ -51,6 +51,22 @@ limits:
   max_upload_mb: {{ tuxmail_max_upload_mb | int }}
   login_rate_per_minute: {{ tuxmail_login_rate_per_minute | int }}
   background_sync: {{ tuxmail_background_sync | default(true) | bool | to_json }}
+
+# Ausgehende Verbindungen (SSRF-Schutz): Benutzer dürfen den Server nur
+# öffentliche Adressen kontaktieren lassen (Mail-, Kalender-, Cloud-Server,
+# Webhooks, KI-Anbieter, Web Push ...). Loopback, private Netze, Link-Local
+# und Cloud-Metadaten sind gesperrt.
+security:
+  # true = private Netze (RFC 1918, fc00::/7) und Loopback erlauben, z. B. für
+  # einen Mailserver im selben LAN. Gilt dann für ALLE Benutzer.
+  allow_private_networks: {{ tuxmail_security_allow_private_networks | bool | to_json }}
+  # Immer erlaubte Adressen/Netze, optional mit Port ("10.0.0.5", "10.1.0.0/16:993", "127.0.0.1:8008").
+  allowed_networks:
+{% for net in tuxmail_security_allowed_networks %}
+    - {{ net | to_json }}
+{% else %}
+    []
+{% endfor %}
 {% if tuxmail_fcm_enabled | bool %}
 
 # Native Push für die Android-App (Play-Store-Variante) über Firebase Cloud Messaging.

@@ -42,6 +42,7 @@
   import RecurrenceEditor from './RecurrenceEditor.svelte';
   import ScopeDialog from './ScopeDialog.svelte';
   import InvitationCard from './InvitationCard.svelte';
+  import { safeHref } from '../../safeurl';
 
   interface Props {
     event: CalendarEvent | null;
@@ -346,7 +347,7 @@
         <span class="with-btn">
           <input class="input" type="url" bind:value={meetingUrl} placeholder="https://" />
           {#if meetingUrl}
-            <a class="icon-btn" href={meetingUrl} target="_blank" rel="noopener noreferrer" title={t('calendar.event.join')} aria-label={t('calendar.event.join')}><Video size={16} /></a>
+            <a class="icon-btn" href={safeHref(meetingUrl)} target="_blank" rel="noopener noreferrer" title={t('calendar.event.join')} aria-label={t('calendar.event.join')}><Video size={16} /></a>
             <button type="button" class="icon-btn" title={t('calendar.event.copyLink')} aria-label={t('calendar.event.copyLink')} onclick={() => navigator.clipboard?.writeText(meetingUrl)}><Copy size={15} /></button>
           {:else}
             <MeetingLinkButton

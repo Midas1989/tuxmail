@@ -38,7 +38,10 @@ mkdir -p "$tools"
 
 # Sources: rolling "continuous" builds (these projects publish no versioned
 # release assets). The SHA-256 of each download is printed for the build log.
-fetch() { # fetch URL FILE
+# Optional pinning (AUDIT-D D-13): set LINUXDEPLOY_SHA256,
+# LINUXDEPLOY_PLUGIN_GTK_SHA256 and/or APPIMAGETOOL_SHA256 to the expected
+# hashes (e.g. in a release pipeline) and the build stops on a mismatch.
+fetch() { # fetch URL FILE [EXPECTED_SHA256]
 	if [ ! -s "$2" ]; then
 		log "downloading $1"
 		curl -fsSL --retry 3 -o "$2.tmp" "$1"
@@ -46,13 +49,17 @@ fetch() { # fetch URL FILE
 	fi
 	chmod +x "$2"
 	sha256 "$2" >&2
+	if [ -n "${3:-}" ]; then
+		got=$(sha256 "$2" | cut -d' ' -f1)
+		[ "$got" = "$3" ] || die "$2: SHA-256 $got does not match the pinned $3"
+	fi
 }
 LINUXDEPLOY=${LINUXDEPLOY:-$tools/linuxdeploy-$arch.AppImage}
 LINUXDEPLOY_PLUGIN_GTK=${LINUXDEPLOY_PLUGIN_GTK:-$tools/linuxdeploy-plugin-gtk.sh}
 APPIMAGETOOL=${APPIMAGETOOL:-$tools/appimagetool-$arch.AppImage}
-fetch "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$arch.AppImage" "$LINUXDEPLOY"
-fetch "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" "$LINUXDEPLOY_PLUGIN_GTK"
-fetch "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$arch.AppImage" "$APPIMAGETOOL"
+fetch "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$arch.AppImage" "$LINUXDEPLOY" "${LINUXDEPLOY_SHA256:-}"
+fetch "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" "$LINUXDEPLOY_PLUGIN_GTK" "${LINUXDEPLOY_PLUGIN_GTK_SHA256:-}"
+fetch "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$arch.AppImage" "$APPIMAGETOOL" "${APPIMAGETOOL_SHA256:-}"
 # linuxdeploy finds plugins named linuxdeploy-plugin-<name>(.sh) in PATH or next to itself.
 PATH="$(dirname "$LINUXDEPLOY_PLUGIN_GTK"):$PATH"
 export PATH
@@ -85,7 +92,7 @@ DEPLOY_GTK_VERSION=3 "$LINUXDEPLOY" \
 
 if [ -d "$stage/usr/lib/tuxmail" ]; then
 	cp -a "$stage/usr/lib/tuxmail" "$appdir/usr/lib/"
-	log "added messenger plugins: $(find "$appdir/usr/lib/tuxmail/plugins" -type f -printf '%f ')"
+	log "added messenger plugins: $(find "$appdir/usr/lib/tuxmail/plugins" -maxdepth 1 -printf '%f ')"
 fi
 
 # Point the bundled WebKit to the bundled helpers (same-length replacement).

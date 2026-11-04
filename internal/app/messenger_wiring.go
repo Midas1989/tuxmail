@@ -13,6 +13,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/messenger"
 	"github.com/Midas1989/Mailclient/internal/messenger/host"
+	"github.com/Midas1989/Mailclient/internal/messenger/signalcli"
 	"github.com/Midas1989/Mailclient/internal/messenger/wire"
 	"github.com/Midas1989/Mailclient/internal/store"
 )
@@ -37,6 +38,7 @@ const (
 	CodeMessengerNotLinked = "messenger_not_linked"
 	CodePluginOutdated     = "plugin_outdated"
 	CodeRateLimited        = "rate_limited"
+	CodeComponentMissing   = "component_missing"
 )
 
 // Messenger ApiEvent types.
@@ -53,7 +55,7 @@ func (a *App) initMessenger() error {
 	}
 	mo := messenger.Options{Store: a.st, Blobs: a.blobs, Bus: a.bus, DataDir: a.opts.DataDir, Dirs: o.Dirs, Static: o.Static,
 		Launcher: o.Launcher, HostVersion: a.opts.Version, Env: messenger.EnvConfig, Notifier: appNotifier{a: a}, Logger: a.log,
-		Now: a.opts.Now}
+		Now: a.opts.Now, RestrictHostSettings: a.opts.Mode == ModeServer}
 	if o.Configure != nil {
 		o.Configure(&mo)
 	}
@@ -91,8 +93,16 @@ func msgrErr(err error) error {
 		return &Error{Code: CodeRiskNotAccepted, Status: http.StatusConflict, Message: err.Error(), Err: err}
 	case errors.Is(err, messenger.ErrUnknownPair), errors.Is(err, messenger.ErrNotMessenger):
 		return &Error{Code: CodeNotFound, Status: http.StatusNotFound, Message: err.Error(), Err: err}
+	case errors.Is(err, messenger.ErrHostSetting):
+		return &Error{Code: "forbidden", Status: http.StatusForbidden, Message: err.Error(), Err: err}
 	case errors.Is(err, messenger.ErrNoChat):
 		return &Error{Code: CodeInvalidInput, Status: http.StatusBadRequest, Message: err.Error(), Err: err}
+	case errors.Is(err, messenger.ErrNoComponent):
+		return &Error{Code: CodeNotFound, Status: http.StatusNotFound, Message: err.Error(), Err: err}
+	case errors.Is(err, messenger.ErrInstallRunning):
+		return &Error{Code: CodeConflict, Status: http.StatusConflict, Message: err.Error(), Err: err}
+	case errors.Is(err, signalcli.ErrUnsupported), errors.Is(err, signalcli.ErrNotPinned):
+		return &Error{Code: CodeNotSupported, Status: http.StatusNotImplemented, Message: err.Error(), Err: err}
 	case errors.Is(err, host.ErrUnavailable):
 		return &Error{Code: CodePluginUnavailable, Status: http.StatusServiceUnavailable, Message: err.Error(), Err: err}
 	}
@@ -109,6 +119,8 @@ func msgrErr(err error) error {
 		return &Error{Code: CodeNotFound, Status: http.StatusNotFound, Message: err.Error(), Err: err}
 	case wire.CodeOutdated:
 		return &Error{Code: CodePluginOutdated, Status: http.StatusServiceUnavailable, Message: err.Error(), Err: err}
+	case wire.CodeComponentMissing:
+		return &Error{Code: CodeComponentMissing, Status: http.StatusServiceUnavailable, Message: err.Error(), Err: err}
 	case wire.CodeUnavailable:
 		return &Error{Code: CodePluginUnavailable, Status: http.StatusServiceUnavailable, Message: err.Error(), Err: err}
 	}

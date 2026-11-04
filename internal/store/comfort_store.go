@@ -71,6 +71,7 @@ func (s *Store) SpamTokenCounts(ctx context.Context, hashes []int64) (map[int64]
 	out := map[int64]SpamCount{}
 	for start := 0; start < len(hashes); start += 500 {
 		chunk := hashes[start:min(start+500, len(hashes))]
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err := s.db.QueryContext(ctx, `SELECT h, spam, ham FROM spam_tokens WHERE h IN (`+placeholders(len(chunk))+`)`, int64Args(chunk)...)
 		if err != nil {
 			return nil, err
@@ -147,6 +148,7 @@ func (s *Store) CategoryCounts(ctx context.Context, tokens []string) (map[string
 		for i, t := range chunk {
 			args[i] = t
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err := s.db.QueryContext(ctx, `SELECT category, token, n FROM category_tokens WHERE token IN (`+placeholders(len(chunk))+`)`, args...)
 		if err != nil {
 			return nil, nil, err

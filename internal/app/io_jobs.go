@@ -447,6 +447,18 @@ func (a *App) resolveSource(src IOSource) (path string, cleanup func(), err erro
 	return path, cleanup, nil
 }
 
+// importRoot is the directory an import may read from: uploads (and
+// everything in server mode) are confined to the uploaded/unpacked files,
+// so a crafted Thunderbird profile cannot point at server files such as
+// master.key (AUDIT-C). Local paths in desktop mode are the user's own
+// files and are not confined ("").
+func (a *App) importRoot(src IOSource, path string) string {
+	if src.UploadToken != "" || a.opts.Mode == ModeServer {
+		return path
+	}
+	return ""
+}
+
 func isZip(p string) bool {
 	f, err := os.Open(p)
 	if err != nil {
@@ -467,8 +479,12 @@ func unzip(src, dst string) error {
 	defer zr.Close()
 	var total uint64
 	for _, f := range zr.File {
-		name := filepath.FromSlash(f.Name)
-		if strings.Contains(f.Name, "..") || filepath.IsAbs(name) {
+		// Backslashes are treated as separators on every OS (some Windows
+		// tools write them); IsLocal also rejects drive/UNC and reserved
+		// names (AUDIT-C).
+		slash := strings.ReplaceAll(f.Name, `\`, "/")
+		name := filepath.FromSlash(slash)
+		if strings.Contains(slash, "..") || !filepath.IsLocal(name) {
 			return ie.Corrupt("zip: unsafe path %q", f.Name)
 		}
 		p := filepath.Join(dst, name)
@@ -494,6 +510,7 @@ func unzip(src, dst string) error {
 			rc.Close()
 			return err
 		}
+		// #nosec G110 -- archive/zip fails reads beyond UncompressedSize64; the total is checked against MaxIOUpload
 		_, err = io.Copy(out, rc)
 		rc.Close()
 		out.Close()

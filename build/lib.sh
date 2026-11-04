@@ -54,8 +54,10 @@ PLUGIN_NAMES="whatsapp telegram matrix signal"
 
 # stage_plugins OS ARCH DEST: builds the messenger plugins for OS/ARCH
 # (build/plugins.sh; the Go build cache makes repeated calls cheap) and
-# copies them into DEST. TUXMAIL_PLUGINS_DIR=<dir> uses prebuilt (e.g.
-# signed) binaries instead; TUXMAIL_SKIP_PLUGINS=1 packages without them.
+# copies them into DEST, plus signal-cli in DEST/signal-cli (taken from the
+# source directory when it has one, else stage_signal_cli).
+# TUXMAIL_PLUGINS_DIR=<dir> uses prebuilt (e.g. signed) binaries instead;
+# TUXMAIL_SKIP_PLUGINS=1 packages without them.
 stage_plugins() {
 	_sp_os=$1 _sp_arch=$2 _sp_dest=$3 _sp_ext=""
 	if [ "${TUXMAIL_SKIP_PLUGINS:-}" = 1 ]; then
@@ -77,6 +79,40 @@ stage_plugins() {
 		chmod 0755 "$_sp_dest/tuxmail-plugin-$_sp_n$_sp_ext"
 	done
 	log "staged plugins ($PLUGIN_NAMES) in $_sp_dest"
+	if [ -d "$_sp_src/signal-cli" ] && [ -f "$_sp_src/signal-cli/VERSION" ]; then
+		rm -rf "$_sp_dest/signal-cli"
+		cp -R "$_sp_src/signal-cli" "$_sp_dest/signal-cli"
+		log "staged signal-cli $(cat "$_sp_dest/signal-cli/VERSION") from $_sp_src"
+	else
+		stage_signal_cli "$_sp_os" "$_sp_arch" "$_sp_dest/signal-cli"
+	fi
+}
+
+# stage_signal_cli OS ARCH DIR: bundles signal-cli (+ Java runtime) for the
+# Signal plugin into DIR (<plugins>/signal-cli, see build/signal-cli.sh).
+# TUXMAIL_SIGNAL_CLI=bundle  required (release CI): any failure is fatal
+#                   auto     (default) bundle when possible, else warn - the
+#                            app then offers the on-demand install
+#                   skip     package without signal-cli
+stage_signal_cli() {
+	_sc_mode=${TUXMAIL_SIGNAL_CLI:-auto}
+	case $_sc_mode in
+	skip)
+		log "TUXMAIL_SIGNAL_CLI=skip - packaging without signal-cli (on-demand install in the app)"
+		rm -rf "$3"
+		return 0
+		;;
+	bundle | auto) ;;
+	*) die "TUXMAIL_SIGNAL_CLI must be bundle, auto or skip (got $_sc_mode)" ;;
+	esac
+	rm -rf "$3"
+	if sh "$ROOT/build/signal-cli.sh" bundle "$1" "$2" "$3"; then
+		log "bundled signal-cli $(cat "$3/VERSION") in $3 ($(du -sh "$3" | cut -f1))"
+		return 0
+	fi
+	rm -rf "$3"
+	[ "$_sc_mode" = bundle ] && die "bundling signal-cli for $1/$2 failed (TUXMAIL_SIGNAL_CLI=bundle)"
+	log "WARNING: signal-cli not bundled for $1/$2 - the app offers the on-demand install"
 }
 
 # mktar OUT.tar.gz DIR ENTRY...: deterministic gzip tarball of ENTRYs relative to DIR.

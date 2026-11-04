@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!--
+  AUDIT-D D-10: stated explicitly instead of relying on the platform
+  defaults of the targetSdk: no cleartext traffic and only the system CA
+  store (no user-installed CAs, which would allow a device-level TLS
+  interception of the device token).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

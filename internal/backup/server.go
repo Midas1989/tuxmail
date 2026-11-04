@@ -3,6 +3,7 @@
 package backup
 
 import (
+	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"database/sql"
@@ -165,7 +166,8 @@ func RestoreServer(ctx context.Context, src Source, passphrase, dataDir string) 
 		}
 		name := path.Clean(h.Name)
 		fe, ok := sums[name]
-		if !ok || !strings.HasPrefix(name, serverPrefix) || strings.Contains(name, "..") {
+		if !ok || !strings.HasPrefix(name, serverPrefix) || strings.Contains(name, "..") || strings.Contains(name, `\`) ||
+			(h.Typeflag != tar.TypeReg && h.Typeflag != 0) || !filepath.IsLocal(filepath.FromSlash(name)) {
 			return nil, fmt.Errorf("%w: unexpected entry %q", ErrTampered, h.Name)
 		}
 		dst := filepath.Join(tmp, filepath.FromSlash(strings.TrimPrefix(name, serverPrefix)))

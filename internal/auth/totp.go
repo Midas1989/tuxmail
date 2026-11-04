@@ -5,6 +5,7 @@ package auth
 import (
 	"crypto/hmac"
 	"crypto/rand"
+	// #nosec G505 -- HMAC-SHA1 is mandated by RFC 4226/6238 (authenticator app compatibility)
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
@@ -61,6 +62,7 @@ func (t TOTP) CodeAt(step int64) string {
 	}
 	mac := hmac.New(h, t.Secret)
 	var msg [8]byte
+	// #nosec G115 -- TOTP time step, non-negative for any date after 1970
 	binary.BigEndian.PutUint64(msg[:], uint64(step))
 	mac.Write(msg[:])
 	sum := mac.Sum(nil)

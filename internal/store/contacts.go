@@ -244,6 +244,7 @@ func (s *Store) SearchContacts(ctx context.Context, q string, limit int) ([]Cont
 }
 
 func (s *Store) listContacts(ctx context.Context, where string, args ...any) ([]Contact, error) {
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+contactCols+` FROM contacts c WHERE `+where+`
 		ORDER BY c.display_name COLLATE NOCASE, c.id`, args...)
 	if err != nil {

@@ -219,7 +219,7 @@ func backupErr(err error) error {
 	case errors.Is(err, backup.ErrWrongPassphrase), errors.Is(err, backup.ErrNeedPassphrase):
 		return Errorf(http.StatusUnauthorized, CodeInvalidPassword, "%v", err)
 	case errors.Is(err, backup.ErrTampered), errors.Is(err, backup.ErrNotArchive), errors.Is(err, backup.ErrMissingBase),
-		errors.Is(err, backup.ErrTooNew):
+		errors.Is(err, backup.ErrTooNew), errors.Is(err, backup.ErrNotEncrypted):
 		return invalid("%v", err)
 	}
 	return err

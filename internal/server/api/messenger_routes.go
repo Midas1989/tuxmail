@@ -19,6 +19,9 @@ func MessengerRoutes() []Route {
 		{"POST /api/messenger/plugins/{name}/restart", func(w w, r r, a A) {
 			done(w, a.RestartMessengerPlugin(r.Context(), r.PathValue("name")))
 		}},
+		{"POST /api/messenger/plugins/{name}/component", func(w w, r r, a A) {
+			done(w, a.InstallMessengerComponent(r.Context(), r.PathValue("name")))
+		}},
 		{"POST /api/messenger/pairings", jsonHandler(func(w w, r r, a A, in app.MessengerPairingInput) {
 			p, err := a.StartMessengerPairing(r.Context(), in)
 			if err != nil {

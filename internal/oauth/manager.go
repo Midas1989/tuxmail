@@ -339,6 +339,7 @@ func (m *Manager) SaveGrant(ref string, g Grant) error {
 	if m.cfg.Secrets == nil {
 		return errors.New("oauth: no secret store")
 	}
+	// #nosec G117 -- serialized only into the secret store (keyring/vault)
 	b, err := json.Marshal(g)
 	if err != nil {
 		return err
@@ -471,6 +472,7 @@ func (t *TokenSource) set(c AccessToken) {
 }
 
 func (m *Manager) saveGrantLocked(ref string, g Grant) error {
+	// #nosec G117 -- serialized only into the secret store (keyring/vault)
 	b, err := json.Marshal(g)
 	if err != nil {
 		return err

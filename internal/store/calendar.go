@@ -295,6 +295,7 @@ func (s *Store) ListEventsInRange(ctx context.Context, from, to time.Time, calen
 			args = append(args, id)
 		}
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	q := `SELECT ` + prefixed("o.", calObjectCols) + `, i.start_at, i.end_at FROM cal_instances i
 			JOIN cal_objects o ON o.id = i.object_id
 			WHERE o.kind = 'event' AND ` + fmt.Sprintf(overlapCond, "i.start_at", "i.end_at") + calFilter + `
@@ -354,6 +355,7 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]CalObject, error
 	q := `SELECT ` + calObjectCols + ` FROM cal_objects WHERE kind = 'todo'`
 	var args []any
 	if len(f.CalendarIDs) > 0 {
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		q += ` AND calendar_id IN (` + placeholders(len(f.CalendarIDs)) + `)`
 		for _, id := range f.CalendarIDs {
 			args = append(args, id)

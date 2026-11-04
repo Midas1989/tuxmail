@@ -8,9 +8,12 @@
 //
 // signal-cli is used instead of signalmeow (mautrix-signal) because
 // signalmeow needs libsignal-ffi (Rust, linked through CGO), which would
-// break the CGO-free build of the plugins. The path of signal-cli is taken
-// from the setting signal_cli_path (or TUXMAIL_SIGNAL_SIGNAL_CLI_PATH),
-// otherwise "signal-cli" is looked up in PATH.
+// break the CGO-free build of the plugins. signal-cli is located by
+// internal/messenger/signalcli: the setting signal_cli_path (or
+// TUXMAIL_SIGNAL_SIGNAL_CLI_PATH), then the copy bundled next to the plugin
+// (<plugins dir>/signal-cli), then the one installed on demand
+// (<data dir>/plugins/signal-cli), then PATH. It is located again on every
+// start, so an install done while the plugin runs is picked up.
 package signal
 
 import (
@@ -28,6 +31,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/messenger/sdk"
+	"github.com/Midas1989/Mailclient/internal/messenger/signalcli"
 	"github.com/Midas1989/Mailclient/internal/messenger/wire"
 )
 
@@ -84,14 +88,7 @@ func (p *Plugin) Init(_ context.Context, env *sdk.Env) error {
 	defer p.mu.Unlock()
 	p.env = env
 	if p.Spawn == nil {
-		path := env.Config["signal_cli_path"]
-		if path == "" {
-			path = os.Getenv("TUXMAIL_SIGNAL_SIGNAL_CLI_PATH")
-		}
-		if path == "" {
-			path = "signal-cli"
-		}
-		p.Spawn = ExecSpawner(path)
+		p.Spawn = LocatingSpawner(LocateOptions(env))
 	}
 	dirs, err := env.AccountDirs()
 	if err != nil {
@@ -114,34 +111,130 @@ type accountMeta struct {
 	UUID   string `json:"uuid,omitempty"`
 }
 
-// ExecSpawner runs the signal-cli executable at path.
+// LocateOptions are the signal-cli search options of the plugin: the
+// setting, <exe dir>/signal-cli (bundled) and <data dir>/../signal-cli
+// (installed on demand by the host into <data dir>/plugins/signal-cli).
+func LocateOptions(env *sdk.Env) signalcli.Options {
+	explicit := env.Config["signal_cli_path"]
+	if explicit == "" {
+		explicit = os.Getenv("TUXMAIL_SIGNAL_SIGNAL_CLI_PATH")
+	}
+	var dirs []string
+	if exe, err := os.Executable(); err == nil {
+		if real, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = real
+		}
+		dirs = append(dirs, filepath.Join(filepath.Dir(exe), signalcli.DirName))
+	}
+	o := signalcli.Options{Explicit: explicit, Dirs: dirs}
+	if env.DataDir != "" {
+		o.InstallDir = filepath.Join(filepath.Dir(env.DataDir), signalcli.DirName)
+	}
+	return o
+}
+
+// MissingError is the error for a missing signal-cli: CodeComponentMissing
+// lets the host offer the on-demand install.
+func MissingError(err error) error {
+	switch {
+	case errors.Is(err, signalcli.ErrNotFound) && !strings.HasPrefix(err.Error(), "signal_cli_path"):
+		return wire.Errorf(wire.CodeComponentMissing, "the Signal component (signal-cli) is not installed")
+	case errors.Is(err, signalcli.ErrNoJava):
+		return wire.Errorf(wire.CodeComponentMissing, "the Signal component needs a Java runtime: %v", err)
+	}
+	return wire.Errorf(wire.CodeUnavailable, "%v", err)
+}
+
+// LocatingSpawner locates signal-cli on every start (see signalcli.Locate).
+func LocatingSpawner(o signalcli.Options) Spawner {
+	return func(ctx context.Context, dir string) (CLI, error) {
+		c, err := signalcli.Locate(o)
+		if err != nil {
+			return nil, MissingError(err)
+		}
+		return startCLI(c, dir)
+	}
+}
+
+// ExecSpawner runs the signal-cli executable at path (no search).
 func ExecSpawner(path string) Spawner {
 	return func(ctx context.Context, dir string) (CLI, error) {
-		cmd := exec.Command(path, "--config", filepath.Join(dir, "signal-cli"), "--output=json", "jsonRpc", "--receive-mode=on-start")
-		stdin, err := cmd.StdinPipe()
-		if err != nil {
-			return nil, err
-		}
-		stdout, err := cmd.StdoutPipe()
-		if err != nil {
-			return nil, err
-		}
-		cmd.Stderr = os.Stderr
-		if err := cmd.Start(); err != nil {
-			if errors.Is(err, exec.ErrNotFound) {
-				return nil, wire.Errorf(wire.CodeUnavailable, "signal-cli not found (%s): install it and set signal_cli_path", path)
-			}
-			return nil, err
-		}
-		return &execCLI{Reader: stdout, WriteCloser: stdin, cmd: cmd}, nil
+		return startCLI(signalcli.Command{Path: path, Mode: signalcli.ModeExec}, dir)
 	}
+}
+
+func startCLI(c signalcli.Command, dir string) (CLI, error) {
+	cmd := c.Exec("--config", filepath.Join(dir, "signal-cli"), "--output=json", "jsonRpc", "--receive-mode=on-start")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	tail := &stderrTail{w: os.Stderr}
+	cmd.Stderr = tail
+	if err := cmd.Start(); err != nil {
+		if errors.Is(err, exec.ErrNotFound) || errors.Is(err, os.ErrNotExist) {
+			return nil, wire.Errorf(wire.CodeComponentMissing, "signal-cli not found (%s)", c.Path)
+		}
+		return nil, wire.Errorf(wire.CodeUnavailable, "start signal-cli: %v", err)
+	}
+	return &execCLI{Reader: stdout, WriteCloser: stdin, cmd: cmd, tail: tail}, nil
+}
+
+// stderrTail forwards signal-cli's stderr (plugin log) and keeps its end
+// for error messages.
+type stderrTail struct {
+	mu  sync.Mutex
+	w   io.Writer
+	buf []byte
+}
+
+func (t *stderrTail) Write(b []byte) (int, error) {
+	t.mu.Lock()
+	t.buf = append(t.buf, b...)
+	if len(t.buf) > 4096 {
+		t.buf = append([]byte(nil), t.buf[len(t.buf)-4096:]...)
+	}
+	t.mu.Unlock()
+	if t.w != nil {
+		_, _ = t.w.Write(b)
+	}
+	return len(b), nil
+}
+
+func (t *stderrTail) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.buf)
+}
+
+// Hint explains a failed start from signal-cli's output (empty if
+// nothing is known).
+func Hint(stderr string) string {
+	switch {
+	case strings.Contains(stderr, "UnsatisfiedLinkError") || strings.Contains(stderr, "signal_jni"):
+		return "signal-cli could not load libsignal for this platform (on Windows on ARM use the bundled x64 Java runtime)"
+	case strings.Contains(stderr, "UnsupportedClassVersionError"):
+		return "signal-cli needs Java 21 or newer"
+	}
+	return ""
 }
 
 type execCLI struct {
 	io.Reader
 	io.WriteCloser
-	cmd *exec.Cmd
+	cmd  *exec.Cmd
+	tail *stderrTail
 }
+
+// Hint implements hinter.
+func (c *execCLI) Hint() string { return Hint(c.tail.String()) }
+
+// hinter is a CLI that can explain why it stopped.
+type hinter interface{ Hint() string }
 
 func (c *execCLI) Kill() error {
 	_ = c.WriteCloser.Close()
@@ -350,7 +443,7 @@ func (p *Plugin) Pair(ctx context.Context, req wire.PairRequest, pr *sdk.Pairing
 		DeviceLinkURI string `json:"deviceLinkUri"`
 	}
 	if err := conn.Call(ctx, "startLink", map[string]any{}, &link); err != nil {
-		return wire.Account{}, err
+		return wire.Account{}, exitError(cli, err)
 	}
 	if link.DeviceLinkURI == "" {
 		return wire.Account{}, errors.New("signal-cli returned no link URI")
@@ -385,6 +478,17 @@ func (p *Plugin) Pair(ctx context.Context, req wire.PairRequest, pr *sdk.Pairing
 	p.mu.Unlock()
 	ok = true
 	return wire.Account{ID: req.Account, Self: wire.Contact{ID: s.selfID(), Phone: fin.Number}, State: wire.StateDisconnected, Channel: "signal"}, nil
+}
+
+// exitError explains an error after signal-cli stopped unexpectedly.
+func exitError(cli CLI, err error) error {
+	if h, ok := cli.(hinter); ok && errors.Is(err, wire.ErrClosed) {
+		if hint := h.Hint(); hint != "" {
+			return wire.Errorf(wire.CodeUnavailable, "%s", hint)
+		}
+		return wire.Errorf(wire.CodeUnavailable, "signal-cli exited (see the plugin log)")
+	}
+	return err
 }
 
 // ==== ids ======================================================================

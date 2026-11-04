@@ -9,12 +9,18 @@
   import { formatFullDate, t } from './lib/i18n/index.svelte';
   import type { Address, MessageDetail } from './lib/types';
   import MailFrame from './lib/components/mail/MailFrame.svelte';
+  import { proxiedRemoteHtml } from './lib/remote';
   import AttachmentCard from './lib/components/common/AttachmentCard.svelte';
 
   let { id }: { id: number } = $props();
   let m = $state<MessageDetail | null>(null);
   let error = $state('');
   let allowRemote = $state(false);
+  let remoteHtml = $state<string | null>(null);
+  async function loadRemote(msg: MessageDetail) {
+    remoteHtml = await proxiedRemoteHtml(app.api, msg.id);
+    allowRemote = true;
+  }
   const fmtList = (l: Address[]) => l.map((a) => (a.name ? `${a.name} <${a.email}>` : a.email)).join(', ');
 
   $effect(() => {
@@ -46,13 +52,13 @@
         <dd>{formatFullDate(m.date)}</dd>
       </dl>
       {#if m.hasRemoteContent && !allowRemote}
-        <button class="btn" onclick={() => (allowRemote = true)}>{t('mail.reader.loadRemote')}</button>
+        <button class="btn" onclick={() => m && loadRemote(m)}>{t('mail.reader.loadRemote')}</button>
       {/if}
       {#if m.attachments.length}
         <div class="atts">{#each m.attachments as a (a.id)}<AttachmentCard attachment={a} compact />{/each}</div>
       {/if}
     </header>
-    <div class="body"><MailFrame html={m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={m.subject} /></div>
+    <div class="body"><MailFrame html={remoteHtml ?? m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={m.subject} /></div>
   {:else if error}
     <p class="err" role="alert">{error}</p>
   {:else}

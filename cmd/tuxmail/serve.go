@@ -30,7 +30,7 @@ func newLogger(c config.Log, fallback io.Writer) (*slog.Logger, io.Closer, error
 	w := fallback
 	var closer io.Closer
 	if c.File != "" {
-		f, err := os.OpenFile(c.File, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o640)
+		f, err := os.OpenFile(c.File, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
 		if err != nil {
 			return nil, nil, fmt.Errorf("open log file: %w", err)
 		}
@@ -105,7 +105,7 @@ func (c *cli) checkConfig(args []string) error {
 		}
 	}
 	if cfg.Log.File != "" {
-		if f, err := os.OpenFile(cfg.Log.File, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o640); err != nil {
+		if f, err := os.OpenFile(cfg.Log.File, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600); err != nil {
 			problems = append(problems, fmt.Errorf("log.file: %w", err))
 		} else {
 			f.Close()

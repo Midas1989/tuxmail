@@ -631,6 +631,7 @@
       "recurring": "recurring",
       "reply": "{name} replied: {status}",
       "respond": "Respond",
+      "spoofWarning": "The organizer named in this invitation is not the sender ({sender}). Changes are not applied automatically.",
       "tentative": "Maybe",
       "title": "Invitation",
       "method": {
@@ -3058,7 +3059,37 @@
       "back": "Back",
       "done": "Done",
       "cancel": "Cancel",
-      "qrLabel": "QR code for linking"
+      "qrLabel": "QR code for linking",
+      "reason": {
+        "component_missing": "The Signal component (signal-cli) is missing.",
+        "unavailable": "The service is not available right now: {message}",
+        "outdated": "The network rejected this version: {message}"
+      }
+    },
+    "component": {
+      "title": "Signal component (signal-cli)",
+      "missing": "The Signal component is missing – install it now",
+      "missingText": "Signal needs the helper program signal-cli. TuxMail downloads version {version} from the official release page, verifies its checksum and installs it into its data folder. Nothing else needs to be installed.",
+      "install": "Install Signal component",
+      "installing": "Installing the Signal component …",
+      "stage": {
+        "download": "Downloading {file} … {percent}%",
+        "verify": "Verifying checksum …",
+        "unpack": "Unpacking …",
+        "done": "Finishing …"
+      },
+      "ready": "signal-cli {version} ready",
+      "readyNoVersion": "signal-cli ready",
+      "source": {
+        "bundled": "included with TuxMail",
+        "setting": "from the configured path",
+        "path": "from the system PATH",
+        "installed": "downloaded by TuxMail"
+      },
+      "failed": "Installing the Signal component failed: {error}",
+      "manual": "This build cannot download signal-cli for this platform. Install signal-cli (Java 21+) and enter its path in the Signal settings.",
+      "retryNote": "Linking starts again automatically after the installation.",
+      "note": "Note: {note}"
     }
   },
   "team": {

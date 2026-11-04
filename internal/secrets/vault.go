@@ -49,8 +49,8 @@ const (
 	kdfArgon2id    = 1
 	saltLen        = 16
 	headerLen      = 8 + 1 + 1 + 4 + 4 + 1 + saltLen + chacha20poly1305.NonceSizeX
-	maxArgonMemKiB = 4 << 20 // 4 GiB; protects against crafted headers
-	maxArgonTime   = 100
+	maxArgonMemKiB = 1 << 20 // 1 GiB; protects against crafted headers (AUDIT-C)
+	maxArgonTime   = 20
 )
 
 // KDFParams are the Argon2id parameters used to derive the vault key.

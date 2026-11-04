@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"strings"
 	"testing"
 
@@ -49,13 +50,13 @@ func TestMasterKeyKAT(t *testing.T) {
 }
 
 func TestArgon2idMasterKey(t *testing.T) {
-	k := KDFParams{Type: KDFArgon2id, Iterations: 3, Memory: 4, Parallelism: 1}
+	k := KDFParams{Type: KDFArgon2id, Iterations: 3, Memory: 16, Parallelism: 1}
 	mk, err := MasterKey("p4ssw0rd", "User@example.com", k)
 	if err != nil {
 		t.Fatal(err)
 	}
 	salt := sha256.Sum256([]byte("user@example.com"))
-	if want := argon2.IDKey([]byte("p4ssw0rd"), salt[:], 3, 4*1024, 1, 32); !bytes.Equal(mk, want) {
+	if want := argon2.IDKey([]byte("p4ssw0rd"), salt[:], 3, 16*1024, 1, 32); !bytes.Equal(mk, want) {
 		t.Errorf("argon2id master key %x", mk)
 	}
 	if _, err := MasterKey("x", "y", KDFParams{Type: KDFArgon2id}); err == nil {
@@ -63,6 +64,31 @@ func TestArgon2idMasterKey(t *testing.T) {
 	}
 	if _, err := MasterKey("x", "y", KDFParams{Type: 9, Iterations: 1}); err == nil {
 		t.Error("unknown kdf accepted")
+	}
+}
+
+// AUDIT-C: a malicious server must not downgrade the KDF (offline
+// brute force of the master password hash) or make the client allocate
+// huge amounts of memory.
+func TestKDFDowngradeRejected(t *testing.T) {
+	for _, k := range []KDFParams{
+		{Type: KDFPBKDF2, Iterations: 1},
+		{Type: KDFPBKDF2, Iterations: 4999},
+		{Type: KDFPBKDF2, Iterations: 1 << 30},
+		{Type: KDFArgon2id, Iterations: 1, Memory: 64, Parallelism: 4},
+		{Type: KDFArgon2id, Iterations: 3, Memory: 1, Parallelism: 4},
+		{Type: KDFArgon2id, Iterations: 3, Memory: 1 << 20, Parallelism: 4},
+		{Type: KDFArgon2id, Iterations: 3, Memory: 64, Parallelism: 200},
+		{Type: KDFArgon2id, Iterations: 1000, Memory: 64, Parallelism: 4},
+	} {
+		if _, err := MasterKey("pw", "a@b", k); !errors.Is(err, ErrWeakKDF) {
+			t.Errorf("%+v: err = %v, want ErrWeakKDF", k, err)
+		}
+	}
+	for _, k := range []KDFParams{{Type: KDFPBKDF2, Iterations: 600000}, {Type: KDFArgon2id, Iterations: 3, Memory: 64, Parallelism: 4}} {
+		if err := k.Validate(); err != nil {
+			t.Errorf("%+v: %v", k, err)
+		}
 	}
 }
 

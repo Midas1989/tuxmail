@@ -470,6 +470,8 @@ export interface Api {
   /** Enable/disable (enabling WhatsApp needs acceptRisk once) or change settings. */
   updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin>;
   restartMessengerPlugin(name: string): Promise<void>;
+  /** Downloads and installs the external program of a plugin (signal-cli) in the background; progress via messenger.plugin events. */
+  installMessengerComponent(name: string): Promise<void>;
   startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing>;
   getMessengerPairing(id: string): Promise<MessengerPairing>;
   submitMessengerPairingInput(id: string, field: string, value: string): Promise<void>;

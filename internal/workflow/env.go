@@ -37,7 +37,8 @@ type Env struct {
 	Project      ProjectEnv      `expr:"project"`
 	SearchFolder SearchFolderEnv `expr:"searchfolder"`
 
-	rt *envRuntime // backends for query conditions (querycond.go)
+	rt     *envRuntime // backends for query conditions (querycond.go)
+	budget *evalBudget // sandbox limits of the running evaluation (sandbox.go)
 }
 
 // MailEnv describes a mail (or, for mail.before_send, the draft).

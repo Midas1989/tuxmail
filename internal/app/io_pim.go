@@ -456,7 +456,7 @@ func (a *App) InspectImport(ctx context.Context, src IOSource) (ImportPreview, e
 		}
 		p.Items = len(objs)
 	case "thunderbird":
-		pr, err := thunderbird.Read(ctx, path, thunderbird.Options{})
+		pr, err := thunderbird.Read(ctx, path, thunderbird.Options{Root: a.importRoot(src, path)})
 		if err != nil {
 			return p, invalid("%v", err)
 		}
@@ -547,6 +547,7 @@ func (z *zipWriter) AddDir(dir string) error {
 		if err != nil {
 			return err
 		}
+		// #nosec G122 -- walks a temporary export directory written by TuxMail itself
 		b, err := os.ReadFile(p)
 		if err != nil {
 			return err

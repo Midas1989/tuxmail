@@ -16,6 +16,7 @@
   import { app, comfort } from '../../state';
   import { fmt, t } from '../../i18n/index.svelte';
   import { CATEGORIES, type CategoryId, type MessageInsights } from '../../api/comfort';
+  import { openExternal } from '../../platform';
 
   interface Props {
     messageId: number;
@@ -60,7 +61,7 @@
       const r = await comfort.api.unsubscribeMessage(messageId);
       if (r.done) app.toast(r.method === 'mailto' ? t('comfort.newsletter.unsubscribedMail') : t('comfort.newsletter.unsubscribed'));
       else if (r.openUrl) {
-        window.open(r.openUrl, '_blank', 'noopener,noreferrer');
+        openExternal(r.openUrl);
         app.toast(t('comfort.newsletter.openedLink'));
       } else app.toast(t('comfort.newsletter.failed', { error: r.error ?? '' }), undefined, 'error');
       await reload();

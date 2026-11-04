@@ -203,7 +203,7 @@ func isExcluded(t time.Time, ex []ical.TimeValue, allDay bool) bool {
 func occurrences(ev *ical.Event, after, before time.Time) ([]time.Time, error) {
 	var out []time.Time
 	if ev.RRule != "" {
-		rule, err := build(ev)
+		rule, err := build(ev, before)
 		if err != nil {
 			return nil, err
 		}
@@ -256,8 +256,25 @@ func containsTime(list []time.Time, t time.Time) bool {
 	return false
 }
 
-// build creates the rrule-go rule of ev in the location of DTSTART.
-func build(ev *ical.Event) (*rr.RRule, error) {
+// maxPeriods bounds the number of FREQ periods between DTSTART and the end
+// of the requested window: rrule-go walks every period from DTSTART (also
+// those that yield no instance), so a hostile invitation such as
+// "DTSTART:19000101T000000Z, FREQ=SECONDLY" or an impossible rule would
+// otherwise keep a CPU busy for hours (audit B, docs/security).
+const maxPeriods = 1_000_000
+
+// ErrTooExpensive is returned for rules whose expansion would be unbounded.
+var ErrTooExpensive = errors.New("rrule: recurrence rule too expensive to expand")
+
+var freqPeriod = map[rr.Frequency]time.Duration{
+	rr.SECONDLY: time.Second, rr.MINUTELY: time.Minute, rr.HOURLY: time.Hour, rr.DAILY: 24 * time.Hour,
+	rr.WEEKLY: 7 * 24 * time.Hour, rr.MONTHLY: 28 * 24 * time.Hour, rr.YEARLY: 365 * 24 * time.Hour,
+}
+
+// build creates the rrule-go rule of ev in the location of DTSTART. The
+// iteration never runs past before (UNTIL is capped, which does not change
+// the instances up to before, also with COUNT).
+func build(ev *ical.Event, before time.Time) (*rr.RRule, error) {
 	loc := ev.Start.Time.Location()
 	opt, err := rr.StrToROptionInLocation(ev.RRule, loc)
 	if err != nil {
@@ -273,8 +290,18 @@ func build(ev *ical.Event) (*rr.RRule, error) {
 		u := opt.Until
 		opt.Until = time.Date(u.Year(), u.Month(), u.Day(), u.Hour(), u.Minute(), u.Second(), 0, loc)
 	}
-	if opt.Interval == 0 {
+	if opt.Interval <= 0 {
 		opt.Interval = 1
+	}
+	if !before.IsZero() {
+		if opt.Until.IsZero() || opt.Until.After(before) {
+			opt.Until = before
+		}
+		if p, ok := freqPeriod[opt.Freq]; ok && before.After(opt.Dtstart) {
+			if before.Sub(opt.Dtstart)/p/time.Duration(opt.Interval) > maxPeriods {
+				return nil, ErrTooExpensive
+			}
+		}
 	}
 	r, err := rr.NewRRule(*opt)
 	if err != nil {

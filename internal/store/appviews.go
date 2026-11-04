@@ -100,6 +100,7 @@ func (s *Store) ListFilteredMessages(ctx context.Context, f MessageFilter, limit
 	if limit <= 0 {
 		limit = 50
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("m.", messageCols)+` FROM messages m WHERE `+where+`
 		ORDER BY COALESCE(m.sent_at, m.received_at, 0) DESC, m.id DESC LIMIT ? OFFSET ?`, append(args, limit, max(offset, 0))...)
 	if err != nil {
@@ -112,6 +113,7 @@ func (s *Store) ListFilteredMessages(ctx context.Context, f MessageFilter, limit
 // MatchingMessageIDs returns the ids of all messages matching f.
 func (s *Store) MatchingMessageIDs(ctx context.Context, f MessageFilter) ([]int64, error) {
 	where, args := f.where()
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT m.id FROM messages m WHERE `+where, args...)
 	if err != nil {
 		return nil, err
@@ -129,6 +131,7 @@ func (s *Store) GetMessages(ctx context.Context, ids []int64) ([]Message, error)
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE id IN (`+int64List(ids)+`)`)
 	if err != nil {
 		return nil, err
@@ -142,6 +145,7 @@ func (s *Store) AddressesFor(ctx context.Context, ids []int64) (map[int64][]Mess
 	if len(ids) == 0 {
 		return out, nil
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT message_id, role, name, email, person_id FROM message_addresses
 		WHERE message_id IN (`+int64List(ids)+`) ORDER BY rowid`)
 	if err != nil {
@@ -170,6 +174,7 @@ func (s *Store) FoldersFor(ctx context.Context, ids []int64) (map[int64][]int64,
 	if len(ids) == 0 {
 		return out, nil
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT message_id, folder_id FROM message_locations WHERE message_id IN (`+int64List(ids)+`)
 		ORDER BY message_id, folder_id`)
 	if err != nil {
@@ -194,6 +199,7 @@ func (s *Store) ProjectsForItems(ctx context.Context, kind ItemKind, ids []int64
 	if len(ids) == 0 {
 		return out, nil
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT item_id, project_id FROM project_items WHERE item_kind = ? AND item_id IN (`+int64List(ids)+`)
 		ORDER BY item_id, project_id`, kind)
 	if err != nil {
@@ -216,6 +222,7 @@ func (s *Store) TaggedItemIDs(ctx context.Context, kind ItemKind, tagIDs []int64
 	if len(tagIDs) == 0 {
 		return []int64{}, nil
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT item_id FROM item_tags WHERE item_kind = ? AND tag_id IN (`+int64List(tagIDs)+`)`, kind)
 	if err != nil {
 		return nil, err
@@ -323,6 +330,7 @@ func (s *Store) AggregateConversations(ctx context.Context, q ConvQuery) ([]Conv
 			conv = `pc.conversation_id`
 			join = `JOIN message_counterparts mc ON mc.message_id = m.id JOIN person_conversations pc ON pc.person_id = mc.person_id`
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err := s.db.QueryContext(ctx, `SELECT `+conv+`, MAX(COALESCE(m.sent_at, m.received_at, 0)),
 				SUM(m.flags & ? = 0), COUNT(*), GROUP_CONCAT(DISTINCT m.account_id)
 			FROM messages m `+join+` WHERE `+conv+` IS NOT NULL AND `+where+` GROUP BY 1`, append([]any{FlagSeen}, args...)...)
@@ -353,6 +361,7 @@ func (s *Store) AggregateConversations(ctx context.Context, q ConvQuery) ([]Conv
 			conv = `COALESCE(CASE WHEN c.kind = 'direct' THEN pc.conversation_id END, c.conversation_id)`
 			join = `LEFT JOIN chat_counterparts cc ON cc.chat_id = c.id LEFT JOIN person_conversations pc ON pc.person_id = cc.person_id`
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err := s.db.QueryContext(ctx, `SELECT `+conv+` AS cid, MAX(COALESCE(cm.sent_at, 0)),
 				SUM(cm.from_me = 0 AND COALESCE(cm.sent_at, 0) > COALESCE(c.last_read_at, 0)), COUNT(*),
 				GROUP_CONCAT(DISTINCT c.account_id), GROUP_CONCAT(DISTINCT COALESCE(c.channel, '')), MAX(c.kind <> 'direct')
@@ -401,6 +410,7 @@ func (s *Store) GetConversations(ctx context.Context, ids []int64) (map[int64]Co
 	if len(ids) == 0 {
 		return out, nil
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+conversationCols+` FROM conversations WHERE id IN (`+int64List(ids)+`)`)
 	if err != nil {
 		return nil, err
@@ -482,6 +492,7 @@ func (s *Store) ChatMessagesByIDs(ctx context.Context, ids []int64) ([]ChatMessa
 	if len(ids) == 0 {
 		return nil, nil
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages WHERE id IN (`+int64List(ids)+`)`)
 	if err != nil {
 		return nil, err
@@ -512,6 +523,7 @@ func (s *Store) ParticipantsOfConversations(ctx context.Context, ids []int64) (m
 		return out, nil
 	}
 	list := int64List(ids)
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT m.conversation_id, a.person_id FROM messages m
 			JOIN message_addresses a ON a.message_id = m.id
 			WHERE m.conversation_id IN (`+list+`) AND a.person_id IS NOT NULL AND +m.state = 'live'

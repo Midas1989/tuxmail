@@ -315,6 +315,11 @@ Section "$(SecApp)" SecApp
     ; Messenger plugins (plugins\ next to TuxMail.exe).
     SetOutPath "$INSTDIR\plugins"
     File "${PLUGINS}\tuxmail-plugin-*.exe"
+    !if /FileExists "${PLUGINS}\signal-cli\VERSION"
+      ; signal-cli + Java runtime for the Signal plugin (build/signal-cli.sh).
+      RMDir /r "$INSTDIR\plugins\signal-cli"
+      File /r "${PLUGINS}\signal-cli"
+    !endif
     SetOutPath "$INSTDIR"
   !endif
   File "/oname=LICENSE.txt" "${ROOT}\LICENSE"
@@ -400,6 +405,7 @@ Section "Uninstall"
   Delete "$INSTDIR\NOTICE.txt"
   Delete "$INSTDIR\Uninstall.exe"
   Delete "$INSTDIR\plugins\tuxmail-plugin-*.exe"
+  RMDir /r "$INSTDIR\plugins\signal-cli"
   RMDir "$INSTDIR\plugins"
   RMDir "$INSTDIR"
 

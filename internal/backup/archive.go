@@ -45,6 +45,11 @@ var (
 	ErrNotArchive      = errors.New("backup: not a TuxMail backup archive")
 	ErrMissingBase     = errors.New("backup: incremental archive needs its base archive")
 	ErrTooNew          = errors.New("backup: archive was written by a newer TuxMail version")
+	// ErrNotEncrypted is returned when a passphrase is given but the archive
+	// is not encrypted: an attacker who can write to the backup target could
+	// otherwise replace an encrypted archive by an unauthenticated one
+	// (downgrade, AUDIT-C).
+	ErrNotEncrypted = errors.New("backup: a passphrase was given but the archive is not encrypted")
 )
 
 // scryptWorkFactor overrides the age default (tests only).
@@ -218,6 +223,9 @@ func openReader(r io.Reader, passphrase string) (*reader, error) {
 		}
 		src = dec
 	case bytes.HasPrefix(head, zstdMagic):
+		if passphrase != "" {
+			return nil, ErrNotEncrypted
+		}
 	default:
 		return nil, ErrNotArchive
 	}

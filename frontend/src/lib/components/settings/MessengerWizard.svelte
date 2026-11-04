@@ -15,6 +15,7 @@
   import Modal from '../common/Modal.svelte';
   import QrCode from '../common/QrCode.svelte';
   import ChannelIcon from '../common/ChannelIcon.svelte';
+  import MessengerComponent from './MessengerComponent.svelte';
 
   interface Props {
     onclose: () => void;
@@ -50,6 +51,14 @@
   const seconds = $derived(pairing?.expiresAt ? Math.max(0, Math.round((Date.parse(pairing.expiresAt) - now) / 1000)) : 0);
   const done = $derived(pairing?.state === 'success');
   const failed = $derived(pairing?.state === 'error' || pairing?.state === 'cancelled');
+  const componentMissing = $derived(!!selected?.component && selected.component.state !== 'ready');
+  const errorText = $derived.by(() => {
+    if (!pairing || pairing.state !== 'error') return '';
+    const r = pairing.reason;
+    if (r === 'component_missing') return t('messenger.wizard.reason.component_missing');
+    if (r === 'unavailable' || r === 'outdated') return t(`messenger.wizard.reason.${r}`, { message: pairing.message ?? '' });
+    return t('messenger.wizard.error', { message: pairing.message ?? '' });
+  });
   const needsPhone = $derived(method === 'phone');
   const needsLogin = $derived(method === 'password');
   const scanHint = $derived.by(() => {
@@ -69,6 +78,7 @@
     });
     const off = app.api.subscribe((e) => {
       if (e.type === 'messenger.pairing' && pairing && e.pairing.id === pairing.id) pairing = e.pairing;
+      if (e.type === 'messenger.plugin' && selected && e.name === selected.name) void refreshSelected();
     });
     const tick = setInterval(() => (now = Date.now()), 1000);
     return () => {
@@ -91,6 +101,22 @@
     }, 2500);
     return () => clearInterval(iv);
   });
+
+  /** Reloads the selected plugin (component install progress). */
+  async function refreshSelected() {
+    const name = selected?.name;
+    if (!name) return;
+    const prev = selected?.component?.state;
+    const ps = await app.api.listMessengerPlugins();
+    plugins = ps;
+    const p = ps.find((x) => x.name === name);
+    if (!p || selected?.name !== name) return;
+    selected = p;
+    // Linking failed for the missing component: start again once it is installed.
+    if (prev === 'installing' && p.component?.state === 'ready' && step === 'pairing' && pairing?.reason === 'component_missing') {
+      void start();
+    }
+  }
 
   function choose(p: MessengerPlugin) {
     selected = p;
@@ -205,6 +231,7 @@
     </div>
   {:else if step === 'method' && selected}
     <div class="head-line"><ChannelIcon channel={channelOf(selected)} size={18} label /></div>
+    {#if componentMissing}<MessengerComponent plugin={selected} />{/if}
     {#if selected.status.updateHint}<p class="alert">{selected.name === 'telegram' ? t('messenger.wizard.telegramCredentials') : selected.status.updateHint}</p>{/if}
     <div class="seg" role="radiogroup" aria-label={t('messenger.wizard.title')}>
       {#each selected.pairingMethods as m (m)}
@@ -271,7 +298,10 @@
       {:else if done}
         <div class="result ok"><CircleCheck size={36} /><p>{t('messenger.wizard.success', { name: selected.displayName })}</p></div>
       {:else if pairing.state === 'error'}
-        <div class="result bad"><TriangleAlert size={32} /><p>{t('messenger.wizard.error', { message: pairing.message ?? '' })}</p></div>
+        <div class="result bad">
+          <TriangleAlert size={32} /><p>{errorText}</p>
+          {#if pairing.reason === 'component_missing'}<MessengerComponent plugin={selected} extra={t('messenger.component.retryNote')} />{/if}
+        </div>
       {:else if pairing.state === 'cancelled'}
         <div class="result bad"><p>{t('messenger.wizard.cancelled')}</p></div>
       {:else}
@@ -287,7 +317,7 @@
       <button class="btn btn-primary" disabled={busy || !accepted} onclick={enable}>{t('messenger.riskConfirm', { name: selected?.displayName ?? '' })}</button>
     {:else if step === 'method'}
       <button class="btn" onclick={() => (step = 'choose')}>{t('messenger.wizard.back')}</button>
-      <button class="btn btn-primary" disabled={busy || (needsPhone && !phone) || (needsLogin && (!username || !password)) || (method === 'bridge' && !bridgeAccountId)} onclick={start}>{t('messenger.wizard.start')}</button>
+      <button class="btn btn-primary" disabled={busy || componentMissing || (needsPhone && !phone) || (needsLogin && (!username || !password)) || (method === 'bridge' && !bridgeAccountId)} onclick={start}>{t('messenger.wizard.start')}</button>
     {:else if step === 'pairing'}
       {#if done}
         <button class="btn btn-primary" onclick={onclose}>{t('messenger.wizard.done')}</button>

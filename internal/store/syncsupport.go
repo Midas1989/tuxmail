@@ -280,6 +280,7 @@ func (s *Store) ConversationIDsOf(ctx context.Context, messageIDs ...int64) ([]i
 	for i, id := range messageIDs {
 		args[i] = id
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT conversation_id FROM messages
 		WHERE conversation_id IS NOT NULL AND id IN (`+placeholders(len(args))+`) ORDER BY conversation_id`, args...)
 	if err != nil {

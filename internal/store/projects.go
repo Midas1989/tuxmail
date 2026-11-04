@@ -797,6 +797,7 @@ func (s *Store) ListProjectItems(ctx context.Context, projectID int64, kinds ...
 
 // ProjectsOfItem returns the projects an item is linked to.
 func (s *Store) ProjectsOfItem(ctx context.Context, it Item) ([]Project, error) {
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("p.", projectCols)+` FROM projects p
 		JOIN project_items pi ON pi.project_id = p.id WHERE pi.item_kind = ? AND pi.item_id = ? ORDER BY lower(p.name)`, it.Kind, it.ID)
 	if err != nil {
@@ -959,6 +960,7 @@ func (s *Store) ListProjectRules(ctx context.Context, projectID int64) ([]Projec
 // ListActiveProjectRules returns the enabled rules of open projects
 // (planned, active, on hold).
 func (s *Store) ListActiveProjectRules(ctx context.Context) ([]ProjectRule, error) {
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("r.", ruleCols)+` FROM project_rules r JOIN projects p ON p.id = r.project_id
 		WHERE r.enabled = 1 AND p.status IN ('planned', 'active', 'on_hold') ORDER BY p.sort_order, p.id, r.sort_order, r.id`)
 	if err != nil {
@@ -1074,6 +1076,7 @@ var timelineArms = []string{
 // time it was linked.
 func (s *Store) ProjectTimeline(ctx context.Context, projectID int64, o TimelineOptions) ([]TimelineEntry, error) {
 	cte, args := projectLinks(projectID, o.Expand)
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	q := `WITH ` + cte + ` SELECT * FROM (` + strings.Join(timelineArms, "\nUNION ALL\n") + `) WHERE 1`
 	if len(o.Kinds) > 0 {
 		q += ` AND kind IN (` + placeholders(len(o.Kinds)) + `)`

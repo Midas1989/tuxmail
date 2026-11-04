@@ -314,6 +314,27 @@ func authMode(m int) string {
 type Options struct {
 	// SkipAddressBooks does not open the *.sqlite address books.
 	SkipAddressBooks bool
+	// Root confines every file the profile refers to (the profile itself
+	// via profiles.ini, local mail directories, signature files) to this
+	// directory. It must be set for untrusted profiles such as uploaded
+	// ZIP files in server mode: prefs.js and profiles.ini can name
+	// absolute paths ("sig_file" = master.key) or "[ProfD]../..".
+	Root string
+}
+
+// within reports whether p is root or below it, after resolving symlinks.
+func within(root, p string) bool {
+	r, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false
+	}
+	q, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		// A path that does not exist yet: check it lexically.
+		q = filepath.Clean(p)
+	}
+	rel, err := filepath.Rel(r, q)
+	return err == nil && (rel == "." || filepath.IsLocal(rel))
 }
 
 // Read reads the profile at dir (see ResolveProfile).
@@ -322,6 +343,10 @@ func Read(ctx context.Context, dir string, opts Options) (*Profile, error) {
 	if err != nil {
 		return nil, err
 	}
+	if opts.Root != "" && !within(opts.Root, dir) {
+		return nil, ie.Corrupt("profile %s is outside the imported directory", filepath.Base(dir))
+	}
+	allowed := func(p string) bool { return opts.Root == "" || within(opts.Root, p) }
 	f, err := os.Open(filepath.Join(dir, "prefs.js"))
 	if err != nil {
 		return nil, err
@@ -364,12 +389,16 @@ func Read(ctx context.Context, dir string, opts Options) (*Profile, error) {
 			acc.Incoming.Port = defaultPort(acc.Incoming.Kind, acc.Incoming.TLS)
 		}
 		acc.MailDir = prefs.path(dir, sb+"directory")
+		if acc.MailDir != "" && !allowed(acc.MailDir) {
+			pr.Warnings = append(pr.Warnings, fmt.Sprintf("%s: mail directory outside the profile ignored", key))
+			acc.MailDir = ""
+		}
 		for _, idKey := range prefs.list(base + "identities") {
 			ib := "mail.identity." + idKey + "."
 			id := Identity{Name: prefs[ib+"fullName"], Email: prefs[ib+"useremail"], ReplyTo: prefs[ib+"reply_to"], Organization: prefs[ib+"organization"]}
 			sig := prefs[ib+"htmlSigText"]
 			if prefs[ib+"attach_signature"] == "true" {
-				if p := prefs.path(dir, ib+"sig_file"); p != "" {
+				if p := prefs.path(dir, ib+"sig_file"); p != "" && allowed(p) {
 					if b, err := os.ReadFile(p); err == nil {
 						sig = string(b)
 					}

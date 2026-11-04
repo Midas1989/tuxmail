@@ -53,6 +53,11 @@ func Discover(dirs ...string) []Manifest {
 			if !isExecutable(path) {
 				continue
 			}
+			if err := checkTrusted(path); err != nil {
+				// Another user could replace the program (AUDIT-D D-06).
+				slog.Warn("messenger: ignoring plugin", "path", path, "err", err)
+				continue
+			}
 			seen[name] = true
 			out = append(out, Manifest{Name: name, Path: path})
 		}
@@ -92,23 +97,41 @@ func isExecutable(path string) bool {
 // explicit development directory (TUXMAIL_PLUGIN_DIR), plugins/ next to the
 // executable (Windows, portable and server archives), ../lib/tuxmail/plugins
 // relative to it (FHS packages: /usr/bin/tuxmail -> /usr/lib/tuxmail/plugins,
-// AppImage, Docker /usr/local/lib/tuxmail/plugins), the executable's
-// directory and bin/plugins of a source checkout (build/plugins.sh output).
+// AppImage, Docker /usr/local/lib/tuxmail/plugins) and the executable's
+// directory. bin/plugins of the working directory (build/plugins.sh output)
+// is only searched by "go run" binaries: an installed TuxMail must never run
+// programs from wherever it was started (AUDIT-D D-06).
 func DefaultDirs() []string {
 	var dirs []string
 	if d := os.Getenv("TUXMAIL_PLUGIN_DIR"); d != "" {
 		dirs = append(dirs, filepath.SplitList(d)...)
 	}
-	if exe, err := os.Executable(); err == nil {
+	exe, err := os.Executable()
+	if err == nil {
 		if real, err := filepath.EvalSymlinks(exe); err == nil {
 			exe = real
 		}
 		dirs = append(dirs, installDirs(filepath.Dir(exe))...)
 	}
-	if wd, err := os.Getwd(); err == nil {
+	if wd, werr := os.Getwd(); werr == nil && err == nil && isGoRunBinary(exe) {
 		dirs = append(dirs, filepath.Join(wd, "bin", "plugins"))
 	}
 	return dirs
+}
+
+// isGoRunBinary reports whether exe was built by "go run" / "go test"
+// (a go-build* directory below the temporary directory).
+func isGoRunBinary(exe string) bool {
+	tmp := os.TempDir()
+	if real, err := filepath.EvalSymlinks(tmp); err == nil {
+		tmp = real
+	}
+	rel, err := filepath.Rel(tmp, exe)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	first, _, _ := strings.Cut(filepath.ToSlash(rel), "/")
+	return strings.HasPrefix(first, "go-build")
 }
 
 // installDirs are the plugin directories of an installation whose

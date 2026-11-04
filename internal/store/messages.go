@@ -258,6 +258,7 @@ func (s *Store) ListMessagesByConversation(ctx context.Context, conversationID i
 
 // ListMessagesInFolder returns the messages located in a folder, newest first.
 func (s *Store) ListMessagesInFolder(ctx context.Context, folderID int64, limit, offset int) ([]Message, error) {
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("m.", messageCols)+` FROM messages m
 		JOIN message_locations l ON l.message_id = m.id
 		WHERE l.folder_id = ? ORDER BY m.sent_at DESC, m.id DESC LIMIT ? OFFSET ?`, folderID, limit, offset)

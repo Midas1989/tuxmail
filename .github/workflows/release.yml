@@ -14,7 +14,11 @@
 #
 # Every desktop and server package (and the Docker image) contains the
 # messenger plugins (build/plugins.sh): plugins/ next to the executable, or
-# /usr/lib/tuxmail/plugins in .deb/.rpm/AppImage.
+# /usr/lib/tuxmail/plugins in .deb/.rpm/AppImage, and signal-cli for the
+# Signal plugin in plugins/signal-cli (build/signal-cli.sh; versions and
+# SHA-256 pinned in internal/messenger/signalcli/pins.env). Tags require it
+# (TUXMAIL_SIGNAL_CLI=bundle); branch builds package without it when the pins
+# are incomplete (the app then offers the on-demand install).
 #
 # Optional secrets (steps are skipped when missing):
 #   GPG_PRIVATE_KEY, GPG_PASSPHRASE        signed .deb/.rpm + checksums.txt.asc
@@ -51,6 +55,8 @@ env:
   TUXMAIL_BUILD_GOOGLE_CLIENT_ID: ${{ vars.TUXMAIL_GOOGLE_CLIENT_ID }}
   # Google treats desktop-app client secrets as non-confidential; still kept as a secret.
   TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
+  # signal-cli bundling (build/lib.sh stage_signal_cli): required for releases.
+  TUXMAIL_SIGNAL_CLI: ${{ startsWith(github.ref, 'refs/tags/') && 'bundle' || 'auto' }}
 
 jobs:
   version:
@@ -127,6 +133,19 @@ jobs:
           tar -xzf "dist/tuxmail_${TUXMAIL_VERSION}_linux_amd64.tar.gz" -C "$RUNNER_TEMP"
           "$RUNNER_TEMP/tuxmail" version | grep -F "$TUXMAIL_VERSION"
           for p in whatsapp telegram matrix signal; do test -x "$RUNNER_TEMP/plugins/tuxmail-plugin-$p"; done
+      - name: signal-cli smoke test (bundled copy, version and link start)
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          if [ ! -f "$RUNNER_TEMP/plugins/signal-cli/VERSION" ]; then
+            [ "$TUXMAIL_SIGNAL_CLI" != bundle ] || { echo "::error::signal-cli missing"; exit 1; }
+            echo "::warning::signal-cli not bundled (pins incomplete?)"
+            exit 0
+          fi
+          du -sh "$RUNNER_TEMP/plugins/signal-cli"
+          go run ./build/signalcli smoke -dir "$RUNNER_TEMP/plugins/signal-cli" -link \
+            || go run ./build/signalcli smoke -dir "$RUNNER_TEMP/plugins/signal-cli"
+      - name: Package sizes
+        run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: server-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -192,6 +211,12 @@ jobs:
           tuxmail version | grep -F "$TUXMAIL_VERSION"
           ls -l /usr/lib/tuxmail/plugins
           for p in whatsapp telegram matrix signal; do test -x "/usr/lib/tuxmail/plugins/tuxmail-plugin-$p"; done
+          if [ -f /usr/lib/tuxmail/plugins/signal-cli/VERSION ]; then
+            go run ./build/signalcli smoke -dir /usr/lib/tuxmail/plugins/signal-cli -link \
+              || go run ./build/signalcli smoke -dir /usr/lib/tuxmail/plugins/signal-cli
+          elif [ "$TUXMAIL_SIGNAL_CLI" = bundle ]; then
+            echo "::error::signal-cli missing in the .deb"; exit 1
+          fi
           sudo apt-get remove -y tuxmail
 
       - name: Portable tar.gz
@@ -212,6 +237,9 @@ jobs:
           wait
           cat "$RUNNER_TEMP/appimage.log"
           [ $found -eq 0 ] || { echo "::warning::AppImage did not start WebKit helper processes"; exit 1; }
+
+      - name: Package sizes
+        run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7.0.2
         with:
@@ -263,6 +291,20 @@ jobs:
           build/out/windows-amd64/TuxMail.exe version
           ls -l build/out/windows-amd64/plugins
 
+      # Both architectures: the arm64 package bundles the x64 Java runtime
+      # (Windows 11 on ARM runs it emulated), so it runs on this x64 runner.
+      - name: signal-cli smoke test (bundled copy, version and link start)
+        run: |
+          d=build/out/windows-${{ matrix.arch }}/plugins/signal-cli
+          if [ -f "$d/VERSION" ]; then
+            du -sh "$d"
+            go run ./build/signalcli smoke -dir "$d" -link || go run ./build/signalcli smoke -dir "$d"
+          elif [ "$TUXMAIL_SIGNAL_CLI" = bundle ]; then
+            echo "::error::signal-cli missing"; exit 1
+          else
+            echo "::warning::signal-cli not bundled (pins incomplete?)"
+          fi
+
       # ------------------------------------------------------------------
       # Code signing (SignPath Foundation / SignPath.io) - PLACEHOLDER.
       # Disabled until the secret SIGNPATH_API_TOKEN and the repository
@@ -299,7 +341,12 @@ jobs:
           output-artifact-directory: build/out/signed-${{ matrix.arch }}
       - name: Use signed TuxMail.exe
         if: env.SIGNPATH_ENABLED == 'true'
-        run: echo "TUXMAIL_EXE=$PWD/build/out/signed-${{ matrix.arch }}/TuxMail.exe" >> "$GITHUB_ENV"
+        run: |
+          echo "TUXMAIL_EXE=$PWD/build/out/signed-${{ matrix.arch }}/TuxMail.exe" >> "$GITHUB_ENV"
+          # signal-cli and its Java runtime are signed upstream (Eclipse): keep them as they are.
+          if [ -d "build/out/windows-${{ matrix.arch }}/plugins/signal-cli" ]; then
+            cp -R "build/out/windows-${{ matrix.arch }}/plugins/signal-cli" "build/out/signed-${{ matrix.arch }}/plugins/"
+          fi
 
       - name: Portable zip
         run: build/windows/package-portable.sh "${{ matrix.arch }}"
@@ -337,6 +384,11 @@ jobs:
                            'plugins\tuxmail-plugin-whatsapp.exe', 'plugins\tuxmail-plugin-telegram.exe',
                            'plugins\tuxmail-plugin-matrix.exe', 'plugins\tuxmail-plugin-signal.exe') {
               if (-not (Test-Path (Join-Path $dir $f))) { throw "missing $f" }
+            }
+            if ($env:TUXMAIL_SIGNAL_CLI -eq 'bundle') {
+              foreach ($f in 'plugins\signal-cli\VERSION', 'plugins\signal-cli\jre\bin\java.exe', 'plugins\signal-cli\LICENSE-signal-cli.txt') {
+                if (-not (Test-Path (Join-Path $dir $f))) { throw "missing $f" }
+              }
             }
             $entry = Get-ItemProperty $key
             if ($entry.DisplayVersion -ne $env:TUXMAIL_VERSION -or $entry.Publisher -ne 'TuxMail') { throw "bad uninstall entry: $($entry | Out-String)" }
@@ -376,6 +428,9 @@ jobs:
           github-artifact-id: ${{ steps.unsigned-setup.outputs.artifact-id }}
           wait-for-completion: true
           output-artifact-directory: dist
+
+      - name: Package sizes
+        run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7.0.2
         with:
@@ -430,6 +485,7 @@ jobs:
           build-args: |
             FRONTEND=prebuilt
             VERSION=${{ needs.version.outputs.version }}
+            SIGNAL_CLI=${{ env.TUXMAIL_SIGNAL_CLI }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

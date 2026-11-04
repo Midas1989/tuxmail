@@ -65,6 +65,20 @@ neben dem Programm (Windows, portable und Server-Archive) und in `../lib/tuxmail
 (`/usr/lib/tuxmail/plugins` bei `.deb`/`.rpm`/AppImage, `/usr/local/lib/tuxmail/plugins` im Docker-Image).
 `TUXMAIL_PLUGINS_DIR=<dir>` verwendet fertige (z. B. signierte) Plugins, `TUXMAIL_SKIP_PLUGINS=1` packt ohne.
 
+**signal-cli (Signal-Plugin):** Jedes Paket enthält zusätzlich `plugins/signal-cli/` (`build/signal-cli.sh`,
+aufgerufen von `stage_plugins`): Linux x86_64 den GraalVM-Native-Build (kein Java nötig), Linux ARM64 und
+Windows x64 den JVM-Build mit Eclipse-Temurin-JRE 21 (`jre/`), Windows ARM64 denselben x64-Build (läuft unter
+der x64-Emulation von Windows 11 on ARM, weil libsignal-client keine Windows-ARM64-Bibliothek mitliefert),
+das Docker-Image (jetzt auf `debian:trixie-slim`, signal-cli braucht glibc) je nach Architektur eines davon.
+Versionen, URLs und SHA-256 stehen an **einer** Stelle: `internal/messenger/signalcli/pins.env` (auch in die App
+eingebettet). Downloads nur per HTTPS, Prüfsumme vor dem Entpacken geprüft, Cache `build/cache/signal-cli`.
+`TUXMAIL_SIGNAL_CLI=bundle` (Tags in CI) bricht ab, wenn es nicht klappt; `auto` (Standard, Branch-Builds) packt
+dann ohne, `skip` immer ohne – die App bietet dann „Signal-Komponente installieren“ an (gleiche Pins, Ziel
+`<Datenordner>/plugins/signal-cli`). Aktualisieren: Workflow *Pin signal-cli* (manuell) oder
+`build/signal-cli.sh pin [VERSION|latest] [TEMURIN_VERSION]` – vergleicht jede Prüfsumme mit dem GitHub-Asset-Digest
+bzw. Adoptiums `.sha256.txt` und schreibt `pins.env` neu. signal-cli muss aktuell bleiben (Signal lehnt Clients
+ab, die älter als etwa drei Monate sind): vor jedem Release neu pinnen. Lizenzen: THIRD_PARTY_NOTICES.md.
+
 **Ablauf in `release.yml`:** *version* (Version bestimmen, Tag prüfen) → *frontend* (einmal `npm ci && npm run build`,
 Artefakt `frontend-dist`, von allen Jobs nach `web/dist` geladen) → parallel *server* (4×), *linux-desktop*
 (`ubuntu-24.04` und `ubuntu-24.04-arm`), *windows-desktop* (`windows-latest`, arm64 als Cross-Build), *docker* →

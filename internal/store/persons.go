@@ -243,6 +243,7 @@ func (s *Store) MergePersons(ctx context.Context, keep int64, others ...int64) e
 		for i, id := range ids {
 			all[i] = id
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err := tx.QueryContext(ctx, `SELECT `+personCols+` FROM persons WHERE id IN (`+placeholders(len(ids))+`)`, all...)
 		if err != nil {
 			return err
@@ -285,6 +286,7 @@ func (s *Store) MergePersons(ctx context.Context, keep int64, others ...int64) e
 			nullString(merged.DisplayName), nullString(merged.AvatarBlob), boolInt(merged.IsMe), keep); err != nil {
 			return err
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		_, err = tx.ExecContext(ctx, `DELETE FROM persons WHERE id IN (`+ph+`)`, all[1:]...)
 		return err
 	})

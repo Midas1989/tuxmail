@@ -169,6 +169,7 @@ func encodeUTF7Run(rs []rune) string {
 	u := utf16.Encode(rs)
 	buf := make([]byte, 0, 2*len(u))
 	for _, c := range u {
+		// #nosec G115 -- intentional split of a UTF-16 code unit into two bytes
 		buf = append(buf, byte(c>>8), byte(c))
 	}
 	return utf7Enc.EncodeToString(buf)

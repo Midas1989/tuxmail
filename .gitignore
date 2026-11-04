@@ -12,6 +12,7 @@ frontend/dist/
 .DS_Store
 /.claude/
 /build/out/
+/build/cache/
 /build/windows/icon.ico
 /cmd/tuxmail/rsrc_windows_*.syso
 /cmd/tuxmail-setup/rsrc_windows_*.syso

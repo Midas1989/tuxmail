@@ -308,6 +308,7 @@ func (s *Store) InvalidateSearchFolderCounts(ctx context.Context, ids ...int64) 
 		_, err := s.db.ExecContext(ctx, `UPDATE search_folders SET cached_at = NULL`)
 		return err
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	_, err := s.db.ExecContext(ctx, `UPDATE search_folders SET cached_at = NULL WHERE id IN (`+placeholders(len(ids))+`)`,
 		int64Args(ids)...)
 	return err
@@ -428,6 +429,7 @@ func (s *Store) MatchItems(ctx context.Context, req SearchRequest, items []Item)
 			for len(rest) > 0 {
 				chunk := rest[:min(len(rest), 500)]
 				rest = rest[len(chunk):]
+				// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 				rows, err := s.db.QueryContext(ctx, `SELECT id FROM (`+a.sql+`) WHERE id IN (`+placeholders(len(chunk))+`)`,
 					append(slices.Clone(a.args), int64Args(chunk)...)...)
 				if err != nil {

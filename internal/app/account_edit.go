@@ -889,6 +889,7 @@ func (a *App) SyncAccountNow(ctx context.Context, id int64) error {
 	}
 	switch {
 	case acc.Kind == domain.KindCalDAV || acc.Kind == domain.KindCardDAV:
+		// #nosec G118 -- background sync must outlive the request; it has its own timeout
 		go func() {
 			sctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 			defer cancel()
@@ -979,6 +980,7 @@ func (a *App) DeleteAccount(ctx context.Context, id int64, opts DeleteAccountOpt
 			return err
 		}
 		if a.mgr != nil {
+			// #nosec G118 -- background clean-up must outlive the request; it has its own timeout
 			go func() { // drop the blobs that belonged only to this account
 				gctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 				defer cancel()

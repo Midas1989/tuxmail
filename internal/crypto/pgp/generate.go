@@ -147,8 +147,8 @@ func (k *Key) AddUserID(u UserIDSpec, now time.Time) (*Key, error) {
 	}
 	cfg := configAt(now)
 	if exp := k.Expires(); !exp.IsZero() {
-		secs := exp.Sub(k.CreationTime()) / time.Second
-		cfg.KeyLifetimeSecs = uint32(secs)
+		secs := max(min(exp.Sub(k.CreationTime())/time.Second, math.MaxUint32), 1)
+		cfg.KeyLifetimeSecs = uint32(secs) // #nosec G115 -- clamped to 1..MaxUint32 above
 	}
 	if err := c.entity.AddUserId(u.Name, u.Comment, u.Email, cfg); err != nil {
 		return nil, fmt.Errorf("pgp: add user ID: %w", err)

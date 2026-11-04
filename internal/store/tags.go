@@ -634,6 +634,7 @@ func (s *Store) SetProviderTags(ctx context.Context, it Item, source TagSource, 
 				added = append(added, t)
 			}
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err = tx.QueryContext(ctx, `SELECT `+prefixCols("t.", tagCols)+` FROM item_tags it JOIN tags t ON t.id = it.tag_id
 			WHERE it.item_kind = ? AND it.item_id = ? AND it.source = ?`, it.Kind, it.ID, source)
 		if err != nil {
@@ -671,6 +672,7 @@ func prefixCols(prefix, cols string) string {
 
 // ItemTags returns the tags of an item ordered by path.
 func (s *Store) ItemTags(ctx context.Context, it Item) ([]ItemTag, error) {
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("t.", tagCols)+`, it.source, it.created_at
 		FROM item_tags it JOIN tags t ON t.id = it.tag_id WHERE it.item_kind = ? AND it.item_id = ? ORDER BY t.path_norm`, it.Kind, it.ID)
 	if err != nil {
@@ -715,6 +717,7 @@ func (s *Store) TagsForItems(ctx context.Context, kind ItemKind, ids []int64) (m
 	for len(ids) > 0 {
 		chunk := ids[:min(len(ids), 500)]
 		ids = ids[len(chunk):]
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		rows, err := s.db.QueryContext(ctx, `SELECT it.item_id, `+prefixCols("t.", tagCols)+` FROM item_tags it JOIN tags t ON t.id = it.tag_id
 			WHERE it.item_kind = ? AND it.item_id IN (`+placeholders(len(chunk))+`) ORDER BY t.path_norm`,
 			append([]any{kind}, int64Args(chunk)...)...)
@@ -854,6 +857,7 @@ func (s *Store) ListTaggedItems(ctx context.Context, tagID int64, o TaggedItemsO
 			ids = append(ids, d.ID)
 		}
 	}
+	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 	q := `SELECT it.item_kind, it.item_id, it.source, it.created_at, ` + prefixCols("t.", tagCols) + ` FROM item_tags it
 		JOIN tags t ON t.id = it.tag_id WHERE it.tag_id IN (` + placeholders(len(ids)) + `)`
 	args := int64Args(ids)

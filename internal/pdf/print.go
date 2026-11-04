@@ -34,6 +34,11 @@ type PrintView struct {
 	Labels PrintLabels
 	// Footer is printed at the end (e.g. "Exported with TuxMail").
 	Footer string
+	// Offline restricts images to data: URLs (PDF conversion in Chromium or
+	// Gotenberg: the page must not reach local files or loopback services
+	// through relative or crafted URLs, audit B-11). Otherwise same-origin
+	// images (cid: parts served by the API) are allowed as well.
+	Offline bool
 }
 
 // PrintLabels are the localized header labels.
@@ -70,7 +75,9 @@ var printTpl = template.Must(template.New("print").Funcs(template.FuncMap{
 		return b.String()
 	},
 }).Parse(`<!doctype html>
-<html lang="{{.Lang}}"><head><meta charset="utf-8"><title>{{.Title}}</title>
+<html lang="{{.Lang}}"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="{{if .Offline}}default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:{{else}}default-src 'none'; img-src data: 'self'; style-src 'unsafe-inline'; font-src data:{{end}}">
+<title>{{.Title}}</title>
 <style>
 @page { size: A4; margin: 18mm 16mm; }
 body { font: 10.5pt/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #111; margin: 0; }
@@ -81,6 +88,7 @@ table.hdr { border-collapse: collapse; margin-bottom: 8pt; font-size: 9.5pt; }
 table.hdr th { text-align: left; padding: 1pt 10pt 1pt 0; color: #555; font-weight: 600; vertical-align: top; white-space: nowrap; }
 table.hdr td { padding: 1pt 0; }
 .body { border-top: 1px solid #ddd; padding-top: 8pt; overflow-wrap: anywhere; }
+.tm-mail { position: relative; overflow: hidden; contain: paint; }
 .body pre { white-space: pre-wrap; font: inherit; margin: 0; }
 .chat .msg { max-width: 75%; margin: 4pt 0; padding: 5pt 8pt; border-radius: 8pt; background: #f1f3f5; break-inside: avoid; }
 .chat .msg.own { margin-left: auto; background: #dbeafe; }

@@ -200,6 +200,7 @@ func (s *Store) MergeConversations(ctx context.Context, ids ...int64) (int64, er
 				return err
 			}
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		if _, err := tx.ExecContext(ctx, `UPDATE conversations SET
 				last_activity = (SELECT MAX(last_activity) FROM conversations WHERE id IN (`+phAll+`)),
 				unread_count  = (SELECT SUM(unread_count) FROM conversations WHERE id IN (`+phAll+`)),
@@ -209,6 +210,7 @@ func (s *Store) MergeConversations(ctx context.Context, ids ...int64) (int64, er
 			WHERE id = ?`, repeatArgs(all, 5, keep)...); err != nil {
 			return err
 		}
+		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
 		_, err := tx.ExecContext(ctx, `DELETE FROM conversations WHERE id IN (`+ph+`)`, all[1:]...)
 		return err
 	})

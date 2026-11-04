@@ -124,8 +124,10 @@ const (
 	DefaultMaxPerMessage = 3
 	DefaultLoopWindow    = Duration(3600e9)
 	DefaultMaxDepth      = 5
-	DefaultRateMax       = 60
-	DefaultRatePer       = Duration(60e9)
+	// MaxAllowedDepth caps a configured max_depth (run_workflow recursion).
+	MaxAllowedDepth = 32
+	DefaultRateMax  = 60
+	DefaultRatePer  = Duration(60e9)
 )
 
 func (o Options) maxPerMessage() int {
@@ -144,7 +146,7 @@ func (o Options) loopWindow() Duration {
 
 func (o Options) maxDepth() int {
 	if o.LoopProtection.MaxDepth > 0 {
-		return o.LoopProtection.MaxDepth
+		return min(o.LoopProtection.MaxDepth, MaxAllowedDepth)
 	}
 	return DefaultMaxDepth
 }

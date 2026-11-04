@@ -798,7 +798,7 @@ func zipDir(dir, out string) error {
 // ==== Thunderbird ==============================================================
 
 func (a *App) importThunderbird(ctx context.Context, j *ioJob, path string, req ImportRequest) error {
-	pr, err := thunderbird.Read(ctx, path, thunderbird.Options{SkipAddressBooks: !req.Options.TBAddressBooks})
+	pr, err := thunderbird.Read(ctx, path, thunderbird.Options{SkipAddressBooks: !req.Options.TBAddressBooks, Root: a.importRoot(req.Source, path)})
 	if err != nil {
 		if errors.Is(err, ie.ErrCorrupt) {
 			return invalid("%v", err)

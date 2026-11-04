@@ -6,6 +6,7 @@
   import { app } from '../../state';
   import { fmt, t } from '../../i18n/index.svelte';
   import type { CalendarEvent } from '../../types';
+  import { safeHref } from '../../safeurl';
 
   // Reminders (VALARM) pushed by the core as calendar.reminder events, with
   // snooze, dismiss and a "Join" button for online meetings (KONZEPT 9.1).
@@ -48,7 +49,7 @@
           <strong>{s.event.title}</strong>
           <span>{s.event.allDay ? fmt().date(s.event.start + 'T12:00:00Z') : `${fmt().relative(s.event.start)} · ${fmt().time(s.event.start)}`}{#if s.event.location}&nbsp;· {s.event.location}{/if}</span>
           <div class="acts">
-            {#if s.event.meetingUrl}<a class="btn btn-primary" href={s.event.meetingUrl} target="_blank" rel="noopener noreferrer"><Video size={14} /> {t('calendar.event.join')}</a>{/if}
+            {#if safeHref(s.event.meetingUrl)}<a class="btn btn-primary" href={safeHref(s.event.meetingUrl)} target="_blank" rel="noopener noreferrer"><Video size={14} /> {t('calendar.event.join')}</a>{/if}
             <button class="btn" onclick={() => snooze(s, 5)}>{t('calendar.reminder.snooze', { n: 5 })}</button>
             <button class="btn" onclick={() => snooze(s, 15)}>{t('calendar.reminder.snooze', { n: 15 })}</button>
           </div>

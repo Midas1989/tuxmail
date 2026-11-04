@@ -7,9 +7,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/Midas1989/Mailclient/internal/mime/sanitize"
 	"html/template"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -90,10 +92,10 @@ func (a *App) renderArchivePDF(ctx context.Context, raw []byte, req PDFRenderReq
 			browser, berr = a.chromium(s)
 		}
 		if gotenberg != "" || berr == nil {
-			if r, rerr := a.render.Render(ctx, raw); rerr == nil && r.HTML != "" {
-				html, _ := pdf.PrintHTML(pdf.PrintView{Title: pm.Header.Subject, Lang: lang, Mails: []pdf.PrintMail{{From: from,
+			if body := printFragment(pm, 0, 0); body != "" {
+				html, _ := pdf.PrintHTML(pdf.PrintView{Title: pm.Header.Subject, Lang: lang, Offline: true, Mails: []pdf.PrintMail{{From: from,
 					To: addrString(pm.Header.To), Cc: addrString(pm.Header.Cc), Date: pm.Header.Date, Subject: pm.Header.Subject,
-					Attachments: attNames, HTML: template.HTML(r.HTML)}}})
+					Attachments: attNames, HTML: template.HTML(body)}}})
 				var out []byte
 				var err error
 				if gotenberg != "" {
@@ -233,8 +235,10 @@ func (a *App) PrintView(ctx context.Context, in PrintInput) (string, error) {
 				pmail.Attachments = append(pmail.Attachments, at.Filename)
 			}
 		}
-		if r, err := a.render.Render(WithMessageID(ctx, m.ID), raw); err == nil && r.HTML != "" && in.Layout != "chat" {
-			pmail.HTML = template.HTML(r.HTML) // sanitized by the renderer
+		if in.Layout != "chat" {
+			if body := printFragment(pm, m.ID, len(v.Mails)); body != "" {
+				pmail.HTML = template.HTML(body) // sanitized, style sheet scoped to this mail
+			}
 		}
 		v.Mails = append(v.Mails, pmail)
 	}
@@ -368,4 +372,19 @@ func (a *App) ExportPDFsToFolder(ctx context.Context, in ExportPDFInput) (string
 		}
 	}
 	return dir, nil
+}
+
+// printFragment returns the sanitized HTML body of a parsed mail for the
+// print view / archive PDF, wrapped in its own scope: the mail's style
+// sheet only applies inside the wrapper and the wrapper contains (clips)
+// positioned content, so a mail cannot hide or overlay the header block
+// printed above it (audit B-12). "" for mails without HTML.
+func printFragment(pm *parse.Message, messageID int64, n int) string {
+	if strings.TrimSpace(pm.HTML) == "" {
+		return ""
+	}
+	scope := "tm-mail-" + strconv.Itoa(n)
+	san := sanitize.New(sanitize.Config{CIDURLTemplate: CIDURLTemplate})
+	res := san.Sanitize(pm.HTML, sanitize.Options{MessageID: strconv.FormatInt(messageID, 10), Fragment: true, Scope: scope})
+	return `<div class="tm-mail ` + scope + `">` + res.HTML + `</div>`
 }

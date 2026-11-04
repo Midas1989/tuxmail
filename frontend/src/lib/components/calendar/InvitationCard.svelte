@@ -12,6 +12,7 @@
   import { fmt, t } from '../../i18n/index.svelte';
   import { tk } from '../../calendar/i18n';
   import type { Invitation, InvitationResponse } from '../../types';
+  import { safeHref } from '../../safeurl';
 
   interface Props {
     invitation: Invitation;
@@ -94,7 +95,8 @@
   <ul class="facts">
     <li><Clock size={14} /> {when}{#if inv.recurring}&nbsp;· {t('calendar.invite.recurring')}{/if}</li>
     {#if inv.location}<li><MapPin size={14} /> {inv.location}</li>{/if}
-    {#if inv.meetingUrl}<li><Video size={14} /> <a href={inv.meetingUrl} target="_blank" rel="noopener noreferrer">{t('calendar.event.join')}</a></li>{/if}
+    {#if safeHref(inv.meetingUrl)}<li><Video size={14} /> <a href={safeHref(inv.meetingUrl)} target="_blank" rel="noopener noreferrer">{t('calendar.event.join')}</a></li>{/if}
+    {#if inv.organizerMismatch}<li class="warn" data-testid="invite-spoof"><TriangleAlert size={14} /> {t('calendar.invite.spoofWarning', { sender: inv.sender ?? '' })}</li>{/if}
     {#if organizer}<li class="muted">{t('calendar.invite.from', { name: organizer })} · {t('calendar.invite.attendees', { n: inv.attendees.length })}</li>{/if}
     {#if inv.conflicts.length}<li class="warn"><TriangleAlert size={14} /> {t('calendar.invite.conflicts', { list: inv.conflicts.join(', ') })}</li>{/if}
   </ul>

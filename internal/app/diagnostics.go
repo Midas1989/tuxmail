@@ -248,8 +248,17 @@ func (a *App) redactedAccounts(ctx context.Context) []map[string]any {
 }
 
 var (
-	emailRe  = regexp.MustCompile(`([A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]*@([A-Za-z0-9.\-]+\.[A-Za-z]{2,})`)
-	secretRe = regexp.MustCompile(`(?i)\b(password|passwd|pass|token|secret|authorization|auth)(["']?\s*[=:]\s*["']?)[^\s"',}]+`)
+	emailRe = regexp.MustCompile(`([A-Za-z0-9._%+\-])[A-Za-z0-9._%+\-]*@([A-Za-z0-9.\-]+\.[A-Za-z]{2,})`)
+	// secretRe matches key=value / key: value / "key": "value" pairs whose
+	// key names a credential, including compound keys (access_token,
+	// client_secret, x-api-key, refresh-token, sessionid), OAuth codes
+	// (code, device_code, user_code) and an auth scheme before the value
+	// ("Authorization: Bearer <token>") (AUDIT-C).
+	secretRe = regexp.MustCompile(`(?i)\b([a-z0-9_\-]*(?:password|passwd|passphrase|pwd|token|secret|api[_\-]?key|apikey|cookie|session[_\-]?id|sessionid)[a-z0-9_\-]*|authorization|auth|pass|code|device_code|user_code|auth_code)(["']?\s*[=:]\s*["']?)((?:bearer|basic|token|negotiate|digest)\s+)?[^\s"',}&;]+`)
+	// userinfoRe matches the password of URL userinfo (https://user:pw@host).
+	userinfoRe = regexp.MustCompile(`(://[^/\s:@]*:)[^@\s/]+@`)
+	// jwtRe matches JSON Web Tokens anywhere in the text.
+	jwtRe = regexp.MustCompile(`\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]*`)
 )
 
 // maskEmail turns anna.berger@example.org into a***@example.org.
@@ -257,7 +266,9 @@ func maskEmail(s string) string { return emailRe.ReplaceAllString(s, "$1***@$2")
 
 // redactText masks e-mail addresses and key=value secrets in free text.
 func redactText(s string) string {
-	return secretRe.ReplaceAllString(maskEmail(s), "$1$2[redacted]")
+	s = userinfoRe.ReplaceAllString(s, "$1[redacted]@")
+	s = jwtRe.ReplaceAllString(s, "[redacted-jwt]")
+	return secretRe.ReplaceAllString(maskEmail(s), "$1$2$3[redacted]")
 }
 
 // SyncNow asks the sync engine to sync an account right away (also cuts a
