@@ -1103,6 +1103,11 @@ type Event struct {
 	ProjectID      int64               `json:"projectId,omitempty"`
 	WorkflowID     string              `json:"workflowId,omitempty"`
 	Run            *WorkflowRunSummary `json:"run,omitempty"`
+	// Extra carries the fields of event types without own struct fields
+	// (messenger.* events, see messenger_wiring.go).
+	Extra map[string]any `json:"-"`
+	// Team is the payload of team.* events (team_events.go).
+	Team any `json:"team,omitempty"`
 }
 
 // ApiEvent type names.

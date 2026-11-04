@@ -75,7 +75,7 @@ self.addEventListener('fetch', (event) => {
 
 // ---------------------------------------------------------------------------
 // Web Push
-// payload: { type, title, body, url, tag, accountId, conversationId }
+// payload: { type, title, body, url, tag, accountId, conversationId, sender, itemId, teamId, badge }
 // ---------------------------------------------------------------------------
 
 self.addEventListener('push', (event) => {
@@ -97,9 +97,13 @@ self.addEventListener('push', (event) => {
       type: p.type,
       accountId: p.accountId,
       conversationId: p.conversationId,
+      teamId: p.teamId,
     },
   };
-  event.waitUntil(self.registration.showNotification(title, options));
+  const shown = self.registration.showNotification(title, options);
+  // Unread counter on the app icon (Badging API, where supported).
+  const badge = p.badge > 0 && self.navigator && self.navigator.setAppBadge ? self.navigator.setAppBadge(p.badge).catch(() => {}) : null;
+  event.waitUntil(badge ? Promise.all([shown, badge]) : shown);
 });
 
 self.addEventListener('notificationclick', (event) => {

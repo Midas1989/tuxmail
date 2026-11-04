@@ -459,6 +459,32 @@ export class EventHub {
   }
 }
 
+// --- Messenger ---
+// Messenger plugins (KONZEPT 11); merged into the Api interface above.
+// Live updates arrive as ApiEvents messenger.plugin / messenger.pairing /
+// messenger.typing; chats and messages use the conversation methods.
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
+
+export interface Api {
+  listMessengerPlugins(): Promise<MessengerPlugin[]>;
+  /** Enable/disable (enabling WhatsApp needs acceptRisk once) or change settings. */
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin>;
+  restartMessengerPlugin(name: string): Promise<void>;
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing>;
+  getMessengerPairing(id: string): Promise<MessengerPairing>;
+  submitMessengerPairingInput(id: string, field: string, value: string): Promise<void>;
+  cancelMessengerPairing(id: string): Promise<void>;
+  listMessengerAccounts(): Promise<MessengerAccountState[]>;
+  removeMessengerAccount(accountId: number): Promise<void>;
+  syncMessengerAccount(accountId: number): Promise<void>;
+  setMessengerTyping(conversationId: number, active: boolean): Promise<void>;
+}
+
+/** Download URL of the media of a messenger chat message. */
+export function messengerMediaUrl(chatMessageId: number): string {
+  return `/api/messenger/media/${chatMessageId}`;
+}
+
 // --- Import/Export/Backup ---
 import type * as IO from '../types';
 // --- Cloud ---

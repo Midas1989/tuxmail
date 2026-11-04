@@ -6,7 +6,7 @@
 <script lang="ts" module>
   export interface MessengerTarget {
     accountId: number;
-    channel: 'whatsapp' | 'signal' | 'telegram';
+    channel: 'whatsapp' | 'signal' | 'telegram' | 'matrix';
     label: string;
   }
 </script>

@@ -24,14 +24,16 @@ export type AccountKind =
   | 'whatsapp'
   | 'signal'
   | 'telegram'
+  | 'matrix'
   | 'matrix_bridge';
 
 export const MAIL_KINDS: readonly AccountKind[] = ['imap', 'pop3', 'jmap', 'eas', 'graph', 'ews', 'gmail'];
-export const MESSENGER_KINDS: readonly AccountKind[] = ['whatsapp', 'signal', 'telegram', 'matrix_bridge'];
+export const MESSENGER_KINDS: readonly AccountKind[] = ['whatsapp', 'signal', 'telegram', 'matrix', 'matrix_bridge'];
 
 /** Messenger channel of an account kind (null for mail/PIM accounts). */
-export function messengerChannel(kind: AccountKind): 'whatsapp' | 'signal' | 'telegram' | null {
-  return kind === 'whatsapp' || kind === 'signal' || kind === 'telegram' ? kind : null;
+export function messengerChannel(kind: AccountKind): 'whatsapp' | 'signal' | 'telegram' | 'matrix' | null {
+  if (kind === 'matrix_bridge') return 'matrix';
+  return kind === 'whatsapp' || kind === 'signal' || kind === 'telegram' || kind === 'matrix' ? kind : null;
 }
 
 export type TLSMode = 'tls' | 'starttls' | 'none';
@@ -117,8 +119,8 @@ export interface Address {
 // View-level DTOs (application layer -> UI)
 // ---------------------------------------------------------------------------
 
-export type Channel = 'email' | 'whatsapp' | 'signal' | 'telegram';
-export type HandleKind = 'email' | 'phone' | 'whatsapp' | 'signal' | 'telegram';
+export type Channel = 'email' | 'whatsapp' | 'signal' | 'telegram' | 'matrix';
+export type HandleKind = 'email' | 'phone' | 'whatsapp' | 'signal' | 'telegram' | 'matrix';
 
 export interface PersonHandle {
   kind: HandleKind;
@@ -319,7 +321,7 @@ export interface LinkPreview {
   imageUrl?: string;
 }
 
-export type ChatFilter = 'all' | 'unread' | 'mail' | 'whatsapp' | 'signal' | 'telegram' | 'groups' | 'favorites';
+export type ChatFilter = 'all' | 'unread' | 'mail' | 'whatsapp' | 'signal' | 'telegram' | 'matrix' | 'groups' | 'favorites';
 
 export interface ConversationPatch {
   /** ISO time, null = wake up now. */
@@ -492,7 +494,8 @@ export type ApiEvent =
   | { type: 'vault.locked' }
   | PimEvent
   /** Import/export/backup job changed (poll Api.getIOJob). */
-  | { type: 'io.job'; itemId: string; state: string };
+  | { type: 'io.job'; itemId: string; state: string }
+  | MessengerApiEvent;
 
 export type ApiEventType = ApiEvent['type'];
 
@@ -1186,6 +1189,103 @@ export interface WorkflowTemplate {
   workflow: Workflow;
 }
 
+// --- Messenger ---
+// Messenger plugins (KONZEPT 4.4, 11, 18.1): opt-in per plugin with risk
+// notice, plugin process status, pairing (QR / code / password) and the
+// plugin state of messenger accounts. Mirrors internal/app/messenger_api.go.
+
+export type MessengerRisk = 'low' | 'medium' | 'high';
+export type MessengerPluginState = 'missing' | 'stopped' | 'starting' | 'running' | 'crashed' | 'failed';
+export type MessengerPairingMethod = 'qr' | 'phone' | 'password' | 'token' | 'bridge';
+export type MessengerPairingState = 'waiting' | 'qr' | 'code' | 'input' | 'success' | 'error' | 'cancelled';
+
+export interface MessengerPluginStatus {
+  state: MessengerPluginState;
+  version?: string;
+  pid?: number;
+  restarts: number;
+  lastError?: string;
+  startedAt?: string;
+  lastCrash?: string;
+  nextRetry?: string;
+  /** Set when the plugin (or the network) reports that it is outdated. */
+  updateHint?: string;
+  capabilities: string[];
+  path?: string;
+}
+
+export interface MessengerPlugin {
+  name: string;
+  displayName: string;
+  channel: string;
+  risk: MessengerRisk;
+  /** Uses an API the network allows for third-party clients (Telegram, Matrix). */
+  official: boolean;
+  experimental: boolean;
+  /** Enabling requires acknowledging the risk notice (WhatsApp). */
+  needsRiskAck: boolean;
+  pairingMethods: MessengerPairingMethod[];
+  settingKeys: string[];
+  installed: boolean;
+  enabled: boolean;
+  riskAcceptedAt?: string;
+  settings: Record<string, string>;
+  accounts: number;
+  status: MessengerPluginStatus;
+}
+
+export interface MessengerPluginPatch {
+  enabled?: boolean;
+  acceptRisk?: boolean;
+  /** Empty values reset a setting. */
+  settings?: Record<string, string>;
+}
+
+export interface MessengerPairingInput {
+  plugin: string;
+  method: MessengerPairingMethod;
+  displayName?: string;
+  phone?: string;
+  homeserver?: string;
+  username?: string;
+  password?: string;
+  token?: string;
+  /** Bridge mode: network to link through the bridge of a Matrix account. */
+  network?: string;
+  bridgeAccountId?: number;
+}
+
+export interface MessengerPairing {
+  id: string;
+  plugin: string;
+  method: MessengerPairingMethod;
+  network?: string;
+  state: MessengerPairingState;
+  /** Data to render as QR code (state 'qr'). */
+  qr?: string;
+  /** Pairing code to type on the phone (state 'code'). */
+  code?: string;
+  /** Requested input (state 'input'): code, password, phone, homeserver ... */
+  field?: string;
+  message?: string;
+  expiresAt?: string;
+  accountId?: number;
+}
+
+export interface MessengerAccountState {
+  accountId: number;
+  plugin: string;
+  mode: 'direct' | 'bridge';
+  state: string;
+  lastError?: string;
+  syncedAt?: string;
+}
+
+export type MessengerApiEvent =
+  | { type: 'messenger.plugin'; name: string }
+  | { type: 'messenger.pairing'; pairing: MessengerPairing }
+  /** Ephemeral: somebody types in a conversation. */
+  | { type: 'messenger.typing'; conversationId: number; accountId: number; personId?: number; name: string; active: boolean };
 // --- Folder config ---
 // Settings → account → "Ordner" (internal/app/folderconfig.go).
 

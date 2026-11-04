@@ -56,6 +56,7 @@ type Config struct {
 	Auth           Auth     `yaml:"auth"`
 	Limits         Limits   `yaml:"limits"`
 	OAuth          OAuth    `yaml:"oauth"` // oauth.go
+	Push           Push     `yaml:"push"`  // push.go
 }
 
 // Log configures logging.

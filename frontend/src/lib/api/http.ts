@@ -120,6 +120,18 @@
 //   DELETE /api/cloud/shares/{id}               -> CloudShare (revoked)
 //   GET  /api/cloud/shares/{id}/password        -> {password}
 //   WS   /api/events                          server -> client: one ApiEvent JSON per frame
+//   Messenger (internal/server/api/messenger_routes.go):
+//   GET  /api/messenger/plugins                 -> MessengerPlugin[]
+//   PATCH /api/messenger/plugins/{name}         MessengerPluginPatch -> MessengerPlugin
+//   POST /api/messenger/plugins/{name}/restart
+//   POST /api/messenger/pairings                MessengerPairingInput -> MessengerPairing
+//   GET/DELETE /api/messenger/pairings/{id}     -> MessengerPairing (DELETE cancels)
+//   POST /api/messenger/pairings/{id}/input     {field, value}
+//   GET  /api/messenger/accounts                -> MessengerAccountState[]
+//   DELETE /api/messenger/accounts/{id}         unlink and delete the account
+//   POST /api/messenger/accounts/{id}/sync
+//   POST /api/conversations/{id}/typing         {active}
+//   GET  /api/messenger/media/{id}              media of a chat message (downloaded through the plugin)
 //   --- Folder config ---
 //   GET  /api/accounts/{id}/folder-config       -> FolderConfig
 //   PUT  /api/accounts/{id}/folder-config/roles/{role}  {folderId} (0 = automatic) -> FolderConfig
@@ -287,6 +299,8 @@ export interface HttpTransportOptions {
   authToken?: () => string | undefined;
   /** Called on HTTP 401 (expired/revoked device token). */
   onUnauthorized?: () => void;
+  /** Rewrites request paths, e.g. to the team mailbox prefix /api/team/{id}/ (api/team.ts). */
+  rewritePath?: (path: string) => string;
 }
 
 function readCsrfToken(): string | undefined {
@@ -320,8 +334,10 @@ export class HttpTransport implements Api {
   private readonly maxDelay: number;
   private readonly authToken: () => string | undefined;
   private readonly onUnauthorized: (() => void) | undefined;
+  private readonly rewritePath: ((path: string) => string) | undefined;
 
   constructor(opts: HttpTransportOptions = {}) {
+    this.rewritePath = opts.rewritePath;
     this.base = (opts.baseUrl ?? '').replace(/\/$/, '');
     this.fetchImpl = opts.fetchImpl ?? ((...args) => fetch(...args));
     this.wsImpl = opts.webSocketImpl ?? (typeof WebSocket !== 'undefined' ? WebSocket : undefined);
@@ -346,7 +362,7 @@ export class HttpTransport implements Api {
     }
     let res: Response;
     try {
-      res = await this.fetchImpl(this.base + path, { method, headers: h, body: payload, credentials: bearer ? 'omit' : 'same-origin' });
+      res = await this.fetchImpl(this.base + (this.rewritePath ? this.rewritePath(path) : path), { method, headers: h, body: payload, credentials: bearer ? 'omit' : 'same-origin' });
     } catch (err) {
       throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
     }
@@ -975,6 +991,41 @@ export class HttpTransport implements Api {
     }
   }
 
+  // --- Messenger ---
+  listMessengerPlugins(): Promise<MessengerPlugin[]> {
+    return this.request('GET', '/api/messenger/plugins');
+  }
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin> {
+    return this.request('PATCH', `/api/messenger/plugins/${encodeURIComponent(name)}`, patch);
+  }
+  async restartMessengerPlugin(name: string): Promise<void> {
+    await this.request('POST', `/api/messenger/plugins/${encodeURIComponent(name)}/restart`);
+  }
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
+    return this.request('POST', '/api/messenger/pairings', input);
+  }
+  getMessengerPairing(id: string): Promise<MessengerPairing> {
+    return this.request('GET', `/api/messenger/pairings/${encodeURIComponent(id)}`);
+  }
+  async submitMessengerPairingInput(id: string, field: string, value: string): Promise<void> {
+    await this.request('POST', `/api/messenger/pairings/${encodeURIComponent(id)}/input`, { field, value });
+  }
+  async cancelMessengerPairing(id: string): Promise<void> {
+    await this.request('DELETE', `/api/messenger/pairings/${encodeURIComponent(id)}`);
+  }
+  listMessengerAccounts(): Promise<MessengerAccountState[]> {
+    return this.request('GET', '/api/messenger/accounts');
+  }
+  async removeMessengerAccount(accountId: number): Promise<void> {
+    await this.request('DELETE', `/api/messenger/accounts/${accountId}`);
+  }
+  async syncMessengerAccount(accountId: number): Promise<void> {
+    await this.request('POST', `/api/messenger/accounts/${accountId}/sync`);
+  }
+  async setMessengerTyping(conversationId: number, active: boolean): Promise<void> {
+    await this.request('POST', `/api/conversations/${conversationId}/typing`, { active });
+  }
+
   // --- PIM ---
   listCalendars(): Promise<pim.PimCalendar[]> {
     return this.request('GET', '/api/calendars');
@@ -1202,6 +1253,8 @@ export class HttpTransport implements Api {
     return this.request('PUT', '/api/vacation', settings);
   }
 }
+
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
 
 function scopeParams(s: ConversationScope): Record<string, string | number | undefined> {
   return {

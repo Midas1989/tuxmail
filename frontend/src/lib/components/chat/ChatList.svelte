@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Messenger-style chat list: search, filter pills, archived row, pinned on top. -->
 <script lang="ts">
+  import TeamSection from '../team/TeamSection.svelte';
+  import TeamBadge from '../team/TeamBadge.svelte';
   import Search from '@lucide/svelte/icons/search';
   import X from '@lucide/svelte/icons/x';
   import SquarePen from '@lucide/svelte/icons/square-pen';
@@ -148,6 +150,7 @@
       <button class="icon-btn" title={t('chat.moreActions')} aria-label={t('chat.moreActions')} aria-haspopup="menu" onclick={(e) => (headerMenu = { x: e.clientX - 220, y: e.clientY + 12 })}><EllipsisVertical size={18} /></button>
     {/if}
   </header>
+  <TeamSection variant="strip" />
 
   <div class="search" role="search">
     <Search size={16} aria-hidden="true" />
@@ -288,6 +291,7 @@
               {#if !(c.draft && c.id !== app.selectedConversationId)}{preview(c)}{/if}
             </span>
             <span class="marks">
+              <TeamBadge conversation={c} />
               {#if c.returnedFromSnooze}<span class="back" title={t('chat.snooze.back')}><AlarmClock size={12} /> {t('chat.snooze.backShort')}</span>{/if}
               {#if c.scheduledCount}<Clock size={13} class="mark sched" aria-label={t('chat.schedule.count', { count: c.scheduledCount })} />{/if}
               {#if c.muted}<BellOff size={14} class="mark" aria-label={t('chat.muted')} />{/if}

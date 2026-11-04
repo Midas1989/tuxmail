@@ -32,7 +32,8 @@
       "email": "E-Mail",
       "signal": "Signal",
       "whatsapp": "WhatsApp",
-      "telegram": "Telegram"
+      "telegram": "Telegram",
+      "matrix": "Matrix"
     },
     "conn": {
       "offline": "Offline",
@@ -213,7 +214,8 @@
       "signal": "Signal",
       "telegram": "Telegram",
       "groups": "Gruppen",
-      "favorites": "Favoriten"
+      "favorites": "Favoriten",
+      "matrix": "Matrix"
     },
     "chatMenu": "Chat-Optionen für {name}",
     "muted": "Stummgeschaltet",
@@ -890,7 +892,8 @@
       "vaultwarden": "Vaultwarden",
       "whatsapp": "WhatsApp",
       "telegram": "Telegram",
-      "local": "Lokale Ordner"
+      "local": "Lokale Ordner",
+      "matrix": "Matrix"
     },
     "region": {
       "custom": "Eigenes Muster",
@@ -2496,5 +2499,219 @@
     "done": "Fertig",
     "archivesHint": "Archive an deinen Sicherungszielen:",
     "useArchive": "Verwenden"
+  },
+  "messenger": {
+    "title": "Messenger",
+    "intro": "Messenger-Plugins laufen als eigene Programme neben TuxMail. Jedes Plugin bleibt aus, bis du es aktivierst.",
+    "add": "Messenger-Konto hinzufügen",
+    "risk": {
+      "low": "Geringes Risiko",
+      "medium": "Mittleres Risiko",
+      "high": "Hohes Risiko"
+    },
+    "official": "Offizielle API",
+    "experimental": "Experimentell",
+    "state": {
+      "missing": "Nicht installiert",
+      "stopped": "Gestoppt",
+      "starting": "Startet",
+      "running": "Läuft",
+      "crashed": "Abgestürzt – Neustart folgt",
+      "failed": "Fehlgeschlagen"
+    },
+    "enabled": "Aktiviert",
+    "enable": "Aktivieren",
+    "disable": "Deaktivieren",
+    "restart": "Neu starten",
+    "version": "Version {version}",
+    "pid": "PID {pid}",
+    "restarts": "{count} Neustarts",
+    "restarts_one": "{count} Neustart",
+    "lastError": "Letzter Fehler: {error}",
+    "nextRetry": "Nächster Versuch {time}",
+    "updateHint": "Update nötig: {hint}",
+    "notInstalled": "Die Plugin-Datei {file} wurde im Plugin-Ordner nicht gefunden.",
+    "accounts": "{count} Konten",
+    "accounts_one": "{count} Konto",
+    "settingsTitle": "Einstellungen",
+    "setting": {
+      "signal_cli_path": "Pfad zu signal-cli",
+      "api_id": "Telegram api_id",
+      "api_hash": "Telegram api_hash",
+      "default_homeserver": "Standard-Homeserver"
+    },
+    "save": "Speichern",
+    "saved": "Gespeichert",
+    "riskTitle": "Bevor du {name} aktivierst",
+    "riskText": {
+      "whatsapp": "WhatsApp erlaubt keine inoffiziellen Clients. TuxMail koppelt sich wie WhatsApp Web als Gerät deines Kontos, WhatsApp kann aber Konten sperren, die inoffizielle Clients nutzen. TuxMail sendet zurückhaltend (keine Massennachrichten, Ratenbegrenzung). Die Nutzung erfolgt auf eigenes Risiko.",
+      "generic": "Dieses Plugin nutzt eine inoffizielle Anbindung. Der Dienst kann Konten sperren, die inoffizielle Clients nutzen. Die Nutzung erfolgt auf eigenes Risiko."
+    },
+    "riskAccept": "Ich habe das Risiko verstanden und möchte {name} aktivieren.",
+    "riskConfirm": "{name} aktivieren",
+    "accountState": {
+      "connected": "Verbunden",
+      "connecting": "Verbindet",
+      "disconnected": "Getrennt",
+      "logged_out": "Am Handy abgemeldet",
+      "error": "Fehler"
+    },
+    "unlink": "Entkoppeln",
+    "unlinkConfirm": "{name} entkoppeln? Die Chats werden aus TuxMail entfernt, auf dem Handy bleiben sie erhalten.",
+    "sync": "Jetzt synchronisieren",
+    "typing": "{name} schreibt …",
+    "media": "Medien",
+    "wizard": {
+      "title": "Messenger-Konto hinzufügen",
+      "chooseService": "Welchen Messenger möchtest du hinzufügen?",
+      "sameChats": "TuxMail wird ein verknüpftes Gerät deines bestehenden Kontos: Du nutzt dein Handy weiter und siehst hier dieselben Chats.",
+      "signalHistory": "Signal überträgt ältere Nachrichten nicht auf verknüpfte Geräte; Kontakte und Gruppen werden übernommen, neue Nachrichten erscheinen ab jetzt.",
+      "telegramCredentials": "Die Telegram-API-Zugangsdaten dieser Installation fehlen (TUXMAIL_TELEGRAM_API_ID / TUXMAIL_TELEGRAM_API_HASH).",
+      "disabledNote": "Dieses Plugin ist deaktiviert.",
+      "method": {
+        "qr": "QR-Code scannen",
+        "phone": "Telefonnummer und Code",
+        "password": "Benutzername und Passwort",
+        "token": "Single Sign-on",
+        "bridge": "Über eine Matrix-Bridge"
+      },
+      "displayName": "Name in TuxMail (optional)",
+      "phone": "Telefonnummer (international, z. B. +49 170 1234567)",
+      "homeserver": "Homeserver",
+      "username": "Benutzer",
+      "password": "Passwort",
+      "network": "Netzwerk",
+      "bridgeAccount": "Matrix-Konto mit den Bridges",
+      "noBridgeAccount": "Füge zuerst ein Matrix-Konto hinzu; auf dessen Homeserver muss die Bridge laufen.",
+      "start": "Kopplung starten",
+      "waiting": "Verbinde mit {name} …",
+      "scan": "Scanne diesen Code mit {name} auf deinem Handy",
+      "scanHint": {
+        "whatsapp": "WhatsApp → Einstellungen → Verknüpfte Geräte → Gerät hinzufügen",
+        "signal": "Signal → Einstellungen → Verknüpfte Geräte → Neues Gerät verknüpfen",
+        "telegram": "Telegram → Einstellungen → Geräte → Desktop-Gerät verknüpfen",
+        "bridge": "Scanne mit der {network}-App auf deinem Handy (die Bridge meldet sich für dich an)."
+      },
+      "code": "Gib diesen Code auf deinem Handy ein",
+      "codeHint": "WhatsApp → Verknüpfte Geräte → Gerät hinzufügen → Stattdessen mit Telefonnummer verknüpfen",
+      "expires": "Code wird in {seconds} s erneuert",
+      "input": {
+        "code": "Anmeldecode",
+        "password": "Passwort (zweistufige Bestätigung)",
+        "phone": "Telefonnummer",
+        "homeserver": "Homeserver",
+        "username": "Benutzer",
+        "token": "Anmelde-Token",
+        "confirm": "Bestätigung"
+      },
+      "submit": "Weiter",
+      "success": "{name} ist gekoppelt. Deine Chats werden geladen.",
+      "error": "Kopplung fehlgeschlagen: {message}",
+      "cancelled": "Die Kopplung wurde abgebrochen.",
+      "retry": "Erneut versuchen",
+      "back": "Zurück",
+      "done": "Fertig",
+      "cancel": "Abbrechen",
+      "qrLabel": "QR-Code zum Koppeln"
+    }
+  },
+  "team": {
+    "section": "Team-Postfächer",
+    "back": "Meine Postfächer",
+    "personal": "Persönlich",
+    "viewsLabel": "Team-Ansichten",
+    "open": "Öffnen",
+    "me": "ich",
+    "mentions": "{count} ungelesene Erwähnungen",
+    "panel": "Team-Postfach {name}",
+    "assignee": "Zuständig",
+    "unassigned": "Nicht zugewiesen",
+    "assignToMe": "Mir zuweisen",
+    "due": "Fällig",
+    "overdue": "Überfällig",
+    "view": {
+      "all": "Alle",
+      "mine": "Mir zugewiesen",
+      "unassigned": "Nicht zugewiesen",
+      "done": "Erledigt"
+    },
+    "status": {
+      "label": "Status",
+      "open": "Offen",
+      "in_progress": "In Bearbeitung",
+      "waiting": "Wartet",
+      "done": "Erledigt"
+    },
+    "priority": {
+      "label": "Priorität",
+      "low": "Niedrig",
+      "normal": "Normal",
+      "high": "Hoch",
+      "urgent": "Dringend"
+    },
+    "comments": {
+      "toggle": "Interne Kommentare anzeigen",
+      "count": "{count} Notizen",
+      "internal": "Intern – wird nie an Kunden gesendet",
+      "delete": "Kommentar löschen",
+      "placeholder": "Interne Notiz, @Name erwähnt Kollegen (Strg+Enter)",
+      "add": "Kommentar hinzufügen",
+      "mention": "Kollegen erwähnen"
+    },
+    "presence": {
+      "replying": "{name} schreibt gerade eine Antwort",
+      "viewing": "{name} sieht sich das an",
+      "draft": "Entwurf von {name} ({when})"
+    },
+    "error": {
+      "permission": "Dafür fehlt dir die Berechtigung in diesem Team-Postfach."
+    },
+    "role": {
+      "read": "Lesen",
+      "reply": "Beantworten",
+      "assign": "Zuweisen",
+      "manage": "Verwalten"
+    },
+    "stats": {
+      "title": "Statistik",
+      "total": "Konversationen",
+      "median": "Median erste Antwort",
+      "minutes": "{n} Min.",
+      "hours": "{n} Std."
+    },
+    "admin": {
+      "title": "Team-Postfächer",
+      "create": "Team-Postfach anlegen",
+      "intro": "Gemeinsame Postfächer werden einmal auf dem Server synchronisiert. Mitglieder sehen sie in Ordnerbaum und Chatliste, weisen Konversationen zu und hinterlassen interne Notizen.",
+      "name": "Name",
+      "address": "Adresse",
+      "description": "Beschreibung",
+      "sharedDrafts": "Entwürfe sind für das Team sichtbar",
+      "sharedDraftsShort": "Geteilte Entwürfe",
+      "withAccount": "E-Mail-Konto jetzt verbinden (IMAP/SMTP)",
+      "password": "Passwort",
+      "imap": "IMAP-Server",
+      "smtp": "SMTP-Server",
+      "port": "Port",
+      "created": "Team-Postfach angelegt",
+      "deleteConfirm": "Team-Postfach „{name}“ mit allen Daten löschen?",
+      "accounts": "{count} Konten",
+      "disabled": "deaktiviert",
+      "active": "Aktiv",
+      "delete": "{name} löschen",
+      "member": "Benutzer oder Gruppe",
+      "role": "Rolle",
+      "group": "Gruppe",
+      "removeMember": "{name} entfernen",
+      "pick": "Auswählen …",
+      "groups": "Gruppen",
+      "users": "Benutzer",
+      "add": "Hinzufügen",
+      "rolesHint": "Lesen: Konversationen und Notizen sehen. Beantworten: als Team antworten, Konversationen übernehmen, kommentieren. Zuweisen: an alle zuweisen. Verwalten: Textbausteine, Workflows und Mitglieder.",
+      "namePh": "Support",
+      "addressPh": "support@firma.de",
+      "imapPh": "imap.firma.de",
+      "smtpPh": "smtp.firma.de"
+    }
   }
 }

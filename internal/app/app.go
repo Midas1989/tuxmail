@@ -21,6 +21,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/imageproxy"
+	"github.com/Midas1989/Mailclient/internal/messenger"
 	"github.com/Midas1989/Mailclient/internal/project"
 	"github.com/Midas1989/Mailclient/internal/send"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -59,7 +60,9 @@ type Options struct {
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
-	OAuth      *OAuthOptions   // OAuth clients/redirect (default: environment), oauth_app.go
+	// Messenger enables the messenger plugins (messenger_wiring.go).
+	Messenger *MessengerOptions
+	OAuth     *OAuthOptions // OAuth clients/redirect (default: environment), oauth_app.go
 	// ImageSigner signs remote image proxy URLs (server mode: server key,
 	// subject = user id); default: per-installation key, mailproto.go.
 	ImageSigner *imageproxy.Signer
@@ -73,6 +76,13 @@ type Options struct {
 	// loop (CalDAV/CardDAV sync, reminders, invitations) runs when PIM or
 	// Sync is set and PIM.Disabled is false.
 	PIM *PIMOptions
+	// Team gives access to shared team mailboxes (server mode, team_source.go).
+	Team TeamSource
+	// WorkflowActions are registered in addition to the built-in actions
+	// (e.g. the team action "assign" of a team mailbox runtime).
+	WorkflowActions []workflow.ActionType
+	// Notifier delivers the workflow action notify (channel "push" ...).
+	Notifier workflow.Notifier
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -109,6 +119,7 @@ type App struct {
 	mgr     *tsync.Manager
 	render  MessageRenderer
 	log     *slog.Logger
+	msgr    *messenger.Service
 
 	idxMu      sync.Mutex
 	idxDirty   bool
@@ -217,8 +228,13 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.sync = &localSyncer{st: a.st}
 	}
 	a.wfReg = workflow.DefaultRegistry()
+	for _, t := range opts.WorkflowActions {
+		if err := a.wfReg.Register(t); err != nil {
+			return nil, err
+		}
+	}
 	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient,
-		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}}
+		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}, Notifier: opts.Notifier}
 	a.proj.Workflow().Deps(&deps)
 	a.vac.mail, deps.Vacation = mail, vacationProxy{a: a} // vacation.go
 	loc := workflow.RunLocal
@@ -233,6 +249,9 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	a.wf = wf
 	if err := a.wf.Load(ctx); err != nil {
 		a.log.Warn("app: some workflows could not be loaded", "err", err)
+	}
+	if err := a.initMessenger(); err != nil {
+		return nil, err
 	}
 	return a, nil
 }
@@ -263,6 +282,9 @@ func (a *App) Start() {
 			a.wg.Add(1)
 			go func() { defer a.wg.Done(); a.runPIM(ctx) }()
 		}
+		if a.msgr != nil {
+			a.msgr.Start()
+		}
 	})
 }
 
@@ -272,6 +294,9 @@ func (a *App) Close() error {
 		a.cancel()
 	}
 	a.wg.Wait()
+	if a.msgr != nil {
+		a.msgr.Close()
+	}
 	if a.mgr != nil {
 		a.mgr.Stop()
 	}

@@ -567,6 +567,41 @@ export class WailsTransport implements Api {
     };
   }
 
+  // --- Messenger ---
+  listMessengerPlugins(): Promise<MessengerPlugin[]> {
+    return this.call('ListMessengerPlugins');
+  }
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin> {
+    return this.call('UpdateMessengerPlugin', name, patch);
+  }
+  restartMessengerPlugin(name: string): Promise<void> {
+    return this.call('RestartMessengerPlugin', name);
+  }
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
+    return this.call('StartMessengerPairing', input);
+  }
+  getMessengerPairing(id: string): Promise<MessengerPairing> {
+    return this.call('GetMessengerPairing', id);
+  }
+  submitMessengerPairingInput(id: string, field: string, value: string): Promise<void> {
+    return this.call('SubmitMessengerPairingInput', id, field, value);
+  }
+  cancelMessengerPairing(id: string): Promise<void> {
+    return this.call('CancelMessengerPairing', id);
+  }
+  listMessengerAccounts(): Promise<MessengerAccountState[]> {
+    return this.call('ListMessengerAccounts');
+  }
+  removeMessengerAccount(accountId: number): Promise<void> {
+    return this.call('RemoveMessengerAccount', accountId);
+  }
+  syncMessengerAccount(accountId: number): Promise<void> {
+    return this.call('SyncMessengerAccount', accountId);
+  }
+  setMessengerTyping(conversationId: number, active: boolean): Promise<void> {
+    return this.call('SetMessengerTyping', conversationId, active);
+  }
+
   // --- PIM --- (internal/app/pim_api.go)
   listCalendars(): Promise<pim.PimCalendar[]> {
     return this.call('ListCalendars');
@@ -805,6 +840,8 @@ export class WailsTransport implements Api {
     return this.call('SaveVacationSettings', settings);
   }
 }
+
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
 
 // --- Import/Export/Backup ---
 import type * as IO from '../types';

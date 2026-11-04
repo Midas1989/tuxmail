@@ -215,6 +215,9 @@ func (a *App) Send(ctx context.Context, msg OutgoingMessage) (SendResult, error)
 // sendNow sends msg; unattended sends (due scheduled messages) do not wait
 // for the user to confirm send-check warnings.
 func (a *App) sendNow(ctx context.Context, msg OutgoingMessage, unattended bool) (SendResult, error) {
+	if msg.Channel != "email" && a.msgr != nil {
+		return a.sendMessenger(ctx, msg) // messenger_wiring.go
+	}
 	sender, err := a.senderOrError()
 	if err != nil {
 		return SendResult{}, err

@@ -1,5 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import TeamPanel from '../team/TeamPanel.svelte';
+  import { team } from '../../state';
   import Reply from '@lucide/svelte/icons/reply';
   import ReplyAll from '@lucide/svelte/icons/reply-all';
   import Forward from '@lucide/svelte/icons/forward';
@@ -85,6 +87,7 @@
         <MessagesSquare size={16} /> <span class="hide-sm">{t('mail.view.showAsConversation')}</span>
       </button>
     </div>
+    {#if team.activeId != null}<TeamPanel messageId={m.id} />{/if}
 
     <div class="scroll">
       <header class="head">

@@ -8,7 +8,7 @@
 //
 // UnifiedPush endpoints are Web-Push endpoints (RFC 8030/8291 with VAPID),
 // so they use the existing POST /api/push/subscribe body unchanged.
-// FCM tokens need the server extension described in mobile/SERVER_TODO.md.
+// FCM tokens are stored by servers with push.fcm configured (501 otherwise).
 
 import type { PushRegistration } from './plugins';
 
@@ -76,7 +76,7 @@ export async function subscribeAtServer(session: PushSession, reg: PushRegistrat
     const res = await call(session, 'POST', '/api/push/subscribe', body, f);
     if (res.ok) return 'subscribed';
     // Servers without FCM support reject the token (no endpoint/keys).
-    if (res.status === 400 && reg.provider === 'fcm') return 'unsupported-by-server';
+    if ((res.status === 400 || res.status === 501) && reg.provider === 'fcm') return 'unsupported-by-server';
     return 'failed';
   } catch {
     return 'failed';

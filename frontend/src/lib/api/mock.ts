@@ -181,6 +181,8 @@ export interface MockOptions {
   simulateIncoming?: boolean;
   /** Auto-reply in direct chats after the user sends something. */
   autoReply?: boolean;
+  /** Messenger pairing: a shown QR/pairing code counts as scanned after this delay (ms, 0 = never). */
+  messengerAutoAcceptMs?: number;
 }
 
 /** Day 0 of the demo data. Before 13:00 local time we use yesterday so no item lies in the future. */
@@ -1291,7 +1293,7 @@ export class MockTransport implements Api {
     privacy: 'full',
     quietHours: { enabled: true, start: '22:00', end: '07:00' },
     accounts: {},
-    channels: { email: true, whatsapp: true, signal: true, telegram: true },
+    channels: { email: true, whatsapp: true, signal: true, telegram: true, matrix: true },
   };
   private pushSubscriptions: PushSubscriptionInput[] = [];
 
@@ -2280,6 +2282,62 @@ export class MockTransport implements Api {
     };
   }
 
+  // --- Messenger ---
+  private messengerState: MockMessenger | null = null;
+  private get messenger(): MockMessenger {
+    if (!this.messengerState) {
+      this.messengerState = new MockMessenger({
+        accounts: () => this.accounts,
+        addAccount: (a) => {
+          const acc: Account = { ...a, id: this.nextId++, sortOrder: this.accounts.length };
+          this.accounts.push(acc);
+          this.emit({ type: 'account.updated', accountId: acc.id });
+          return acc;
+        },
+        removeAccount: (id) => {
+          this.accounts = this.accounts.filter((a) => a.id !== id);
+          this.emit({ type: 'account.updated', accountId: id });
+        },
+        emit: (e) => this.emit(e),
+        autoAcceptMs: this.opts.messengerAutoAcceptMs ?? 6000,
+      });
+    }
+    return this.messengerState;
+  }
+  listMessengerPlugins(): Promise<MessengerPlugin[]> {
+    return this.run(() => this.messenger.list());
+  }
+  updateMessengerPlugin(name: string, patch: MessengerPluginPatch): Promise<MessengerPlugin> {
+    return this.run(() => this.messenger.update(name, patch));
+  }
+  restartMessengerPlugin(name: string): Promise<void> {
+    return this.run(() => this.messenger.restart(name));
+  }
+  startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
+    return this.run(() => this.messenger.start(input));
+  }
+  getMessengerPairing(id: string): Promise<MessengerPairing> {
+    return this.run(() => this.messenger.get(id));
+  }
+  submitMessengerPairingInput(id: string, field: string, value: string): Promise<void> {
+    return this.run(() => this.messenger.submit(id, field, value));
+  }
+  cancelMessengerPairing(id: string): Promise<void> {
+    return this.run(() => this.messenger.cancel(id));
+  }
+  listMessengerAccounts(): Promise<MessengerAccountState[]> {
+    return this.run(() => this.messenger.accounts());
+  }
+  removeMessengerAccount(accountId: number): Promise<void> {
+    return this.run(() => this.messenger.remove(accountId));
+  }
+  syncMessengerAccount(_accountId: number): Promise<void> {
+    return this.run(() => undefined);
+  }
+  setMessengerTyping(_conversationId: number, _active: boolean): Promise<void> {
+    return this.run(() => undefined);
+  }
+
   // --- PIM --- (mockPim.ts)
   private pimState?: MockPim;
   private get pim(): MockPim {
@@ -2551,6 +2609,9 @@ export class MockTransport implements Api {
     return this.run(() => this.mailProto.saveVacation(settings));
   }
 }
+
+import { MockMessenger } from './mockMessenger';
+import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
 
 // --- Import/Export/Backup ---
 import type * as IO from '../types';
