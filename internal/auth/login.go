@@ -7,15 +7,21 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/netip"
 	"strings"
 	"sync"
 	"time"
 )
 
-// Login throttling policy (per username, persistent in login_throttle).
+// Login throttling policy (persistent in login_throttle). Failures are
+// counted per username and client network (strict) and per username across
+// all networks (lenient). A stranger can therefore only lock a user out of
+// their own network, not everywhere (E-03), while distributed guessing is
+// still bounded by the user-wide counter.
 const (
 	throttleWindow      = 15 * time.Minute
 	throttleFreeFails   = 5
+	throttleUserFails   = 50
 	throttleBaseLock    = time.Minute
 	throttleMaxLock     = time.Hour
 	mfaChallengeTTL     = 5 * time.Minute
@@ -58,6 +64,42 @@ var throttleKeyMu sync.Mutex
 
 func throttleKey(login string) string { return "u:" + strings.ToLower(strings.TrimSpace(login)) }
 
+// clientNet groups an address the way the HTTP rate limiter does: IPv4 per
+// address, IPv6 per /64.
+func clientNet(ip string) string {
+	a, err := netip.ParseAddr(strings.TrimSpace(ip))
+	if err != nil {
+		return "?"
+	}
+	a = a.Unmap()
+	if a.Is6() {
+		if p, err := a.Prefix(64); err == nil {
+			return p.String()
+		}
+	}
+	return a.String()
+}
+
+// loginKeys are the two throttle counters of one login attempt.
+type loginKeys struct{ user, net string }
+
+func keysFor(login, ip string) loginKeys {
+	u := throttleKey(login)
+	return loginKeys{user: u, net: u + "|" + clientNet(ip)}
+}
+
+func (s *Service) checkKeys(ctx context.Context, k loginKeys) error {
+	if err := s.checkThrottle(ctx, k.net); err != nil {
+		return err
+	}
+	return s.checkThrottle(ctx, k.user)
+}
+
+func (s *Service) failKeys(ctx context.Context, k loginKeys) {
+	s.recordFailure(ctx, k.net, throttleFreeFails)
+	s.recordFailure(ctx, k.user, throttleUserFails)
+}
+
 func (s *Service) checkThrottle(ctx context.Context, key string) error {
 	var until int64
 	err := s.db.QueryRowContext(ctx, `SELECT locked_until FROM login_throttle WHERE key = ?`, key).Scan(&until)
@@ -73,7 +115,7 @@ func (s *Service) checkThrottle(ctx context.Context, key string) error {
 	return nil
 }
 
-func (s *Service) recordFailure(ctx context.Context, key string) {
+func (s *Service) recordFailure(ctx context.Context, key string, free int) {
 	throttleKeyMu.Lock()
 	defer throttleKeyMu.Unlock()
 	ctx = context.WithoutCancel(ctx)
@@ -89,8 +131,8 @@ func (s *Service) recordFailure(ctx context.Context, key string) {
 	fails++
 	first := now.Unix()
 	var until int64
-	if fails >= throttleFreeFails {
-		lock := throttleBaseLock << min(fails-throttleFreeFails, 10)
+	if fails >= free {
+		lock := throttleBaseLock << min(fails-free, 10)
 		until = now.Add(min(lock, throttleMaxLock)).Unix()
 	}
 	s.db.ExecContext(ctx, `INSERT INTO login_throttle(key, failures, first_failure, locked_until) VALUES (?,?,?,?)
@@ -102,9 +144,11 @@ func (s *Service) clearThrottle(ctx context.Context, key string) {
 	s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM login_throttle WHERE key = ?`, key)
 }
 
-// UnlockLogin clears the failed-login counter of a username (admin action).
+// UnlockLogin clears the failed-login counters of a username (admin action).
 func (s *Service) UnlockLogin(ctx context.Context, username string) {
-	s.clearThrottle(ctx, throttleKey(username))
+	k := throttleKey(username)
+	// key = k, or k + "|" + network: "}" sorts right after "|" (binary collation).
+	s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM login_throttle WHERE key = ? OR (key >= ? AND key < ?)`, k, k+"|", k+"}")
 }
 
 var (
@@ -120,15 +164,15 @@ func (s *Service) dummyVerify(password string) {
 // Login checks username and password (and optionally the second factor).
 func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, error) {
 	ctx = WithActor(ctx, Actor{Name: truncate(req.Login, 100), IP: req.Client.IP})
-	key := throttleKey(req.Login)
-	if err := s.checkThrottle(ctx, key); err != nil {
+	key := keysFor(req.Login, req.Client.IP)
+	if err := s.checkKeys(ctx, key); err != nil {
 		s.Audit(ctx, "login", req.Login, false, "throttled")
 		return nil, err
 	}
 	u, err := s.GetUserByName(ctx, req.Login)
 	if errors.Is(err, ErrNotFound) {
 		s.dummyVerify(req.Password)
-		s.recordFailure(ctx, key)
+		s.failKeys(ctx, key)
 		s.Audit(ctx, "login", req.Login, false, "unknown user")
 		return nil, ErrInvalidCredentials
 	}
@@ -137,9 +181,9 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 	}
 	// Logins by e-mail address share the counter of the username, otherwise
 	// every alias would add another set of free attempts (A-07).
-	if canon := throttleKey(u.Username); canon != key {
+	if canon := keysFor(u.Username, req.Client.IP); canon != key {
 		key = canon
-		if err := s.checkThrottle(ctx, key); err != nil {
+		if err := s.checkKeys(ctx, key); err != nil {
 			s.Audit(ctx, "login", u.Username, false, "throttled")
 			return nil, err
 		}
@@ -147,13 +191,13 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: req.Client.IP})
 	if u.passwordHash == "" {
 		s.dummyVerify(req.Password)
-		s.recordFailure(ctx, key)
+		s.failKeys(ctx, key)
 		s.Audit(ctx, "login", u.Username, false, "no local password")
 		return nil, ErrInvalidCredentials
 	}
 	ok, rehash, err := VerifyPassword(req.Password, u.passwordHash, s.PasswordParams)
 	if err != nil || !ok {
-		s.recordFailure(ctx, key)
+		s.failKeys(ctx, key)
 		s.Audit(ctx, "login", u.Username, false, "wrong password")
 		return nil, ErrInvalidCredentials
 	}
@@ -177,7 +221,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 			return &LoginResult{MFARequired: true, Challenge: ch, User: u}, nil
 		}
 		if err := s.VerifySecondFactor(ctx, u.ID, req.TOTPCode, req.RecoveryCode); err != nil {
-			s.recordFailure(ctx, key)
+			s.failKeys(ctx, key)
 			s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 			return nil, err
 		}
@@ -189,7 +233,9 @@ func (s *Service) finishLogin(ctx context.Context, u *User, kind string, mfa boo
 	if kind == "" {
 		kind = KindWeb
 	}
-	s.clearThrottle(ctx, throttleKey(u.Username))
+	k := keysFor(u.Username, ci.IP)
+	s.clearThrottle(ctx, k.net)
+	s.clearThrottle(ctx, k.user)
 	tok, sess, err := s.createSession(ctx, u.ID, kind, mfa, ci)
 	if err != nil {
 		return nil, err
@@ -228,7 +274,7 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 		return nil, ErrUserDisabled
 	}
 	if err := s.VerifySecondFactor(ctx, u.ID, totpCode, recoveryCode); err != nil {
-		s.recordFailure(ctx, throttleKey(u.Username))
+		s.failKeys(ctx, keysFor(u.Username, ci.IP))
 		s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 		return nil, err
 	}

@@ -150,3 +150,35 @@ func TestAuditA08MFAChallengeAttemptsAtomic(t *testing.T) {
 		t.Fatalf("exhausted challenge still accepted: %v", err)
 	}
 }
+
+func TestSafeReturnPathRejectsControlCharTricks(t *testing.T) {
+	bad := []string{"/\t/evil.example", "/\n/evil.example", "/ /evil.example", "/\\evil.example", "//evil.example", "/%09/x\t", "https://evil.example", "/ /evil", "/\x7f/evil", "/%2F%2Fevil"}
+	for _, p := range bad {
+		if got := SafeReturnPath(p); got != "/" {
+			t.Errorf("SafeReturnPath(%q) = %q, want /", p, got)
+		}
+	}
+	for _, p := range []string{"/", "/mail", "/settings/accounts?x=1#a"} {
+		if got := SafeReturnPath(p); got != p {
+			t.Errorf("SafeReturnPath(%q) = %q, want unchanged", p, got)
+		}
+	}
+}
+
+// E-03: a stranger failing logins from one network must not lock the user
+// out of a different network.
+func TestLoginLockoutIsPerNetwork(t *testing.T) {
+	s, _ := newTestService(t)
+	ctx := context.Background()
+	mustUser(t, s, "victim", RoleUser, "correct horse battery staple")
+	for i := 0; i < throttleFreeFails+2; i++ {
+		s.Login(ctx, LoginRequest{Login: "victim", Password: "wrong", Client: ClientInfo{IP: "203.0.113.7"}})
+	}
+	if _, err := s.Login(ctx, LoginRequest{Login: "victim", Password: "correct horse battery staple", Client: ClientInfo{IP: "203.0.113.7"}}); !errors.Is(err, ErrThrottled) {
+		t.Fatalf("attacker network not throttled: %v", err)
+	}
+	if _, err := s.Login(ctx, LoginRequest{Login: "victim", Password: "correct horse battery staple", Client: ClientInfo{IP: "198.51.100.20"}}); err != nil {
+		t.Fatalf("victim locked out from another network: %v", err)
+	}
+	s.UnlockLogin(ctx, "victim")
+}

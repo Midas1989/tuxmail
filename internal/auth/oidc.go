@@ -7,9 +7,11 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/Midas1989/Mailclient/internal/netguard"
 	"github.com/coreos/go-oidc/v3/oidc"
@@ -95,7 +97,22 @@ func (s *Service) OIDCAuthURL(ctx context.Context, returnTo string) (string, err
 
 // SafeReturnPath accepts only local absolute paths (no scheme, no "//host").
 func SafeReturnPath(p string) string {
-	if p == "" || p[0] != '/' || strings.HasPrefix(p, "//") || strings.HasPrefix(p, "/\\") || strings.ContainsAny(p, "\r\n") {
+	if p == "" || p[0] != '/' || len(p) > 2048 || strings.ContainsRune(p, '\\') {
+		return "/"
+	}
+	// Browsers drop TAB/CR/LF and other control characters inside URLs
+	// ("/\t/evil" becomes "//evil"), so any control or space character is
+	// refused outright.
+	for _, r := range p {
+		if r < 0x21 || r == 0x7f || unicode.IsSpace(r) || unicode.IsControl(r) {
+			return "/"
+		}
+	}
+	if strings.HasPrefix(p, "//") {
+		return "/"
+	}
+	u, err := url.Parse(p)
+	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || !strings.HasPrefix(u.Path, "/") || strings.HasPrefix(u.Path, "//") {
 		return "/"
 	}
 	return p
