@@ -37,7 +37,7 @@ describe('account edit (mock transport)', () => {
     // The demo Exchange account starts with a login error; a new password fixes it.
     expect((await api.getAccountSettings(2)).status?.state).toBe('error');
     await expect(api.changeAccountPassword(2, 'wrong', true)).rejects.toMatchObject({ code: 'connection_failed' });
-    expect((await api.changeAccountPassword(2, 'richtig', true)).status?.state).toBe('online');
+    expect((await api.changeAccountPassword(2, 'richtig', true)).status?.state).toBe('idle');
   });
 
   it('manages identities and deletes accounts', async () => {

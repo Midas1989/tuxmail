@@ -68,6 +68,11 @@ type Config struct {
 	MinBackoff, MaxBackoff time.Duration
 	// FetchBatchSize is the number of UIDs per header FETCH. Default 250.
 	FetchBatchSize int
+	// FirstSyncChunk and SyncChunk bound the number of new messages one
+	// Sync call returns (newest first; SyncDelta.More reports the rest):
+	// FirstSyncChunk for a folder without known messages (fast first rows),
+	// SyncChunk afterwards. Defaults 50 / 500.
+	FirstSyncChunk, SyncChunk int
 	// DebugWriter receives the raw protocol trace (contains credentials!).
 	DebugWriter io.Writer
 }
@@ -129,6 +134,12 @@ func New(cfg Config) (*Provider, error) {
 	}
 	if cfg.FetchBatchSize <= 0 {
 		cfg.FetchBatchSize = 250
+	}
+	if cfg.FirstSyncChunk <= 0 {
+		cfg.FirstSyncChunk = 50
+	}
+	if cfg.SyncChunk <= 0 {
+		cfg.SyncChunk = 500
 	}
 	log := cfg.Logger
 	if log == nil {

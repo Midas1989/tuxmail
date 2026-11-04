@@ -47,6 +47,32 @@
   import { fmt, formatDay, t } from '../../i18n/index.svelte';
   import ChatAvatar from './ChatAvatar.svelte';
   import MessageBubble from './MessageBubble.svelte';
+  import FileText from '@lucide/svelte/icons/file-text';
+
+  // "Ganze Mail anzeigen" for the whole conversation, remembered per
+  // conversation in this browser (a convenience, so localStorage).
+  let fullMail = $state(false);
+  const fullKey = (id: number) => `tuxmail.fullMail.${id}`;
+  $effect(() => {
+    const id = app.conversation?.id;
+    if (id == null) return;
+    try {
+      fullMail = localStorage.getItem(fullKey(id)) === '1';
+    } catch {
+      fullMail = false;
+    }
+  });
+  function toggleFullMail() {
+    fullMail = !fullMail;
+    const id = app.conversation?.id;
+    if (id == null) return;
+    try {
+      if (fullMail) localStorage.setItem(fullKey(id), '1');
+      else localStorage.removeItem(fullKey(id));
+    } catch {
+      /* private mode */
+    }
+  }
   import MessengerComposer from './MessengerComposer.svelte';
   import EmojiPicker, { QUICK_REACTIONS } from './EmojiPicker.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
@@ -155,6 +181,11 @@
     const p = app.person(conv.participantIds[0]);
     const kinds = new Set(p?.handles.map((h) => h.kind) ?? []);
     const names: string[] = [];
+    // Mail threads are titled by subject: name the counterpart first.
+    if (conv.kind === 'email_thread') {
+      const who = conv.participantIds.map((id) => app.personName(id)).filter(Boolean);
+      names.push(who.length ? who.join(', ') : t('chat.you'));
+    }
     if (kinds.has('email')) names.push(t('common.channel.email'));
     for (const ch of ['whatsapp', 'signal', 'telegram'] as const) if (kinds.has(ch)) names.push(t(`common.channel.${ch}`));
     if (p?.lastSeen && names.length > 1) return t('chat.lastSeen', { when: fmt().relative(p.lastSeen) });
@@ -173,7 +204,9 @@
     const target = el?.querySelector<HTMLElement>(`#item-${CSS.escape(id)}`);
     if (!el || !target) return false;
     const row = target.closest<HTMLElement>('.row') ?? target;
-    const top = row.offsetTop - (block === 'center' ? el.clientHeight / 2 - row.offsetHeight / 2 : 60);
+    // 'start' leaves room for the sticky day header and the unread divider
+    // above the item (they overlapped at 60 px).
+    const top = row.offsetTop - (block === 'center' ? el.clientHeight / 2 - row.offsetHeight / 2 : 104);
     el.scrollTo({ top: Math.max(0, top) });
     return true;
   }
@@ -309,7 +342,7 @@
     <header class="head">
       <button class="icon-btn back" aria-label={t('common.action.back')} onclick={() => app.selectConversation(null)}><ArrowLeft size={19} /></button>
       <button class="who" onclick={() => !hybrid && (app.infoOpen = !app.infoOpen)} aria-label={hybrid ? conv.title : t('chat.info.toggle')} aria-expanded={hybrid ? undefined : app.infoOpen}>
-        <ChatAvatar name={conv.title} seed={conv.kind === 'chat' && conv.isGroup ? conv.title : (app.person(conv.participantIds[0])?.handles[0]?.value ?? conv.title)} size={40} group={conv.isGroup && conv.kind === 'chat'} url={conv.avatarUrl} />
+        <ChatAvatar name={app.convAvatar(conv).name} seed={app.convAvatar(conv).seed} size={40} group={app.convAvatar(conv).group} url={conv.avatarUrl} />
         <span class="names">
           <span class="title">{conv.title}</span>
           <span class="sub">{#if hybrid}{t('mail.hybrid.inFolder', { count: inScopeCount, total: app.items.length }) + ' · '}{/if}{subtitle}</span>
@@ -323,6 +356,9 @@
       {/if}
       {#if longChat}
         <button class="icon-btn" class:busy={summarizing} aria-label={t('chat.ai.summarize')} title={t('chat.ai.summarize')} onclick={summarize}><Sparkles size={18} /></button>
+      {/if}
+      {#if app.items.some((i) => i.channel === 'email')}
+        <button class="icon-btn" aria-label={t('chat.full.all')} title={t('chat.full.all')} aria-pressed={fullMail} onclick={toggleFullMail} data-testid="full-mail-toggle"><FileText size={18} /></button>
       {/if}
       <button class="icon-btn" aria-label={t('chat.searchInChat')} title={t('chat.searchInChat')} aria-pressed={searchOpen} onclick={() => (searchOpen ? (searchOpen = false) : openSearch())}><Search size={18} /></button>
       {#if !hybrid}<button class="icon-btn" aria-label={t('chat.info.toggle')} title={t('chat.info.toggle')} aria-pressed={app.infoOpen} onclick={() => (app.infoOpen = !app.infoOpen)}><Info size={18} /></button>{/if}
@@ -399,6 +435,8 @@
               groupEnd={entry.groupEnd}
               channelChanged={entry.channelChanged}
               showReplyQuote={entry.showReplyQuote}
+              showSubject={entry.showSubject}
+              {fullMail}
               {isGroupChat}
               focused={entry.item.id === app.focusedItemId}
               query={searchOpen ? searchQuery : ''}
@@ -746,7 +784,13 @@
     top: 6px;
     z-index: 2;
   }
+  /* All day pills stick at the same place; equal width (and an opaque
+     background) lets the current one cover the earlier ones completely
+     ("Mont Heute mber" overlapped before). */
   .day span {
+    min-width: 210px;
+    text-align: center;
+    box-sizing: border-box;
     font-size: 12px;
     font-weight: 600;
     color: var(--tm-muted);
@@ -766,6 +810,13 @@
   }
   .unread-marker {
     margin: 14px -4%;
+    position: relative;
+    z-index: 1;
+    scroll-margin-top: 48px;
+  }
+  /* Directly below a day separator: keep clear of the sticky day pill. */
+  .day + .unread-marker {
+    margin-top: 22px;
   }
   .unread-marker span {
     width: 100%;

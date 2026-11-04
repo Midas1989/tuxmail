@@ -7,12 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
-	"os"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/Midas1989/Mailclient/internal/autoconfig"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/store"
 )
@@ -134,48 +132,13 @@ const EnvISPDBURL = "TUXMAIL_ISPDB_URL"
 type autoconfigDiscoverer struct{}
 
 func (autoconfigDiscoverer) Discover(ctx context.Context, email, password string) (DiscoveryResult, error) {
-	d := autoconfig.New()
-	d.UseAutodiscover = true // Microsoft Autodiscover -> EAS (KONZEPT 7.5)
-	d.AutodiscoverPassword = func(string) string { return password }
-	// TUXMAIL_ISPDB_URL replaces Thunderbird's ISPDB, e.g. with an
-	// organization's own mirror or the dev server (docs/ENTWICKLUNG.md).
-	if u := os.Getenv(EnvISPDBURL); u != "" {
-		d.ISPDBURL = u
-	}
-	cands, err := d.Discover(ctx, email)
-	res := DiscoveryResult{Source: "none", Kind: string(domain.KindIMAP)}
-	if _, dom, e := autoconfig.SplitAddress(email); e == nil {
-		res.DisplayName = dom
-	}
-	if err != nil || len(cands) == 0 {
+	d := newDiscoverer(password)
+	res := discoverRanked(ctx, d, email, password)
+	if res.Source == "none" {
 		if j := discoverJMAP(ctx, d, email, password); j != nil { // mailproto.go
 			return *j, nil
 		}
-		return res, nil //nolint:nilerr // "none" is a valid result the UI handles
 	}
-	c := cands[0]
-	switch c.Source {
-	case autoconfig.SourceSRV:
-		res.Source = "srv"
-	case autoconfig.SourceAutodiscover:
-		res.Source = "autodiscover"
-	case autoconfig.SourceHeuristic, autoconfig.SourceMX:
-		res.Source = "guess"
-	default:
-		res.Source = "autoconfig"
-	}
-	res.Kind = string(c.Kind)
-	if c.DisplayName != "" {
-		res.DisplayName = c.DisplayName
-	}
-	in, out := c.Incoming, c.Outgoing
-	res.Incoming = &in
-	if out.Host != "" {
-		res.Outgoing = &out
-	}
-	res.OAuthAvailable = c.OAuthProvider != ""
-	res.EASURL = c.EASURL
-	res.OAuthProvider = c.OAuthProvider
 	return res, nil
 }
 
@@ -314,21 +277,7 @@ func (a *App) ListFolders(ctx context.Context, accountID int64) ([]Folder, error
 	if err != nil {
 		return nil, err
 	}
-	rank := map[domain.FolderRole]int{domain.RoleInbox: 0, domain.RoleDrafts: 1, domain.RoleSent: 2, domain.RoleArchive: 3, domain.RoleJunk: 4, domain.RoleTrash: 5}
-	sort.SliceStable(fs, func(i, j int) bool {
-		ri, iok := rank[fs[i].Role]
-		rj, jok := rank[fs[j].Role]
-		if fs[i].ParentID != 0 || fs[j].ParentID != 0 {
-			return false
-		}
-		switch {
-		case iok && jok:
-			return ri < rj
-		case iok != jok:
-			return iok
-		}
-		return false
-	})
+	sortFolders(fs)
 	if fs == nil {
 		fs = []Folder{}
 	}
@@ -345,4 +294,36 @@ func (a *App) FrequentContacts(ctx context.Context) ([]int64, error) {
 		ids = []int64{}
 	}
 	return ids, err
+}
+
+// folderRank orders role folders: Inbox, Drafts, Sent, Archive, Junk,
+// Trash, then all others.
+var folderRank = map[domain.FolderRole]int{domain.RoleInbox: 0, domain.RoleDrafts: 1, domain.RoleSent: 2,
+	domain.RoleArchive: 3, domain.RoleJunk: 4, domain.RoleTrash: 5, domain.RoleTemplates: 6}
+
+// sortFolders sorts folders by parent (top level first), then role rank,
+// then name (case-insensitive). The former comparator returned false for
+// every pair involving a subfolder, which is not a strict weak ordering and
+// produced orders like "Archiv" before "Posteingang". The frontend
+// (folders.ts) builds the tree from this flat list with the same order.
+func sortFolders(fs []Folder) {
+	rank := func(f Folder) int {
+		if r, ok := folderRank[f.Role]; ok {
+			return r
+		}
+		return len(folderRank)
+	}
+	sort.SliceStable(fs, func(i, j int) bool {
+		a, b := fs[i], fs[j]
+		if (a.ParentID == 0) != (b.ParentID == 0) {
+			return a.ParentID == 0
+		}
+		if ra, rb := rank(a), rank(b); ra != rb {
+			return ra < rb
+		}
+		if la, lb := strings.ToLower(a.Name), strings.ToLower(b.Name); la != lb {
+			return la < lb
+		}
+		return a.ID < b.ID
+	})
 }

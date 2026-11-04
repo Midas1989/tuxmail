@@ -462,6 +462,7 @@ func Routes(opts Options) []Route {
 	routes = append(routes, MessengerRoutes()...)   // messenger_routes.go
 	routes = append(routes, comfortRoutes()...)     // comfort_routes.go
 	routes = append(routes, pimRoutes()...)         // pim_routes.go
+	routes = append(routes, diagRoutes()...)        // diag_routes.go
 	routes = append(routes, accountEditRoutes()...) // account_routes.go
 	return append(routes, teamRoutes(routes)...)    // team_routes.go (wraps mailbox routes of the groups above)
 }

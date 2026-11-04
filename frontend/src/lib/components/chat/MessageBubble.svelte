@@ -30,6 +30,12 @@
   import { prefs } from '../../state';
   import FolderIcon from '@lucide/svelte/icons/folder';
   import TagChips from '../common/TagChips.svelte';
+  import MailFrame from '../mail/MailFrame.svelte';
+  import Maximize2 from '@lucide/svelte/icons/maximize-2';
+  import Minimize2 from '@lucide/svelte/icons/minimize-2';
+  import AppWindow from '@lucide/svelte/icons/app-window';
+  import { app } from '../../state';
+  import type { MessageDetail } from '../../types';
 
   interface Props {
     item: ConversationItem;
@@ -56,8 +62,33 @@
     folderLabel?: string;
     /** Hybrid view: the bubble can be dragged onto a folder in the tree. */
     draggableMail?: boolean;
+    /** One-way mail conversation: show the subject in the bubble. */
+    showSubject?: boolean;
+    /** "Ganze Mail anzeigen": render the full original mail inside the bubble. */
+    fullMail?: boolean;
   }
-  let { item, groupStart, groupEnd, channelChanged, showReplyQuote, isGroupChat, focused, query, activeHit, onmenu, onreact, onjump, onoriginal, onimage, onfocusitem, translation = null, ontoggletranslation, onslot, scope = null, folderLabel = '', draggableMail = false }: Props = $props();
+  let { item, groupStart, groupEnd, channelChanged, showReplyQuote, isGroupChat, focused, query, activeHit, onmenu, onreact, onjump, onoriginal, onimage, onfocusitem, translation = null, ontoggletranslation, onslot, scope = null, folderLabel = '', draggableMail = false, showSubject = false, fullMail = false }: Props = $props();
+
+  // Full original rendering (sanitized HTML in an auto-height frame): the
+  // conversation-wide toggle or this bubble's own override.
+  let fullOverride = $state<boolean | null>(null);
+  const showFull = $derived(item.channel === 'email' && item.messageId != null && (fullOverride ?? fullMail));
+  let full = $state<MessageDetail | null>(null);
+  $effect(() => {
+    if (showFull && item.messageId != null && full?.id !== item.messageId) {
+      const id = item.messageId;
+      void app.api.getMessage(id).then((d) => {
+        if (item.messageId === id) full = d;
+      });
+    }
+  });
+  const empty = $derived(!item.body.trim() && !item.attachments.length && item.relation !== 'forward' && !item.meeting);
+
+  function openWindow(e?: Event) {
+    if (item.messageId == null) return;
+    e?.stopPropagation();
+    void app.openMailWindow(item.messageId);
+  }
 
   function ondragstart(e: DragEvent) {
     if (!draggableMail || item.messageId == null || !e.dataTransfer) return;
@@ -85,6 +116,11 @@
   }
 
   function onkeydown(e: KeyboardEvent) {
+    if (e.key === 'Enter' && e.shiftKey && item.messageId != null) {
+      e.preventDefault();
+      openWindow();
+      return;
+    }
     if (e.key === 'Enter' || e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
       e.preventDefault();
       const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -112,6 +148,7 @@
     tabindex={focused ? 0 : -1}
     onfocus={() => onfocusitem(item.id)}
     onclick={() => onfocusitem(item.id)}
+    ondblclick={(e) => openWindow(e)}
     {onkeydown}
     use:longpress={(x, y) => onmenu(item, x, y)}
     draggable={draggableMail ? 'true' : undefined}
@@ -137,15 +174,32 @@
       </button>
     {/if}
 
-    {#if item.display === 'card' && item.card}
+    {#if showSubject && item.subject && !showFull}
+      <div class="subj">{item.subject}</div>
+    {/if}
+    {#if showFull}
+      <div class="full" data-testid="bubble-full">
+        {#if full}
+          <MailFrame html={full.html} text={full.text} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: full.subject })} autoHeight maxHeight={1600} />
+        {:else}
+          <span class="muted">{t('mail.window.loading')}</span>
+        {/if}
+      </div>
+    {:else if item.display === 'card' && item.card}
       <div class="card-body">
         <span class="card-ic"><Newspaper size={18} aria-hidden="true" /></span>
         <div class="card-text">
-          <strong>{item.card.title}</strong>
-          <span>{item.card.excerpt}</span>
+          <strong>{item.card.title || t('mail.list.noSubject')}</strong>
+          <span class="card-ex">{item.card.excerpt || (item.bodyMissing ? t('chat.bodyLoading') : t('chat.noTextContent'))}</span>
         </div>
       </div>
       <button class="card-open" onclick={(e) => (e.stopPropagation(), onoriginal(item))}>{t('chat.openCard')}</button>
+    {:else if empty}
+      <!-- Never an empty bubble: subject + hint, opens the mail. -->
+      <button class="text empty-mail" onclick={(e) => (e.stopPropagation(), onoriginal(item))}>
+        {#if item.subject && !showSubject}<strong>{item.subject}</strong>{/if}
+        <span class="muted">{item.bodyMissing ? t('chat.bodyLoading') : t('chat.noTextContent')}</span>
+      </button>
     {:else}
       {#if gallery.length}
         <div class="gallery n{Math.min(gallery.length, 4)}">
@@ -221,6 +275,14 @@
     {#if item.tagIds?.length}
       <div class="tags"><TagChips ids={item.tagIds} size="xs" /></div>
     {/if}
+    {#if item.channel === 'email' && item.messageId != null}
+      <span class="mail-tools">
+        <button class="mt-btn" aria-pressed={showFull} title={showFull ? t('chat.full.compact') : t('chat.full.show')} aria-label={showFull ? t('chat.full.compact') : t('chat.full.show')} onclick={(e) => (e.stopPropagation(), (fullOverride = !showFull))}>
+          {#if showFull}<Minimize2 size={12} />{:else}<Maximize2 size={12} />{/if}
+        </button>
+        <button class="mt-btn" title={t('chat.full.window') + ' (Shift+Enter)'} aria-label={t('chat.full.window')} onclick={(e) => openWindow(e)}><AppWindow size={12} /></button>
+      </span>
+    {/if}
     <span class="meta">
       {#if item.pinned}<Pin size={11} aria-label={t('chat.pin.pinned')} />{/if}
       {#if item.starred}<Star size={11} class="starred-ic" aria-label={t('chat.starred.starred')} />{/if}
@@ -250,6 +312,71 @@
 </div>
 
 <style>
+  .subj {
+    font-weight: 650;
+    font-size: 13px;
+    margin-bottom: 3px;
+  }
+  .full {
+    width: min(720px, 72vw);
+    max-width: 100%;
+    margin: 2px 0 4px;
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--tm-surface);
+  }
+  .full .muted,
+  .empty-mail .muted {
+    color: var(--tm-muted);
+    font-size: 12.5px;
+  }
+  .empty-mail {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border: none;
+    background: none;
+    padding: 0;
+    text-align: left;
+    font: inherit;
+    color: inherit;
+    cursor: pointer;
+  }
+  .card-ex {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .mail-tools {
+    display: inline-flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity var(--tm-dur);
+  }
+  .bubble:hover .mail-tools,
+  .bubble:focus-within .mail-tools,
+  .mail-tools:has([aria-pressed='true']) {
+    opacity: 1;
+  }
+  .mt-btn {
+    display: inline-flex;
+    border: none;
+    background: transparent;
+    color: var(--tm-muted);
+    padding: 2px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .mt-btn:hover {
+    background: color-mix(in srgb, var(--tm-fg) 8%, transparent);
+  }
+  @media (hover: none) {
+    .mail-tools {
+      opacity: 1;
+    }
+  }
   .row {
     display: flex;
     align-items: flex-end;

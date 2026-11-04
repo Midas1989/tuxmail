@@ -9,15 +9,21 @@ import (
 	"crypto/subtle"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/Midas1989/Mailclient/internal/app"
@@ -77,15 +83,37 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	log := slog.New(slog.NewTextHandler(c.stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// The log goes to <data_dir>/logs/tuxmail.log (rotated, 5 MB x 4; the
+	// Windows GUI build has no console) and to stderr.
+	var logOut io.Writer = c.stderr
+	logFile := ""
+	if err := os.MkdirAll(loc.Dir, 0o700); err == nil {
+		if lf, err := openLogFile(filepath.Join(loc.Dir, "logs"), logMaxSize, logKeep); err == nil {
+			defer lf.Close()
+			logOut, logFile = io.MultiWriter(c.stderr, lf), lf.Path()
+		} else {
+			fmt.Fprintln(c.stderr, "tuxmail: log file:", err)
+		}
+	}
+	level := slog.LevelInfo
+	if strings.EqualFold(os.Getenv("TUXMAIL_LOG_LEVEL"), "debug") {
+		level = slog.LevelDebug
+	}
+	log := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: level}))
 	a, st, err := openDesktopApp(ctx, loc, log)
 	if err != nil {
+		log.Error("tuxmail desktop: start failed", "err", err)
 		return err
 	}
 	defer st.Close()
 	defer a.Close()
+	a.SetDiagnostics(app.DiagnosticsOptions{LogFile: logFile, Portable: loc.Portable, Config: func() any {
+		return map[string]any{"mode": "desktop", "portable": loc.Portable, "dataDir": loc.Dir, "logLevel": level.String(),
+			"titleBar": loadDesktopPrefs(loc.Dir)}
+	}})
 	a.Start()
-	log.Info("tuxmail desktop", "data_dir", loc.Dir, "portable", loc.Portable, "version", version)
+	log.Info("tuxmail desktop", "data_dir", loc.Dir, "portable", loc.Portable, "version", version, "log_file", logFile,
+		"os", runtime.GOOS+"/"+runtime.GOARCH)
 
 	mux := http.NewServeMux()
 	api.Mount(mux, func(h api.AppHandler) http.HandlerFunc {
@@ -101,12 +129,30 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 		assets = placeholderFS()
 	}
 	bound := app.NewApi(ctx, a)
+	// Window decoration: a frameless window with the app's own title bar
+	// (drag region, window buttons; Windows default) or the system title
+	// bar (Linux/macOS default; Settings → "Systemtitelleiste verwenden").
+	// On Windows 11 the window gets a Mica backdrop.
+	frameless := !loadDesktopPrefs(loc.Dir).nativeTitleBar(runtime.GOOS)
+	backdrop := frameless && backdropSupported()
+	desk := &Desktop{dataDir: loc.Dir, frameless: frameless, backdrop: backdrop, logFile: logFile}
+	winOpts := &windows.Options{Theme: windows.SystemDefault}
+	bg := &options.RGBA{R: 246, G: 247, B: 249, A: 255}
+	if backdrop {
+		winOpts.WebviewIsTransparent, winOpts.WindowIsTranslucent, winOpts.BackdropType = true, true, windows.Mica
+		bg = &options.RGBA{A: 0}
+	}
+	log.Info("tuxmail desktop: window", "frameless", frameless, "backdrop", backdrop)
 	return wails.Run(&options.App{
-		Title:     "TuxMail",
-		Width:     1280,
-		Height:    820,
-		MinWidth:  900,
-		MinHeight: 600,
+		Title:            "TuxMail",
+		Width:            1280,
+		Height:           820,
+		MinWidth:         720,
+		MinHeight:        520,
+		Frameless:        frameless,
+		BackgroundColour: bg,
+		Windows:          winOpts,
+		Linux:            &linux.Options{ProgramName: "TuxMail"},
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
 			Handler: mux,
@@ -124,6 +170,6 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 				wruntime.EventsEmit(wctx, "tuxmail:event", app.Event{Type: app.EventVaultLocked})
 			}
 		},
-		Bind: []interface{}{bound},
+		Bind: []interface{}{bound, desk},
 	})
 }

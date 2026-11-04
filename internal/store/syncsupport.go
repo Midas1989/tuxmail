@@ -212,7 +212,7 @@ func (s *Store) MessagesWithoutBody(ctx context.Context, accountID int64, notBef
 		  AND COALESCE(m.sent_at, m.received_at, 0) >= ? AND (? = 0 OR m.size <= ?)
 		  AND (? = '' OR substr(l.remote_ref, 1, length(?)) <> ?)
 		GROUP BY m.id
-		ORDER BY COALESCE(m.sent_at, m.received_at, 0) DESC, m.id DESC LIMIT ?`,
+		ORDER BY MAX(f.role = 'inbox') DESC, COALESCE(m.sent_at, m.received_at, 0) DESC, m.id DESC LIMIT ?`,
 		accountID, unixOrZero(notBefore), maxSize, maxSize, skipRefPrefix, skipRefPrefix, skipRefPrefix, limit)
 	if err != nil {
 		return nil, err

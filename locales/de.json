@@ -82,7 +82,10 @@
     "mail": "Mail",
     "search": "Suche",
     "settings": "Einstellungen",
-    "projects": "Projekte"
+    "projects": "Projekte",
+    "rail": {
+      "settings": "Ein­stel­lun­gen"
+    }
   },
   "mail": {
     "attachment": {
@@ -179,6 +182,13 @@
       "otherFolder": "In einem anderen Ordner",
       "onlyFolder": "Nur Nachrichten aus diesem Ordner",
       "onlyFolderShort": "Nur dieser Ordner"
+    },
+    "window": {
+      "loading": "Wird geladen …",
+      "print": "Drucken",
+      "source": "Quelltext anzeigen",
+      "newWindow": "In neuem Fenster öffnen",
+      "resize": "Größe ändern"
     }
   },
   "chat": {
@@ -479,6 +489,14 @@
       "hour": "In 1 Stunde",
       "monday": "Montag früh",
       "tomorrow": "Morgen früh"
+    },
+    "noTextContent": "(Kein Textinhalt – Mail öffnen)",
+    "bodyLoading": "Mail wird geladen …",
+    "full": {
+      "show": "Ganze Mail anzeigen",
+      "compact": "Kompakte Ansicht",
+      "all": "Ganze Mails anzeigen",
+      "window": "Im Mail-Fenster öffnen"
     }
   },
   "calendar": {
@@ -1142,6 +1160,47 @@
         "sender": "Absender",
         "domain": "Domain"
       }
+    },
+    "diag": {
+      "title": "Info & Diagnose",
+      "version": "Version",
+      "mode": "Modus",
+      "modeDesktop": "Desktop",
+      "modeServer": "Server",
+      "portable": "portabel",
+      "dataDir": "Datenverzeichnis",
+      "logFile": "Logdatei",
+      "system": "System",
+      "accounts": "Konten",
+      "noAccounts": "Keine Mailkonten.",
+      "state": "Status",
+      "folder": "Ordner",
+      "progress": "Fortschritt",
+      "lastSync": "Letzte Synchronisation",
+      "lastError": "Letzter Fehler",
+      "never": "nie",
+      "folders": "{count} Ordner · {messages} Nachrichten",
+      "export": "Diagnosedaten exportieren",
+      "exportHint": "Erstellt eine ZIP-Datei mit den Logdateien und der Konfiguration ohne Passwörter, Tokens oder Mailinhalte. Hängen Sie sie an einen Fehlerbericht an.",
+      "exported": "Diagnosedaten gespeichert als {file}",
+      "refresh": "Aktualisieren",
+      "syncNow": "Jetzt synchronisieren",
+      "states": {
+        "connecting": "Verbinde",
+        "syncing": "Synchronisiere",
+        "idle": "Aktuell",
+        "error": "Fehler",
+        "stopped": "Angehalten",
+        "offline": "Offline"
+      },
+      "incoming": "Posteingangsserver",
+      "outgoing": "Postausgangsserver"
+    },
+    "window": {
+      "title": "Fenster",
+      "nativeTitleBar": "Systemtitelleiste verwenden",
+      "nativeTitleBarHint": "Zeigt die Titelleiste des Betriebssystems statt der eigenen von TuxMail. Wirkt nach einem Neustart.",
+      "restart": "Starten Sie TuxMail neu, um die Änderung zu übernehmen."
     },
     "accountEdit": {
       "open": "Konto {name} bearbeiten",
@@ -1848,6 +1907,18 @@
         "days": "Tagen (0 = nie)",
         "deleteLocal": "Vom Server löschen, wenn in TuxMail gelöscht",
         "hint": "POP3 kennt nur einen Posteingang. Mails lassen sich in lokale Ordner verschieben; sie bleiben auf diesem Gerät, auch wenn die Serverkopie gelöscht wird."
+      },
+      "others": "Andere gefundene Einstellungen ({count})",
+      "others_one": "Andere gefundene Einstellungen (1)",
+      "useThis": "Diese verwenden",
+      "check": {
+        "verified": "geprüft",
+        "reachable": "erreichbar",
+        "loginOk": "Anmeldung erfolgreich",
+        "loginFailed": "Anmeldung abgelehnt (Passwort oder Benutzername?)",
+        "unreachable": "nicht erreichbar: {error}",
+        "unknown": "nicht geprüft",
+        "noneWorking": "Keiner der gefundenen Server konnte bestätigt werden. Prüfen Sie das Passwort oder geben Sie die Einstellungen manuell ein."
       }
     },
     "connect": {
@@ -3066,5 +3137,26 @@
       "chromiumPath": "Chromium / Chrome / Edge",
       "chromiumAuto": "automatisch erkannt"
     }
+  },
+  "sync": {
+    "connecting": "Verbinde mit {account} …",
+    "syncing": "Synchronisiere {account} …",
+    "folder": "Synchronisiere {account} · {folder}",
+    "progress": "Synchronisiere {account} · {folder} {done} / {total}",
+    "done": "{account} ist synchronisiert",
+    "error": "Synchronisation von {account} fehlgeschlagen",
+    "retry": "Erneut versuchen",
+    "details": "Details",
+    "listSyncing": "Wird synchronisiert …",
+    "listSyncingHint": "{done} von {total} Nachrichten geladen – neue Mails erscheinen hier sofort.",
+    "listSyncingHintNoCount": "Das Postfach wird geladen – neue Mails erscheinen hier sofort.",
+    "allIdle": "Alle Konten sind aktuell",
+    "indicator": "Synchronisationsstatus"
+  },
+  "window": {
+    "minimise": "Minimieren",
+    "maximise": "Maximieren",
+    "restore": "Wiederherstellen",
+    "close": "Schließen"
   }
 }

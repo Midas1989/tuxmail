@@ -46,7 +46,10 @@ func int64List(ids []int64) string {
 
 // where builds the SQL condition for alias m (messages).
 func (f MessageFilter) where() (string, []any) {
-	conds := []string{`m.state = 'live'`}
+	// +m.state: without ANALYZE statistics SQLite would pick ix_msg_live_sent
+	// (state is not selective) and sort all live messages; this way the
+	// newest-first page walks ix_msg_time and stops after the page.
+	conds := []string{`+m.state = 'live'`}
 	var args []any
 	if f.IDs != nil {
 		if len(f.IDs) == 0 {
@@ -418,7 +421,7 @@ func (s *Store) SetConversationFlags(ctx context.Context, id int64, pinned, mute
 // MessagesWithoutConversation returns live messages that are not assigned to
 // a conversation yet (at most limit).
 func (s *Store) MessagesWithoutConversation(ctx context.Context, limit int) ([]Message, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE conversation_id IS NULL AND state = 'live'
+	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE conversation_id IS NULL AND +state = 'live'
 		ORDER BY id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -438,7 +441,7 @@ func (s *Store) MessageIDsOfPerson(ctx context.Context, personID int64) ([]int64
 
 // MessageIDsOfConversation returns the live messages of a thread conversation.
 func (s *Store) MessageIDsOfConversation(ctx context.Context, conversationID int64) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM messages WHERE conversation_id = ? AND state = 'live'`, conversationID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM messages WHERE conversation_id = ? AND +state = 'live'`, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -511,7 +514,7 @@ func (s *Store) ParticipantsOfConversations(ctx context.Context, ids []int64) (m
 	list := int64List(ids)
 	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT m.conversation_id, a.person_id FROM messages m
 			JOIN message_addresses a ON a.message_id = m.id
-			WHERE m.conversation_id IN (`+list+`) AND a.person_id IS NOT NULL AND m.state = 'live'
+			WHERE m.conversation_id IN (`+list+`) AND a.person_id IS NOT NULL AND +m.state = 'live'
 		UNION
 		SELECT DISTINCT c.conversation_id, cm.sender_person_id FROM chats c JOIN chat_messages cm ON cm.chat_id = c.id
 			WHERE c.conversation_id IN (`+list+`) AND cm.sender_person_id IS NOT NULL`)

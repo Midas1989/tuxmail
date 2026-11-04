@@ -2522,6 +2522,34 @@ export class MockTransport implements Api {
     return this.run(() => this.cloud.generatePassword(accountId));
   }
 
+  // --- Diagnostics ---
+  syncStatus(): Promise<AccountSyncStatus[]> {
+    return this.run(() =>
+      this.accounts
+        .filter((a) => !messengerKinds.has(a.kind))
+        .map((a) => ({ accountId: a.id, state: 'idle' as const, lastSync: new Date().toISOString() })),
+    );
+  }
+  syncNow(_accountId: number): Promise<void> {
+    return this.run(() => undefined);
+  }
+  messageSource(id: number): Promise<string> {
+    return this.run(() => `Message-ID: <mock-${id}@tuxmail.test>\r\nSubject: Mock\r\n\r\nMock source\r\n`);
+  }
+  diagnostics(): Promise<DiagnosticsInfo> {
+    return this.run(() => ({
+      version: 'dev (mock)',
+      mode: 'server' as const,
+      portable: false,
+      os: 'browser',
+      goVersion: '-',
+      accounts: this.accounts.map((a) => ({ id: a.id, name: a.displayName, kind: a.kind, folders: 0, messages: 0, status: { accountId: a.id, state: 'idle' as const } })),
+    }));
+  }
+  exportDiagnostics(): Promise<{ filename: string; blob: Blob }> {
+    return this.run(() => ({ filename: 'tuxmail-diagnose.zip', blob: new Blob(['mock'], { type: 'application/zip' }) }));
+  }
+
   // --- OAuth/Cloud accounts --- (mockOAuth.ts)
   private oauthMock?: MockOAuth;
   /** In-memory OAuth sign-in flows, client IDs and delegations (mockOAuth.ts). */
@@ -2741,3 +2769,6 @@ import { MockIO } from './mockIO';
 // --- Account edit ---
 import { MockAccountEdit } from './mockAccountEdit';
 import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult } from '../types';
+// --- Diagnostics ---
+import type { AccountSyncStatus, DiagnosticsInfo } from '../types';
+const messengerKinds = new Set(['signal', 'whatsapp', 'telegram', 'matrix_bridge']);

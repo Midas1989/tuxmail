@@ -467,8 +467,8 @@ func (r *ThreadRepo) candidates(ctx context.Context, where string, args ...any) 
 // conversation from its live messages (no error if it does not exist).
 func refreshConversationStats(ctx context.Context, q querier, id int64) error {
 	_, err := q.ExecContext(ctx, `UPDATE conversations SET
-			last_activity = (SELECT MAX(COALESCE(sent_at, received_at)) FROM messages WHERE conversation_id = ?1 AND state = 'live'),
-			unread_count  = (SELECT COUNT(*) FROM messages WHERE conversation_id = ?1 AND state = 'live' AND flags & ?2 = 0)
+			last_activity = (SELECT MAX(COALESCE(sent_at, received_at)) FROM messages WHERE conversation_id = ?1 AND +state = 'live'),
+			unread_count  = (SELECT COUNT(*) FROM messages WHERE conversation_id = ?1 AND +state = 'live' AND flags & ?2 = 0)
 		WHERE id = ?1`, id, FlagSeen)
 	return err
 }

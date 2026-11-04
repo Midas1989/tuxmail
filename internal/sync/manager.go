@@ -47,8 +47,15 @@ type AccountStatus struct {
 	AccountID int64
 	Name      string
 	State     State
-	// Folder is the remote id of the folder being synced (StateSyncing).
-	Folder string
+	// Folder is the remote id of the folder being synced (StateSyncing),
+	// FolderID its local id.
+	Folder   string
+	FolderID int64
+	// Done and Total are the progress of the folder being synced: messages
+	// stored locally and messages on the server (0 = unknown). Initial is
+	// true during the first sync of the folder.
+	Done, Total int
+	Initial     bool
 	// LastError and LastErrorAt describe the last failure (kept until the
 	// next successful cycle).
 	LastError   string

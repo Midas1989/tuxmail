@@ -227,6 +227,8 @@ func (e Event) MarshalJSON() ([]byte, error) {
 		m["projectId"] = e.ProjectID
 	case EventWorkflowRun:
 		m["workflowId"], m["run"] = e.WorkflowID, e.Run
+	case EventSyncStatus:
+		m["accountId"], m["status"] = e.AccountID, e.Sync
 	case EventMessengerTyping:
 		m["conversationId"] = e.ConversationID
 	}

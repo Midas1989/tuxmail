@@ -67,13 +67,53 @@
     allowRemote?: boolean;
     dark?: boolean;
     title: string;
+    /**
+     * Grow with the content (full mail inside a chat bubble). Needs
+     * sandbox="allow-same-origin" so that the app can measure the document;
+     * scripts stay disabled (no allow-scripts, CSP default-src 'none').
+     */
+    autoHeight?: boolean;
+    maxHeight?: number;
   }
-  let { html, text, allowRemote = false, dark = false, title }: Props = $props();
+  let { html, text, allowRemote = false, dark = false, title, autoHeight = false, maxHeight = 4000 }: Props = $props();
   const srcdoc = $derived(buildSrcdoc({ html, text, allowRemote, dark }));
+  let frame = $state<HTMLIFrameElement>();
+  let height = $state(80);
+  let ro: ResizeObserver | null = null;
+
+  function measure() {
+    try {
+      const d = frame?.contentDocument;
+      if (!d?.documentElement) return;
+      height = Math.min(Math.max(d.documentElement.scrollHeight, 40), maxHeight);
+    } catch {
+      /* not measurable */
+    }
+  }
+  function onload() {
+    if (!autoHeight) return;
+    measure();
+    try {
+      const d = frame?.contentDocument;
+      ro?.disconnect();
+      if (d?.body && typeof ResizeObserver !== 'undefined') {
+        ro = new ResizeObserver(measure);
+        ro.observe(d.body);
+      }
+      d?.addEventListener('load', measure, true); // images
+    } catch {
+      /* ignore */
+    }
+  }
+  $effect(() => () => ro?.disconnect());
 </script>
 
-<!-- sandbox="" = maximum restrictions; the mail can neither run scripts nor reach the app. -->
-<iframe class="frame" sandbox="" {srcdoc} {title} referrerpolicy="no-referrer"></iframe>
+{#if autoHeight}
+  <iframe class="frame auto" bind:this={frame} sandbox="allow-same-origin" {srcdoc} {title} referrerpolicy="no-referrer" {onload} style:height="{height}px"></iframe>
+{:else}
+  <!-- sandbox="" = maximum restrictions; the mail can neither run scripts nor reach the app. -->
+  <iframe class="frame" sandbox="" {srcdoc} {title} referrerpolicy="no-referrer"></iframe>
+{/if}
 
 <style>
   .frame {

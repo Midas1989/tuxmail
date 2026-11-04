@@ -761,6 +761,27 @@ export class WailsTransport implements Api {
     return this.call('GenerateCloudPassword', accountId);
   }
 
+  // --- Diagnostics ---
+  syncStatus(): Promise<AccountSyncStatus[]> {
+    return this.call('SyncStatus');
+  }
+  syncNow(accountId: number): Promise<void> {
+    return this.call('SyncNow', accountId);
+  }
+  diagnostics(): Promise<DiagnosticsInfo> {
+    return this.call('Diagnostics');
+  }
+  messageSource(id: number): Promise<string> {
+    return this.call('MessageSource', id);
+  }
+  async exportDiagnostics(): Promise<{ filename: string; blob: Blob; savedPath?: string }> {
+    const d = await this.call<{ filename: string; mimeType: string; data: string; savedPath?: string }>('ExportDiagnostics');
+    const bin = atob(d.data);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return { filename: d.filename, savedPath: d.savedPath, blob: new Blob([bytes], { type: d.mimeType || 'application/zip' }) };
+  }
+
   // --- OAuth/Cloud accounts --- (internal/app/oauth_api.go)
   listOAuthProviders(): Promise<OAuthProviderInfo[]> {
     return this.call('ListOAuthProviders');
@@ -880,3 +901,5 @@ import type * as IO from '../types';
 
 // --- Account edit ---
 import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity } from '../types';
+// --- Diagnostics ---
+import type { AccountSyncStatus, DiagnosticsInfo } from '../types';

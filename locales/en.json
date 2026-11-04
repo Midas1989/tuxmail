@@ -83,7 +83,10 @@
     "mail": "Mail",
     "search": "Search",
     "settings": "Settings",
-    "projects": "Projects"
+    "projects": "Projects",
+    "rail": {
+      "settings": "Set­tings"
+    }
   },
   "mail": {
     "attachment": {
@@ -180,6 +183,13 @@
       "otherFolder": "In another folder",
       "onlyFolder": "Only messages from this folder",
       "onlyFolderShort": "Only this folder"
+    },
+    "window": {
+      "loading": "Loading …",
+      "print": "Print",
+      "source": "Show source",
+      "newWindow": "Open in new window",
+      "resize": "Resize"
     }
   },
   "chat": {
@@ -480,6 +490,14 @@
       "hour": "In 1 hour",
       "monday": "Monday morning",
       "tomorrow": "Tomorrow morning"
+    },
+    "noTextContent": "(No text content – open the mail)",
+    "bodyLoading": "Loading the mail …",
+    "full": {
+      "show": "Show the whole mail",
+      "compact": "Compact view",
+      "all": "Show whole mails",
+      "window": "Open in a mail window"
     }
   },
   "calendar": {
@@ -1143,6 +1161,47 @@
         "sender": "Sender",
         "domain": "Domain"
       }
+    },
+    "diag": {
+      "title": "Info & diagnostics",
+      "version": "Version",
+      "mode": "Mode",
+      "modeDesktop": "Desktop",
+      "modeServer": "Server",
+      "portable": "portable",
+      "dataDir": "Data directory",
+      "logFile": "Log file",
+      "system": "System",
+      "accounts": "Accounts",
+      "noAccounts": "No mail accounts.",
+      "state": "State",
+      "folder": "Folder",
+      "progress": "Progress",
+      "lastSync": "Last synchronisation",
+      "lastError": "Last error",
+      "never": "never",
+      "folders": "{count} folders · {messages} messages",
+      "export": "Export diagnostics",
+      "exportHint": "Creates a zip file with the log files and the configuration without passwords, tokens or mail content. Attach it to a bug report.",
+      "exported": "Diagnostics saved as {file}",
+      "refresh": "Refresh",
+      "syncNow": "Synchronise now",
+      "states": {
+        "connecting": "Connecting",
+        "syncing": "Synchronising",
+        "idle": "Up to date",
+        "error": "Error",
+        "stopped": "Stopped",
+        "offline": "Offline"
+      },
+      "incoming": "Incoming server",
+      "outgoing": "Outgoing server"
+    },
+    "window": {
+      "title": "Window",
+      "nativeTitleBar": "Use system title bar",
+      "nativeTitleBarHint": "Shows the title bar of the operating system instead of TuxMail's own. Takes effect after a restart.",
+      "restart": "Restart TuxMail to apply the change."
     },
     "accountEdit": {
       "open": "Edit account {name}",
@@ -1849,6 +1908,18 @@
         "days": "days (0 = never)",
         "deleteLocal": "Delete from the server when deleted in TuxMail",
         "hint": "POP3 only has an inbox. You can move mails into local folders; they stay on this device even after the server copy is deleted."
+      },
+      "others": "Other settings found ({count})",
+      "others_one": "Other settings found (1)",
+      "useThis": "Use these",
+      "check": {
+        "verified": "checked",
+        "reachable": "reachable",
+        "loginOk": "login successful",
+        "loginFailed": "login rejected (password or user name?)",
+        "unreachable": "not reachable: {error}",
+        "unknown": "not checked",
+        "noneWorking": "None of the found servers could be verified. Check the password or enter the settings manually."
       }
     },
     "connect": {
@@ -3067,5 +3138,26 @@
       "chromiumPath": "Chromium / Chrome / Edge",
       "chromiumAuto": "detected automatically"
     }
+  },
+  "sync": {
+    "connecting": "Connecting to {account} …",
+    "syncing": "Synchronising {account} …",
+    "folder": "Synchronising {account} · {folder}",
+    "progress": "Synchronising {account} · {folder} {done} / {total}",
+    "done": "{account} is synchronised",
+    "error": "Synchronisation of {account} failed",
+    "retry": "Retry",
+    "details": "Details",
+    "listSyncing": "Synchronising …",
+    "listSyncingHint": "{done} of {total} messages loaded – new mail appears here right away.",
+    "listSyncingHintNoCount": "The mailbox is being loaded – new mail appears here right away.",
+    "allIdle": "All accounts are up to date",
+    "indicator": "Synchronisation status"
+  },
+  "window": {
+    "minimise": "Minimise",
+    "maximise": "Maximise",
+    "restore": "Restore",
+    "close": "Close"
   }
 }

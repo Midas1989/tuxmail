@@ -249,7 +249,7 @@ func (s *Store) FindMessageByLocation(ctx context.Context, folderID int64, remot
 // ListMessagesByConversation returns the live messages of a conversation in chronological order.
 func (s *Store) ListMessagesByConversation(ctx context.Context, conversationID int64) ([]Message, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages
-		WHERE conversation_id = ? AND state = 'live' ORDER BY sent_at, id`, conversationID)
+		WHERE conversation_id = ? AND +state = 'live' ORDER BY sent_at, id`, conversationID)
 	if err != nil {
 		return nil, err
 	}

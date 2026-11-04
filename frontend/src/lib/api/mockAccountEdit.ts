@@ -88,7 +88,7 @@ export class MockAccountEdit {
     return {
       account: acc,
       email: acc.extra?.address ?? '',
-      status: { accountId: acc.id, state: !acc.enabled ? 'stopped' : o.error ? 'error' : 'online', error: o.error, lastSync: o.lastSync },
+      status: { accountId: acc.id, state: !acc.enabled ? 'stopped' : o.error ? 'error' : 'idle', error: o.error, lastSync: o.lastSync },
       hasPassword: EDITABLE.has(acc.kind) && !oauth,
       oauthProvider: acc.extra?.oauthProvider ?? (oauth ? 'oauth2' : undefined),
       easUrl: acc.kind === 'eas' ? (acc.extra?.eas_url ?? `https://${acc.incoming?.host ?? ''}/Microsoft-Server-ActiveSync`) : undefined,
