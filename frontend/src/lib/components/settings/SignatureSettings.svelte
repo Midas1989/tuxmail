@@ -6,13 +6,19 @@
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
   import type { Identity, Signature } from '../../types';
+  import SignatureEditor from '../SignatureEditor.svelte';
 
   async function reload() {
     app.signatures = await app.api.listSignatures();
   }
   async function save(sig: Signature) {
-    // The HTML version is regenerated from the plain text.
-    await app.api.saveSignature({ ...sig, html: '' });
+    // The server sanitizes the HTML, stores its images and regenerates
+    // the plain text unless plainOverride is set.
+    try {
+      await app.api.saveSignature(sig);
+    } catch (err) {
+      app.toast(t('settings.signatures.saveFailed', { error: err instanceof Error ? err.message : String(err) }), undefined, 'error');
+    }
     await reload();
   }
   async function add() {
@@ -45,7 +51,11 @@
           <input class="input" value={sig.name} aria-label={t('settings.signatures.name')} onchange={(e) => save({ ...sig, name: (e.currentTarget as HTMLInputElement).value })} />
           <button class="icon-btn" aria-label={t('settings.signatures.delete', { name: sig.name })} onclick={() => remove(sig.id)}><Trash size={15} /></button>
         </div>
-        <textarea class="input text" rows="3" value={sig.plain} aria-label={t('settings.signatures.text')} onchange={(e) => save({ ...sig, plain: (e.currentTarget as HTMLTextAreaElement).value })}></textarea>
+        <SignatureEditor html={sig.html} plain={sig.plain} plainOverride={sig.plainOverride ?? false} label={t('settings.signatures.text')} onchange={(v) => save({ ...sig, ...v })} />
+        <select class="input placement" value={sig.placement || 'below_reply'} aria-label={t('settings.signatures.placement')} onchange={(e) => save({ ...sig, placement: (e.currentTarget as HTMLSelectElement).value as Signature['placement'] })}>
+          <option value="below_reply">{t('settings.signatures.placementBelow')}</option>
+          <option value="above_quote">{t('settings.signatures.placementAbove')}</option>
+        </select>
       </li>
     {/each}
   </ul>
@@ -112,13 +122,9 @@
     align-items: center;
     gap: 6px;
   }
-  .text {
-    margin-top: 4px;
-    height: auto;
-    padding: 6px 10px;
-    resize: vertical;
-    font-family: var(--tm-mono);
-    font-size: 12.5px;
+  .placement {
+    margin-top: 6px;
+    width: auto;
   }
   .ids {
     width: 100%;

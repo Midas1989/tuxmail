@@ -65,6 +65,7 @@ import * as data from './mockData';
 import { runSearch, type SearchDoc } from '../search/engine';
 import { DEFAULT_REGION } from '../format';
 import { EMPTY_RULES, isVip, matchesFolder } from '../chatfeatures';
+import { cleanSignatureHtml, htmlToPlain } from '../signature';
 import { MockOrganizer } from './mockOrganize';
 import { DEFAULT_SCHEMA } from '../workflow/schema';
 import type {
@@ -1088,6 +1089,11 @@ export class MockTransport implements Api {
   async saveSignature(signature: Signature): Promise<Signature> {
     const s = clone(signature);
     if (!s.html && s.plain) s.html = s.plain.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!).replace(/\n/g, '<br>');
+    // Like the server: allowlist-clean the HTML, generate the plain text.
+    if (typeof DOMParser !== 'undefined') {
+      s.html = cleanSignatureHtml(s.html).html;
+      if (!s.plainOverride || !s.plain.trim()) s.plain = htmlToPlain(s.html);
+    }
     if (!s.id) {
       s.id = Math.max(0, ...this.signatures.map((x) => x.id)) + 1;
       this.signatures.push(s);

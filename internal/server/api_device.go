@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"net/http"
 	"net/url"
@@ -17,8 +18,10 @@ import (
 
 	"github.com/Midas1989/Mailclient/internal/auth"
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/mime/signature"
 	"github.com/Midas1989/Mailclient/internal/server/sealed"
 	"github.com/Midas1989/Mailclient/internal/store"
+	"github.com/Midas1989/Mailclient/internal/store/blob"
 )
 
 // Device authorization flow for the desktop client ("Mit TuxMail-Server
@@ -223,7 +226,49 @@ func storeMailData(ctx context.Context, userDir string) (*MailData, error) {
 	if md.Signatures == nil {
 		md.Signatures = []domain.Signature{}
 	}
+	embedSignatureImages(filepath.Join(userDir, "blobs"), md.Signatures)
 	return md, nil
+}
+
+// embedSignatureImages turns the cid: images of signatures into data: URIs
+// so that a provisioned client can store them in its own blob store.
+func embedSignatureImages(dir string, sigs []domain.Signature) {
+	if _, err := os.Stat(dir); err != nil {
+		return
+	}
+	var bs *blob.Store
+	for i := range sigs {
+		if len(sigs[i].Images) == 0 {
+			continue
+		}
+		if bs == nil {
+			var err error
+			if bs, err = blob.New(dir); err != nil {
+				return
+			}
+		}
+		byCID := map[string]domain.SignatureImage{}
+		for _, im := range sigs[i].Images {
+			byCID[im.ContentID] = im
+		}
+		sigs[i].HTML = signature.RewriteImages(sigs[i].HTML, func(src string) (string, bool) {
+			im, ok := byCID[strings.Trim(strings.TrimPrefix(src, "cid:"), "<> ")]
+			if !ok || !strings.HasPrefix(src, "cid:") {
+				return src, true
+			}
+			rc, err := bs.Open(im.BlobHash)
+			if err != nil {
+				return src, true
+			}
+			defer rc.Close()
+			data, err := io.ReadAll(io.LimitReader(rc, signature.MaxImageSize+1))
+			if err != nil {
+				return src, true
+			}
+			return signature.DataURI(im.MIMEType, data), true
+		})
+		sigs[i].Images = nil
+	}
 }
 
 // Provisioning modes recommended to the desktop client.
