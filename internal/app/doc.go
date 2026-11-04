@@ -48,7 +48,9 @@
 // send.OpKind, account 0) are executed by runSendOps; chat-mode scheduled
 // messages are kept in scheduled_messages and sent when due. Send-check
 // blocks are returned as SendResult{blocked, findings}; too large mails as
-// error code "too_large".
+// error code "too_large". The built-in checks (workflow/sendcheck) run as
+// mail.before_send hook; composer sends also wait for warnings to be
+// confirmed (OutgoingMessage.ConfirmChecks), due scheduled messages do not.
 //
 // Rendering (internal/mime/parse + internal/mime/sanitize): MIMERenderer
 // (default) sanitizes HTML with cid URLs /api/messages/{id}/cid/{cid} and
@@ -59,4 +61,19 @@
 // Messenger plugins: chats and chat messages are read from the store;
 // sending to messenger channels returns not_supported until a plugin
 // Sender exists.
+//
+// Cloud files (KONZEPT 12, cloud_*.go on internal/cloud/...): cloud
+// accounts are accounts rows of kind nextcloud, opencloud, vaultwarden or
+// webdav (Extra: server, user; the secret store keeps the app password,
+// OAuth token or Vaultwarden session). StartCloudLogin/PollCloudLogin run
+// Nextcloud Login Flow v2 and OpenID Connect (loopback redirect on the
+// desktop, /api/cloud/oauth/callback in server mode); Vaultwarden and
+// WebDAV log in directly. cloudUploader is the send.CloudUploader: every
+// attachment of the composer picks its own provider (delivery nextcloud,
+// opencloud, vaultwarden -> send.CloudOptions.FileAccounts), files go to
+// <uploadDir>/<date>/<subject>/ with a policy compliant password, links are
+// recorded in cloud_links (+ cloud_link_meta, migration 0007_cloud.sql) and
+// listed/revoked as "My shares". workflowCloud and workflowPDF implement
+// workflow.CloudActions and PDFActions (duplicate protection via
+// cloud_archive); the PDF itself comes from SetPDFRenderer.
 package app

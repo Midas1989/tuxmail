@@ -209,15 +209,17 @@ func (a *App) Send(ctx context.Context, msg OutgoingMessage) (SendResult, error)
 		}
 		msg.SendAt = ""
 	}
-	return a.sendNow(ctx, msg)
+	return a.sendNow(ctx, msg, false)
 }
 
-func (a *App) sendNow(ctx context.Context, msg OutgoingMessage) (SendResult, error) {
+// sendNow sends msg; unattended sends (due scheduled messages) do not wait
+// for the user to confirm send-check warnings.
+func (a *App) sendNow(ctx context.Context, msg OutgoingMessage, unattended bool) (SendResult, error) {
 	sender, err := a.senderOrError()
 	if err != nil {
 		return SendResult{}, err
 	}
-	req := SendRequest{Message: msg}
+	req := SendRequest{Message: msg, Unattended: unattended}
 	if msg.Channel == "email" {
 		if msg.IdentityID == 0 {
 			return SendResult{}, invalid("identityId is required for e-mail")
@@ -377,7 +379,10 @@ func (a *App) deliverScheduled(ctx context.Context, s store.ScheduledMessage) er
 		return err
 	}
 	msg.SendAt = ""
-	if _, err := a.sendNow(ctx, msg); err != nil {
+	if res, err := a.sendNow(ctx, msg, true); err != nil || res.Blocked {
+		if err == nil {
+			err = fmt.Errorf("blocked by send checks")
+		}
 		_ = a.st.SetScheduledState(ctx, s.ID, store.ScheduledFailed, err.Error())
 		return err
 	}

@@ -788,7 +788,60 @@
     "opencloudDesc": "OpenID Connect, spaces and LibreGraph shares.",
     "placeholder": "Cloud storage for attachments and share links.",
     "vaultwardenDesc": "End-to-end encrypted file Sends.",
-    "webdavDesc": "Any WebDAV server or local folders."
+    "webdavDesc": "Any WebDAV server or local folders.",
+    "subtitle": "Cloud storage, share links and encrypted Sends.",
+    "addAccount": "Connect cloud",
+    "noAccounts": "No cloud account connected yet. Connect one to attach files from the cloud, send large attachments as links and save attachments.",
+    "providers": "Cloud accounts",
+    "myShares": "My shares",
+    "upload": "Upload",
+    "uploading_one": "Uploading {count} file…",
+    "uploading": "Uploading {count} files…",
+    "uploaded": "{name} uploaded",
+    "uploadFailed": "Uploading {name} failed: {error}",
+    "newFolder": "New folder",
+    "newFolderName": "Name of the new folder",
+    "refresh": "Refresh",
+    "download": "Download",
+    "downloadFile": "Download {name}",
+    "share": "Share link",
+    "shareFile": "Create share link for {name}",
+    "rename": "Rename",
+    "renameFile": "Rename {name}",
+    "renamePrompt": "New name",
+    "deleteFile": "Delete {name}",
+    "deleted": "{name} deleted",
+    "deleteConfirm": "Delete “{name}”? Files go to the trash of the cloud server.",
+    "removeAccount": "Disconnect account",
+    "removeConfirm": "Disconnect “{name}”? Its app password or tokens are removed; files and shares on the server stay.",
+    "quota": "{used} of {total}",
+    "quotaUnlimited": "{used} used",
+    "breadcrumb": "Folder path",
+    "root": "Root folder",
+    "loading": "Loading",
+    "empty": "This folder is empty.",
+    "noSubfolders": "No subfolders.",
+    "loadFailed": "Could not load the folder: {error}",
+    "selectFile": "Select {name}",
+    "col": {
+      "select": "Select",
+      "name": "Name",
+      "size": "Size",
+      "modified": "Modified",
+      "actions": "Actions"
+    },
+    "dav": {
+      "title": "Calendar and contacts of this account",
+      "hint": "Nextcloud also offers CalDAV and CardDAV. Add them as calendar or address book accounts with these addresses.",
+      "caldav": "CalDAV",
+      "carddav": "CardDAV"
+    },
+    "send": {
+      "title": "Bitwarden Send",
+      "hint": "Files and texts are encrypted on this device; the key is only part of the link and never reaches the server.",
+      "file": "Send a file",
+      "text": "Send a text"
+    }
   },
   "settings": {
     "about": "About TuxMail",
@@ -952,6 +1005,22 @@
     "workflows": {
       "title": "Workflows",
       "intro": "Automations: trigger → condition → actions. Edit visually, as a one-line rule or as YAML; test with a dry run before enabling."
+    },
+    "signatures": {
+      "title": "Signatures",
+      "add": "New signature",
+      "newName": "Signature",
+      "hint": "Appended to new mails and replies; chat replies use the chat signature setting of the identity.",
+      "name": "Name",
+      "text": "Signature text",
+      "delete": "Delete signature {name}",
+      "identity": "Identity",
+      "default": "New mails",
+      "reply": "Replies",
+      "defaultFor": "Signature for new mails from {email}",
+      "replyFor": "Signature for replies from {email}",
+      "none": "None",
+      "sameAsDefault": "Same as new mails"
     }
   },
   "search": {
@@ -1139,7 +1208,12 @@
     "titleNew": "New email",
     "titleReply": "Reply",
     "to": "To",
-    "underline": "Underline"
+    "underline": "Underline",
+    "checks": {
+      "title": "Please check before sending",
+      "edit": "Back to the message",
+      "sendAnyway": "Send anyway"
+    }
   },
   "workflow": {
     "placeholder": "Rules will be configured here.",
@@ -1487,6 +1561,7 @@
       "errEmail": "Please enter a valid email address.",
       "errInsecure": "Please confirm the unencrypted connection.",
       "host": "Server",
+      "easUrl": "ActiveSync URL (optional; username may be DOMAIN\\user)",
       "incoming": "Incoming server",
       "insecureConfirm": "Confirm unencrypted connection",
       "insecureWarning": "Unencrypted connection: password and mail can be read in transit. Use anyway?",
@@ -1789,6 +1864,210 @@
       "title": "App settings",
       "version": "App version {version}"
     }
+  },
+  "cloud": {
+    "provider": {
+      "nextcloud": "Nextcloud",
+      "opencloud": "OpenCloud",
+      "vaultwarden": "Vaultwarden Send",
+      "webdav": "WebDAV"
+    },
+    "connect": {
+      "title": "Connect cloud account",
+      "provider": "Provider",
+      "lead": {
+        "nextcloud": "Sign in in the browser (Login Flow v2). TuxMail receives an app password; your main password stays with Nextcloud.",
+        "opencloud": "Sign in in the browser with OpenID Connect (also works with ownCloud Infinite Scale).",
+        "vaultwarden": "Your master password is only used on this device to unlock the encryption key; TuxMail keeps a session, not the password.",
+        "webdav": "Any WebDAV server: enter the full address of the folder."
+      },
+      "server": "Server address",
+      "webdavUrl": "WebDAV address",
+      "email": "E-mail address",
+      "masterPassword": "Master password",
+      "totp": "Two-factor code",
+      "totpHint": "Enter the code of your authenticator app.",
+      "username": "User name",
+      "password": "Password",
+      "displayName": "Display name (optional)",
+      "displayNameHint": "e.g. Family cloud",
+      "signIn": "Sign in",
+      "signInBrowser": "Sign in in the browser",
+      "waiting": "Waiting for the sign-in in the browser…",
+      "loginFlowHint": "Confirm access for TuxMail in the opened Nextcloud page. This dialog continues automatically.",
+      "oidcHint": "Sign in in the opened page and allow access. This dialog continues automatically.",
+      "openAgain": "Open login page again",
+      "done": "{name} is connected.",
+      "finish": "Done",
+      "failed": "Sign-in failed.",
+      "errServer": "Please enter the server address.",
+      "errTotp": "The code was not accepted. Please try again.",
+      "wizardTitle": "Add a cloud account instead"
+    },
+    "share": {
+      "title": "Share “{name}”",
+      "textTitle": "New text Send",
+      "created": "Link created",
+      "link": "Link",
+      "password": "Password",
+      "copyLink": "Copy link",
+      "copyPassword": "Copy password",
+      "linkCopied": "Link copied",
+      "passwordCopied": "Password copied",
+      "passwordSeparately": "Tip: send the password through a different channel than the link.",
+      "validUntil": "Valid until {date}",
+      "sendHint": "The Send is encrypted end to end; the key is part of the link.",
+      "text": "Text",
+      "usePassword": "Protect with password",
+      "passwordAuto": "Generated automatically",
+      "generate": "Generate",
+      "expires": "Expires on",
+      "maxAccess": "Maximum number of accesses",
+      "unlimited": "Unlimited",
+      "hideEmail": "Hide my e-mail address from recipients",
+      "note": "Note for recipients",
+      "notePlaceholder": "Optional",
+      "errText": "Please enter a text.",
+      "create": "Create link",
+      "createSend": "Create Send"
+    },
+    "shares": {
+      "filter": "Show",
+      "filterActive": "Active",
+      "filterAll": "All",
+      "count_one": "{count} link",
+      "count": "{count} links",
+      "empty": "No shares yet.",
+      "statusActive": "Active",
+      "statusExpired": "Expired",
+      "statusRevoked": "Revoked",
+      "expiresSoon_one": "Expires in {count} day",
+      "expiresSoon": "Expires in {count} days",
+      "source": {
+        "mail": "Mail",
+        "files": "Files",
+        "workflow": "Workflow",
+        "chat": "Chat"
+      },
+      "createdAt": "created {date}",
+      "revokedAt": "revoked {date}",
+      "expiresAt": "until {date}",
+      "open": "Open link",
+      "revoke": "Revoke",
+      "revokeConfirm": "Revoke the link for “{name}”? Recipients can no longer open it.",
+      "revoked": "Link for {name} revoked"
+    },
+    "picker": {
+      "title": "Attach from cloud",
+      "button": "From cloud",
+      "noAccounts": "No cloud account with file storage is connected (Files screen).",
+      "account": "Cloud account",
+      "selected_one": "{count} file selected",
+      "selected": "{count} files selected",
+      "insertLinks": "Insert as link",
+      "attach": "Attach",
+      "linkPassword": "Password: {password}"
+    },
+    "save": {
+      "title": "Save “{name}” to the cloud",
+      "button": "Save to cloud",
+      "filename": "File name",
+      "target": "Target folder: {path}",
+      "saved": "Saved to {path}",
+      "action": "Save here"
+    },
+    "signIn": {
+      "with": "Sign in with {provider}",
+      "lead": "{provider} expects a sign-in through the browser. TuxMail never sees your password.",
+      "method": "Access method",
+      "kind": {
+        "graph": "Microsoft Graph (recommended)",
+        "imap": "IMAP/SMTP with OAuth2",
+        "eas": "Exchange ActiveSync",
+        "ews": "Exchange Web Services",
+        "gmail": "Gmail API (recommended)"
+      },
+      "waiting": "Waiting for the sign-in in your browser …",
+      "openLink": "Browser did not open? Open the sign-in page",
+      "deviceCode": "Open {url} on any device and enter this code:",
+      "useDevice": "Sign in on another device (code)",
+      "cancel": "Cancel sign-in",
+      "notConfigured": "Sign-in with {provider} is not set up yet. Enter a client ID under Settings → Sign-in services, or ask your administrator.",
+      "openSettings": "Open sign-in services",
+      "consent": "Your organization requires an administrator to approve TuxMail first.",
+      "denied": "The sign-in was canceled or access was denied.",
+      "expired": "The sign-in expired. Please try again.",
+      "failed": "Sign-in failed: {error}",
+      "done": "Signed in as {email}.",
+      "passwordInstead": "Use password or app password instead"
+    },
+    "services": {
+      "title": "Sign-in services",
+      "intro": "Client IDs for signing in with Microsoft and Google. Power users and administrators can enter their own registration (see docs/MICROSOFT-GOOGLE.md).",
+      "configured": "Configured",
+      "notConfigured": "Not configured",
+      "source": {
+        "env": "from the environment",
+        "admin": "set by the administrator",
+        "user": "own client ID",
+        "builtin": "TuxMail registration"
+      },
+      "clientId": "Client ID",
+      "clientSecret": "Client secret (Google desktop clients only)",
+      "secretStored": "A client secret is stored.",
+      "tenant": "Tenant (common, organizations or tenant ID)",
+      "save": "Save own client ID",
+      "remove": "Remove own client ID",
+      "saved": "Saved.",
+      "adminOnly": "Own client IDs were disabled by the administrator.",
+      "redirect": "Redirect URI to register: {uri}",
+      "edit": "Own client ID …"
+    },
+    "shared": {
+      "title": "Shared mailboxes",
+      "intro": "Open mailboxes you have access to in Microsoft 365 or Exchange (shared mailboxes, delegation).",
+      "add": "Add shared mailbox",
+      "account": "Through account",
+      "address": "Address of the mailbox",
+      "name": "Display name (optional)",
+      "sendMode": "Sending",
+      "none": "Read only (no sender identity)",
+      "noAccounts": "Add a Microsoft 365 (Graph) or Exchange (EWS) account first.",
+      "added": "Mailbox {address} added."
+    },
+    "sendMode": {
+      "send_as": "Send as",
+      "send_on_behalf": "Send on behalf of",
+      "own": "Own address",
+      "hint": {
+        "send_as": "Recipients only see the shared mailbox as sender.",
+        "send_on_behalf": "Recipients see “you on behalf of the shared mailbox”."
+      }
+    },
+    "identities": {
+      "title": "Identities and delegation",
+      "intro": "How each sender address sends: as own address, as the shared mailbox (Send as) or on its behalf.",
+      "mode": "Send mode of {email}"
+    },
+    "pim": {
+      "sync": "Sync calendar and contacts",
+      "done": "{events} events, {contacts} contacts and {tasks} tasks imported."
+    }
+  },
+  "vault": {
+    "createTitle": "Set a master password",
+    "unlockTitle": "Unlock TuxMail",
+    "createLead": "In portable mode your account passwords are stored encrypted next to the program. Choose a master password to protect them.",
+    "unlockLead": "Enter your master password to unlock the stored account passwords.",
+    "password": "Master password",
+    "confirm": "Repeat master password",
+    "createHint": "There is no way to recover a forgotten master password.",
+    "create": "Create vault",
+    "unlock": "Unlock",
+    "errShort": "The master password needs at least {count} characters.",
+    "errMismatch": "The passwords do not match.",
+    "errEmpty": "Please enter the master password.",
+    "errWrong": "Wrong master password."
   },
   "tasks": {
     "addPlaceholder": "Add a task, e.g. “Call Anna tomorrow”",

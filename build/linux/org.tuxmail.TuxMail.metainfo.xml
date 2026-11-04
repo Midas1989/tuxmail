@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: CC0-1.0 -->
+<!-- AppStream metadata. @VERSION@ and @DATE@ are filled in by build/linux/stage.sh. -->
+<component type="desktop-application">
+  <id>org.tuxmail.TuxMail</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>AGPL-3.0-or-later</project_license>
+
+  <name>TuxMail</name>
+  <summary>Email, calendar, contacts and messengers in one app</summary>
+  <summary xml:lang="de">E-Mail, Kalender, Kontakte und Messenger in einer Anwendung</summary>
+
+  <developer id="org.tuxmail">
+    <name>Midas Wollinger and TuxMail contributors</name>
+  </developer>
+
+  <description>
+    <p>
+      TuxMail is a free communication client for Linux and Windows: email (IMAP, POP3, SMTP and more),
+      calendar and tasks, contacts and messengers in one window.
+    </p>
+    <p xml:lang="de">
+      TuxMail ist ein freier Kommunikations-Client für Linux und Windows: E-Mail (IMAP, POP3, SMTP und mehr),
+      Kalender und Aufgaben, Kontakte und Messenger in einem Fenster.
+    </p>
+    <p>
+      Besides the classic three-pane view, TuxMail offers a messenger-like conversation view for emails.
+      Both work on the same data and can be switched at any time.
+    </p>
+    <p xml:lang="de">
+      Neben der klassischen 3-Spalten-Ansicht gibt es eine Messenger-artige Konversationsansicht auch für
+      E-Mails. Beide arbeiten auf denselben Daten und sind jederzeit umschaltbar.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">org.tuxmail.TuxMail.desktop</launchable>
+  <provides>
+    <binary>tuxmail</binary>
+  </provides>
+
+  <url type="homepage">https://github.com/Midas1989/Mailclient</url>
+  <url type="bugtracker">https://github.com/Midas1989/Mailclient/issues</url>
+  <url type="vcs-browser">https://github.com/Midas1989/Mailclient</url>
+
+  <categories>
+    <category>Network</category>
+    <category>Email</category>
+  </categories>
+  <keywords>
+    <keyword>mail</keyword>
+    <keyword>email</keyword>
+    <keyword>calendar</keyword>
+    <keyword>contacts</keyword>
+    <keyword>messenger</keyword>
+  </keywords>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f3f6fa</color>
+    <color type="primary" scheme_preference="dark">#1c2b45</color>
+  </branding>
+
+  <requires>
+    <display_length compare="ge">768</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <content_rating type="oars-1.1">
+    <content_attribute id="social-chat">intense</content_attribute>
+    <content_attribute id="social-info">mild</content_attribute>
+  </content_rating>
+
+  <releases>
+    <release version="@VERSION@" date="@DATE@"/>
+  </releases>
+</component>

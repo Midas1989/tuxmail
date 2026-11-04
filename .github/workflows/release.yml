@@ -1,0 +1,438 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Midas Wollinger and TuxMail contributors
+#
+# TuxMail release packaging (docs/RELEASE.md). All build logic lives in build/
+# so that CI and developers use the same scripts.
+#
+#   push to main / claude/**   -> all packages as workflow artifacts, Docker image :edge
+#   tag v*                     -> additionally a GitHub release with all files,
+#                                 checksums.txt (+ .asc), SBOM; Docker :<version> and :latest
+#   workflow_dispatch          -> like a branch push
+#
+# Jobs: version -> frontend -> server (4x), linux-desktop (amd64/arm64),
+#       windows-desktop (amd64/arm64), docker -> publish
+#
+# Optional secrets (steps are skipped when missing):
+#   GPG_PRIVATE_KEY, GPG_PASSPHRASE        signed .deb/.rpm + checksums.txt.asc
+#   SIGNPATH_API_TOKEN (+ variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
+#   SIGNPATH_SIGNING_POLICY_SLUG)          Authenticode signing of the Windows files
+# The Android APKs are built and attached by android.yml.
+
+name: Release
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    tags: ['v*']
+    paths-ignore:
+      - 'docs/**'
+      - 'mobile/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+env:
+  NODE_VERSION: '22'
+  NFPM_VERSION: v2.43.0      # last nfpm release that builds with Go 1.24
+  GO_WINRES_VERSION: v0.3.3
+  IMAGE: ghcr.io/midas1989/tuxmail
+  # OAuth app registrations of the project (public client IDs; set them as
+  # repository variables under Settings -> Secrets and variables -> Variables).
+  TUXMAIL_BUILD_MS_CLIENT_ID: ${{ vars.TUXMAIL_MS_CLIENT_ID }}
+  TUXMAIL_BUILD_GOOGLE_CLIENT_ID: ${{ vars.TUXMAIL_GOOGLE_CLIENT_ID }}
+  # Google treats desktop-app client secrets as non-confidential; still kept as a secret.
+  TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
+
+jobs:
+  version:
+    name: Version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      release: ${{ steps.v.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - name: Determine version (VERSION file) and check the tag
+        id: v
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            build/version.sh --check-tag "$GITHUB_REF_NAME"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
+          version=$(build/version.sh)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "### TuxMail $version" >> "$GITHUB_STEP_SUMMARY"
+
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: npm ci && npm run build -> web/dist
+        run: sh web/build.sh
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: frontend-dist
+          path: web/dist
+          if-no-files-found: error
+          retention-days: 3
+
+  server:
+    name: Server ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: [version, frontend]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, windows]
+        goarch: [amd64, arm64]
+    env:
+      TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: frontend-dist
+          path: web/dist
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Build and pack
+        run: build/package-server.sh "${{ matrix.goos }}" "${{ matrix.goarch }}"
+      - name: Smoke test
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        run: |
+          tar -xzf "dist/tuxmail_${TUXMAIL_VERSION}_linux_amd64.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/tuxmail" version | grep -F "$TUXMAIL_VERSION"
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: server-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  linux-desktop:
+    name: Linux desktop ${{ matrix.arch }}
+    needs: [version, frontend]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    env:
+      TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
+      HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: frontend-dist
+          path: web/dist
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev \
+            dpkg-dev file desktop-file-utils appstream librsvg2-common xvfb
+          go install "github.com/goreleaser/nfpm/v2/cmd/nfpm@${NFPM_VERSION}"
+
+      - name: Build desktop binary and stage files
+        run: build/linux/build.sh
+
+      - name: Prepare package signing key
+        if: env.HAS_GPG_KEY == 'true'
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          printf '%s\n' "$GPG_PRIVATE_KEY" > "$RUNNER_TEMP/nfpm-signing-key.asc"
+          echo "NFPM_SIGNING_KEY_FILE=$RUNNER_TEMP/nfpm-signing-key.asc" >> "$GITHUB_ENV"
+
+      - name: .deb and .rpm (nfpm)
+        env:
+          NFPM_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: build/linux/package-nfpm.sh
+
+      - name: Remove package signing key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/nfpm-signing-key.asc"
+
+      - name: Test .deb installation
+        run: |
+          sudo apt-get install -y ./dist/tuxmail_*_${{ matrix.arch }}.deb
+          tuxmail version | grep -F "$TUXMAIL_VERSION"
+          sudo apt-get remove -y tuxmail
+
+      - name: Portable tar.gz
+        run: build/linux/package-portable.sh
+
+      - name: AppImage
+        run: build/linux/package-appimage.sh
+
+      - name: AppImage window smoke test (informational)
+        continue-on-error: true
+        run: |
+          app="dist/TuxMail-${TUXMAIL_VERSION}-linux-${{ matrix.arch }}.AppImage"
+          set +e
+          APPIMAGE_EXTRACT_AND_RUN=1 timeout 30 xvfb-run -a "$app" --data-dir "$RUNNER_TEMP/appimage-data" > "$RUNNER_TEMP/appimage.log" 2>&1 &
+          sleep 20
+          pgrep -af 'WebKit(Web|Network)Process'
+          found=$?
+          wait
+          cat "$RUNNER_TEMP/appimage.log"
+          [ $found -eq 0 ] || { echo "::warning::AppImage did not start WebKit helper processes"; exit 1; }
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: linux-desktop-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-desktop:
+    name: Windows desktop ${{ matrix.arch }}
+    needs: [version, frontend]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Wails on Windows needs no CGO (go-webview2): arm64 is a cross build.
+        arch: [amd64, arm64]
+    defaults:
+      run:
+        shell: bash
+    env:
+      TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
+      # SignPath (Authenticode) stays disabled until the token and variables exist.
+      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: frontend-dist
+          path: web/dist
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install go-winres and NSIS
+        run: |
+          go install "github.com/tc-hib/go-winres@${GO_WINRES_VERSION}"
+          if ! command -v makensis > /dev/null && [ ! -x "/c/Program Files (x86)/NSIS/makensis.exe" ]; then
+            choco install nsis -y --no-progress
+          fi
+
+      - name: Build TuxMail.exe
+        run: build/windows/build.sh "${{ matrix.arch }}"
+
+      - name: Smoke test
+        if: matrix.arch == 'amd64'
+        run: build/out/windows-amd64/TuxMail.exe version
+
+      # ------------------------------------------------------------------
+      # Code signing (SignPath Foundation / SignPath.io) - PLACEHOLDER.
+      # Disabled until the secret SIGNPATH_API_TOKEN and the repository
+      # variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG and
+      # SIGNPATH_SIGNING_POLICY_SLUG exist. The SignPath project needs an
+      # artifact configuration "exe" that signs the PE file in the zip that
+      # upload-artifact creates. Signed files land in build/out/signed-<arch>/
+      # and replace the unsigned ones for packaging (TUXMAIL_EXE).
+      # ------------------------------------------------------------------
+      - name: Upload unsigned TuxMail.exe for signing
+        id: unsigned-exe
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: unsigned-exe-${{ matrix.arch }}
+          path: build/out/windows-${{ matrix.arch }}/TuxMail.exe
+          retention-days: 1
+      - name: Sign TuxMail.exe (SignPath)
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v2.2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: exe
+          github-artifact-id: ${{ steps.unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: build/out/signed-${{ matrix.arch }}
+      - name: Use signed TuxMail.exe
+        if: env.SIGNPATH_ENABLED == 'true'
+        run: echo "TUXMAIL_EXE=$PWD/build/out/signed-${{ matrix.arch }}/TuxMail.exe" >> "$GITHUB_ENV"
+
+      - name: Portable zip
+        run: build/windows/package-portable.sh "${{ matrix.arch }}"
+
+      - name: NSIS installer
+        env:
+          WEBVIEW2_BOOTSTRAPPER: download
+        run: build/windows/package-installer.sh "${{ matrix.arch }}"
+
+      - name: Upload unsigned installer for signing
+        id: unsigned-setup
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: unsigned-setup-${{ matrix.arch }}
+          path: dist/TuxMail-*-setup.exe
+          retention-days: 1
+      - name: Sign installer (SignPath)
+        if: env.SIGNPATH_ENABLED == 'true'
+        uses: signpath/github-action-submit-signing-request@v2.2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: exe
+          github-artifact-id: ${{ steps.unsigned-setup.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: windows-desktop-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  docker:
+    name: Docker image
+    needs: [version, frontend]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: frontend-dist
+          path: web/dist
+      - uses: docker/setup-qemu-action@v4.4.0
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/login-action@v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: ${{ env.IMAGE }}
+          flavor: latest=false
+          tags: |
+            type=raw,value=edge,enable=${{ github.ref_type == 'branch' }}
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
+          labels: |
+            org.opencontainers.image.title=TuxMail
+            org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.version=${{ needs.version.outputs.version }}
+      - uses: docker/build-push-action@v7.4.0
+        with:
+          context: .
+          file: build/docker/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            FRONTEND=prebuilt
+            VERSION=${{ needs.version.outputs.version }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  publish:
+    name: Checksums and GitHub release
+    needs: [version, server, linux-desktop, windows-desktop, docker]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: '{server,linux-desktop,windows-desktop}-*'
+          path: dist
+          merge-multiple: true
+
+      - name: SBOM (SPDX, Go modules and npm packages)
+        continue-on-error: true
+        uses: anchore/sbom-action@v0.24.3
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/tuxmail_${{ needs.version.outputs.version }}_sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: checksums.txt
+        run: build/checksums.sh dist
+
+      - name: GPG signature of checksums.txt (optional)
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        run: build/sign-gpg.sh dist/checksums.txt
+
+      - name: Summary
+        run: |
+          {
+            echo "### Release files ($TUXMAIL_VERSION)"
+            echo '```'
+            ls -l dist
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: checksums
+          path: |
+            dist/checksums.txt*
+            dist/*.spdx.json
+            dist/tuxmail-release-key.asc
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: GitHub release
+        if: needs.version.outputs.release == 'true'
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          name: TuxMail ${{ needs.version.outputs.version }}
+          files: dist/*
+          fail_on_unmatched_files: true
+          generate_release_notes: true

@@ -34,6 +34,8 @@ import {
   type MessageSummary,
   type Person,
   type Signature,
+  type SendResult,
+  type VaultStatus,
   type ItemRef,
   type Project,
   type SearchFolder,
@@ -325,7 +327,27 @@ export class AppState {
   // Lifecycle
   // -------------------------------------------------------------------------
 
+  /** Portable desktop: master-password vault state (VaultUnlock dialog). */
+  vault = $state<VaultStatus | null>(null);
+
+  async refreshVault(): Promise<void> {
+    try {
+      this.vault = await this.api.vaultStatus();
+    } catch {
+      this.vault = null;
+    }
+  }
+
+  /** Unlocks (or on first use creates) the vault; throws ApiError "invalid_password". */
+  async unlockVault(password: string): Promise<void> {
+    await this.api.unlockVault(password);
+    await this.refreshVault();
+    const accounts = await this.api.listAccounts();
+    this.accounts = accounts.sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
   async init(): Promise<void> {
+    void this.refreshVault();
     try {
       await prefs.connect(this.api);
       void this.initChatFeatures();
@@ -364,11 +386,16 @@ export class AppState {
   private reloadListDebounced = debounce(() => void this.reloadList({ keepSelection: true }), 150);
   private reloadItemsDebounced = debounce((focus?: string) => void this.reloadItems(focus), 80);
   private reloadSearchFoldersDebounced = debounce(() => void this.loadSearchFolders(), 400);
+  // Sync creates persons for new senders/recipients (KONZEPT 10.2).
+  private reloadPersonsDebounced = debounce(() => void this.api.listPersons().then((p) => (this.persons = p)), 700);
 
   private onEvent(e: ApiEvent): void {
     switch (e.type) {
       case 'connection':
         this.connection = e.state;
+        break;
+      case 'vault.locked':
+        void this.refreshVault();
         break;
       case 'tags.changed':
         void this.loadTags();
@@ -390,20 +417,24 @@ export class AppState {
         this.pendingFolderAccounts = [];
         break;
       case 'account.updated':
+        // accountId 0: settings shared by all accounts changed (e.g. signatures).
         void this.api.listAccounts().then((a) => {
           this.accounts = a.sort((x, y) => x.sortOrder - y.sortOrder);
-          return this.reloadFolders(e.accountId);
+          return e.accountId ? this.reloadFolders(e.accountId) : undefined;
         });
         void this.api.listIdentities().then((i) => (this.identities = i));
+        void this.api.listSignatures().then((s) => (this.signatures = s));
         break;
       case 'message.added':
       case 'message.updated':
       case 'message.removed':
+        if (e.type === 'message.added') this.reloadPersonsDebounced();
         this.reloadListDebounced();
         this.reloadSearchFoldersDebounced();
         if (this.selectedMessageId === e.messageId && e.type === 'message.updated') void this.refreshMessage();
         break;
       case 'conversation.updated':
+        this.reloadPersonsDebounced();
         if (this.viewMode !== 'classic') this.reloadListDebounced();
         if (this.selectedConversationId === e.conversationId) this.reloadItemsDebounced(e.itemId);
         break;
@@ -903,11 +934,19 @@ export class AppState {
   async sendChat(
     text: string,
     option: ChannelOption,
-    extra: { replyTo?: ConversationItem | null; signature?: Signature | null; attachments?: OutgoingAttachment[]; sendAt?: string; cc?: Address[] } = {},
-  ): Promise<void> {
+    extra: {
+      replyTo?: ConversationItem | null;
+      signature?: Signature | null;
+      attachments?: OutgoingAttachment[];
+      sendAt?: string;
+      cc?: Address[];
+      /** Send checks confirmed by the user after a blocked result. */
+      confirmChecks?: string[];
+    } = {},
+  ): Promise<SendResult | undefined> {
     const conv = this.conversation;
     const attachments = extra.attachments ?? [];
-    if (!conv || (!text.trim() && attachments.length === 0)) return;
+    if (!conv || (!text.trim() && attachments.length === 0)) return undefined;
     const sig = extra.signature ?? null;
     if (option.channel === 'email') {
       const target = extra.replyTo?.messageId != null ? extra.replyTo : [...this.items].reverse().find((i) => i.messageId != null);
@@ -918,9 +957,10 @@ export class AppState {
           .map((id) => this.person(id))
           .map((p) => ({ name: p?.displayName, email: p?.handles.find((h) => h.kind === 'email')?.value ?? '' }))
           .filter((a) => a.email);
-        const res = await this.api.send({ channel: 'email', identityId: option.identityId, conversationId: conv.id, sendAt: extra.sendAt, to, cc: extra.cc ?? [], bcc: [], subject: text.split('\n')[0].slice(0, 60), text: textWithSig, html, attachments });
+        const res = await this.api.send({ channel: 'email', identityId: option.identityId, conversationId: conv.id, sendAt: extra.sendAt, to, cc: extra.cc ?? [], bcc: [], subject: text.split('\n')[0].slice(0, 60), text: textWithSig, html, attachments, confirmChecks: extra.confirmChecks });
+        if (res.blocked) return res;
         await this.reloadItems(res.itemId);
-        return;
+        return res;
       }
       const original = await this.api.getMessage(target.messageId);
       const init = this.replyInit(original, conv.isGroup ? 'replyAll' : 'reply');
@@ -939,10 +979,12 @@ export class AppState {
         replyToItemId: extra.replyTo?.id,
         signatureId: sig?.id ?? null,
         attachments,
+        confirmChecks: extra.confirmChecks,
       });
+      if (res.blocked) return res;
       await this.reloadItems(res.itemId);
       if (res.scheduledId) this.toast(t('chat.schedule.scheduled', { when: fmt().dateTime(extra.sendAt!) }));
-      return;
+      return res;
     }
     const res = await this.api.send({
       channel: option.channel,
@@ -960,6 +1002,7 @@ export class AppState {
     });
     await this.reloadItems(res.itemId);
     if (res.scheduledId) this.toast(t('chat.schedule.scheduled', { when: fmt().dateTime(extra.sendAt!) }));
+    return res;
   }
 
   /** Signature for mails written in chat mode (identity setting: full / short / off). */

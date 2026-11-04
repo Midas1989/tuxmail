@@ -41,15 +41,24 @@
     checked = checked.includes(id) ? checked.filter((x) => x !== id) : [...checked, id];
   }
 
-  async function createTag() {
+  // "Apply" right after "create" must wait for the new tag (else it is lost).
+  let creating: Promise<void> | null = null;
+  function createTag(): Promise<void> {
     const path = query.trim();
-    if (!path) return;
-    const tag = await app.createTag(path, newColor);
-    checked = [...checked, tag.id];
-    query = '';
+    if (!path) return Promise.resolve();
+    const p = app.createTag(path, newColor).then((tag) => {
+      checked = [...checked, tag.id];
+      query = '';
+    });
+    const c: Promise<void> = p.finally(() => {
+      if (creating === c) creating = null;
+    });
+    creating = c;
+    return p;
   }
 
   async function applyTags(items: ItemRef[], current: number[]) {
+    if (creating) await creating.catch(() => {});
     const add = checked.filter((x) => !current.includes(x));
     const remove = current.filter((x) => !checked.includes(x));
     close();

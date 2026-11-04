@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/pim/ical"
 	"github.com/Midas1989/Mailclient/internal/pim/itip"
 	"github.com/Midas1989/Mailclient/internal/pim/rrule"
@@ -31,7 +32,39 @@ var calendarPalette = []string{"#3b82f6", "#16a34a", "#9333ea", "#ea580c", "#db2
 
 // ensureDefaultCalendars creates the local calendar and the birthdays
 // calendar on first use and makes sure exactly one calendar is the default.
+// Calendars imported from Graph, Gmail and EWS accounts (pimapi, import
+// only) are returned read-only; EAS calendars stay writable (easstore
+// sends local changes).
 func (a *App) ensureDefaultCalendars(ctx context.Context) ([]store.CalendarWithMeta, error) {
+	cals, err := a.ensureDefaultCalendarsRaw(ctx)
+	if err != nil {
+		return nil, err
+	}
+	imp := a.importOnlyAccounts(ctx)
+	for i := range cals {
+		if imp[cals[i].AccountID] {
+			cals[i].ReadOnly = true
+		}
+	}
+	return cals, nil
+}
+
+// importOnlyAccounts returns the accounts whose calendars and contacts are
+// imported by internal/providers/pimapi without write-back.
+func (a *App) importOnlyAccounts(ctx context.Context) map[int64]bool {
+	out := map[int64]bool{}
+	if accs, err := a.st.ListAccounts(ctx); err == nil {
+		for _, acc := range accs {
+			switch acc.Kind {
+			case domain.KindGraph, domain.KindGmail, domain.KindEWS:
+				out[acc.ID] = true
+			}
+		}
+	}
+	return out
+}
+
+func (a *App) ensureDefaultCalendarsRaw(ctx context.Context) ([]store.CalendarWithMeta, error) {
 	cals, err := a.st.ListCalendarsWithMeta(ctx)
 	if err != nil {
 		return nil, err
@@ -224,7 +257,7 @@ func (a *App) DeleteCalendar(ctx context.Context, id int64) error {
 	if err != nil {
 		return err
 	}
-	if cm.Meta.Kind == store.CalKindCalDAV || cm.Meta.Kind == store.CalKindBirthdays {
+	if cm.Meta.Kind == store.CalKindCalDAV || cm.Meta.Kind == store.CalKindBirthdays || (cm.AccountID != 0 && cm.Meta.Kind == store.CalKindLocal) {
 		return invalid("this calendar cannot be deleted here; hide it instead")
 	}
 	if err := a.st.DeleteCalendar(ctx, id); err != nil {
@@ -269,6 +302,9 @@ func (a *App) writableCalendar(ctx context.Context, id int64, component string) 
 	cm, err := a.st.GetCalendarWithMeta(ctx, id)
 	if err != nil {
 		return cm, err
+	}
+	if a.importOnlyAccounts(ctx)[cm.AccountID] {
+		cm.ReadOnly = true
 	}
 	if cm.ReadOnly || cm.Meta.Kind == store.CalKindSubscription || cm.Meta.Kind == store.CalKindBirthdays {
 		return cm, errReadOnly

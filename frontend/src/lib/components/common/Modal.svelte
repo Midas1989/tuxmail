@@ -1,4 +1,10 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<script lang="ts" module>
+  // Open modals, top-most last: Escape closes the top-most one even when the
+  // focused element was removed (focus fell back to <body>).
+  const stack: symbol[] = [];
+</script>
+
 <script lang="ts">
   import type { Snippet } from 'svelte';
   import { fade, scale } from 'svelte/transition';
@@ -15,12 +21,32 @@
     bare?: boolean;
     align?: 'center' | 'top';
     labelledBy?: string;
+    /** False hides the close button (dialogs that must be answered). */
+    closable?: boolean;
   }
-  let { title, onclose, width = '560px', children, footer, bare = false, align = 'center' }: Props = $props();
+  let { title, onclose, width = '560px', children, footer, bare = false, align = 'center', closable = true }: Props = $props();
 
   let dialog = $state<HTMLDivElement>();
   const titleId = `dlg-${Math.random().toString(36).slice(2, 8)}`;
   const previouslyFocused = typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null;
+
+  const me = Symbol('modal');
+  $effect(() => {
+    stack.push(me);
+    return () => {
+      const i = stack.indexOf(me);
+      if (i >= 0) stack.splice(i, 1);
+    };
+  });
+
+  function onwindowkeydown(e: KeyboardEvent) {
+    if (e.key !== 'Escape' || e.defaultPrevented || stack[stack.length - 1] !== me) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && dialog?.contains(active)) return; // handled by onkeydown
+    if (active && active !== document.body && active.closest('[role="dialog"]')) return;
+    e.preventDefault();
+    onclose();
+  }
 
   $effect(() => {
     // Initial focus: first element marked autofocus, else first focusable.
@@ -59,6 +85,8 @@
   }
 </script>
 
+<svelte:window onkeydown={onwindowkeydown} />
+
 <div class="backdrop" class:top={align === 'top'} transition:fade={{ duration: 120 }} role="presentation" onmousedown={(e) => e.target === e.currentTarget && onclose()}>
   <div
     bind:this={dialog}
@@ -75,7 +103,7 @@
     {#if !bare}
       <header>
         <h2 id={titleId}>{title}</h2>
-        <button class="icon-btn" onclick={onclose} aria-label={t('common.action.close')}><X size={18} /></button>
+        {#if closable}<button class="icon-btn" onclick={onclose} aria-label={t('common.action.close')}><X size={18} /></button>{/if}
       </header>
     {/if}
     <div class="content" class:bare>

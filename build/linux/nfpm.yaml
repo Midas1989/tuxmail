@@ -1,0 +1,111 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (C) 2026 Midas Wollinger and TuxMail contributors
+#
+# nfpm configuration for the TuxMail desktop packages (.deb, .rpm).
+# Used by build/linux/package-nfpm.sh, which sets:
+#   VERSION  package version (semver; "0.1.0-dev.abc1234" becomes 0.1.0~dev.abc1234)
+#   ARCH     Go architecture (amd64 | arm64)
+#   STAGE    staged FHS tree from build/linux/build.sh
+#   NFPM_SIGNING_KEY_FILE  optional armored GPG private key (rpm/deb signatures),
+#                          passphrase in NFPM_PASSPHRASE
+# Tested with nfpm v2.43.0. Contents need "expand: true" for ${STAGE}.
+
+name: tuxmail
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+version_schema: semver
+release: "1"
+section: mail
+priority: optional
+maintainer: "TuxMail contributors <https://github.com/Midas1989/Mailclient/issues>"
+vendor: TuxMail
+homepage: https://github.com/Midas1989/Mailclient
+license: AGPL-3.0-or-later
+description: |-
+  Email, calendar, contacts and messengers in one app
+  TuxMail is a free communication client: email (IMAP, POP3, SMTP and more),
+  calendar and tasks, contacts and messengers with a classic three-pane view
+  and a messenger-like conversation view. The binary also provides the
+  command line ("tuxmail serve", "tuxmail user ...").
+
+# The built binary needs glibc >= 2.34, GTK 3 and WebKitGTK 4.1
+# (Debian 12+, Ubuntu 22.04+, Fedora 39+, openSUSE Tumbleweed).
+overrides:
+  deb:
+    depends:
+      - libc6 (>= 2.34)
+      - libgtk-3-0
+      - libwebkit2gtk-4.1-0
+    recommends:
+      - gnome-keyring | kwalletmanager | keepassxc
+  rpm:
+    depends:
+      # Library capabilities instead of package names: works on Fedora and openSUSE alike.
+      - libgtk-3.so.0()(64bit)
+      - libwebkit2gtk-4.1.so.0()(64bit)
+
+contents:
+  - src: ${STAGE}/usr/bin/tuxmail
+    expand: true
+    dst: /usr/bin/tuxmail
+    file_info: { mode: 0755 }
+  - src: ${STAGE}/usr/share/applications/org.tuxmail.TuxMail.desktop
+    expand: true
+    dst: /usr/share/applications/org.tuxmail.TuxMail.desktop
+  - src: ${STAGE}/usr/share/metainfo/org.tuxmail.TuxMail.metainfo.xml
+    expand: true
+    dst: /usr/share/metainfo/org.tuxmail.TuxMail.metainfo.xml
+  # One entry per file: the package must not own the shared hicolor directories.
+  - src: ${STAGE}/usr/share/icons/hicolor/16x16/apps/org.tuxmail.TuxMail.png
+    expand: true
+    dst: /usr/share/icons/hicolor/16x16/apps/org.tuxmail.TuxMail.png
+  - src: ${STAGE}/usr/share/icons/hicolor/32x32/apps/org.tuxmail.TuxMail.png
+    expand: true
+    dst: /usr/share/icons/hicolor/32x32/apps/org.tuxmail.TuxMail.png
+  - src: ${STAGE}/usr/share/icons/hicolor/48x48/apps/org.tuxmail.TuxMail.png
+    expand: true
+    dst: /usr/share/icons/hicolor/48x48/apps/org.tuxmail.TuxMail.png
+  - src: ${STAGE}/usr/share/icons/hicolor/64x64/apps/org.tuxmail.TuxMail.png
+    expand: true
+    dst: /usr/share/icons/hicolor/64x64/apps/org.tuxmail.TuxMail.png
+  - src: ${STAGE}/usr/share/icons/hicolor/128x128/apps/org.tuxmail.TuxMail.png
+    expand: true
+    dst: /usr/share/icons/hicolor/128x128/apps/org.tuxmail.TuxMail.png
+  - src: ${STAGE}/usr/share/icons/hicolor/256x256/apps/org.tuxmail.TuxMail.png
+    expand: true
+    dst: /usr/share/icons/hicolor/256x256/apps/org.tuxmail.TuxMail.png
+  - src: ${STAGE}/usr/share/icons/hicolor/512x512/apps/org.tuxmail.TuxMail.png
+    expand: true
+    dst: /usr/share/icons/hicolor/512x512/apps/org.tuxmail.TuxMail.png
+  - src: ${STAGE}/usr/share/doc/tuxmail/NOTICE
+    expand: true
+    dst: /usr/share/doc/tuxmail/copyright
+    packager: deb
+  - src: ${STAGE}/usr/share/doc/tuxmail/README.md
+    expand: true
+    dst: /usr/share/doc/tuxmail/README.md
+  - src: ${STAGE}/usr/share/licenses/tuxmail/LICENSE
+    expand: true
+    dst: /usr/share/doc/tuxmail/LICENSE
+    packager: deb
+  - src: ${STAGE}/usr/share/doc/tuxmail/NOTICE
+    expand: true
+    dst: /usr/share/doc/tuxmail/NOTICE
+    packager: rpm
+  - src: ${STAGE}/usr/share/licenses/tuxmail/LICENSE
+    expand: true
+    dst: /usr/share/licenses/tuxmail/LICENSE
+    type: license
+    packager: rpm
+
+deb:
+  signature:
+    key_file: ${NFPM_SIGNING_KEY_FILE}
+    type: origin
+rpm:
+  group: Applications/Internet
+  summary: Email, calendar, contacts and messengers in one app
+  compression: zstd
+  signature:
+    key_file: ${NFPM_SIGNING_KEY_FILE}

@@ -138,7 +138,7 @@ func (a *App) DeleteAddressBook(ctx context.Context, id int64) error {
 	}
 	for _, b := range books {
 		if b.ID == id {
-			if b.Meta.Kind != store.BookKindLocal {
+			if b.Meta.Kind != store.BookKindLocal || b.AccountID != 0 {
 				return invalid("address books of accounts are removed with their account")
 			}
 			if err := a.st.DeleteAddressbook(ctx, id); err != nil {
@@ -392,6 +392,9 @@ func (a *App) SaveContact(ctx context.Context, in PimContact) (PimContact, error
 		}
 		sc = store.Contact{AddressbookID: book, UID: uid}
 		card = vcard.New(uid, "")
+	}
+	if ab, err := a.st.GetAddressbook(ctx, sc.AddressbookID); err == nil && a.importOnlyAccounts(ctx)[ab.AccountID] {
+		return PimContact{}, &Error{Code: CodeReadOnly, Status: http.StatusConflict, Message: "the address book is read-only"}
 	}
 	ct := in.Contact
 	ct.UID = sc.UID

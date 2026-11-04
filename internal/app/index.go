@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/Midas1989/Mailclient/internal/store"
 )
@@ -49,12 +50,21 @@ func (a *App) ensureIndexed(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		done := 0
 		for _, m := range ms {
+			// With the sync engine, threading belongs to it: a mail it has
+			// stored but not threaded yet must not get a conversation of its
+			// own here (that split threads under concurrent folder syncs).
+			// Only leftovers of failed threading are covered.
+			if a.mgr != nil && m.CreatedAt.After(a.now().Add(-threadGrace)) {
+				continue
+			}
 			if _, err := a.ensureThread(ctx, m); err != nil {
 				return err
 			}
+			done++
 		}
-		if len(ms) < indexBatch {
+		if len(ms) < indexBatch || done == 0 {
 			break
 		}
 	}
@@ -94,6 +104,10 @@ func (a *App) ensureIndexed(ctx context.Context) error {
 
 // ensureThread assigns a mail without conversation to a new email_thread
 // conversation (fallback until the threading engine is wired in).
+// threadGrace is how long a mail without conversation is left to the sync
+// engine's threading before ensureIndexed gives it a conversation.
+const threadGrace = 2 * time.Minute
+
 func (a *App) ensureThread(ctx context.Context, m store.Message) (int64, error) {
 	if m.ConversationID != 0 {
 		return m.ConversationID, nil

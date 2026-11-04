@@ -109,6 +109,10 @@ func (x *Api) CreateFromItem(conv int64, item, kind string) (IDResult, error) {
 func (x *Api) SaveContactCard(personID int64, card ContactCard) error {
 	return werr(x.app.SaveContactCard(x.ctx, personID, card))
 }
+func (x *Api) SaveSignature(s Signature) (Signature, error) {
+	return r1(x.app.SaveSignature(x.ctx, s))
+}
+func (x *Api) DeleteSignature(id int64) error { return werr(x.app.DeleteSignature(x.ctx, id)) }
 func (x *Api) UpdateIdentity(i Identity) (Identity, error) {
 	return r1(x.app.UpdateIdentity(x.ctx, i))
 }

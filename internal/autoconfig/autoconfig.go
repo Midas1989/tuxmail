@@ -6,9 +6,11 @@
 //
 //  1. built-in table of well-known providers (no network access),
 //  2. Mozilla autoconfig XML (autoconfig.<domain>, /.well-known/autoconfig, ISPDB),
-//  3. DNS SRV records (RFC 6186 mail, RFC 6764 CalDAV/CardDAV),
-//  4. MX-based lookup (known provider or ISPDB entry of the MX host's domain),
-//  5. host name heuristics (imap./mail./smtp.<domain>), optionally probed.
+//  3. Microsoft Autodiscover (POX, JSON v2, SRV _autodiscover; optional,
+//     see Discoverer.UseAutodiscover) yielding EAS candidates,
+//  4. DNS SRV records (RFC 6186 mail, RFC 6764 CalDAV/CardDAV),
+//  5. MX-based lookup (known provider or ISPDB entry of the MX host's domain),
+//  6. host name heuristics (imap./mail./smtp.<domain>), optionally probed.
 //
 // HTTP client, DNS resolver and dialer are injectable so tests stay offline.
 package autoconfig
@@ -69,6 +71,9 @@ type Candidate struct {
 	Insecure bool `json:"insecure,omitempty"`
 	// Verified is set when ProbeConnect succeeded for the servers.
 	Verified bool `json:"verified,omitempty"`
+	// EASURL is the ActiveSync endpoint of Kind domain.KindEAS candidates
+	// (Microsoft Autodiscover).
+	EASURL string `json:"easUrl,omitempty"`
 }
 
 // Resolver is the subset of *net.Resolver used for discovery.
@@ -103,6 +108,12 @@ type Discoverer struct {
 	Timeout time.Duration
 	// Known is the provider table. Defaults to KnownProviders().
 	Known []Provider
+	// UseAutodiscover enables Microsoft Autodiscover (EAS endpoints) in
+	// Discover; it is ranked after Mozilla autoconfig and before DNS SRV.
+	UseAutodiscover bool
+	// AutodiscoverPassword optionally returns the password for
+	// authenticated POX Autodiscover requests (HTTPS only).
+	AutodiscoverPassword func(email string) string
 }
 
 // DefaultISPDBURL is Thunderbird's public ISPDB.
@@ -197,16 +208,19 @@ func (d *Discoverer) Discover(ctx context.Context, email string) ([]Candidate, e
 			})
 		}
 	}
+	if d.UseAutodiscover && (d.HTTPClient != nil || d.Resolver != nil) {
+		run(3, func() []Candidate { return d.autodiscoverCandidates(ctx, email) })
+	}
 	var dav davURLs
 	if d.Resolver != nil {
-		run(3, func() []Candidate {
+		run(4, func() []Candidate {
 			c, dv := d.lookupSRV(ctx, email, dom)
 			mu.Lock()
 			dav = dv
 			mu.Unlock()
 			return c
 		})
-		run(4, func() []Candidate { return d.lookupMX(ctx, email, dom) })
+		run(5, func() []Candidate { return d.lookupMX(ctx, email, dom) })
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
