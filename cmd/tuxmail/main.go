@@ -21,6 +21,9 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+
+	// First: restrict the Windows DLL search path (AUDIT-D D-02).
+	_ "github.com/Midas1989/Mailclient/internal/dllsafe"
 )
 
 var version = "0.0.0-dev"
