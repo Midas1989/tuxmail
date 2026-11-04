@@ -497,3 +497,5 @@ jobs:
           files: dist/*
           fail_on_unmatched_files: true
           generate_release_notes: true
+          # 0.x releases are alpha/beta builds: marked as pre-release.
+          prerelease: ${{ startsWith(needs.version.outputs.version, '0.') }}

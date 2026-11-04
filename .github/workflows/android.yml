@@ -185,12 +185,21 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::secret KEYSTORE_BASE64 is missing"
-            exit 1
+            # No release key yet (issue #9): publish a debug-signed test APK instead.
+            echo "::warning::secret KEYSTORE_BASE64 is missing - attaching a debug-signed APK"
+            echo "HAS_KEYSTORE=false" >> "$GITHUB_ENV"
+            exit 0
           fi
+          echo "HAS_KEYSTORE=true" >> "$GITHUB_ENV"
           printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/tuxmail-release.jks"
 
+      - name: Build fossDebug (no release key configured)
+        if: env.HAS_KEYSTORE != 'true'
+        working-directory: mobile/android
+        run: ./gradlew --no-daemon -Ptuxmail.gms=false assembleFossDebug
+
       - name: Build fossRelease (F-Droid-compatible, no Google dependencies)
+        if: env.HAS_KEYSTORE == 'true'
         working-directory: mobile/android
         env:
           TUXMAIL_KEYSTORE_FILE: ${{ runner.temp }}/tuxmail-release.jks
@@ -200,13 +209,13 @@ jobs:
         run: ./gradlew --no-daemon -Ptuxmail.gms=false assembleFossRelease
 
       - name: Write google-services.json
-        if: env.HAS_PLAY_CONFIG == 'true'
+        if: env.HAS_PLAY_CONFIG == 'true' && env.HAS_KEYSTORE == 'true'
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
         run: printf '%s' "$GOOGLE_SERVICES_JSON" > mobile/android/app/src/play/google-services.json
 
       - name: Build playRelease APK + AAB (FCM)
-        if: env.HAS_PLAY_CONFIG == 'true'
+        if: env.HAS_PLAY_CONFIG == 'true' && env.HAS_KEYSTORE == 'true'
         working-directory: mobile/android
         env:
           TUXMAIL_KEYSTORE_FILE: ${{ runner.temp }}/tuxmail-release.jks
@@ -222,7 +231,11 @@ jobs:
           rm -f "$RUNNER_TEMP/tuxmail-release.jks" mobile/android/app/src/play/google-services.json
           mkdir -p dist-android
           out=mobile/android/app/build/outputs
-          cp "$out/apk/foss/release/app-foss-release.apk" "dist-android/TuxMail-$VERSION-foss.apk"
+          if [ -f "$out/apk/foss/release/app-foss-release.apk" ]; then
+            cp "$out/apk/foss/release/app-foss-release.apk" "dist-android/TuxMail-$VERSION-foss.apk"
+          else
+            cp "$out/apk/foss/debug/app-foss-debug.apk" "dist-android/TuxMail-$VERSION-foss-debug.apk"
+          fi
           if [ -d "$out/apk/play/release" ]; then
             cp "$out/apk/play/release/app-play-release.apk" "dist-android/TuxMail-$VERSION-play.apk"
             cp "$out/bundle/playRelease/app-play-release.aab" "dist-android/TuxMail-$VERSION-play.aab"
@@ -240,3 +253,4 @@ jobs:
         with:
           files: dist-android/*
           fail_on_unmatched_files: true
+          prerelease: ${{ startsWith(steps.version.outputs.version, '0.') }}
