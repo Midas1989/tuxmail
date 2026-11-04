@@ -435,7 +435,7 @@
                   type="button"
                   class="btn btn-ghost small"
                   onclick={() => {
-                    app.settingsAnchor = 'set-sieve';
+                    app.openSettings('accounts', 'sieve');
                     onclose();
                   }}>{t('settings.accountEdit.sieveScripts')}</button
                 >

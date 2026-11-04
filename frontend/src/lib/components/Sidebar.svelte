@@ -79,8 +79,7 @@
       icon: Settings2,
       run: () => {
         folderSettingsTarget.accountId = f.accountId;
-        app.settingsAnchor = 'set-folders';
-        app.navigate('settings');
+        app.openSettings('accounts', 'folders');
       },
     });
     return items;
@@ -355,7 +354,7 @@
     {#if tagNodes.length}
       <li role="none" class="section">
         <span class="section-title with-action">{t('organize.tags.section')}
-          <button class="sec-btn" aria-label={t('organize.tags.manage')} title={t('organize.tags.manage')} onclick={() => ((app.settingsAnchor = 'set-tags'), app.navigate('settings'))}><Pencil size={12} /></button>
+          <button class="sec-btn" aria-label={t('organize.tags.manage')} title={t('organize.tags.manage')} onclick={() => app.openSettings('automation', 'tags')}><Pencil size={12} /></button>
         </span>
       </li>
       {#each tagNodes as node (node.id)}

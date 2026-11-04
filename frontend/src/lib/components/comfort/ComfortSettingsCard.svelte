@@ -8,6 +8,16 @@
   import { CATEGORIES, type ComfortSettings } from '../../api/comfort';
   import SubscriptionsDialog from './SubscriptionsDialog.svelte';
 
+  interface Props {
+    /** Settings → Mail shows the reading part (spam, categories, newsletters) and the writing part (spelling, meetings, merge/PDF) as separate sections. */
+    part?: 'all' | 'reading' | 'compose';
+  }
+  let { part = 'all' }: Props = $props();
+  const reading = $derived(part !== 'compose');
+  const compose = $derived(part !== 'reading');
+  const title = $derived(part === 'reading' ? t('settings.pages.mail.sections.reading') : part === 'compose' ? t('settings.pages.mail.sections.compose') : t('comfort.settings.title'));
+  const hid = $derived(part === 'compose' ? 'set-comfort-compose' : 'set-comfort');
+
   let s = $state<ComfortSettings | null>(null);
   let words = $state<string[]>([]);
   let newWord = $state('');
@@ -46,13 +56,14 @@
   }
 </script>
 
-<section class="card wide" id="set-comfort" aria-labelledby="set-comfort-h">
+<section class="card wide" id={hid} aria-labelledby="{hid}-h">
   <div class="head">
-    <h2 id="set-comfort-h">{t('comfort.settings.title')}</h2>
+    <h2 id="{hid}-h">{title}</h2>
     {#if saved}<span class="saved" role="status">{t('notifications.saved')}</span>{/if}
   </div>
   {#if s}
     <div class="grid">
+      {#if reading}
       <fieldset>
         <legend>{t('comfort.settings.spam')}</legend>
         <label class="chk"><input type="checkbox" bind:checked={s.spam.enabled} /> {t('comfort.settings.spamEnabled')}</label>
@@ -79,7 +90,9 @@
         <label class="chk"><input type="checkbox" bind:checked={s.newsletter.showBar} /> {t('comfort.settings.newsletterBar')}</label>
         <button class="btn" onclick={() => (subsOpen = true)}><Newspaper size={15} /> {t('comfort.subscriptions.open')}</button>
       </fieldset>
+      {/if}
 
+      {#if compose}
       <fieldset>
         <legend>{t('comfort.settings.spell')}</legend>
         <label class="chk"><input type="checkbox" bind:checked={s.spell.enabled} /> {t('comfort.settings.spellEnabled')}</label>
@@ -123,6 +136,7 @@
         <label class="chk"><input type="checkbox" bind:checked={s.pdf.useChromium} /> {t('comfort.settings.useChromium')}</label>
         <label class="field"><span class="label">{t('comfort.settings.chromiumPath')}</span><input class="input" bind:value={s.pdf.chromiumPath} spellcheck="false" placeholder={t('comfort.settings.chromiumAuto')} /></label>
       </fieldset>
+      {/if}
     </div>
     <div class="foot"><button class="btn btn-primary" onclick={save}>{t('common.action.save')}</button></div>
   {/if}

@@ -6,6 +6,7 @@
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
   import type { Identity, Signature } from '../../types';
+  import SignatureEditor from './SignatureEditor.svelte';
 
   async function reload() {
     app.signatures = await app.api.listSignatures();
@@ -45,7 +46,7 @@
           <input class="input" value={sig.name} aria-label={t('settings.signatures.name')} onchange={(e) => save({ ...sig, name: (e.currentTarget as HTMLInputElement).value })} />
           <button class="icon-btn" aria-label={t('settings.signatures.delete', { name: sig.name })} onclick={() => remove(sig.id)}><Trash size={15} /></button>
         </div>
-        <textarea class="input text" rows="3" value={sig.plain} aria-label={t('settings.signatures.text')} onchange={(e) => save({ ...sig, plain: (e.currentTarget as HTMLTextAreaElement).value })}></textarea>
+        <SignatureEditor signature={sig} onchange={save} />
       </li>
     {/each}
   </ul>
@@ -111,14 +112,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-  .text {
-    margin-top: 4px;
-    height: auto;
-    padding: 6px 10px;
-    resize: vertical;
-    font-family: var(--tm-mono);
-    font-size: 12.5px;
   }
   .ids {
     width: 100%;
