@@ -4,8 +4,8 @@
 #
 # Packs the Linux desktop binary as portable archive:
 #   dist/TuxMail-<version>-linux-<arch>-portable.tar.gz
-#     TuxMail-<version>-linux-<arch>/tuxmail, portable (empty marker), data/,
-#     README-portable.txt, LICENSE, NOTICE
+#     TuxMail-<version>-linux-<arch>/tuxmail, plugins/tuxmail-plugin-*,
+#     portable (empty marker), data/, README-portable.txt, LICENSE, NOTICE
 # Needs build/linux/build.sh first. The host needs GTK 3 + WebKitGTK 4.1.
 set -eu
 # shellcheck source=../lib.sh
@@ -23,6 +23,7 @@ trap 'rm -rf "$work"' EXIT
 d=$work/$top
 mkdir -p "$d/data"
 install -m0755 "$bin" "$d/tuxmail"
+stage_plugins linux "$arch" "$d/plugins"
 : > "$d/portable"
 : > "$d/data/.keep"
 sed -e "s/@VERSION@/$VERSION/" -e "s/@ARCH@/$arch/" "$ROOT/build/linux/README-portable.txt" > "$d/README-portable.txt"

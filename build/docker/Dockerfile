@@ -48,6 +48,9 @@ RUN test -f web/dist/index.html || { echo "web/dist/index.html missing: run 'go 
 RUN --mount=type=cache,target=/root/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/tuxmail ./cmd/tuxmail
+# Messenger plugins (WhatsApp, Telegram, Matrix, Signal), pure Go.
+RUN --mount=type=cache,target=/root/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    sh build/plugins.sh target "$TARGETOS" "$TARGETARCH" /out/plugins
 
 # ---------------------------------------------------------------- runtime
 # hadolint ignore=DL3006
@@ -68,6 +71,8 @@ RUN apk add --no-cache ca-certificates tzdata \
     && chown tuxmail:tuxmail /data
 
 COPY --from=go /out/tuxmail /usr/local/bin/tuxmail
+# Found by the plugin host as <exe dir>/../lib/tuxmail/plugins.
+COPY --from=go /out/plugins/ /usr/local/lib/tuxmail/plugins/
 COPY build/docker/config.yaml /etc/tuxmail/config.yaml
 COPY LICENSE NOTICE /usr/share/doc/tuxmail/
 

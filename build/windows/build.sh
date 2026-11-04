@@ -4,6 +4,7 @@
 #
 # Builds the Windows desktop app (Wails + WebView2, pure Go, no CGO):
 #   build/out/windows-<arch>/TuxMail.exe
+#   build/out/windows-<arch>/plugins/tuxmail-plugin-*.exe   (messenger plugins)
 # with icon, manifest (per-monitor DPI v2, common controls v6) and version
 # information (CompanyName/ProductName "TuxMail", copyright) from
 # build/windows/winres.json, compiled by go-winres into a .syso next to main.go
@@ -40,3 +41,5 @@ log "building TuxMail.exe windows/$goarch version $VERSION"
 	go build -trimpath -tags desktop,production -ldflags "$(go_ldflags -H windowsgui)" \
 	-o "$out/TuxMail.exe" ./cmd/tuxmail)
 log "wrote $out/TuxMail.exe"
+rm -rf "$out/plugins"
+stage_plugins windows "$goarch" "$out/plugins"

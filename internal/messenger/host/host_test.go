@@ -228,3 +228,22 @@ func TestInProcessPairing(t *testing.T) {
 		t.Fatalf("path check: %v", err)
 	}
 }
+
+func TestInstallDirs(t *testing.T) {
+	root := string(filepath.Separator)
+	bin := filepath.Join(root, "usr", "bin")
+	got := installDirs(bin)
+	want := []string{
+		filepath.Join(bin, "plugins"),                           // Windows, portable and server archives
+		filepath.Join(root, "usr", "lib", "tuxmail", "plugins"), // .deb/.rpm, AppImage, Docker
+		bin,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("installDirs = %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("installDirs[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}

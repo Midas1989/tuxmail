@@ -14,3 +14,6 @@ frontend/dist/
 /build/out/
 /build/windows/icon.ico
 /cmd/tuxmail/rsrc_windows_*.syso
+/cmd/tuxmail-setup/rsrc_windows_*.syso
+/cmd/tuxmail-setup/payload/*
+!/cmd/tuxmail-setup/payload/.keep

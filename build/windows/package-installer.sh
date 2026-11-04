@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Midas Wollinger and TuxMail contributors
 #
-# Builds the NSIS installer dist/TuxMail-<version>-windows-<arch>-setup.exe
-# from build/out/windows-<arch>/TuxMail.exe (or TUXMAIL_EXE) with
-# build/windows/installer.nsi. Runs with makensis on Windows (Git Bash) and
-# on Linux (apt install nsis).
+# Builds the classic NSIS installer dist/TuxMail-<version>-windows-<arch>-setup-classic.exe
+# (fallback; the primary installer is build/windows/package-setup.sh) from
+# build/out/windows-<arch>/TuxMail.exe (or TUXMAIL_EXE) and the plugins/
+# next to it (or TUXMAIL_PLUGINS_DIR) with build/windows/installer.nsi.
+# Runs with makensis on Windows (Git Bash) and on Linux (apt install nsis).
 #
 # WEBVIEW2_BOOTSTRAPPER=<file>  bundle Microsoft's WebView2 bootstrapper
 # WEBVIEW2_BOOTSTRAPPER=download  fetch it from go.microsoft.com first
@@ -33,10 +34,15 @@ winpath() {
 }
 
 numeric=$(sh "$ROOT/build/version.sh" --numeric)
-out=$DIST/TuxMail-$VERSION-windows-$goarch-setup.exe
+out=$DIST/TuxMail-$VERSION-windows-$goarch-setup-classic.exe
 mkdir -p "$DIST"
 
 set --
+plugins=${TUXMAIL_PLUGINS_DIR:-$(dirname "$exe")/plugins}
+if [ "${TUXMAIL_SKIP_PLUGINS:-}" != 1 ]; then
+	[ -f "$plugins/tuxmail-plugin-whatsapp.exe" ] || die "missing plugins in $plugins (run build/windows/build.sh $goarch)"
+	set -- "-DPLUGINS=$(winpath "$plugins")"
+fi
 wv2=${WEBVIEW2_BOOTSTRAPPER:-}
 if [ "$wv2" = download ]; then
 	wv2=$ROOT/build/out/MicrosoftEdgeWebview2Setup.exe
@@ -51,7 +57,7 @@ if [ "$wv2" = download ]; then
 	fi
 fi
 if [ -n "$wv2" ]; then
-	set -- "-DWEBVIEW2_BOOTSTRAPPER=$(winpath "$wv2")"
+	set -- "$@" "-DWEBVIEW2_BOOTSTRAPPER=$(winpath "$wv2")"
 fi
 
 # On Windows (MSYS) "/D..." arguments would be rewritten as paths; makensis also accepts "-D".
