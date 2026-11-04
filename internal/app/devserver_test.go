@@ -131,11 +131,19 @@ func TestLiveSendChecksNeedConfirmation(t *testing.T) {
 func TestLiveNewMailUpdatesPersonView(t *testing.T) {
 	f := newLiveFixture(t)
 	ctx := context.Background()
-	convs := must[app.Page[app.Conversation]](t)(f.a.ListConversations(ctx, app.ConversationQuery{Scope: app.ConversationScope{Kind: "all"}, Grouping: "person", Limit: 50}))
+	// The initial sync and person indexing run in the background; under the
+	// race detector on CI they can lag behind the fixture, so poll.
+	var convs app.Page[app.Conversation]
 	var maria int64
-	for _, c := range convs.Items {
-		if c.Title == "Maria Sommer" {
-			maria = c.ID
+	for deadline := time.Now().Add(20 * time.Second); maria == 0 && time.Now().Before(deadline); {
+		convs = must[app.Page[app.Conversation]](t)(f.a.ListConversations(ctx, app.ConversationQuery{Scope: app.ConversationScope{Kind: "all"}, Grouping: "person", Limit: 50}))
+		for _, c := range convs.Items {
+			if c.Title == "Maria Sommer" {
+				maria = c.ID
+			}
+		}
+		if maria == 0 {
+			time.Sleep(100 * time.Millisecond)
 		}
 	}
 	if maria == 0 {
