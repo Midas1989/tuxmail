@@ -383,6 +383,8 @@ type PairEvent struct {
 	Code      string `json:"code,omitempty"`
 	Field     string `json:"field,omitempty"`
 	Message   string `json:"message,omitempty"`
+	// ErrorCode is the protocol error code of an error event (0 = unspecified).
+	ErrorCode int `json:"errorCode,omitempty"`
 	// ExpiresAt is set for QR codes and pairing codes.
 	ExpiresAt time.Time `json:"expiresAt,omitzero"`
 	Account   *Account  `json:"account,omitempty"`

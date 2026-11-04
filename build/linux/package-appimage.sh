@@ -85,7 +85,7 @@ DEPLOY_GTK_VERSION=3 "$LINUXDEPLOY" \
 
 if [ -d "$stage/usr/lib/tuxmail" ]; then
 	cp -a "$stage/usr/lib/tuxmail" "$appdir/usr/lib/"
-	log "added messenger plugins: $(find "$appdir/usr/lib/tuxmail/plugins" -type f -printf '%f ')"
+	log "added messenger plugins: $(find "$appdir/usr/lib/tuxmail/plugins" -maxdepth 1 -printf '%f ')"
 fi
 
 # Point the bundled WebKit to the bundled helpers (same-length replacement).

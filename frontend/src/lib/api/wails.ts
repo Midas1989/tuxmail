@@ -577,6 +577,9 @@ export class WailsTransport implements Api {
   restartMessengerPlugin(name: string): Promise<void> {
     return this.call('RestartMessengerPlugin', name);
   }
+  installMessengerComponent(name: string): Promise<void> {
+    return this.call('InstallMessengerComponent', name);
+  }
   startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
     return this.call('StartMessengerPairing', input);
   }

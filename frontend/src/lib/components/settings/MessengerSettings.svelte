@@ -15,6 +15,7 @@
   import ChannelIcon from '../common/ChannelIcon.svelte';
   import Modal from '../common/Modal.svelte';
   import MessengerWizard from './MessengerWizard.svelte';
+  import MessengerComponent from './MessengerComponent.svelte';
 
   let plugins = $state<MessengerPlugin[]>([]);
   let accountStates = $state<MessengerAccountState[]>([]);
@@ -152,6 +153,7 @@
             {#if p.status.nextRetry && p.status.state === 'crashed'}<span>{t('messenger.nextRetry', { time: fmt().time(p.status.nextRetry) })}</span>{/if}
           {/if}
         </div>
+        {#if p.installed && p.component}<MessengerComponent plugin={p} compact />{/if}
         {#if p.status.lastError && (p.status.state === 'crashed' || p.status.state === 'failed')}
           <p class="err"><TriangleAlert size={13} /> {t('messenger.lastError', { error: p.status.lastError })}</p>
         {/if}

@@ -1277,6 +1277,26 @@ export interface MessengerPlugin {
   settings: Record<string, string>;
   accounts: number;
   status: MessengerPluginStatus;
+  /** External program the plugin needs (Signal: signal-cli); absent for others. */
+  component?: MessengerComponent;
+}
+
+export type MessengerComponentState = 'ready' | 'missing' | 'installing' | 'failed' | 'unsupported';
+
+/** External program of a plugin (internal/messenger/components.go). */
+export interface MessengerComponent {
+  name: string;
+  state: MessengerComponentState;
+  /** Where it was found: setting | bundled | installed | path. */
+  source?: string;
+  version?: string;
+  path?: string;
+  /** A pinned, checksum-verified download exists for this platform. */
+  installable: boolean;
+  installVersion?: string;
+  error?: string;
+  note?: string;
+  progress?: { stage: 'download' | 'verify' | 'unpack' | 'done'; file?: string; done: number; total: number; step: number; steps: number };
 }
 
 export interface MessengerPluginPatch {
@@ -1313,6 +1333,8 @@ export interface MessengerPairing {
   /** Requested input (state 'input'): code, password, phone, homeserver ... */
   field?: string;
   message?: string;
+  /** Error class (state 'error'): component_missing | unavailable | outdated. */
+  reason?: string;
   expiresAt?: string;
   accountId?: number;
 }

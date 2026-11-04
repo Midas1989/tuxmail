@@ -130,6 +130,7 @@
 //   GET  /api/messenger/plugins                 -> MessengerPlugin[]
 //   PATCH /api/messenger/plugins/{name}         MessengerPluginPatch -> MessengerPlugin
 //   POST /api/messenger/plugins/{name}/restart
+//   POST /api/messenger/plugins/{name}/component  install signal-cli (background, pinned + SHA-256 verified)
 //   POST /api/messenger/pairings                MessengerPairingInput -> MessengerPairing
 //   GET/DELETE /api/messenger/pairings/{id}     -> MessengerPairing (DELETE cancels)
 //   POST /api/messenger/pairings/{id}/input     {field, value}
@@ -1017,6 +1018,9 @@ export class HttpTransport implements Api {
   }
   async restartMessengerPlugin(name: string): Promise<void> {
     await this.request('POST', `/api/messenger/plugins/${encodeURIComponent(name)}/restart`);
+  }
+  async installMessengerComponent(name: string): Promise<void> {
+    await this.request('POST', `/api/messenger/plugins/${encodeURIComponent(name)}/component`);
   }
   startMessengerPairing(input: MessengerPairingInput): Promise<MessengerPairing> {
     return this.request('POST', '/api/messenger/pairings', input);
