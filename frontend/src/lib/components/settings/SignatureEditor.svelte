@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!--
-  WYSIWYG editor for HTML signatures (KONZEPT 8.2): formatting, links
+  Editor of one signature (Settings → Konten → Signaturen); SignatureSettings
+  saves what onchange reports. WYSIWYG editor for HTML signatures (KONZEPT 8.2): formatting, links
   (http/https/mailto/tel), images (upload, paste, drag & drop, resize by
   width, remote https URLs), an HTML source mode for signature generators,
   live previews on light and dark backgrounds and the plain-text fallback
@@ -32,7 +33,7 @@
   import CodeXml from '@lucide/svelte/icons/code-xml';
   import RemoveFormatting from '@lucide/svelte/icons/remove-formatting';
   import Trash from '@lucide/svelte/icons/trash';
-  import { formatSize, t } from '../i18n/index.svelte';
+  import { formatSize, t } from '../../i18n/index.svelte';
   import {
     MAX_SIGNATURE_IMAGE,
     SIGNATURE_IMAGE_TYPES,
@@ -47,18 +48,18 @@
     readImageFile,
     removeLink,
     setImageWidth,
-  } from '../signature';
+  } from '../../signature';
+  import type { Signature } from '../../types';
 
   interface Props {
-    html: string;
-    plain: string;
-    plainOverride?: boolean;
-    /** Accessible name of the editing area. */
-    label?: string;
+    signature: Signature;
     /** Called when the user finished a change (blur, toolbar action, source applied). */
-    onchange: (value: SignatureValue) => void;
+    onchange: (next: Signature) => void;
   }
-  let { html, plain, plainOverride = false, label, onchange }: Props = $props();
+  let { signature, onchange }: Props = $props();
+  const html = $derived(signature.html);
+  const plain = $derived(signature.plain);
+  const plainOverride = $derived(signature.plainOverride ?? false);
 
   const uid = Math.random().toString(36).slice(2, 8);
   let editor = $state<HTMLDivElement>();
@@ -122,7 +123,7 @@
     const key = JSON.stringify(value);
     if (key === lastCommitted) return;
     lastCommitted = key;
-    onchange(value);
+    onchange({ ...signature, ...value });
   }
 
   function restoreRange(): Range | null {
@@ -304,7 +305,7 @@
   }
 </script>
 
-<div class="sig-editor">
+<div class="sig-editor" data-signature-editor={signature.id}>
   <div class="toolbar" role="toolbar" aria-label={t('settings.signatures.editor.toolbar')}>
     {#if mode === 'visual'}
       <button type="button" class="icon-btn" title={t('compose.bold')} aria-label={t('compose.bold')} onmousedown={(e) => e.preventDefault()} onclick={() => exec('bold')}><Bold size={15} /></button>
@@ -383,24 +384,24 @@
   {/if}
 
   <div
-      class="area"
-      hidden={mode !== 'visual'}
-      bind:this={editor}
-      contenteditable="true"
-      role="textbox"
-      tabindex="0"
-      aria-multiline="true"
-      aria-label={label ?? t('settings.signatures.editor.area')}
-      oninput={sync}
-      onblur={commit}
-      onpaste={onPaste}
-      ondrop={onDrop}
-      ondragover={(e) => e.preventDefault()}
-      onclick={onEditorClick}
-      onkeydown={(e) => {
-        if (e.key === 'Escape') selectedImg = null;
-      }}
-    ></div>
+    class="area"
+    hidden={mode !== 'visual'}
+    bind:this={editor}
+    contenteditable="true"
+    role="textbox"
+    tabindex="0"
+    aria-multiline="true"
+    aria-label={t('settings.signatures.text')}
+    oninput={sync}
+    onblur={commit}
+    onpaste={onPaste}
+    ondrop={onDrop}
+    ondragover={(e) => e.preventDefault()}
+    onclick={onEditorClick}
+    onkeydown={(e) => {
+      if (e.key === 'Escape') selectedImg = null;
+    }}
+  ></div>
   {#if mode === 'source'}
     <textarea
       class="input source"
@@ -458,9 +459,23 @@
       <pre class="auto">{autoPlain}</pre>
     {/if}
   </details>
+
+  <select
+    class="input placement"
+    value={signature.placement || 'below_reply'}
+    aria-label={t('settings.signatures.placement')}
+    onchange={(e) => onchange({ ...signature, placement: (e.currentTarget as HTMLSelectElement).value as Signature['placement'] })}
+  >
+    <option value="below_reply">{t('settings.signatures.placementBelow')}</option>
+    <option value="above_quote">{t('settings.signatures.placementAbove')}</option>
+  </select>
 </div>
 
 <style>
+  .placement {
+    width: auto;
+    align-self: flex-start;
+  }
   .sig-editor {
     display: flex;
     flex-direction: column;

@@ -6,7 +6,7 @@
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
   import type { Identity, Signature } from '../../types';
-  import SignatureEditor from '../SignatureEditor.svelte';
+  import SignatureEditor from './SignatureEditor.svelte';
 
   async function reload() {
     app.signatures = await app.api.listSignatures();
@@ -51,11 +51,7 @@
           <input class="input" value={sig.name} aria-label={t('settings.signatures.name')} onchange={(e) => save({ ...sig, name: (e.currentTarget as HTMLInputElement).value })} />
           <button class="icon-btn" aria-label={t('settings.signatures.delete', { name: sig.name })} onclick={() => remove(sig.id)}><Trash size={15} /></button>
         </div>
-        <SignatureEditor html={sig.html} plain={sig.plain} plainOverride={sig.plainOverride ?? false} label={t('settings.signatures.text')} onchange={(v) => save({ ...sig, ...v })} />
-        <select class="input placement" value={sig.placement || 'below_reply'} aria-label={t('settings.signatures.placement')} onchange={(e) => save({ ...sig, placement: (e.currentTarget as HTMLSelectElement).value as Signature['placement'] })}>
-          <option value="below_reply">{t('settings.signatures.placementBelow')}</option>
-          <option value="above_quote">{t('settings.signatures.placementAbove')}</option>
-        </select>
+        <SignatureEditor signature={sig} onchange={save} />
       </li>
     {/each}
   </ul>
@@ -121,10 +117,6 @@
     display: flex;
     align-items: center;
     gap: 6px;
-  }
-  .placement {
-    margin-top: 6px;
-    width: auto;
   }
   .ids {
     width: 100%;

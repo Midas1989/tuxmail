@@ -13,6 +13,18 @@
   import type { Account, IdentityDelegation, OAuthClientInput, OAuthProviderInfo, SendMode } from '../../types';
   import SharedMailboxDialog from './SharedMailboxDialog.svelte';
 
+  interface Props {
+    /**
+     * Settings shows the parts in different categories: 'services' (own OAuth
+     * client IDs, Sicherheit), 'mailboxes' (shared mailboxes and send mode,
+     * Konten), 'pim' (calendar/contacts sync, Kalender & Kontakte).
+     */
+    part?: 'all' | 'services' | 'mailboxes' | 'pim';
+  }
+  let { part = 'all' }: Props = $props();
+  const show = (p: 'services' | 'mailboxes' | 'pim') => part === 'all' || part === p;
+  const hid = $derived(part === 'mailboxes' ? 'set-shared' : part === 'pim' ? 'set-cloudpim' : 'set-signin');
+
   let providers = $state<OAuthProviderInfo[]>([]);
   let delegations = $state<IdentityDelegation[]>([]);
   let editing = $state<OAuthClientInput | null>(null);
@@ -97,11 +109,18 @@
   }
 </script>
 
-<section class="card" id="set-signin" aria-labelledby="set-signin-h">
+<section class="card" id={hid} aria-labelledby="{hid}-h">
   <div class="head">
-    <h2 id="set-signin-h"><KeyRound size={16} /> {t('cloud.services.title')}</h2>
+    {#if part === 'mailboxes'}
+      <h2 id="{hid}-h"><Users size={16} /> {t('cloud.shared.title')}</h2>
+    {:else if part === 'pim'}
+      <h2 id="{hid}-h"><CalendarSync size={16} /> {t('settings.pages.pim.sections.cloudsync')}</h2>
+    {:else}
+      <h2 id="{hid}-h"><KeyRound size={16} /> {t('cloud.services.title')}</h2>
+    {/if}
     {#if status}<span class="saved" role="status">{status}</span>{/if}
   </div>
+  {#if show('services')}
   <p class="hint">{t('cloud.services.intro')}</p>
   <ul class="list">
     {#each providers as p (p.id)}
@@ -142,8 +161,10 @@
       </li>
     {/each}
   </ul>
+  {/if}
 
-  <h3><Users size={15} /> {t('cloud.shared.title')}</h3>
+  {#if show('mailboxes')}
+  {#if part === 'all'}<h3><Users size={15} /> {t('cloud.shared.title')}</h3>{/if}
   <p class="hint">{t('cloud.shared.intro')}</p>
   <div class="row-actions start">
     <button class="btn" onclick={() => (sharedOpen = true)} disabled={cloudAccounts.length === 0}>{t('cloud.shared.add')}</button>
@@ -168,6 +189,10 @@
     </ul>
   {/if}
 
+  {/if}
+
+  {#if show('pim')}
+  {#if part === 'pim'}<p class="hint">{pimAccounts.length ? t('settings.pages.pim.cloudsyncIntro') : t('settings.pages.pim.cloudsyncEmpty')}</p>{/if}
   {#if pimAccounts.length > 0}
     <ul class="list">
       {#each pimAccounts as a (a.id)}
@@ -177,6 +202,7 @@
         </li>
       {/each}
     </ul>
+  {/if}
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 </section>
