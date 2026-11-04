@@ -227,6 +227,9 @@ type Invitation struct {
 	Conflicts     []string   `json:"conflicts"` // titles of overlapping events
 	CanRespond    bool       `json:"canRespond"`
 	ReplyPartStat string     `json:"replyPartStat,omitempty"` // REPLY: answer of the attendee
+	// OrganizerMismatch: the ORGANIZER (REPLY/COUNTER: the attendee) is not
+	// the address the invitation was sent from (possible spoofing).
+	OrganizerMismatch bool `json:"organizerMismatch,omitempty"`
 }
 
 // InvitationResponse answers an invitation.

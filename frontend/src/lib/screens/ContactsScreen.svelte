@@ -24,6 +24,7 @@
   import Modal from '../components/common/Modal.svelte';
   import ContactForm, { blankContact, cleanContact } from '../components/contacts/ContactForm.svelte';
   import MergeDialog from '../components/contacts/MergeDialog.svelte';
+  import { safeHref } from '../safeurl';
 
   let books = $state<PimAddressBook[]>([]);
   let groups = $state<ContactGroup[]>([]);
@@ -267,7 +268,7 @@
             {/each}
             {#each [...selected.urls, ...selected.social] as u (u.value)}
               <dt>{t('contacts.field.url')}</dt>
-              <dd><a href={u.value} target="_blank" rel="noopener noreferrer"><Globe size={12} /> {u.value.replace(/^https?:\/\//, '')}</a></dd>
+              <dd><a href={safeHref(u.value)} target="_blank" rel="noopener noreferrer"><Globe size={12} /> {u.value.replace(/^https?:\/\//, '')}</a></dd>
             {/each}
             {#if selected.birthday}<dt>{t('contacts.field.birthday')}</dt><dd><Cake size={12} /> {birthday(selected)}</dd>{/if}
             {#if selected.anniversary}<dt>{t('contacts.field.anniversary')}</dt><dd>{fmt().dateLong(selected.anniversary + 'T12:00:00Z')}</dd>{/if}

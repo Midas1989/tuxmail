@@ -284,13 +284,18 @@ func invitationMail(method, body string) []byte {
 
 func (f *pimFixture) addMail(t *testing.T, raw []byte, key string) int64 {
 	t.Helper()
+	return f.addMailFrom(t, raw, key, "maria@sommer-design.example")
+}
+
+func (f *pimFixture) addMailFrom(t *testing.T, raw []byte, key, from string) int64 {
+	t.Helper()
 	ctx := context.Background()
 	hash, err := f.blobs.Put(bytes.NewReader(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
 	id, _, err := f.st.UpsertMessage(ctx, store.Message{AccountID: f.d.WorkAccount, MessageIDHdr: key, Fingerprint: "fp-" + key, Subject: "Invitation",
-		From: "maria@sommer-design.example", SentAt: now, ReceivedAt: now, Size: int64(len(raw)), BlobHash: hash})
+		From: from, SentAt: now, ReceivedAt: now, Size: int64(len(raw)), BlobHash: hash})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -347,6 +352,15 @@ func TestPIMInvitations(t *testing.T) {
 		t.Fatalf("update %+v", invs[0])
 	}
 	cancel := strings.ReplaceAll(strings.ReplaceAll(inviteICS, "METHOD:REQUEST", "METHOD:CANCEL"), "SEQUENCE:0", "SEQUENCE:2")
+	// Audit B: a CANCEL from somebody else than the organizer is ignored.
+	spoof := f.addMailFrom(t, invitationMail("CANCEL", cancel), "inv-spoof-cancel@evil.example", "Mallory <mallory@evil.example>")
+	invs = must[[]app.Invitation](t)(f.a.GetMessageInvitations(ctx, spoof))
+	if invs[0].Status == "cancelled" || !invs[0].OrganizerMismatch {
+		t.Fatalf("spoofed cancel %+v", invs[0])
+	}
+	if ev := must[app.CalendarEvent](t)(f.a.GetEvent(ctx, inv.EventID)); ev.Status == "CANCELLED" {
+		t.Fatalf("spoofed cancel applied %+v", ev)
+	}
 	m3 := f.addMail(t, invitationMail("CANCEL", cancel), "inv-cancel@sommer-design.example")
 	invs = must[[]app.Invitation](t)(f.a.GetMessageInvitations(ctx, m3))
 	if invs[0].Status != "cancelled" {
@@ -366,7 +380,17 @@ func TestPIMInvitations(t *testing.T) {
 	}
 	reply := "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:x\nMETHOD:REPLY\nBEGIN:VEVENT\nUID:" + mine.UID + "\nSEQUENCE:0\nDTSTAMP:20261103T110000Z\n" +
 		"ORGANIZER:mailto:alex@berger-kanzlei.example\nATTENDEE;PARTSTAT=TENTATIVE:mailto:jonas.keller@post.example\nEND:VEVENT\nEND:VCALENDAR"
-	m4 := f.addMail(t, invitationMail("REPLY", reply), "inv-reply@post.example")
+	// Audit B: a REPLY on behalf of another attendee (here from maria) is
+	// not applied and flagged.
+	forged := f.addMail(t, invitationMail("REPLY", strings.ReplaceAll(reply, "TENTATIVE", "DECLINED")), "inv-forged-reply@sommer-design.example")
+	invs = must[[]app.Invitation](t)(f.a.GetMessageInvitations(ctx, forged))
+	if !invs[0].OrganizerMismatch {
+		t.Fatalf("forged reply not flagged %+v", invs[0])
+	}
+	if ev := must[app.CalendarEvent](t)(f.a.GetEvent(ctx, mine.ID)); ev.Attendees[0].PartStat == "DECLINED" {
+		t.Fatalf("forged reply applied %+v", ev.Attendees)
+	}
+	m4 := f.addMailFrom(t, invitationMail("REPLY", reply), "inv-reply@post.example", "Jonas <jonas.keller@post.example>")
 	invs = must[[]app.Invitation](t)(f.a.GetMessageInvitations(ctx, m4))
 	if invs[0].Status != "applied" || invs[0].ReplyPartStat != "TENTATIVE" {
 		t.Fatalf("reply %+v", invs[0])

@@ -79,6 +79,9 @@ func HTMLToPDF(ctx context.Context, browser string, html []byte) ([]byte, error)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, browser, "--headless", "--disable-gpu", "--no-sandbox", "--no-first-run",
 		"--disable-extensions", "--disable-background-networking", "--disable-component-update", "--user-data-dir="+filepath.Join(dir, "profile"), "--proxy-server=127.0.0.1:9",
+		// Chromium bypasses proxies for loopback by default; "<-loopback>"
+		// removes that rule so that 127.0.0.1/localhost are unreachable too.
+		"--proxy-bypass-list=<-loopback>", "--disable-javascript", "--blink-settings=scriptEnabled=false",
 		"--no-pdf-header-footer", "--print-to-pdf-no-header", "--print-to-pdf="+out, "file://"+filepath.ToSlash(in))
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr

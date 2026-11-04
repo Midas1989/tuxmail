@@ -195,7 +195,12 @@ func (a *App) applyIncoming(ctx context.Context, inv store.Invitation, cal *ical
 	switch inv.Method {
 	case itip.MethodReply:
 		for _, p := range objs {
-			if _, err := itip.ApplyReply(p.cal, cal); err != nil {
+			// Only our own events (we are the organizer) take replies, and
+			// only the sender's own answer (audit B: forged REPLY).
+			if !me[itip.Organizer(p.cal).Email] {
+				continue
+			}
+			if _, err := itip.ApplyReplyFrom(p.cal, cal, inv.Sender); err != nil {
 				return err
 			}
 			if _, err := a.storeObject(ctx, p.obj, p.cal, false); err != nil {
@@ -204,6 +209,10 @@ func (a *App) applyIncoming(ctx context.Context, inv store.Invitation, cal *ical
 		}
 		return a.st.SetInvitationStatus(ctx, inv.ID, invApplied, firstObjectID(objs))
 	case itip.MethodCancel:
+		objs = fromOrganizer(objs, inv.Sender)
+		if len(objs) == 0 {
+			return nil // not from the organizer of the stored event: never applied automatically
+		}
 		for _, p := range objs {
 			if _, err := itip.ApplyCancel(p.cal, cal, p.tz); err != nil {
 				return err
@@ -217,6 +226,10 @@ func (a *App) applyIncoming(ctx context.Context, inv store.Invitation, cal *ical
 	case itip.MethodRequest, itip.MethodAdd:
 		a.obsoleteOlder(ctx, inv)
 		myAddr := itip.FindMe(cal, me.list())
+		// Updates of stored events are only accepted from their organizer
+		// (RFC 5546 3.2.2; audit B: anybody knowing a UID could otherwise
+		// move or rewrite events in the user's calendar).
+		objs = fromOrganizer(objs, inv.Sender)
 		if len(objs) == 0 {
 			return nil // pending until the user answers
 		}
@@ -243,6 +256,38 @@ func (a *App) applyIncoming(ctx context.Context, inv store.Invitation, cal *ical
 		return nil // pending: the organizer accepts or declines
 	}
 	return a.st.SetInvitationStatus(ctx, inv.ID, invApplied, 0)
+}
+
+// fromOrganizer keeps the stored objects whose ORGANIZER is sender.
+func fromOrganizer(objs []*parsedObject, sender string) []*parsedObject {
+	var out []*parsedObject
+	for _, p := range objs {
+		if org := itip.Organizer(p.cal).Email; org != "" && strings.EqualFold(org, strings.TrimSpace(sender)) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// organizerMismatch reports whether an invitation claims an organizer (or,
+// for REPLY/COUNTER, an attendee) other than the address it was sent from.
+// Display names and the ORGANIZER property are chosen freely by the sender,
+// so the card warns instead of presenting them as the sender.
+func organizerMismatch(method, sender string, organizer *ical.Attendee, attendees []ical.Attendee) bool {
+	sender = strings.ToLower(strings.TrimSpace(sender))
+	if sender == "" {
+		return false
+	}
+	switch method {
+	case itip.MethodReply, itip.MethodCounter:
+		for _, at := range attendees {
+			if strings.EqualFold(at.Email, sender) {
+				return false
+			}
+		}
+		return true
+	}
+	return organizer != nil && organizer.Email != "" && !strings.EqualFold(organizer.Email, sender)
 }
 
 func firstObjectID(objs []*parsedObject) int64 {
@@ -382,6 +427,8 @@ func (a *App) invitationView(ctx context.Context, inv store.Invitation) (Invitat
 		Description: ev.Description, Location: ev.Location, MeetingURL: ev.Conference, AllDay: ev.Start.AllDay,
 		Start: formatEventTime(ev.Start.Time, ev.Start.AllDay), End: formatEventTime(ev.EndTime(), ev.Start.AllDay),
 		Recurring: ev.RRule != "", Organizer: ev.Organizer, Attendees: ev.Attendees, Sender: inv.Sender, Conflicts: []string{}}
+	v.MeetingURL = linkURL(v.MeetingURL)
+	v.OrganizerMismatch = organizerMismatch(inv.Method, inv.Sender, ev.Organizer, ev.Attendees)
 	if ev.Organizer != nil && ev.Organizer.Name == "" && inv.Method == itip.MethodRequest {
 		v.Organizer.Name = ev.Organizer.Email
 	}

@@ -18,12 +18,21 @@
   import type { MailWindow } from '../../state/app.svelte';
   import { formatFullDate, t } from '../../i18n/index.svelte';
   import type { Address } from '../../types';
-  import MailFrame, { buildSrcdoc } from './MailFrame.svelte';
+  import MailFrame, { buildSrcdoc, escapeHtml } from './MailFrame.svelte';
   import AttachmentCard from '../common/AttachmentCard.svelte';
   import { isWails } from '../../platform';
+  import { proxiedRemoteHtml } from '../../remote';
 
   let sources = $state<Record<number, string | null>>({});
   let remote = $state<Record<number, boolean>>({});
+  /** Proxied HTML per window after "load images". */
+  let remoteHtml = $state<Record<number, string | null>>({});
+
+  async function loadRemote(w: MailWindow) {
+    const html = await proxiedRemoteHtml(app.api, w.messageId);
+    remoteHtml = { ...remoteHtml, [w.key]: html };
+    remote = { ...remote, [w.key]: true };
+  }
 
   const fmtList = (l: Address[]) => l.map((a) => (a.name ? `${a.name} <${a.email}>` : a.email)).join(', ');
 
@@ -72,8 +81,9 @@
     const f = document.createElement('iframe');
     f.setAttribute('sandbox', 'allow-same-origin allow-modals');
     f.style.cssText = 'position:fixed;width:0;height:0;border:0;right:0;bottom:0';
-    const head = `<h2 style="font:600 16px system-ui;margin:0 0 6px">${m.subject.replace(/</g, '&lt;')}</h2><p style="font:12px system-ui;color:#555;margin:0 0 14px">${fmtList(m.from).replace(/</g, '&lt;')} · ${formatFullDate(m.date)}</p>`;
-    f.srcdoc = buildSrcdoc({ html: m.html ? head + m.html : undefined, text: m.html ? undefined : m.text, allowRemote: !!remote[w.key], dark: false });
+    const head = `<h2 style="font:600 16px system-ui;margin:0 0 6px">${escapeHtml(m.subject)}</h2><p style="font:12px system-ui;color:#555;margin:0 0 14px">${escapeHtml(fmtList(m.from))} · ${escapeHtml(formatFullDate(m.date))}</p>`;
+    const html = remoteHtml[w.key] ?? m.html;
+    f.srcdoc = buildSrcdoc({ html: html ? head + html : undefined, text: m.html ? undefined : m.text, allowRemote: !!remote[w.key], dark: false });
     f.onload = () => {
       try {
         f.contentWindow?.print();
@@ -144,7 +154,7 @@
       {#if m.hasRemoteContent && !remote[w.key]}
         <div class="notice">
           <span>{t('mail.reader.remoteBlocked')}</span>
-          <button class="btn" onclick={() => (remote = { ...remote, [w.key]: true })}>{t('mail.reader.loadRemote')}</button>
+          <button class="btn" onclick={() => loadRemote(w)}>{t('mail.reader.loadRemote')}</button>
         </div>
       {/if}
       {#if m.attachments.length}
@@ -156,7 +166,7 @@
         {#if sources[w.key] != null}
           <pre class="src">{sources[w.key]}</pre>
         {:else}
-          <MailFrame html={m.html} text={m.text} allowRemote={!!remote[w.key]} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
+          <MailFrame html={remoteHtml[w.key] ?? m.html} text={m.text} allowRemote={!!remote[w.key]} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
         {/if}
       </div>
     {:else}
