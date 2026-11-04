@@ -1,0 +1,10 @@
+From: Anna Example <anna@example.org>
+To: Bob <bob@example.com>
+Subject: Hello from EML
+Date: Mon, 02 Nov 2026 10:00:00 +0100
+Message-ID: <eml-1@example.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Hi Bob,
+this is a test.

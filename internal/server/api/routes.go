@@ -457,7 +457,9 @@ func Routes(opts Options) []Route {
 		{"GET /api/events", eventsHandler(opts)},
 	}
 	routes = append(routes, cloudRoutes()...) // cloud routes
-	return append(routes, oauthRoutes()...)   // oauth_routes.go
+	routes = append(routes, ioRoutes()...)    // io_routes.go
+	routes = append(routes, oauthRoutes()...) // oauth_routes.go
+	return append(routes, pimRoutes()...)     // pim_routes.go
 }
 
 // send returns a function writing (value, error) results:

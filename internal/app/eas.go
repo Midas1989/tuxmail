@@ -146,6 +146,21 @@ func (a *App) syncEASPIMDue(ctx context.Context) {
 				p.mu.Unlock()
 			}()
 			res, err := a.SyncEASPIM(ctx, acc)
+			// The mail worker may be provisioning the device at the same
+			// time (the server then rejects one of the two Provision
+			// requests): retry transient failures a few times.
+			for wait := time.Second; err != nil && wait <= 4*time.Second && ctx.Err() == nil; wait *= 2 {
+				select {
+				case <-ctx.Done():
+				case <-time.After(wait):
+					// Reload: a just-created account gets its secret after
+					// the first tick may already have read it.
+					if fresh, gerr := a.st.GetAccount(ctx, acc.ID); gerr == nil {
+						acc = fresh
+					}
+					res, err = a.SyncEASPIM(ctx, acc)
+				}
+			}
 			if err != nil {
 				a.log.Info("app: EAS calendar/contacts sync failed", "account", acc.ID, "err", err)
 				return

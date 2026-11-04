@@ -278,7 +278,8 @@ func (w *workflowMail) ReplyAutomatic(context.Context, workflow.ItemRef, workflo
 type workflowTasks struct{ a *App }
 
 func (w *workflowTasks) CreateTask(ctx context.Context, t workflow.TaskRequest) (string, error) {
-	id, err := w.a.createLocalCalObject(ctx, "todo", t.Title, t.Notes, time.Time{}, time.Time{}, t.Due)
+	cal := w.a.calendarByName(ctx, t.List, "VTODO")
+	id, err := w.a.pimCreate(ctx, cal, "todo", t.Title, t.Notes, "", time.Time{}, time.Time{}, t.Due)
 	return fmt.Sprint(id), err
 }
 
@@ -287,6 +288,7 @@ func (w *workflowTasks) CreateEvent(ctx context.Context, e workflow.EventRequest
 	if d <= 0 {
 		d = time.Hour
 	}
-	id, err := w.a.createLocalCalObject(ctx, "event", e.Title, e.Notes, e.Start, e.Start.Add(d), time.Time{})
+	cal := w.a.calendarByName(ctx, e.Calendar, "VEVENT")
+	id, err := w.a.pimCreate(ctx, cal, "event", e.Title, e.Notes, e.Location, e.Start, e.Start.Add(d), time.Time{})
 	return fmt.Sprint(id), err
 }

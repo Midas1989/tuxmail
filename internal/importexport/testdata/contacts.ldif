@@ -1,0 +1,18 @@
+version: 1
+
+dn: cn=Max Muster,mail=max@example.org
+objectclass: top
+objectclass: person
+objectclass: inetOrgPerson
+givenName: Max
+sn: Muster
+cn: Max Muster
+mail: max@example.org
+telephoneNumber: +49 30 1
+description:: TcO8bGxlciDDhHJnZXI=
+
+dn: cn=Friends
+objectclass: top
+objectclass: groupOfNames
+cn: Friends
+member: cn=Max Muster,mail=max@example.org

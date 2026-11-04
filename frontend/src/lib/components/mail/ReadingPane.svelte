@@ -21,6 +21,7 @@
   import AttachmentCard from '../common/AttachmentCard.svelte';
   import MailFrame from './MailFrame.svelte';
   import MoveMenu from './MoveMenu.svelte';
+  import MessageInvitations from '../calendar/MessageInvitations.svelte';
 
   let allowRemote = $state(false);
   let showAllRecipients = $state(false);
@@ -104,6 +105,8 @@
           <button class="btn" onclick={() => (allowRemote = true)}>{t('mail.reader.loadRemote')}</button>
         </div>
       {/if}
+
+      {#key m.id}<MessageInvitations messageId={m.id} />{/key}
 
       {#if m.attachments.length}
         <div class="atts" aria-label={t('mail.reader.attachments', { count: m.attachments.length })}>

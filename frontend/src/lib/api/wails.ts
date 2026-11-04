@@ -12,6 +12,7 @@
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
+import type * as pim from '../types';
 // --- OAuth/Cloud accounts ---
 import type {
   CloudPimResult,
@@ -490,6 +491,63 @@ export class WailsTransport implements Api {
     return this.call('ExpungeFolder', folderId);
   }
 
+  // --- Import/Export/Backup ---
+  // Uploads and downloads use the desktop asset handler (/api/io/...),
+  // which serves the same routes as the web server.
+  listIOFormats(): Promise<IO.IOFormats> {
+    return this.call('ListIOFormats');
+  }
+  async uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload> {
+    const res = await fetch('/api/io/uploads', { method: 'POST', body: file, headers: { 'X-Filename': encodeURIComponent(filename) } });
+    if (!res.ok) throw new ApiError(res.statusText, res.status, 'upload_failed');
+    return (await res.json()) as IO.IOUpload;
+  }
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview> {
+    return this.call('InspectImport', source);
+  }
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob> {
+    return this.call('StartImport', request);
+  }
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob> {
+    return this.call('StartExport', request);
+  }
+  listIOJobs(): Promise<IO.IOJob[]> {
+    return this.call('ListIOJobs');
+  }
+  getIOJob(id: string): Promise<IO.IOJob> {
+    return this.call('GetIOJob', id);
+  }
+  cancelIOJob(id: string): Promise<void> {
+    return this.call('CancelIOJob', id);
+  }
+  ioDownloadUrl(token: string): string {
+    return `/api/io/downloads/${encodeURIComponent(token)}`;
+  }
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob> {
+    return this.call('CreateBackup', request);
+  }
+  inspectBackup(source: IO.BackupSource, passphrase = ''): Promise<IO.BackupInspection> {
+    return this.call('InspectBackup', source, passphrase);
+  }
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob> {
+    return this.call('StartRestore', request);
+  }
+  listBackupSchedules(): Promise<IO.BackupSchedule[]> {
+    return this.call('ListBackupSchedules');
+  }
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule> {
+    return this.call('SaveBackupSchedule', schedule);
+  }
+  deleteBackupSchedule(id: string): Promise<void> {
+    return this.call('DeleteBackupSchedule', id);
+  }
+  runBackupSchedule(id: string): Promise<IO.IOJob> {
+    return this.call('RunBackupSchedule', id);
+  }
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]> {
+    return this.call('ListBackupArchives', scheduleId);
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     if (!this.offRuntime && this.win.runtime?.EventsOn) {
@@ -504,6 +562,101 @@ export class WailsTransport implements Api {
         this.offRuntime = null;
       }
     };
+  }
+
+  // --- PIM --- (internal/app/pim_api.go)
+  listCalendars(): Promise<pim.PimCalendar[]> {
+    return this.call('ListCalendars');
+  }
+  saveCalendar(input: pim.CalendarInput): Promise<pim.PimCalendar> {
+    return this.call('SaveCalendar', input);
+  }
+  deleteCalendar(id: number): Promise<void> {
+    return this.call('DeleteCalendar', id);
+  }
+  syncCalendars(): Promise<void> {
+    return this.call('SyncCalendars');
+  }
+  importCalendarFile(calendarId: number, ics: string): Promise<{ added: number }> {
+    return this.call('ImportCalendarFile', calendarId, ics);
+  }
+  listEvents(query: pim.EventQuery): Promise<pim.CalendarEvent[]> {
+    return this.call('ListEvents', query);
+  }
+  getEvent(id: string): Promise<pim.CalendarEvent> {
+    return this.call('GetEvent', id);
+  }
+  createEvent(input: pim.EventInput): Promise<pim.CalendarEvent> {
+    return this.call('CreateEvent', input);
+  }
+  updateEvent(id: string, input: pim.EventInput, scope: pim.RecurrenceScope): Promise<pim.CalendarEvent> {
+    return this.call('UpdateEvent', id, input, scope);
+  }
+  deleteEvent(id: string, scope: pim.RecurrenceScope): Promise<void> {
+    return this.call('DeleteEvent', id, scope);
+  }
+  resolveEventConflict(objectId: number, keep: boolean): Promise<void> {
+    return this.call('ResolveEventConflict', objectId, keep);
+  }
+  getFreeBusy(query: { attendees: string[]; from: string; to: string }): Promise<pim.FreeBusy[]> {
+    return this.call('GetFreeBusy', query);
+  }
+  snoozeReminder(eventId: string, trigger: string, minutes: number): Promise<void> {
+    return this.call('SnoozeReminder', eventId, trigger, minutes);
+  }
+  addDavAccount(input: pim.DavAccountInput): Promise<Account> {
+    return this.call('AddDavAccount', input);
+  }
+  listTasks(query: pim.TaskQuery): Promise<pim.PimTask[]> {
+    return this.call('ListTasks', query);
+  }
+  saveTask(input: pim.TaskInput): Promise<pim.PimTask> {
+    return this.call('SaveTask', input);
+  }
+  deleteTask(id: number): Promise<void> {
+    return this.call('DeleteTask', id);
+  }
+  getMessageInvitations(messageId: number): Promise<pim.Invitation[]> {
+    return this.call('GetMessageInvitations', messageId);
+  }
+  listInvitations(): Promise<pim.Invitation[]> {
+    return this.call('ListInvitations');
+  }
+  respondInvitation(id: number, response: pim.InvitationResponse): Promise<pim.Invitation> {
+    return this.call('RespondInvitation', id, response);
+  }
+  listAddressBooks(): Promise<pim.PimAddressBook[]> {
+    return this.call('ListAddressBooks');
+  }
+  saveAddressBook(input: pim.AddressBookInput): Promise<pim.PimAddressBook> {
+    return this.call('SaveAddressBook', input);
+  }
+  deleteAddressBook(id: number): Promise<void> {
+    return this.call('DeleteAddressBook', id);
+  }
+  listContacts(query: pim.ContactQuery): Promise<pim.PimContact[]> {
+    return this.call('ListContacts', query);
+  }
+  getContact(id: number): Promise<pim.PimContact> {
+    return this.call('GetContact', id);
+  }
+  saveContact(contact: pim.PimContact): Promise<pim.PimContact> {
+    return this.call('SaveContact', contact);
+  }
+  deleteContact(id: number): Promise<void> {
+    return this.call('DeleteContact', id);
+  }
+  listContactGroups(): Promise<pim.ContactGroup[]> {
+    return this.call('ListContactGroups');
+  }
+  findDuplicateContacts(): Promise<pim.DuplicateGroup[]> {
+    return this.call('FindDuplicateContacts');
+  }
+  mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact> {
+    return this.call('MergeContacts', ids, merged ?? null);
+  }
+  autocompleteAddresses(query: string, limit = 8): Promise<pim.AddressSuggestion[]> {
+    return this.call('AutocompleteAddresses', query, limit);
   }
 
   // --- Cloud ---
@@ -602,3 +755,6 @@ export class WailsTransport implements Api {
     return this.call('SyncCloudPim', accountId);
   }
 }
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';

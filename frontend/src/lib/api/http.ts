@@ -85,6 +85,19 @@
 //   GET  /api/workflows/{id}/runs?limit=        -> WorkflowRun[]
 //   POST /api/workflows/validate                {src, mode} -> WorkflowValidation
 //   POST /api/workflows/complete                {src, offset, mode} -> WorkflowCompletion
+//   GET  /api/io/formats                        -> IOFormats
+//   POST /api/io/uploads                        raw body, X-Filename header -> IOUpload
+//   GET  /api/io/downloads/{token}              export result / backup archive
+//   POST /api/io/inspect                        IOSource -> ImportPreview
+//   POST /api/io/import                         ImportRequest -> IOJob
+//   POST /api/io/export                         ExportRequest -> IOJob
+//   GET  /api/io/jobs                           -> IOJob[];  GET/DELETE /api/io/jobs/{id}
+//   POST /api/backup                            BackupRequest -> IOJob
+//   POST /api/backup/inspect                    {source, passphrase} -> BackupInspection
+//   POST /api/backup/restore                    RestoreRequest -> IOJob
+//   GET  /api/backup/schedules; POST /api/backup/schedules; PUT/DELETE /api/backup/schedules/{id}
+//   POST /api/backup/schedules/{id}/run         -> IOJob
+//   GET  /api/backup/schedules/{id}/archives    -> BackupArchive[]
 //   --- Cloud --- (KONZEPT 12)
 //   GET  /api/cloud/accounts                    -> CloudAccount[]
 //   DELETE /api/cloud/accounts/{id}
@@ -115,6 +128,24 @@
 //   PUT  /api/accounts/{id}/folder-config/behaviour  FolderBehaviour -> FolderConfig
 //   PUT  /api/identities/{id}/folders           {sentFolderId, draftsFolderId} -> FolderConfig
 //   POST /api/folders/{id}/expunge              -> {expunged}
+//   --- PIM ---
+//   GET  /api/calendars; POST /api/calendars; PUT/DELETE /api/calendars/{id}   CalendarInput -> PimCalendar
+//   POST /api/calendars/sync                    POST /api/calendars/{id}/import (raw .ics) -> {added}
+//   GET  /api/calendar-events?from=&to=&calendarIds=1,2  -> CalendarEvent[];  POST /api/calendar-events  EventInput
+//   GET/PUT/DELETE /api/calendar-events/{id...}  (PUT/DELETE ?scope=this|following|all)
+//   POST /api/event-conflicts/{id}/resolve      {keep}
+//   POST /api/freebusy                          {attendees, from, to} -> FreeBusy[]
+//   POST /api/reminders/snooze                  {eventId, trigger, minutes}
+//   POST /api/dav-accounts                      DavAccountInput -> Account
+//   GET  /api/tasks?filter=&calendarIds=&q=     -> PimTask[];  POST /api/tasks;  PUT/DELETE /api/tasks/{id}
+//   GET  /api/messages/{id}/invitations         -> Invitation[];  GET /api/invitations
+//   POST /api/invitations/{id}/respond          InvitationResponse -> Invitation
+//   GET  /api/addressbooks; POST /api/addressbooks; PUT/DELETE /api/addressbooks/{id}
+//   GET  /api/contacts?addressBookId=&q=&group= -> PimContact[];  POST /api/contacts
+//   GET/PUT/DELETE /api/contacts/{id};  GET /api/contacts/{id}/photo
+//   GET  /api/contacts/duplicates               -> DuplicateGroup[];  POST /api/contacts/merge {ids, merged}
+//   GET  /api/contact-groups                    -> ContactGroup[]
+//   GET  /api/autocomplete?q=&limit=            -> AddressSuggestion[]
 //   --- OAuth/Cloud accounts ---
 //   GET  /api/oauth/providers                   -> OAuthProviderInfo[]
 //   PUT/DELETE /api/oauth/clients/{provider}    OAuthClientInput (own client ID)
@@ -139,6 +170,7 @@ import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery,
 import { ApiError, EventHub } from './api';
 import type { ConversationScope } from './api';
 import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
+import type * as pim from '../types';
 // --- OAuth/Cloud accounts ---
 import type {
   CloudPimResult,
@@ -768,6 +800,61 @@ export class HttpTransport implements Api {
     return r.expunged;
   }
 
+  // --- Import/Export/Backup ---
+  listIOFormats(): Promise<IO.IOFormats> {
+    return this.request('GET', '/api/io/formats');
+  }
+  uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload> {
+    return this.request('POST', '/api/io/uploads', file, { 'X-Filename': encodeURIComponent(filename) });
+  }
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview> {
+    return this.request('POST', '/api/io/inspect', source);
+  }
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob> {
+    return this.request('POST', '/api/io/import', request);
+  }
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob> {
+    return this.request('POST', '/api/io/export', request);
+  }
+  listIOJobs(): Promise<IO.IOJob[]> {
+    return this.request('GET', '/api/io/jobs');
+  }
+  getIOJob(id: string): Promise<IO.IOJob> {
+    return this.request('GET', `/api/io/jobs/${encodeURIComponent(id)}`);
+  }
+  cancelIOJob(id: string): Promise<void> {
+    return this.request('DELETE', `/api/io/jobs/${encodeURIComponent(id)}`);
+  }
+  ioDownloadUrl(token: string): string {
+    return `${this.base}/api/io/downloads/${encodeURIComponent(token)}`;
+  }
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob> {
+    return this.request('POST', '/api/backup', request);
+  }
+  inspectBackup(source: IO.BackupSource, passphrase = ''): Promise<IO.BackupInspection> {
+    return this.request('POST', '/api/backup/inspect', { source, passphrase });
+  }
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob> {
+    return this.request('POST', '/api/backup/restore', request);
+  }
+  listBackupSchedules(): Promise<IO.BackupSchedule[]> {
+    return this.request('GET', '/api/backup/schedules');
+  }
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule> {
+    return schedule.id
+      ? this.request('PUT', `/api/backup/schedules/${encodeURIComponent(schedule.id)}`, schedule)
+      : this.request('POST', '/api/backup/schedules', schedule);
+  }
+  deleteBackupSchedule(id: string): Promise<void> {
+    return this.request('DELETE', `/api/backup/schedules/${encodeURIComponent(id)}`);
+  }
+  runBackupSchedule(id: string): Promise<IO.IOJob> {
+    return this.request('POST', `/api/backup/schedules/${encodeURIComponent(id)}/run`);
+  }
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]> {
+    return this.request('GET', `/api/backup/schedules/${encodeURIComponent(scheduleId)}/archives`);
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     this.connect();
@@ -872,6 +959,111 @@ export class HttpTransport implements Api {
     }
   }
 
+  // --- PIM ---
+  listCalendars(): Promise<pim.PimCalendar[]> {
+    return this.request('GET', '/api/calendars');
+  }
+  saveCalendar(input: pim.CalendarInput): Promise<pim.PimCalendar> {
+    return input.id ? this.request('PUT', `/api/calendars/${input.id}`, input) : this.request('POST', '/api/calendars', input);
+  }
+  deleteCalendar(id: number): Promise<void> {
+    return this.request('DELETE', `/api/calendars/${id}`);
+  }
+  syncCalendars(): Promise<void> {
+    return this.request('POST', '/api/calendars/sync');
+  }
+  importCalendarFile(calendarId: number, ics: string): Promise<{ added: number }> {
+    return this.request('POST', `/api/calendars/${calendarId}/import`, new Blob([ics], { type: 'text/calendar' }));
+  }
+  listEvents(query: pim.EventQuery): Promise<pim.CalendarEvent[]> {
+    return this.request(
+      'GET',
+      `/api/calendar-events${buildQuery({ from: query.from, to: query.to, calendarIds: query.calendarIds?.join(','), includeHidden: query.includeHidden ? 1 : undefined })}`,
+    );
+  }
+  getEvent(id: string): Promise<pim.CalendarEvent> {
+    return this.request('GET', `/api/calendar-events/${encodeURIComponent(id)}`);
+  }
+  createEvent(input: pim.EventInput): Promise<pim.CalendarEvent> {
+    return this.request('POST', '/api/calendar-events', input);
+  }
+  updateEvent(id: string, input: pim.EventInput, scope: pim.RecurrenceScope): Promise<pim.CalendarEvent> {
+    return this.request('PUT', `/api/calendar-events/${encodeURIComponent(id)}${buildQuery({ scope })}`, input);
+  }
+  deleteEvent(id: string, scope: pim.RecurrenceScope): Promise<void> {
+    return this.request('DELETE', `/api/calendar-events/${encodeURIComponent(id)}${buildQuery({ scope })}`);
+  }
+  resolveEventConflict(objectId: number, keep: boolean): Promise<void> {
+    return this.request('POST', `/api/event-conflicts/${objectId}/resolve`, { keep });
+  }
+  getFreeBusy(query: { attendees: string[]; from: string; to: string }): Promise<pim.FreeBusy[]> {
+    return this.request('POST', '/api/freebusy', query);
+  }
+  snoozeReminder(eventId: string, trigger: string, minutes: number): Promise<void> {
+    return this.request('POST', '/api/reminders/snooze', { eventId, trigger, minutes });
+  }
+  addDavAccount(input: pim.DavAccountInput): Promise<Account> {
+    return this.request('POST', '/api/dav-accounts', input);
+  }
+  listTasks(query: pim.TaskQuery): Promise<pim.PimTask[]> {
+    return this.request('GET', `/api/tasks${buildQuery({ filter: query.filter, calendarIds: query.calendarIds?.join(','), q: query.search })}`);
+  }
+  saveTask(input: pim.TaskInput): Promise<pim.PimTask> {
+    return input.id ? this.request('PUT', `/api/tasks/${input.id}`, input) : this.request('POST', '/api/tasks', input);
+  }
+  deleteTask(id: number): Promise<void> {
+    return this.request('DELETE', `/api/tasks/${id}`);
+  }
+  getMessageInvitations(messageId: number): Promise<pim.Invitation[]> {
+    return this.request('GET', `/api/messages/${messageId}/invitations`);
+  }
+  listInvitations(): Promise<pim.Invitation[]> {
+    return this.request('GET', '/api/invitations');
+  }
+  respondInvitation(id: number, response: pim.InvitationResponse): Promise<pim.Invitation> {
+    return this.request('POST', `/api/invitations/${id}/respond`, response);
+  }
+  listAddressBooks(): Promise<pim.PimAddressBook[]> {
+    return this.request('GET', '/api/addressbooks');
+  }
+  saveAddressBook(input: pim.AddressBookInput): Promise<pim.PimAddressBook> {
+    return input.id ? this.request('PUT', `/api/addressbooks/${input.id}`, input) : this.request('POST', '/api/addressbooks', input);
+  }
+  deleteAddressBook(id: number): Promise<void> {
+    return this.request('DELETE', `/api/addressbooks/${id}`);
+  }
+  async listContacts(query: pim.ContactQuery): Promise<pim.PimContact[]> {
+    const list = await this.request<pim.PimContact[]>('GET', `/api/contacts${buildQuery({ addressBookId: query.addressBookId, q: query.search, group: query.group })}`);
+    return list.map((c) => this.absContact(c));
+  }
+  async getContact(id: number): Promise<pim.PimContact> {
+    return this.absContact(await this.request<pim.PimContact>('GET', `/api/contacts/${id}`));
+  }
+  async saveContact(contact: pim.PimContact): Promise<pim.PimContact> {
+    const c = contact.id
+      ? await this.request<pim.PimContact>('PUT', `/api/contacts/${contact.id}`, contact)
+      : await this.request<pim.PimContact>('POST', '/api/contacts', contact);
+    return this.absContact(c);
+  }
+  deleteContact(id: number): Promise<void> {
+    return this.request('DELETE', `/api/contacts/${id}`);
+  }
+  listContactGroups(): Promise<pim.ContactGroup[]> {
+    return this.request('GET', '/api/contact-groups');
+  }
+  findDuplicateContacts(): Promise<pim.DuplicateGroup[]> {
+    return this.request('GET', '/api/contacts/duplicates');
+  }
+  async mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact> {
+    return this.absContact(await this.request<pim.PimContact>('POST', '/api/contacts/merge', { ids, merged }));
+  }
+  autocompleteAddresses(query: string, limit = 8): Promise<pim.AddressSuggestion[]> {
+    return this.request('GET', `/api/autocomplete${buildQuery({ q: query, limit })}`);
+  }
+  private absContact(c: pim.PimContact): pim.PimContact {
+    return c.photoUrl?.startsWith('/') ? { ...c, photoUrl: this.abs(c.photoUrl) } : c;
+  }
+
   // --- Cloud ---
   listCloudAccounts(): Promise<CloudAccount[]> {
     return this.request('GET', '/api/cloud/accounts');
@@ -956,3 +1148,6 @@ function scopeParams(s: ConversationScope): Record<string, string | number | und
     searchFolderId: s.kind === 'searchFolder' ? s.searchFolderId : undefined,
   };
 }
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';

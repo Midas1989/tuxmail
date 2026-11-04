@@ -58,6 +58,10 @@ type Options struct {
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
 	OAuth      *OAuthOptions   // OAuth clients/redirect (default: environment), oauth_app.go
+	// PIM configures calendars, tasks and contacts (pim.go). The background
+	// loop (CalDAV/CardDAV sync, reminders, invitations) runs when PIM or
+	// Sync is set and PIM.Disabled is false.
+	PIM *PIMOptions
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -111,6 +115,8 @@ type App struct {
 	easPIM    easPIM            // EAS calendar/contacts scheduling (eas.go)
 	cloud     cloudState        // cloud_accounts.go
 	oauth     *oauthState       // oauth_app.go
+	pimOnce   sync.Once
+	pim       *pimService
 }
 
 // New creates the application layer.
@@ -237,6 +243,10 @@ func (a *App) Start() {
 			}
 		}()
 		go func() { defer a.wg.Done(); a.timers(ctx) }()
+		if a.opts.PIM != nil || a.opts.Sync != nil {
+			a.wg.Add(1)
+			go func() { defer a.wg.Done(); a.runPIM(ctx) }()
+		}
 	})
 }
 
@@ -304,6 +314,7 @@ func (a *App) tick(ctx context.Context) {
 	}
 	a.sendDueScheduled(ctx)
 	a.runSendOps(ctx)
+	a.RunDueBackups(ctx)
 	a.syncEASPIMDue(ctx)
 	if hashes, err := a.st.PurgeUploads(ctx, a.now().Add(-24*time.Hour)); err == nil && a.blobs != nil {
 		for _, h := range hashes {

@@ -12,7 +12,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/domain"
 )
 
-// Folder configuration (migration 0006): user overrides of folder roles and
+// Folder configuration (migration 0010): user overrides of folder roles and
 // per-account folder behaviour.
 //
 // folders.role is the effective role. It is derived from the role the server

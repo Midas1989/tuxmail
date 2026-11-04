@@ -7,6 +7,8 @@
 
 export type AccountKind =
   | 'imap'
+  /** Local Folders: mail stored only in TuxMail (imports, archives). */
+  | 'local'
   | 'pop3'
   | 'smtp'
   | 'jmap'
@@ -481,7 +483,10 @@ export type ApiEvent =
   | { type: 'searchfolders.changed' }
   | { type: 'workflow.run'; workflowId: string; run: WorkflowRunSummary }
   /** Desktop portable mode: the secret vault needs the master password (Api.unlockVault). */
-  | { type: 'vault.locked' };
+  | { type: 'vault.locked' }
+  | PimEvent
+  /** Import/export/backup job changed (poll Api.getIOJob). */
+  | { type: 'io.job'; itemId: string; state: string };
 
 export type ApiEventType = ApiEvent['type'];
 
@@ -1222,6 +1227,598 @@ export interface FolderConfig {
   identities: IdentityFolderConfig[];
   /** Missing role folders can be created on the server. */
   canCreate: boolean;
+}
+
+// --- PIM ---
+// Calendars, tasks and contacts (KONZEPT 9, 10). Times are RFC 3339 (UTC);
+// all-day values are dates "YYYY-MM-DD" with an exclusive end.
+
+/** Live events of the PIM area. calendar.reminder: itemId = event id, state = trigger time. */
+export type PimEvent =
+  | { type: 'calendar.changed' }
+  | { type: 'contacts.changed' }
+  | { type: 'calendar.reminder'; itemId: string; state: string }
+  | { type: 'calendar.invitation'; messageId: number };
+
+export type CalendarKind = 'local' | 'caldav' | 'subscription' | 'birthdays';
+
+export interface PimCalendar {
+  id: number;
+  accountId?: number;
+  accountName?: string;
+  name: string;
+  color: string;
+  kind: CalendarKind;
+  readOnly: boolean;
+  visible: boolean;
+  isDefault: boolean;
+  /** Supported components: 'VEVENT', 'VTODO'. */
+  components: string[];
+  url?: string;
+  refreshMinutes?: number;
+  description?: string;
+  lastSync?: string;
+  error?: string;
+}
+
+export interface CalendarInput {
+  id?: number;
+  name: string;
+  color?: string;
+  kind?: 'local' | 'subscription';
+  url?: string;
+  refreshMinutes?: number;
+  visible?: boolean;
+  isDefault?: boolean;
+  components?: string[];
+}
+
+export type RecurrenceFreq = 'DAILY' | 'WEEKLY' | 'MONTHLY' | 'YEARLY';
+
+export interface RecurrenceRule {
+  freq: RecurrenceFreq | string;
+  interval?: number;
+  count?: number;
+  /** Inclusive end date YYYY-MM-DD. */
+  until?: string;
+  /** "MO", "1MO", "-1FR" */
+  byDay?: string[];
+  byMonthDay?: number[];
+  byMonth?: number[];
+  bySetPos?: number[];
+  /** Raw RRULE (read-only). */
+  raw?: string;
+}
+
+export type PartStat = 'NEEDS-ACTION' | 'ACCEPTED' | 'TENTATIVE' | 'DECLINED' | 'DELEGATED';
+
+export interface Attendee {
+  email: string;
+  name?: string;
+  role?: string;
+  partStat?: PartStat | string;
+  rsvp?: boolean;
+  cuType?: string;
+}
+
+export interface EventAlarm {
+  minutesBefore: number;
+  action?: string;
+}
+
+export type RecurrenceScope = 'this' | 'following' | 'all';
+
+export interface CalendarEvent {
+  /** "<objectId>", "<objectId>/<instance>", "bday/<contact>/<year>", "inv/<invitation>". */
+  id: string;
+  objectId: number;
+  calendarId: number;
+  uid: string;
+  recurrenceId?: string;
+  kind: 'event' | 'birthday' | 'invitation';
+  title: string;
+  description?: string;
+  location?: string;
+  url?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  timeZone?: string;
+  recurrence?: RecurrenceRule;
+  recurring: boolean;
+  exception?: boolean;
+  organizer?: Attendee;
+  attendees: Attendee[];
+  alarms: EventAlarm[];
+  isOrganizer?: boolean;
+  myPartStat?: string;
+  status?: string;
+  busy: boolean;
+  categories: string[];
+  color?: string;
+  readOnly?: boolean;
+  conflict?: boolean;
+  invitationId?: number;
+  birthYear?: number;
+}
+
+export interface EventInput {
+  calendarId: number;
+  title: string;
+  description?: string;
+  location?: string;
+  url?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  timeZone?: string;
+  /** null/absent keeps the rule on updates; { freq: '' } removes it. */
+  recurrence?: RecurrenceRule | null;
+  attendees?: Attendee[];
+  alarms?: EventAlarm[];
+  busy?: boolean;
+  categories?: string[];
+  status?: string;
+  notifyAttendees?: boolean;
+}
+
+export interface EventQuery {
+  from: string;
+  to: string;
+  calendarIds?: number[];
+  includeHidden?: boolean;
+}
+
+export interface PimTask {
+  id: number;
+  calendarId: number;
+  uid: string;
+  title: string;
+  description?: string;
+  start?: string;
+  due?: string;
+  dueAllDay?: boolean;
+  /** 0 = none, 1 = highest ... 9 = lowest. */
+  priority: number;
+  progress: number;
+  status: string;
+  done: boolean;
+  completed?: string;
+  parentId?: number;
+  parentUid?: string;
+  categories: string[];
+  recurrence?: RecurrenceRule;
+  overdue?: boolean;
+  readOnly?: boolean;
+  color?: string;
+}
+
+export interface TaskInput {
+  id?: number;
+  calendarId?: number;
+  title: string;
+  description?: string;
+  due?: string;
+  dueAllDay?: boolean;
+  priority?: number;
+  progress?: number;
+  status?: string;
+  done?: boolean;
+  parentId?: number;
+  categories?: string[];
+  recurrence?: RecurrenceRule | null;
+}
+
+export type TaskFilter = 'open' | 'today' | 'overdue' | 'upcoming' | 'completed' | 'all';
+
+export interface TaskQuery {
+  filter?: TaskFilter;
+  calendarIds?: number[];
+  search?: string;
+}
+
+export interface Invitation {
+  id: number;
+  messageId?: number;
+  method: 'REQUEST' | 'REPLY' | 'CANCEL' | 'COUNTER' | 'DECLINECOUNTER' | 'PUBLISH' | string;
+  status: 'pending' | 'accepted' | 'tentative' | 'declined' | 'applied' | 'cancelled' | 'obsolete' | string;
+  uid: string;
+  title: string;
+  description?: string;
+  location?: string;
+  meetingUrl?: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  recurring: boolean;
+  organizer?: Attendee;
+  attendees: Attendee[];
+  myPartStat?: string;
+  sender?: string;
+  comment?: string;
+  eventId?: string;
+  conflicts: string[];
+  canRespond: boolean;
+  replyPartStat?: string;
+}
+
+export interface InvitationResponse {
+  partStat: 'ACCEPTED' | 'TENTATIVE' | 'DECLINED';
+  comment?: string;
+  calendarId?: number;
+  sendReply?: boolean;
+  proposeStart?: string;
+  proposeEnd?: string;
+}
+
+export interface FreeBusy {
+  email: string;
+  source: 'local' | 'caldav' | 'unknown';
+  busy: TimeSlot[];
+}
+
+export interface DavAccountInput {
+  displayName: string;
+  url: string;
+  carddavUrl?: string;
+  username: string;
+  password: string;
+  email?: string;
+}
+
+export interface PimAddressBook {
+  id: number;
+  accountId?: number;
+  accountName?: string;
+  name: string;
+  kind: 'local' | 'carddav';
+  isDefault: boolean;
+  count: number;
+  url?: string;
+  lastSync?: string;
+  error?: string;
+}
+
+export interface AddressBookInput {
+  id?: number;
+  name: string;
+  isDefault?: boolean;
+}
+
+export interface ContactValue {
+  type?: string;
+  label?: string;
+  value: string;
+  pref?: boolean;
+}
+
+export interface ContactAddress {
+  type?: string;
+  label?: string;
+  poBox?: string;
+  extended?: string;
+  street?: string;
+  locality?: string;
+  region?: string;
+  postalCode?: string;
+  country?: string;
+}
+
+export interface ContactName {
+  family?: string;
+  given?: string;
+  additional?: string;
+  prefix?: string;
+  suffix?: string;
+}
+
+export interface PimContact {
+  id: number;
+  addressBookId: number;
+  personId?: number;
+  displayName: string;
+  hasPhoto: boolean;
+  photoUrl?: string;
+  /** Input only: data: URL sets the photo, "-" removes it. */
+  photo?: string;
+  /** Channels of the linked person (e-mail, phone, messengers). */
+  channels: PersonHandle[];
+  uid: string;
+  version?: string;
+  kind?: string;
+  fn: string;
+  n: ContactName;
+  nickname?: string;
+  org?: string;
+  department?: string;
+  title?: string;
+  emails: ContactValue[];
+  phones: ContactValue[];
+  addresses: ContactAddress[];
+  urls: ContactValue[];
+  impp: ContactValue[];
+  social: ContactValue[];
+  /** YYYY-MM-DD or --MM-DD */
+  birthday?: string;
+  anniversary?: string;
+  note?: string;
+  categories: string[];
+  custom: { name: string; value: string }[];
+}
+
+export interface ContactQuery {
+  addressBookId?: number;
+  search?: string;
+  group?: string;
+}
+
+export interface ContactGroup {
+  name: string;
+  count: number;
+}
+
+export interface DuplicateGroup {
+  contacts: PimContact[];
+  preview: PimContact;
+}
+
+export interface AddressSuggestion {
+  name: string;
+  email: string;
+  contactId?: number;
+  personId?: number;
+  source: 'contact' | 'recent';
+}
+
+// --- Import/Export/Backup ---
+// KONZEPT 13 (import & export) and 14 (backup & restore); Go: internal/app/io_*.go.
+
+export type ImportFormat = 'eml' | 'mbox' | 'maildir' | 'pst' | 'thunderbird' | 'ics' | 'vcf' | 'csv' | 'ldif';
+export type ExportFormat = 'eml' | 'mbox' | 'maildir' | 'ics' | 'vcf' | 'csv' | 'ldif' | 'pdf';
+
+export interface IOFormats {
+  import: ImportFormat[];
+  export: ExportFormat[];
+  pst: boolean;
+}
+
+/** An import file: a local path (desktop) or an uploaded file (uploadImportFile). */
+export interface IOSource {
+  format: ImportFormat;
+  path?: string;
+  uploadToken?: string;
+}
+
+export interface IOUpload {
+  token: string;
+  name: string;
+  size: number;
+}
+
+export interface ImportTarget {
+  /** local: "Local Folders" account; folder: an existing server folder (IMAP APPEND). */
+  kind: 'local' | 'folder';
+  accountId?: number;
+  folderId?: number;
+  folderName?: string;
+  calendarId?: number;
+  addressbookId?: number;
+}
+
+export interface ImportOptions {
+  keepStructure: boolean;
+  dedupe: boolean;
+  keepFlags: boolean;
+  keepDates: boolean;
+  throttleMs?: number;
+  mboxVariant?: 'mboxrd' | 'mboxo';
+  duplicateMode?: 'skip' | 'overwrite' | 'copy';
+  csvMapping?: string[];
+  csvPreset?: string;
+  tbAccounts: boolean;
+  tbMail: boolean;
+  tbAddressBooks: boolean;
+}
+
+export interface ImportRequest {
+  source: IOSource;
+  target: ImportTarget;
+  options: ImportOptions;
+  resumeJobId?: string;
+}
+
+export interface ThunderbirdProfile {
+  dir: string;
+  accounts: {
+    key: string;
+    name: string;
+    incoming: { kind: string; host?: string; port?: number; username?: string };
+    identities: { name: string; email: string }[] | null;
+    mailDir?: string;
+  }[];
+  addressBooks: { name: string; file: string; count: number }[] | null;
+  tbsync?: string[];
+  warnings?: string[];
+}
+
+export interface ImportPreview {
+  format: ImportFormat;
+  items: number;
+  header?: string[];
+  preset?: string;
+  mapping?: string[];
+  sample?: string[][];
+  fields?: string[];
+  problems?: string[];
+  profile?: ThunderbirdProfile;
+}
+
+export interface MailSelection {
+  folderIds?: number[];
+  query?: string;
+  conversationId?: number;
+  projectId?: number;
+  messageIds?: number[];
+}
+
+export interface ExportRequest {
+  format: ExportFormat;
+  selection?: MailSelection;
+  calendarIds?: number[];
+  from?: string;
+  to?: string;
+  addressbookIds?: number[];
+  vcardVersion?: '3.0' | '4.0';
+  csvPreset?: 'outlook' | 'google';
+}
+
+export interface IOProblem {
+  item: string;
+  error: string;
+}
+
+export interface IOJob {
+  id: string;
+  kind: 'import' | 'export' | 'backup' | 'restore';
+  format: string;
+  status: 'running' | 'done' | 'failed' | 'canceled';
+  done: number;
+  total: number;
+  skipped: number;
+  failed: number;
+  current?: string;
+  started: string;
+  finished?: string;
+  error?: string;
+  problems?: IOProblem[];
+  summary?: Record<string, number>;
+  /** Export result: GET /api/io/downloads/{download}. */
+  download?: string;
+  downloadName?: string;
+  result?: BackupManifest | RestoreResult;
+  resumable?: boolean;
+}
+
+export type BackupMode = 'config' | 'local' | 'full' | 'custom';
+export type BackupArea = 'mail' | 'calendar' | 'contacts' | 'chats' | 'settings';
+
+export interface BackupScope {
+  mode: BackupMode;
+  accounts?: number[];
+  areas?: BackupArea[];
+  secrets?: boolean;
+}
+
+export interface BackupTarget {
+  kind: 'download' | 'local' | 'webdav';
+  path?: string;
+  url?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface BackupRequest {
+  scope: BackupScope;
+  passphrase?: string;
+  target: BackupTarget;
+}
+
+export interface BackupAccountInfo {
+  id: number;
+  kind: string;
+  name: string;
+  address?: string;
+  messenger?: boolean;
+  messages: number;
+}
+
+export interface BackupManifest {
+  format: number;
+  id: string;
+  created: string;
+  appVersion?: string;
+  schemaVersion: number;
+  scope: BackupScope;
+  encrypted: boolean;
+  secrets: boolean;
+  baseId?: string;
+  files: { path: string; size: number; sha256: string }[];
+  blobs: string[] | null;
+  blobsIncluded: number;
+  accounts: BackupAccountInfo[] | null;
+  counts?: Record<string, number>;
+  warnings?: string[];
+  server?: boolean;
+}
+
+export interface BackupSource {
+  uploadToken?: string;
+  path?: string;
+  scheduleId?: string;
+  name?: string;
+}
+
+export interface BackupInspection {
+  manifest: BackupManifest | null;
+  encrypted: boolean;
+  messenger: boolean;
+}
+
+export interface RestoreRequest {
+  source: BackupSource;
+  bases?: BackupSource[];
+  passphrase?: string;
+  mode: 'replace' | 'merge';
+  accounts?: number[];
+  configOnly?: boolean;
+  secrets?: boolean;
+}
+
+export interface RestoreResult {
+  mode: 'replace' | 'merge';
+  accounts: number;
+  messages: number;
+  blobs: number;
+  secrets: number;
+  schemaFrom: number;
+  schemaTo: number;
+  warnings?: string[];
+  restartRequired?: boolean;
+}
+
+export interface BackupSchedule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  frequency: 'daily' | 'weekly';
+  hour: number;
+  minute: number;
+  /** 0 = Sunday. */
+  weekday: number;
+  scope: BackupScope;
+  target: { kind: 'local' | 'webdav'; path?: string; url?: string; username?: string; passwordRef?: string };
+  passphraseRef?: string;
+  incremental: boolean;
+  fullEvery?: number;
+  keepDaily: number;
+  keepWeekly: number;
+  lastRun?: string;
+  lastResult?: string;
+  lastError?: string;
+  nextRun?: string;
+}
+
+export interface BackupScheduleInput extends BackupSchedule {
+  passphrase?: string;
+  targetPassword?: string;
+}
+
+export interface BackupArchive {
+  name: string;
+  size: number;
+  modified: string;
 }
 
 // --- Cloud ---

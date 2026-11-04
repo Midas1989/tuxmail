@@ -6,6 +6,8 @@
 // provide (conversation grouping, person views, selection mapping, events).
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
+import { MockPim } from './mockPim';
+import type * as pim from '../types';
 import { ApiError, EventHub } from './api';
 import { chatItemId, mailItemId, normalizeSubject, splitMail, splitQuoted } from '../conversation';
 import type {
@@ -2044,6 +2046,7 @@ export class MockTransport implements Api {
     return this.run(() => ({ added: this.org.applyProjectRules(projectId) }));
   }
   setTaskDone(taskId: number, done: boolean): Promise<void> {
+    if (this.pim.setTaskDone(taskId, done)) return this.run(() => undefined);
     return this.run(() => this.org.setTaskDone(taskId, done));
   }
 
@@ -2202,6 +2205,60 @@ export class MockTransport implements Api {
     });
   }
 
+  // --- Import/Export/Backup --- (state and logic in mockIO.ts)
+  private ioMock = new MockIO(this.emit.bind(this));
+  listIOFormats(): Promise<IO.IOFormats> {
+    return this.run(() => this.ioMock.formats());
+  }
+  uploadImportFile(file: Blob, filename: string): Promise<IO.IOUpload> {
+    return this.run(() => this.ioMock.upload(file, filename));
+  }
+  inspectImport(source: IO.IOSource): Promise<IO.ImportPreview> {
+    return this.run(() => this.ioMock.inspect(source));
+  }
+  startImport(request: IO.ImportRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startImport(request));
+  }
+  startExport(request: IO.ExportRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startExport(request));
+  }
+  listIOJobs(): Promise<IO.IOJob[]> {
+    return this.run(() => this.ioMock.jobsList());
+  }
+  getIOJob(id: string): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.job(id));
+  }
+  cancelIOJob(id: string): Promise<void> {
+    return this.run(() => this.ioMock.cancel(id));
+  }
+  ioDownloadUrl(token: string): string {
+    return this.ioMock.downloadUrl(token);
+  }
+  createBackup(request: IO.BackupRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.createBackup(request, this.accounts));
+  }
+  inspectBackup(source: IO.BackupSource, passphrase = ''): Promise<IO.BackupInspection> {
+    return this.run(() => this.ioMock.inspectBackup(source, passphrase, this.accounts));
+  }
+  startRestore(request: IO.RestoreRequest): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.startRestore(request));
+  }
+  listBackupSchedules(): Promise<IO.BackupSchedule[]> {
+    return this.run(() => this.ioMock.schedulesList());
+  }
+  saveBackupSchedule(schedule: IO.BackupScheduleInput): Promise<IO.BackupSchedule> {
+    return this.run(() => this.ioMock.saveSchedule(schedule));
+  }
+  deleteBackupSchedule(id: string): Promise<void> {
+    return this.run(() => this.ioMock.deleteSchedule(id));
+  }
+  runBackupSchedule(id: string): Promise<IO.IOJob> {
+    return this.run(() => this.ioMock.runSchedule(id, this.accounts));
+  }
+  listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]> {
+    return this.run(() => this.ioMock.archives(scheduleId));
+  }
+
   subscribe(handler: (event: ApiEvent) => void): Unsubscribe {
     const off = this.hub.add(handler);
     if (this.opts.simulateIncoming && !this.incomingTimer) {
@@ -2217,6 +2274,114 @@ export class MockTransport implements Api {
         this.incomingTimer = null;
       }
     };
+  }
+
+  // --- PIM --- (mockPim.ts)
+  private pimState?: MockPim;
+  private get pim(): MockPim {
+    this.pimState ??= new MockPim({
+      now: () => this.opts.now ?? new Date(),
+      persons: () => this.persons,
+      notify: (kind) => this.emit({ type: kind === 'calendar' ? 'calendar.changed' : 'contacts.changed' }),
+    });
+    return this.pimState;
+  }
+  listCalendars(): Promise<pim.PimCalendar[]> {
+    return this.run(() => this.pim.listCalendars());
+  }
+  saveCalendar(input: pim.CalendarInput): Promise<pim.PimCalendar> {
+    return this.run(() => this.pim.saveCalendar(clone(input)));
+  }
+  deleteCalendar(id: number): Promise<void> {
+    return this.run(() => this.pim.deleteCalendar(id));
+  }
+  syncCalendars(): Promise<void> {
+    return this.run(() => undefined);
+  }
+  importCalendarFile(_calendarId: number, ics: string): Promise<{ added: number }> {
+    return this.run(() => ({ added: (ics.match(/BEGIN:VEVENT/g) ?? []).length }));
+  }
+  listEvents(query: pim.EventQuery): Promise<pim.CalendarEvent[]> {
+    return this.run(() => this.pim.listEvents(query));
+  }
+  getEvent(id: string): Promise<pim.CalendarEvent> {
+    return this.run(() => this.pim.getEvent(id));
+  }
+  createEvent(input: pim.EventInput): Promise<pim.CalendarEvent> {
+    return this.run(() => this.pim.createEvent(clone(input)));
+  }
+  updateEvent(id: string, input: pim.EventInput, scope: pim.RecurrenceScope): Promise<pim.CalendarEvent> {
+    return this.run(() => this.pim.updateEvent(id, clone(input), scope));
+  }
+  deleteEvent(id: string, scope: pim.RecurrenceScope): Promise<void> {
+    return this.run(() => this.pim.deleteEvent(id, scope));
+  }
+  resolveEventConflict(): Promise<void> {
+    return this.run(() => undefined);
+  }
+  getFreeBusy(query: { attendees: string[]; from: string; to: string }): Promise<pim.FreeBusy[]> {
+    return this.run(() => this.pim.freeBusy(query));
+  }
+  snoozeReminder(): Promise<void> {
+    return this.run(() => undefined);
+  }
+  addDavAccount(input: pim.DavAccountInput): Promise<Account> {
+    return this.run(() => {
+      const acc: Account = { id: ++this.nextId, kind: 'caldav', displayName: input.displayName || input.url, enabled: true, sortOrder: this.accounts.length };
+      this.accounts.push(acc);
+      return acc;
+    });
+  }
+  listTasks(query: pim.TaskQuery): Promise<pim.PimTask[]> {
+    return this.run(() => this.pim.listTasks(query));
+  }
+  saveTask(input: pim.TaskInput): Promise<pim.PimTask> {
+    return this.run(() => this.pim.saveTask(clone(input)));
+  }
+  deleteTask(id: number): Promise<void> {
+    return this.run(() => this.pim.deleteTask(id));
+  }
+  getMessageInvitations(messageId: number): Promise<pim.Invitation[]> {
+    return this.run(() => this.pim.messageInvitations(messageId));
+  }
+  listInvitations(): Promise<pim.Invitation[]> {
+    return this.run(() => this.pim.listInvitations());
+  }
+  respondInvitation(id: number, response: pim.InvitationResponse): Promise<pim.Invitation> {
+    return this.run(() => this.pim.respond(id, clone(response)));
+  }
+  listAddressBooks(): Promise<pim.PimAddressBook[]> {
+    return this.run(() => this.pim.listBooks());
+  }
+  saveAddressBook(input: pim.AddressBookInput): Promise<pim.PimAddressBook> {
+    return this.run(() => this.pim.saveBook(clone(input)));
+  }
+  deleteAddressBook(id: number): Promise<void> {
+    return this.run(() => this.pim.deleteBook(id));
+  }
+  listContacts(query: pim.ContactQuery): Promise<pim.PimContact[]> {
+    return this.run(() => this.pim.listContacts(query));
+  }
+  getContact(id: number): Promise<pim.PimContact> {
+    return this.run(() => this.pim.getContact(id));
+  }
+  saveContact(contact: pim.PimContact): Promise<pim.PimContact> {
+    return this.run(() => this.pim.saveContact(clone(contact)));
+  }
+  deleteContact(id: number): Promise<void> {
+    return this.run(() => this.pim.deleteContact(id));
+  }
+  listContactGroups(): Promise<pim.ContactGroup[]> {
+    return this.run(() => this.pim.groups());
+  }
+  findDuplicateContacts(): Promise<pim.DuplicateGroup[]> {
+    return this.run(() => this.pim.duplicates());
+  }
+  mergeContacts(ids: number[], merged?: pim.PimContact): Promise<pim.PimContact> {
+    return this.run(() => this.pim.merge(ids, merged ? clone(merged) : undefined));
+  }
+  autocompleteAddresses(query: string, limit = 8): Promise<pim.AddressSuggestion[]> {
+    return this.run(() => this.pim.autocomplete(query, limit));
   }
 
   // --- Cloud ---
@@ -2333,3 +2498,7 @@ export class MockTransport implements Api {
     return this.run(() => this.oauth.syncPim(accountId));
   }
 }
+
+// --- Import/Export/Backup ---
+import type * as IO from '../types';
+import { MockIO } from './mockIO';
