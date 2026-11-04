@@ -36,10 +36,8 @@
 - name: Hinweise zu den Bridges
   ansible.builtin.debug:
     msg:
-      - "Matrix-Homeserver ({{ tuxmail_bridges_homeserver }}): http://127.0.0.1:{{ tuxmail_bridges_matrix_port }} (nur lokal)"
-      - "Gotenberg: {{ ('http://127.0.0.1:' ~ tuxmail_bridges_gotenberg_port) if tuxmail_bridges_gotenberg_enabled | bool else 'deaktiviert' }}"
+      - "Matrix-Homeserver ({{ tuxmail_matrix_server }}, Container): http://127.0.0.1:{{ tuxmail_matrix_port }} (nur lokal)"
       - "Matrix-Konto für TuxMail anlegen (Synapse):"
-      - "  {{ tuxmail_bridges_runtime }} exec -it {{ tuxmail_bridges_project }}-homeserver \\"
+      - "  {{ tuxmail_bridges_engine_effective }} exec -it {{ tuxmail_bridges_project }}-homeserver \\"
       - "      register_new_matrix_user -c /data/homeserver.yaml http://localhost:8008"
       - "Anschließend in TuxMail das Matrix-Konto hinzufügen und die Bridges per Chat mit @whatsappbot / @signalbot koppeln."
-  when: tuxmail_bridges_matrix_enabled | bool or tuxmail_bridges_gotenberg_enabled | bool

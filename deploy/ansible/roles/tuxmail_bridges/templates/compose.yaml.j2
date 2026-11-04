@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # {{ ansible_managed }}
-# Optionale Zusatzdienste für TuxMail (Bridge-Modus, PDF-Erzeugung).
-# Alle Ports sind nur auf 127.0.0.1 veröffentlicht.
+# Bridge-Modus im CONTAINER-Modus (tuxmail_bridges_runtime=container) – Ausnahme vom
+# Standard ohne Container. Alle Ports sind nur auf 127.0.0.1 veröffentlicht.
 # Projektname wird per "-p {{ tuxmail_bridges_project }}" gesetzt.
+# PDF/Gotenberg: Rolle tuxmail_pdf (tuxmail_pdf_renderer=gotenberg_container).
 {% set vol = tuxmail_bridges_volume_opts %}
 services:
-{% if tuxmail_bridges_matrix_enabled | bool %}
-{% if tuxmail_bridges_homeserver == 'synapse' %}
+{% if tuxmail_matrix_server == 'synapse' %}
   homeserver:
     image: {{ tuxmail_bridges_synapse_image }}
     container_name: {{ tuxmail_bridges_project }}-homeserver
@@ -16,23 +16,23 @@ services:
     volumes:
       - {{ tuxmail_bridges_dir }}/synapse:/data{{ vol }}
     ports:
-      - "127.0.0.1:{{ tuxmail_bridges_matrix_port }}:8008"
+      - "127.0.0.1:{{ tuxmail_matrix_port }}:8008"
 {% else %}
   homeserver:
     image: {{ tuxmail_bridges_continuwuity_image }}
     container_name: {{ tuxmail_bridges_project }}-homeserver
     restart: always
     environment:
-      CONTINUWUITY_SERVER_NAME: {{ tuxmail_bridges_matrix_server_name | to_json }}
+      CONTINUWUITY_SERVER_NAME: {{ tuxmail_matrix_server_name | to_json }}
       CONTINUWUITY_DATABASE_PATH: /var/lib/continuwuity
       CONTINUWUITY_ADDRESS: "0.0.0.0"
       CONTINUWUITY_PORT: "8008"
       CONTINUWUITY_ALLOW_REGISTRATION: "false"
-      CONTINUWUITY_ALLOW_FEDERATION: "false"
+      CONTINUWUITY_ALLOW_FEDERATION: {{ (tuxmail_matrix_federation | bool | string | lower) | to_json }}
     volumes:
       - {{ tuxmail_bridges_dir }}/continuwuity:/var/lib/continuwuity{{ vol }}
     ports:
-      - "127.0.0.1:{{ tuxmail_bridges_matrix_port }}:8008"
+      - "127.0.0.1:{{ tuxmail_matrix_port }}:8008"
 {% endif %}
 {% for bridge in tuxmail_bridges_mautrix %}
 
@@ -45,13 +45,3 @@ services:
     volumes:
       - {{ tuxmail_bridges_dir }}/{{ bridge.name }}:/data{{ vol }}
 {% endfor %}
-{% endif %}
-{% if tuxmail_bridges_gotenberg_enabled | bool %}
-
-  gotenberg:
-    image: {{ tuxmail_bridges_gotenberg_image }}
-    container_name: {{ tuxmail_bridges_project }}-gotenberg
-    restart: always
-    ports:
-      - "127.0.0.1:{{ tuxmail_bridges_gotenberg_port }}:3000"
-{% endif %}

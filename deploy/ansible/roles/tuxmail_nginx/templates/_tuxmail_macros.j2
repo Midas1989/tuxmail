@@ -43,6 +43,70 @@
 {%- endmacro -%}
 
 {#-
+  matrix_locations(proto, hsts)
+    Bridge-Modus: Matrix-Client-API (/_matrix, bei Synapse auch /_synapse/client) an
+    den lokalen Homeserver. Ohne Föderation werden /_matrix/federation und /_matrix/key
+    blockiert; Admin-APIs (/_synapse/admin) werden nie weitergereicht.
+-#}
+{%- macro matrix_locations(proto, hsts) -%}
+{%- set upstream = 'http://127.0.0.1:' ~ (tuxmail_matrix_port | int) -%}
+{%- set federation = tuxmail_matrix_federation | bool -%}
+
+    # Matrix-Homeserver ({{ tuxmail_matrix_server }}) – Bridge-Modus
+    location /_matrix/ {
+        proxy_pass {{ upstream }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto {{ proto }};
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+        client_max_body_size {{ tuxmail_matrix_max_upload_mb | int }}m;
+{{ security_headers(hsts, '        ') | regex_replace('\n$', '') }}
+    }
+{% if not federation %}
+
+    # Föderation ist aus (tuxmail_matrix_federation=false)
+    location /_matrix/federation/ {
+        return 404;
+    }
+
+    location /_matrix/key/ {
+        return 404;
+    }
+{% endif %}
+{% if tuxmail_matrix_server == 'synapse' %}
+
+    location /_synapse/client/ {
+        proxy_pass {{ upstream }};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto {{ proto }};
+        proxy_set_header Connection "";
+{{ security_headers(hsts, '        ') | regex_replace('\n$', '') }}
+    }
+{% endif %}
+{% if tuxmail_matrix_well_known | bool %}
+
+    location = /.well-known/matrix/client {
+        default_type application/json;
+        add_header Access-Control-Allow-Origin "*" always;
+        return 200 '{{ {"m.homeserver": {"base_url": tuxmail_matrix_public_base_url}} | to_json }}';
+    }
+{% if federation %}
+
+    location = /.well-known/matrix/server {
+        default_type application/json;
+        return 200 '{{ {"m.server": tuxmail_domain ~ ":443"} | to_json }}';
+    }
+{% endif %}
+{% endif %}
+{%- endmacro -%}
+
+{#-
   locations(snippet, proto, hsts)
     snippet: true = Snippet-Modus (direkte Adresse, kein map/upstream möglich)
     proto:   Wert für X-Forwarded-Proto ("$scheme" oder "https")

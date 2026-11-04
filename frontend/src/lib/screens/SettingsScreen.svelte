@@ -34,6 +34,8 @@
   import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
   import BackupSettings from '../components/settings/BackupSettings.svelte';
   import CloudAccountsSettings from '../components/settings/CloudAccountsSettings.svelte'; // OAuth/Cloud accounts
+  import ComfortSettingsCard from '../components/comfort/ComfortSettingsCard.svelte'; // spam, categories, spell, merge, PDF
+  import SmimeSettingsCard from '../components/comfort/SmimeSettingsCard.svelte';
   import TeamSettings from '../components/team/TeamSettings.svelte'; // team mailboxes (server mode)
   import AccountEditDialog from '../components/settings/AccountEditDialog.svelte'; // account edit
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -139,6 +141,10 @@
     <AiSettingsCard />
 
     <CloudAccountsSettings />
+
+    <ComfortSettingsCard />
+
+    <SmimeSettingsCard />
 
     <TagSettings />
 

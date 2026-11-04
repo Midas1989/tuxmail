@@ -69,7 +69,51 @@ tuxmail_tls_fullchain_path: "/etc/ssl/tuxmail/{{ tuxmail_domain }}.fullchain.pem
 # Webroot für ACME-HTTP-01-Challenges.
 tuxmail_acme_webroot: "/var/www/letsencrypt"
 
+# --- Optionale Komponenten (von mehreren Rollen gelesen) ----------------------
+# Alles läuft standardmäßig OHNE Docker/Podman (native Binaries + systemd).
+#
+# Matrix-Homeserver + mautrix-Bridges (Bridge-Modus, KONZEPT 11.3). Details und
+# alle weiteren Variablen: roles/tuxmail_bridges/defaults/main.yml
+tuxmail_bridges_enabled: false
+# continuwuity (statisches Binary, schlank, Standard) | synapse (matrix.org-apt-Repo,
+# nur Debian/Ubuntu). Ein späterer Wechsel des Homeservers ist NICHT vorgesehen.
+tuxmail_matrix_server: "continuwuity"
+# Matrix-Servername (Suffix der IDs, z. B. @admin:mail.example.org) – nachträglich
+# nicht mehr änderbar, ohne die Matrix-Datenbank zu löschen.
+tuxmail_matrix_server_name: "{{ tuxmail_domain }}"
+# Port des Homeservers, nur auf 127.0.0.1.
+tuxmail_matrix_port: 8008
+# Föderation mit anderen Matrix-Servern (Standard: aus). Ein späteres Abschalten
+# ist laut Continuwuity nicht empfohlen – also gleich richtig entscheiden.
+tuxmail_matrix_federation: false
+# nginx leitet https://<tuxmail_domain>/_matrix/ an den Homeserver weiter
+# (Client-API für Desktop-/Mobil-Clients im Bridge-Modus). Federation-Pfade werden
+# blockiert, solange tuxmail_matrix_federation=false.
+tuxmail_matrix_nginx_proxy: true
+# /.well-known/matrix/client (und bei Föderation /server) über nginx ausliefern.
+# Nur sinnvoll, wenn tuxmail_matrix_server_name == tuxmail_domain ist (sonst muss
+# der Webserver von <server_name> diese Dateien ausliefern).
+tuxmail_matrix_well_known: false
+# Öffentliche Basis-URL des Homeservers (für .well-known und Hinweise).
+tuxmail_matrix_public_base_url: "https://{{ tuxmail_domain }}"
+# Upload-Limit für Matrix-Medien (nginx client_max_body_size).
+tuxmail_matrix_max_upload_mb: 50
+
+# PDF-Erzeugung im Server-Modus (KONZEPT 8.11):
+#   none                = kein HTML-Rendering (Standard)
+#   chromium            = Chromium aus den Distributions-Paketen, TuxMail startet es
+#                         selbst (TUXMAIL_CHROMIUM_PATH in /etc/tuxmail/pdf.env)
+#   gotenberg_container = Gotenberg als Container (podman/docker) – nur als bewusste
+#                         Ausnahme vom Prinzip „ohne Container“
+tuxmail_pdf_renderer: "none"
+# Umgebungsdatei, die tuxmail.service per EnvironmentFile=- einliest.
+tuxmail_pdf_env_file: "{{ tuxmail_config_dir }}/pdf.env"
+# Port von Gotenberg (nur 127.0.0.1, nur gotenberg_container).
+tuxmail_gotenberg_port: 3000
+
 # --- Interne, abgeleitete Werte (normalerweise nicht ändern) ------------------
+# nginx-Weiterleitung für /_matrix aktiv?
+tuxmail_matrix_nginx_enabled: "{{ (tuxmail_bridges_enabled | bool) and (tuxmail_matrix_nginx_proxy | bool) }}"
 tuxmail_nginx_use_snippet: "{{ tuxmail_nginx_mode == 'existing' and tuxmail_nginx_existing_style == 'snippet' }}"
 tuxmail_listen_is_socket: "{{ tuxmail_listen is match('unix:') }}"
 tuxmail_socket_path: "{{ tuxmail_listen | regex_replace('^unix:', '') if tuxmail_listen_is_socket else '' }}"
@@ -89,5 +133,6 @@ tuxmail_supported_systems:
   AlmaLinux: ["9"]
 # Auf true setzen, um die Systemprüfung zu überspringen (auf eigene Gefahr).
 tuxmail_skip_os_check: false
-# EPEL auf RHEL-Systemen automatisch einrichten (für certbot, podman-compose).
+# EPEL auf RHEL-Systemen automatisch einrichten (für certbot, age, chromium,
+# podman-compose im Container-Modus).
 tuxmail_manage_epel: true

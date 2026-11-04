@@ -62,6 +62,8 @@
   import RecipientInput, { isValidEmail } from './RecipientInput.svelte';
   import SendChecks from './SendChecks.svelte';
   import PasswordDeliveryDialog, { type MessengerTarget } from './PasswordDeliveryDialog.svelte';
+  import ComposerComfort from '../comfort/ComposerComfort.svelte'; // spell check, video link, S/MIME, mail merge
+  import type { OutgoingCrypto } from '../../api/comfort';
 
   interface Props {
     init: ComposerInit;
@@ -91,6 +93,7 @@
   let lastPw: PasswordDelivery | undefined;
   let dragOver = $state(false);
   let pickCloud = $state(false);
+  let crypto = $state<OutgoingCrypto>({ method: 'auto' });
 
   const identity = $derived(app.identities.find((i) => i.id === identityId));
   const isReply = start.mode === 'reply' || start.mode === 'replyAll';
@@ -269,6 +272,7 @@
         attachments: outgoing,
         passwordDelivery: pw,
         confirmChecks,
+        crypto,
       });
       if (res.blocked) {
         checks = res.findings ?? [];
@@ -361,6 +365,7 @@
       {#if cloud.storageAccounts.length}
         <button class="icon-btn" title={t('cloud.picker.title')} aria-label={t('cloud.picker.title')} onclick={() => (pickCloud = true)}><CloudDownload size={16} /></button>
       {/if}
+      <ComposerComfort {editor} {identityId} fromEmail={identity?.email ?? ''} recipients={[...to, ...cc, ...bcc]} {subject} bind:crypto />
       <input type="file" multiple hidden bind:this={fileInput} onchange={(e) => addFiles((e.currentTarget as HTMLInputElement).files)} />
     </div>
 

@@ -1,0 +1,13 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Debian: Paket "chromium" (/usr/bin/chromium). Ubuntu liefert nur einen Snap-Übergang
+# (chromium-browser) – dort muss tuxmail_pdf_chromium_path gesetzt werden.
+tuxmail_pdf_os_chromium_packages:
+  - chromium
+tuxmail_pdf_os_font_packages:
+  - fonts-dejavu-core
+  - fonts-liberation
+tuxmail_pdf_chromium_candidates:
+  - /usr/bin/chromium
+  - /usr/bin/chromium-browser
+  - /usr/bin/google-chrome-stable

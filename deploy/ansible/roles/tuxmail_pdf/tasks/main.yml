@@ -1,0 +1,44 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Läuft VOR der Rolle tuxmail, damit pdf.env beim (ersten) Start bereits vorliegt.
+# Änderungen an pdf.env lösen "tuxmail restart" aus (Handler der Rolle tuxmail).
+
+- name: Betriebssystem-spezifische Werte laden
+  ansible.builtin.include_vars: "{{ ansible_facts['os_family'] }}.yml"
+
+- name: Konfigurationsverzeichnis von TuxMail
+  ansible.builtin.file:
+    path: "{{ tuxmail_config_dir }}"
+    state: directory
+    owner: root
+    group: "{{ tuxmail_group }}"
+    mode: "0750"
+
+- name: Chromium (Distributionspaket)
+  ansible.builtin.import_tasks: chromium.yml
+  when: tuxmail_pdf_renderer == 'chromium'
+
+- name: Gotenberg-Container (Ausnahme, benötigt podman/docker)
+  ansible.builtin.import_tasks: gotenberg.yml
+  when: tuxmail_pdf_renderer == 'gotenberg_container'
+
+- name: Gotenberg-Container abschalten, falls nicht (mehr) gewünscht
+  ansible.builtin.import_tasks: gotenberg_absent.yml
+  when: tuxmail_pdf_renderer != 'gotenberg_container'
+
+- name: Datei pdf.env schreiben
+  ansible.builtin.template:
+    src: pdf.env.j2
+    dest: "{{ tuxmail_pdf_env_file }}"
+    owner: root
+    group: "{{ tuxmail_group }}"
+    mode: "0640"
+  notify: tuxmail restart
+  when: tuxmail_pdf_renderer != 'none'
+
+- name: Datei pdf.env entfernen (tuxmail_pdf_renderer=none)
+  ansible.builtin.file:
+    path: "{{ tuxmail_pdf_env_file }}"
+    state: absent
+  notify: tuxmail restart
+  when: tuxmail_pdf_renderer == 'none'

@@ -1,0 +1,21 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Hinweise zum Bridge-Modus
+  ansible.builtin.debug:
+    msg:
+      - "Matrix-Homeserver ({{ tuxmail_matrix_server }}, nativ): {{ tuxmail_bridges_homeserver_url }} (nur lokal)"
+      - "{{ tuxmail_bridges_sum_proxy }}"
+      - "Föderation: {{ 'an' if tuxmail_matrix_federation | bool else 'aus' }}"
+      - "Bridges: {{ tuxmail_bridges_sum_units | join(', ') if tuxmail_bridges_sum_units | length > 0 else 'keine' }}"
+      - "Datenbank der Bridges: {{ tuxmail_bridges_db }}"
+      - "Matrix-Konto für TuxMail: {{ tuxmail_bridges_matrix_admin }}"
+      - "  -> in TuxMail als Matrix-Konto (Bridge-Modus) mit Homeserver {{ tuxmail_matrix_public_base_url }} hinzufügen."
+      - "Koppeln: in TuxMail den Kopplungs-Assistenten des Messengers im Bridge-Modus starten (QR-Code, siehe README)."
+      - "Ohne Assistent: Direktchat mit @<bridge>bot:{{ tuxmail_matrix_server_name }} (z. B. @whatsappbot) öffnen und 'login' senden."
+      - "Status: systemctl status {{ tuxmail_bridges_homeserver_service }} {{ tuxmail_bridges_sum_units | join(' ') }}"
+  vars:
+    tuxmail_bridges_sum_units: "{{ tuxmail_bridges_mautrix | map(attribute='name') | map('regex_replace', '^', 'mautrix-') | list }}"
+    tuxmail_bridges_sum_proxy: >-
+      {{ ('Öffentlich über nginx: ' ~ tuxmail_matrix_public_base_url ~ '/_matrix/')
+         if tuxmail_matrix_nginx_enabled | bool
+         else 'Keine nginx-Weiterleitung für /_matrix (tuxmail_matrix_nginx_proxy=false oder kein nginx).' }}

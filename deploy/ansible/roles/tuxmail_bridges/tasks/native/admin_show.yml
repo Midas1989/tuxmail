@@ -1,0 +1,10 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Zugangsdaten des Matrix-Admin-Kontos anzeigen (nur einmal)
+  ansible.builtin.debug:
+    msg:
+      - "Matrix-Admin angelegt: {{ tuxmail_bridges_matrix_admin }} (Homeserver {{ tuxmail_matrix_public_base_url }})"
+      - "Passwort: {{ tuxmail_bridges_admin_password if tuxmail_bridges_admin_password_generated | bool else '(aus Vault)' }}"
+      - "{{ tuxmail_bridges_show_stored if tuxmail_bridges_admin_password_generated | bool else '' }}"
+  vars:
+    tuxmail_bridges_show_stored: "Gespeichert auf dem Steuerrechner: {{ tuxmail_bridges_credentials_dir }}/matrix_admin_password"

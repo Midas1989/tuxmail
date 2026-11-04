@@ -402,6 +402,8 @@ export interface OutgoingMessage {
   sendAt?: string;
   /** Send checks the user confirmed after a blocked result ("send anyway", KONZEPT 8.13). */
   confirmChecks?: string[];
+  /** S/MIME / OpenPGP choice of the composer (comfort features). */
+  crypto?: import('./api/comfort').OutgoingCrypto;
 }
 
 export interface SendResult {

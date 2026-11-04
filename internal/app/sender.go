@@ -47,6 +47,7 @@ func newMailSender(a *App, opts *SendOptions) (*MailSender, error) {
 		cfg.Messenger = messengerPasswords{a: a} // share passwords via Signal/WhatsApp/Telegram
 	}
 	a.configureOAuthSend(&cfg)
+	a.configureComfortSend(&cfg)
 	if opts != nil && opts.Configure != nil {
 		opts.Configure(&cfg)
 	}
@@ -127,6 +128,7 @@ func (s *MailSender) Send(ctx context.Context, r SendRequest) (SendResult, error
 			req.Cloud.Delivery = send.PasswordNone
 		}
 	}
+	s.a.applyOutgoingCrypto(&req, msg.Crypto) // comfort_crypto.go
 	req.Draft = d
 	res, err := s.Service.Send(ctx, req)
 	var blocked *send.BlockedError

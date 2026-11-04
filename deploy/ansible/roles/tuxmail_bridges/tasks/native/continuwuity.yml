@@ -1,0 +1,110 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Continuwuity als statisches Binary:
+#   /opt/continuwuity/versions/<v>/continuwuity, /opt/continuwuity/current
+#   /etc/continuwuity/continuwuity.toml (root:continuwuity 0640)
+#   /etc/continuwuity/appservices/<bridge>.yaml (Kopien der Registrierungen)
+#   /var/lib/continuwuity (Datenbank, Medien; continuwuity:continuwuity 0700)
+
+- name: Laufzeitpakete für Continuwuity (liburing)
+  ansible.builtin.package:
+    name: "{{ tuxmail_continuwuity_packages if tuxmail_continuwuity_packages | length > 0 else tuxmail_bridges_os_continuwuity_packages }}"
+    state: present
+
+- name: Gruppe continuwuity
+  ansible.builtin.group:
+    name: continuwuity
+    system: true
+    state: present
+
+- name: Systembenutzer continuwuity
+  ansible.builtin.user:
+    name: continuwuity
+    group: continuwuity
+    system: true
+    shell: /usr/sbin/nologin
+    home: /var/lib/continuwuity
+    create_home: false
+    comment: "Continuwuity Matrix homeserver"
+    state: present
+
+- name: Verzeichnisse für Continuwuity
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - {path: /etc/continuwuity, owner: root, group: continuwuity, mode: "0750"}
+    - {path: /etc/continuwuity/appservices, owner: root, group: root, mode: "0700"}
+    - {path: /var/lib/continuwuity, owner: continuwuity, group: continuwuity, mode: "0700"}
+  loop_control:
+    label: "{{ item.path }}"
+
+- name: Continuwuity-Binary installieren
+  ansible.builtin.include_tasks: native/binary.yml
+  vars:
+    tuxmail_bin_name: continuwuity
+    tuxmail_bin_version: "{{ tuxmail_continuwuity_version }}"
+    tuxmail_bin_url: "{{ tuxmail_continuwuity_url }}"
+    tuxmail_bin_checksum: >-
+      {{ ('sha256:' ~ tuxmail_continuwuity_checksum_url) if tuxmail_continuwuity_checksum_url | length > 0
+         else (('sha256:' ~ tuxmail_continuwuity_sha256[tuxmail_bridges_arch])
+               if tuxmail_continuwuity_sha256.get(tuxmail_bridges_arch, '') | length > 0 else '') }}
+    tuxmail_bin_src: "{{ tuxmail_continuwuity_binary_src }}"
+    tuxmail_bin_data_dir: /var/lib/continuwuity
+
+- name: Bootstrap-Status des ersten Kontos prüfen
+  ansible.builtin.stat:
+    path: /etc/continuwuity/.admin-initialized
+  register: tuxmail_bridges_cw_marker
+
+- name: Bootstrap festlegen (erstes Konto per einmaligem Registrierungs-Token)
+  ansible.builtin.set_fact:
+    tuxmail_bridges_cw_bootstrap: >-
+      {{ (tuxmail_matrix_admin_create | bool) and (tuxmail_continuwuity_automate | bool)
+         and not tuxmail_bridges_cw_marker.stat.exists }}
+    tuxmail_bridges_cw_bootstrap_token: >-
+      {{ lookup('ansible.builtin.password', '/dev/null length=40 chars=ascii_letters,digits') }}
+  no_log: true
+
+- name: Konfiguration continuwuity.toml schreiben
+  ansible.builtin.template:
+    src: continuwuity.toml.j2
+    dest: /etc/continuwuity/continuwuity.toml
+    owner: root
+    group: continuwuity
+    mode: "0640"
+  register: tuxmail_bridges_cw_config
+  # enthält beim ersten Lauf das einmalige Registrierungs-Token
+  diff: false
+
+- name: Systemd-Unit continuwuity.service
+  ansible.builtin.template:
+    src: continuwuity.service.j2
+    dest: /etc/systemd/system/continuwuity.service
+    owner: root
+    group: root
+    mode: "0644"
+  register: tuxmail_bridges_cw_unit
+
+- name: Continuwuity aktivieren und (neu) starten
+  ansible.builtin.systemd_service:
+    name: continuwuity.service
+    enabled: true
+    state: >-
+      {{ 'restarted' if (tuxmail_bridges_cw_config is changed or tuxmail_bridges_cw_unit is changed
+                         or 'continuwuity' in (tuxmail_bridges_restart | default([]))) else 'started' }}
+    daemon_reload: true
+
+- name: Neustart-Vormerkung zurücksetzen (Continuwuity)
+  ansible.builtin.set_fact:
+    tuxmail_bridges_restart: "{{ tuxmail_bridges_restart | default([]) | reject('equalto', 'continuwuity') | list }}"
+
+- name: Warten, bis der Homeserver antwortet
+  ansible.builtin.include_tasks: native/homeserver_wait.yml
+
+- name: Erstes Konto (Server-Admin) anlegen
+  ansible.builtin.include_tasks: native/continuwuity_admin.yml
+  when: tuxmail_bridges_cw_bootstrap | bool

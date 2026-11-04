@@ -119,7 +119,7 @@ func TestExpertSearch(t *testing.T) {
 	}
 
 	// Warnings for unsupported fields.
-	res, _ := f.expert(t, SearchRequest{Query: "category:x OR type:nonsense"})
+	res, _ := f.expert(t, SearchRequest{Query: "category:nosuchcategory OR type:nonsense"})
 	if len(res.Warnings) != 2 {
 		t.Fatalf("warnings: %v", res.Warnings)
 	}

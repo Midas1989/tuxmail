@@ -166,6 +166,7 @@ func (q SearchQuery) Request() SearchRequest {
 	anyOf("account", q.AccountNames)
 	anyOf("channel", q.Channels)
 	anyOf("folder", append(ids(q.FolderIDs), q.FolderNames...))
+	anyOf("category", q.Categories)
 	if !q.From.IsZero() || !q.To.IsZero() {
 		r := &query.Range{Field: "date"}
 		if !q.From.IsZero() {
@@ -1132,6 +1133,8 @@ func (c *compiler) term(t *query.Term, a *armSchema, driven bool) cond {
 		return constCond(ok && sc == a.kind)
 	case "label":
 		return c.labelCond(t, a)
+	case "category":
+		return c.categoryCond(t, a) // comfort_store.go
 	case "is":
 		return c.isFlag(t.Value, a)
 	case "has":

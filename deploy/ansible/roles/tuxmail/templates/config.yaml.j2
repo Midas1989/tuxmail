@@ -51,3 +51,11 @@ limits:
   max_upload_mb: {{ tuxmail_max_upload_mb | int }}
   login_rate_per_minute: {{ tuxmail_login_rate_per_minute | int }}
   background_sync: {{ tuxmail_background_sync | default(true) | bool | to_json }}
+{% if tuxmail_fcm_enabled | bool %}
+
+# Native Push für die Android-App (Play-Store-Variante) über Firebase Cloud Messaging.
+# Web Push (VAPID) ist immer aktiv; die Schlüssel liegen in data_dir/vapid.json.
+push:
+  fcm:
+    service_account_file: {{ tuxmail_fcm_service_account_file | to_json }}
+{% endif %}

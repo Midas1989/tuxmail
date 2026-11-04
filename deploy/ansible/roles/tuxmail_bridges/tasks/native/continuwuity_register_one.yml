@@ -1,0 +1,80 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Eine Bridge im Admin-Raum von Continuwuity registrieren (siehe continuwuity_register.yml).
+
+- name: "Registrierung lesen ({{ tuxmail_bridge.name }})"
+  ansible.builtin.slurp:
+    src: "/etc/continuwuity/appservices/{{ tuxmail_bridge.name }}.yaml"
+  register: tuxmail_bridges_cw_reg_raw
+  no_log: true
+
+- name: "Markierung lesen ({{ tuxmail_bridge.name }})"
+  ansible.builtin.slurp:
+    src: "/etc/continuwuity/appservices/{{ tuxmail_bridge.name }}.registered"
+  register: tuxmail_bridges_cw_reg_marker
+  failed_when: false
+
+- name: "Status bestimmen ({{ tuxmail_bridge.name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_cw_reg_yaml: "{{ tuxmail_bridges_cw_reg_raw.content | b64decode }}"
+    tuxmail_bridges_cw_reg_sum: "{{ tuxmail_bridges_cw_reg_raw.content | b64decode | hash('sha256') }}"
+    tuxmail_bridges_cw_reg_old: >-
+      {{ (tuxmail_bridges_cw_reg_marker.content | default('') | b64decode | trim) if 'content' in tuxmail_bridges_cw_reg_marker else '' }}
+    tuxmail_bridges_cw_reg_id: "{{ (tuxmail_bridges_cw_reg_raw.content | b64decode | from_yaml).id }}"
+    tuxmail_bridges_cw_send_url: >-
+      {{ tuxmail_bridges_homeserver_url }}/_matrix/client/v3/rooms/{{ tuxmail_bridges_cw_admin_room.json.room_id | urlencode | replace('/', '%2F')
+      }}/send/m.room.message/
+    tuxmail_bridges_cw_auth: "Bearer {{ tuxmail_bridges_cw_token_raw.content | b64decode | trim }}"
+  no_log: true
+
+- name: "Alte Registrierung entfernen, falls geändert – {{ tuxmail_bridge.name }}"
+  ansible.builtin.uri:
+    url: "{{ tuxmail_bridges_cw_send_url }}tuxmail-unreg-{{ tuxmail_bridge.name }}-{{ tuxmail_bridges_cw_reg_sum[:16] }}"
+    method: PUT
+    headers:
+      Authorization: "{{ tuxmail_bridges_cw_auth }}"
+    body_format: json
+    body:
+      msgtype: m.text
+      body: "!admin appservices unregister {{ tuxmail_bridges_cw_reg_id }}"
+    status_code: 200
+  when:
+    - tuxmail_bridges_cw_reg_old | length > 0
+    - tuxmail_bridges_cw_reg_old != tuxmail_bridges_cw_reg_sum
+  changed_when: true
+  no_log: true
+
+- name: "Registrierung senden ({{ tuxmail_bridge.name }})"
+  ansible.builtin.uri:
+    url: "{{ tuxmail_bridges_cw_send_url }}tuxmail-reg-{{ tuxmail_bridge.name }}-{{ tuxmail_bridges_cw_reg_sum[:16] }}"
+    method: PUT
+    headers:
+      Authorization: "{{ tuxmail_bridges_cw_auth }}"
+    body_format: json
+    body:
+      msgtype: m.text
+      body: "!admin appservices register\n```\n{{ tuxmail_bridges_cw_reg_yaml | trim }}\n```"
+    status_code: 200
+  when: tuxmail_bridges_cw_reg_old != tuxmail_bridges_cw_reg_sum
+  changed_when: true
+  no_log: true
+  register: tuxmail_bridges_cw_reg_sent
+
+- name: "Kurz warten, bis der Admin-Bot den Befehl verarbeitet hat ({{ tuxmail_bridge.name }})"
+  ansible.builtin.wait_for:
+    timeout: 3
+  when: tuxmail_bridges_cw_reg_old != tuxmail_bridges_cw_reg_sum
+
+- name: "Markierung schreiben ({{ tuxmail_bridge.name }})"
+  ansible.builtin.copy:
+    content: "{{ tuxmail_bridges_cw_reg_sum }}\n"
+    dest: "/etc/continuwuity/appservices/{{ tuxmail_bridge.name }}.registered"
+    owner: root
+    group: root
+    mode: "0600"
+
+- name: "Neustart der Bridge vormerken ({{ tuxmail_bridge.name }})"
+  ansible.builtin.set_fact:
+    tuxmail_bridges_restart: >-
+      {{ (tuxmail_bridges_restart | default([]))
+         + (['mautrix-' ~ tuxmail_bridge.name] if tuxmail_bridges_cw_reg_old != tuxmail_bridges_cw_reg_sum else []) }}

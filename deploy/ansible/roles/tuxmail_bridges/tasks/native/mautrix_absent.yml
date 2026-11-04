@@ -1,0 +1,15 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Abgeschaltete Bridge stoppen. Daten (/var/lib/mautrix-<name>), Konfiguration und
+# Binaries bleiben erhalten (manuell löschen, wenn die Bridge endgültig entfallen soll).
+- name: "Unit suchen (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/mautrix-{{ tuxmail_bridge.name }}.service"
+  register: tuxmail_bridges_absent_unit
+
+- name: "Bridge stoppen und deaktivieren (mautrix-{{ tuxmail_bridge.name }})"
+  ansible.builtin.systemd_service:
+    name: "mautrix-{{ tuxmail_bridge.name }}.service"
+    enabled: false
+    state: stopped
+  when: tuxmail_bridges_absent_unit.stat.exists

@@ -1,55 +1,153 @@
 ---
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Rolle tuxmail_bridges – OPTIONAL, standardmäßig AUS.
-# Container (podman oder docker compose) für:
-#   - Matrix-Homeserver (Synapse oder Continuwuity), nur lokal (127.0.0.1) erreichbar
-#   - mautrix-whatsapp und mautrix-signal (Bridge-Modus, KONZEPT Kap. 11.3)
-#   - Gotenberg (PDF-Erzeugung, KONZEPT Kap. 8.11)
-# Inoffizielle Messenger-Anbindungen: rechtliche Hinweise in KONZEPT Kap. 18.1 beachten.
+# Rolle tuxmail_bridges – OPTIONAL, standardmäßig AUS (tuxmail_bridges_enabled,
+# siehe tuxmail_common). Bridge-Modus nach KONZEPT 11.3:
+#   - Matrix-Homeserver: Continuwuity (Standard) oder Synapse, nur auf 127.0.0.1
+#   - mautrix-whatsapp, mautrix-signal, optional mautrix-gmessages
+#   - optional PostgreSQL (Distributionspakete) statt SQLite
+#
+# Standard ist die Installation OHNE Docker/Podman: native Binaries aus den
+# offiziellen Releases (feste Version + SHA-256), eigene Systembenutzer,
+# gehärtete systemd-Units, /etc/<dienst>, /var/lib/<dienst>,
+# /opt/<dienst>/versions/<version> + Symlink current (Update/Rollback).
+# Inoffizielle Messenger-Anbindungen: rechtliche Hinweise in KONZEPT Kap. 18.1.
 
-tuxmail_bridges_enabled: false
+# native (Standard) | container (ausdrückliche Ausnahme: podman/docker compose)
+tuxmail_bridges_runtime: "native"
+# Nur bei tuxmail_bridges_runtime=container: podman (mit podman-compose) | docker (Compose-Plugin)
+tuxmail_bridges_container_engine: "podman"
 
-# podman (mit podman-compose) oder docker (mit Compose-Plugin "docker compose")
-tuxmail_bridges_runtime: "podman"
-# Pakete, die installiert werden (leer bei docker: Docker CE bitte vorher installieren).
-tuxmail_bridges_packages: "{{ ['podman', 'podman-compose'] if tuxmail_bridges_runtime == 'podman' else [] }}"
-tuxmail_bridges_dir: "/opt/tuxmail-bridges"
-tuxmail_bridges_project: "tuxmail-bridges"
-
-# --- Matrix ------------------------------------------------------------------------------
-tuxmail_bridges_matrix_enabled: true
-# synapse (Registrierung der Bridges vollautomatisch) oder continuwuity
-# (Bridges müssen einmalig im Admin-Raum registriert werden, siehe README).
-tuxmail_bridges_homeserver: "synapse"
-tuxmail_bridges_matrix_server_name: "{{ tuxmail_domain }}"
-# Lokaler Port des Homeservers (nur 127.0.0.1).
-tuxmail_bridges_matrix_port: 8008
-# Matrix-ID mit Admin-Rechten in den Bridges.
-tuxmail_bridges_matrix_admin: "@admin:{{ tuxmail_bridges_matrix_server_name }}"
+# Datenbank der Bridges (und von Synapse): sqlite (Standard) | postgres
+# postgres = PostgreSQL aus den Distributionspaketen, Anmeldung per Unix-Socket
+# und "peer" (keine Passwörter); je Dienst eine eigene Rolle und Datenbank.
+tuxmail_bridges_db: "sqlite"
 
 tuxmail_bridges_whatsapp_enabled: true
 tuxmail_bridges_signal_enabled: true
+tuxmail_bridges_gmessages_enabled: false
 
-# Images – für den Produktivbetrieb auf feste Versionen setzen!
+# --- Matrix-Administrator (wird für die Bridges berechtigt) -------------------------------
+# Legt beim ersten Lauf ein Matrix-Konto an (Continuwuity: erstes Konto = Server-Admin,
+# Synapse: register_new_matrix_user --admin). Mit diesem Konto meldet man sich in TuxMail an.
+tuxmail_matrix_admin_create: true
+tuxmail_matrix_admin_user: "admin"
+# Leer = generieren und auf dem Steuerrechner unter credentials/<host>/matrix_admin_password ablegen.
+tuxmail_matrix_admin_password: ""
+tuxmail_matrix_admin_password_length: 24
+# Matrix-ID mit Admin-Rechten in den Bridges.
+tuxmail_bridges_matrix_admin: "@{{ tuxmail_matrix_admin_user }}:{{ tuxmail_matrix_server_name }}"
+# Weitere Berechtigungen der Bridges (mautrix bridge.permissions); "user" = darf koppeln.
+tuxmail_bridges_permissions_extra: {}
+tuxmail_bridges_permissions: >-
+  {{ {tuxmail_matrix_server_name: 'user', tuxmail_bridges_matrix_admin: 'admin'} | combine(tuxmail_bridges_permissions_extra) }}
+
+# --- Update/Rollback ----------------------------------------------------------------------
+# Installierte Versionen je Dienst unter /opt/<dienst>/versions (inkl. der aktiven).
+tuxmail_bridges_keep_versions: 3
+# Vor einem Versionswechsel /var/lib/<dienst> sichern (Dienst wird kurz gestoppt).
+tuxmail_bridges_backup_before_upgrade: true
+tuxmail_bridges_backup_dir: "/var/backups/tuxmail-bridges"
+
+# --- Continuwuity (tuxmail_matrix_server=continuwuity) --------------------------------------
+# Offizielle Releases liegen auf Forgejo (forgejo.ellis.link); der GitHub-Spiegel
+# (github.com/continuwuity/continuwuity) enthält KEINE Binaries. Name des Release-Assets und
+# URL-Muster sind Variablen, weil sie sich zwischen Versionen geändert haben – vor dem
+# Einsatz auf der Release-Seite prüfen.
+tuxmail_continuwuity_version: "26.7.2"
+tuxmail_continuwuity_release_base_url: "https://forgejo.ellis.link/continuwuation/continuwuity/releases/download/v{{ tuxmail_continuwuity_version }}/"
+tuxmail_continuwuity_asset: "conduwuit-linux-static-{{ tuxmail_bridges_arch }}"
+tuxmail_continuwuity_url: "{{ tuxmail_continuwuity_release_base_url }}{{ tuxmail_continuwuity_asset }}"
+# SHA-256 je Architektur (Pflicht, nicht vorbelegt – nicht verifizierbar beim Erstellen):
+#   curl -fLO <url> && sha256sum conduwuit-linux-static-amd64
+tuxmail_continuwuity_sha256:
+  amd64: ""
+  arm64: ""
+# Alternativ: URL einer Prüfsummendatei ("sha256sum"-Format), falls das Release eine hat.
+tuxmail_continuwuity_checksum_url: ""
+# Alternative: lokales Binary auf dem Steuerrechner (es wird nichts heruntergeladen).
+tuxmail_continuwuity_binary_src: ""
+# Zusätzliche Laufzeitpakete (liburing für io_uring); leer = Standard des Betriebssystems.
+tuxmail_continuwuity_packages: []
+# Erstes Konto per Registrierungs-Token automatisch anlegen und die Bridges im Admin-Raum
+# automatisch registrieren (Client-API). false = nur Anleitung ausgeben.
+tuxmail_continuwuity_automate: true
+# Zusätzliche Einträge im Abschnitt [global] (Schlüssel: Wert), z. B. {max_request_size: 52428800}
+tuxmail_continuwuity_extra_config: {}
+
+# --- Synapse (tuxmail_matrix_server=synapse, nur Debian/Ubuntu) -------------------------------
+tuxmail_synapse_apt_repo: "https://packages.matrix.org/debian/"
+tuxmail_synapse_apt_key_url: "https://packages.matrix.org/debian/matrix-org-archive-keyring.gpg"
+tuxmail_synapse_apt_keyring: "/usr/share/keyrings/matrix-org-archive-keyring.gpg"
+# Fingerabdruck laut Synapse-Installationsanleitung – der heruntergeladene Schlüssel wird geprüft.
+tuxmail_synapse_apt_key_fingerprint: "AAF9AE843A7584B5A3E4CD2BCF45A512DE2DA058"
+# Paketversion festlegen, z. B. "1.141.0+bookworm1" (apt-cache policy matrix-synapse-py3).
+# Leer = aktuelle Version des Repos bei der Erstinstallation (danach keine automatischen Updates).
+tuxmail_synapse_version: ""
+# Zusätzliche Synapse-Einstellungen (dict) für /etc/matrix-synapse/conf.d/tuxmail.yaml
+tuxmail_synapse_extra_config: {}
+
+# --- mautrix-Bridges --------------------------------------------------------------------------
+# Versionen und Prüfsummen (aus sha256sums.txt der GitHub-Releases v0.2610.0 = "v26.10").
+tuxmail_mautrix_whatsapp_version: "0.2610.0"
+tuxmail_mautrix_whatsapp_sha256:
+  amd64: "6ae3dade4888a2ea6ccc87f6902b0faabe47f143ca50c43eb011ad94745bfec8"
+  arm64: "a441d2768f8d82aa72fc831296f4e45f017e3627062946602e41b4df1a1b4680"
+tuxmail_mautrix_signal_version: "0.2610.0"
+tuxmail_mautrix_signal_sha256:
+  amd64: "13867e87604464b7ca848bd0e4b6afdb013710f021cc7477007629d1585f3b5f"
+  arm64: "b2bafd1796866eb793f5447e15ff9a9cb6577f15279b9d7772d043cc58502739"
+tuxmail_mautrix_gmessages_version: "0.2610.0"
+tuxmail_mautrix_gmessages_sha256:
+  amd64: "2693000227748869f12c922e659313c20077bb59acecd52903cabcb0d9484a4f"
+  arm64: "e27e257138ef255365b3ac85dc8083b25e84dfb3b3a727b13b9697c527fe91e3"
+# URL-Muster: <base>/v<version>/mautrix-<name>-<arch>
+tuxmail_mautrix_release_base_url: "https://github.com/mautrix"
+# Freie Überschreibungen der erzeugten config.yaml je Bridge (rekursiv zusammengeführt),
+# z. B. {whatsapp: {encryption: {allow: true}}}
+tuxmail_mautrix_config_overrides: {}
+# Log-Stufe der Bridges (Ausgabe nach journald).
+tuxmail_mautrix_log_level: "info"
+
+# --- Container-Modus (tuxmail_bridges_runtime=container) -----------------------------------
+tuxmail_bridges_dir: "/opt/tuxmail-bridges"
+tuxmail_bridges_project: "tuxmail-bridges"
+# Images – feste Versionen setzen!
 tuxmail_bridges_synapse_image: "docker.io/matrixdotorg/synapse:latest"
-tuxmail_bridges_continuwuity_image: "forgejo.ellis.link/continuwuation/continuwuity:latest"
-tuxmail_bridges_whatsapp_image: "dock.mau.dev/mautrix/whatsapp:latest"
-tuxmail_bridges_signal_image: "dock.mau.dev/mautrix/signal:latest"
+tuxmail_bridges_continuwuity_image: "forgejo.ellis.link/continuwuation/continuwuity:v{{ tuxmail_continuwuity_version }}"
+tuxmail_bridges_whatsapp_image: "dock.mau.dev/mautrix/whatsapp:v{{ tuxmail_mautrix_whatsapp_version }}"
+tuxmail_bridges_signal_image: "dock.mau.dev/mautrix/signal:v{{ tuxmail_mautrix_signal_version }}"
+tuxmail_bridges_gmessages_image: "dock.mau.dev/mautrix/gmessages:v{{ tuxmail_mautrix_gmessages_version }}"
 
-# --- Gotenberg ---------------------------------------------------------------------------
-tuxmail_bridges_gotenberg_enabled: true
-tuxmail_bridges_gotenberg_image: "docker.io/gotenberg/gotenberg:8"
-tuxmail_bridges_gotenberg_port: 3000
-
-# --- Intern ------------------------------------------------------------------------------
+# --- Intern -----------------------------------------------------------------------------------
+tuxmail_bridges_arch_map:
+  x86_64: amd64
+  amd64: amd64
+  aarch64: arm64
+  arm64: arm64
+tuxmail_bridges_arch: "{{ tuxmail_bridges_arch_map.get(ansible_facts['architecture'], 'unsupported') }}"
+tuxmail_bridges_credentials_dir: "{{ playbook_dir }}/credentials/{{ inventory_hostname }}"
+tuxmail_bridges_homeserver_url: "http://127.0.0.1:{{ tuxmail_matrix_port }}"
+tuxmail_bridges_homeserver_service: "{{ 'continuwuity' if tuxmail_matrix_server == 'continuwuity' else 'matrix-synapse' }}"
 tuxmail_bridges_mautrix_all:
   - name: whatsapp
+    enabled: "{{ tuxmail_bridges_whatsapp_enabled }}"
+    version: "{{ tuxmail_mautrix_whatsapp_version }}"
+    sha256: "{{ tuxmail_mautrix_whatsapp_sha256 }}"
     image: "{{ tuxmail_bridges_whatsapp_image }}"
     port: 29318
-    enabled: "{{ tuxmail_bridges_whatsapp_enabled }}"
   - name: signal
+    enabled: "{{ tuxmail_bridges_signal_enabled }}"
+    version: "{{ tuxmail_mautrix_signal_version }}"
+    sha256: "{{ tuxmail_mautrix_signal_sha256 }}"
     image: "{{ tuxmail_bridges_signal_image }}"
     port: 29328
-    enabled: "{{ tuxmail_bridges_signal_enabled }}"
-tuxmail_bridges_compose_cmd: "{{ ['podman-compose'] if tuxmail_bridges_runtime == 'podman' else ['docker', 'compose'] }}"
+  - name: gmessages
+    enabled: "{{ tuxmail_bridges_gmessages_enabled }}"
+    version: "{{ tuxmail_mautrix_gmessages_version }}"
+    sha256: "{{ tuxmail_mautrix_gmessages_sha256 }}"
+    image: "{{ tuxmail_bridges_gmessages_image }}"
+    port: 29336
+tuxmail_bridges_compose_cmd: >-
+  {{ ['podman-compose'] if (tuxmail_bridges_engine_effective | default(tuxmail_bridges_container_engine)) == 'podman'
+     else ['docker', 'compose'] }}

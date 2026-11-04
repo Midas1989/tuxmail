@@ -30,7 +30,7 @@
     tuxmail_bridges_cfg_overrides:
       homeserver:
         address: "http://homeserver:8008"
-        domain: "{{ tuxmail_bridges_matrix_server_name }}"
+        domain: "{{ tuxmail_matrix_server_name }}"
       appservice:
         address: "http://mautrix-{{ tuxmail_bridge.name }}:{{ tuxmail_bridge.port }}"
         hostname: "0.0.0.0"
@@ -39,7 +39,7 @@
         type: "sqlite3-fk-wal"
         uri: "file:/data/mautrix-{{ tuxmail_bridge.name }}.db?_txlock=immediate"
     tuxmail_bridges_cfg_permissions: >-
-      {{ {'*': 'relay', tuxmail_bridges_matrix_server_name: 'user', tuxmail_bridges_matrix_admin: 'admin'} }}
+      {{ tuxmail_bridges_permissions }}
 
 - name: "Konfiguration zusammenführen (mautrix-{{ tuxmail_bridge.name }})"
   ansible.builtin.set_fact:
@@ -73,7 +73,7 @@
     remote_src: true
     mode: "0644"
   register: tuxmail_bridges_reg_copied
-  when: tuxmail_bridges_homeserver == 'synapse'
+  when: tuxmail_matrix_server == 'synapse'
 
 - name: "Änderungen merken (mautrix-{{ tuxmail_bridge.name }})"
   ansible.builtin.set_fact:

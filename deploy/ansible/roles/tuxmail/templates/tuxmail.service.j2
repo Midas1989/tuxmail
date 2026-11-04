@@ -15,6 +15,9 @@ Environment=HOME={{ tuxmail_data_dir }}
 {% for key, value in tuxmail_service_environment.items() %}
 Environment={{ (key ~ '=' ~ value) | to_json }}
 {% endfor %}
+# Optionale Einstellungen der PDF-Erzeugung (TUXMAIL_CHROMIUM_PATH bzw.
+# TUXMAIL_GOTENBERG_URL), verwaltet von der Rolle tuxmail_pdf. "-" = darf fehlen.
+EnvironmentFile=-{{ tuxmail_pdf_env_file }}
 ExecStartPre={{ tuxmail_binary }} check-config --config {{ tuxmail_config_file }}
 {% if tuxmail_listen_is_socket | bool %}
 # Unix-Socket: /run/{{ tuxmail_socket_path | dirname | basename }} gehört der Socket-Gruppe (setgid),
@@ -48,11 +51,18 @@ CapabilityBoundingSet=
 AmbientCapabilities=
 {% endif %}
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+{% if tuxmail_service_chromium_compat | bool %}
+# tuxmail_pdf_renderer=chromium: Chromium (Kindprozess von TuxMail) braucht für
+# seine eigene Sandbox Benutzer-/PID-/Netz-Namensräume sowie chroot/capset und
+# für die JavaScript-JIT beschreib- und ausführbaren Speicher.
+RestrictNamespaces=~cgroup
+{% else %}
 RestrictNamespaces=true
+{% endif %}
 RestrictRealtime=true
 RestrictSUIDSGID=true
 LockPersonality=true
-MemoryDenyWriteExecute=true
+MemoryDenyWriteExecute={{ 'false' if tuxmail_service_chromium_compat | bool else 'true' }}
 ProtectClock=true
 ProtectControlGroups=true
 ProtectHostname=true
@@ -65,7 +75,9 @@ KeyringMode=private
 RemoveIPC=true
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
+{% if not (tuxmail_service_chromium_compat | bool) %}
 SystemCallFilter=~@privileged
+{% endif %}
 SystemCallErrorNumber=EPERM
 
 [Install]

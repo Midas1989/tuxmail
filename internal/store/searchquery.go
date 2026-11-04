@@ -99,8 +99,8 @@ type SearchQuery struct {
 	Subject       []string `json:"subject,omitempty"`   // subject: — terms matched against the subject/title
 	HasAttachment bool     `json:"hasAttachment,omitempty"`
 	Unread        bool     `json:"unread,omitempty"`
-	// Categories (category:) are parsed and stored with profiles but not yet
-	// applied: smart categories (KONZEPT 8.8) have no storage yet.
+	// Categories (category:) are smart categories (KONZEPT 8.8, table
+	// message_insights); German/English aliases such as "rechnung" work.
 	Categories []string `json:"categories,omitempty"`
 
 	Limit  int `json:"-"`

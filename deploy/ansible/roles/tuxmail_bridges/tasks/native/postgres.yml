@@ -1,0 +1,68 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# PostgreSQL aus den Distributionspaketen. Anmeldung ausschließlich lokal über den
+# Unix-Socket mit "peer" (Systembenutzer == Datenbankrolle) – keine Passwörter.
+# Die Standard-pg_hba.conf von Debian/Ubuntu und RHEL erlaubt "local all all peer".
+# Je Bridge: Rolle "mautrix-<name>", Datenbank "mautrix_<name>".
+# Synapse: Rolle "matrix-synapse", Datenbank "synapse" (C-Kollation).
+
+- name: PostgreSQL-Pakete installieren
+  ansible.builtin.package:
+    name: "{{ tuxmail_bridges_os_postgres_packages }}"
+    state: present
+
+- name: Datenbank-Cluster initialisieren (RHEL-Familie)
+  ansible.builtin.command:
+    argv: [postgresql-setup, --initdb]
+    creates: /var/lib/pgsql/data/PG_VERSION
+  when: ansible_facts['os_family'] == 'RedHat'
+
+- name: PostgreSQL aktivieren und starten
+  ansible.builtin.systemd_service:
+    name: "{{ tuxmail_bridges_os_postgres_service }}"
+    enabled: true
+    state: started
+
+- name: Datenbankrollen der Bridges anlegen (Anmeldung per peer)
+  community.postgresql.postgresql_user:
+    name: "mautrix-{{ item.name }}"
+    state: present
+  become: true
+  become_user: postgres
+  loop: "{{ tuxmail_bridges_mautrix }}"
+  loop_control:
+    label: "mautrix-{{ item.name }}"
+
+- name: Datenbanken der Bridges anlegen
+  community.postgresql.postgresql_db:
+    name: "mautrix_{{ item.name }}"
+    owner: "mautrix-{{ item.name }}"
+    encoding: UTF-8
+    state: present
+  become: true
+  become_user: postgres
+  loop: "{{ tuxmail_bridges_mautrix }}"
+  loop_control:
+    label: "mautrix_{{ item.name }}"
+
+- name: Datenbank für Synapse
+  when: tuxmail_matrix_server == 'synapse'
+  block:
+    - name: Datenbankrolle matrix-synapse anlegen (Anmeldung per peer)
+      community.postgresql.postgresql_user:
+        name: matrix-synapse
+        state: present
+      become: true
+      become_user: postgres
+
+    - name: Datenbank synapse anlegen (C-Kollation, wie von Synapse verlangt)
+      community.postgresql.postgresql_db:
+        name: synapse
+        owner: matrix-synapse
+        encoding: UTF-8
+        lc_collate: C
+        lc_ctype: C
+        template: template0
+        state: present
+      become: true
+      become_user: postgres

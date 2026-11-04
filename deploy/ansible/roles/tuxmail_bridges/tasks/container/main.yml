@@ -1,0 +1,35 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Container-Modus (tuxmail_bridges_runtime=container) – AUSDRÜCKLICHE Ausnahme vom
+# Standard ohne Docker/Podman. Homeserver und Bridges laufen per podman-compose bzw.
+# "docker compose" unter tuxmail_bridges_dir; Ports nur auf 127.0.0.1.
+
+- name: Hinweis – Container-Modus
+  ansible.builtin.debug:
+    msg: >-
+      Bridge-Modus mit Containern ({{ tuxmail_bridges_engine_effective }}). Standard und empfohlen ist
+      tuxmail_bridges_runtime=native (ohne Docker/Podman).
+
+- name: Abgeleitete Werte setzen
+  ansible.builtin.set_fact:
+    tuxmail_bridges_volume_opts: "{{ ':Z' if ansible_facts['selinux']['status'] | default('disabled') == 'enabled' else '' }}"
+    tuxmail_bridges_run_cmd: "{{ [tuxmail_bridges_engine_effective, 'run', '--rm'] }}"
+
+- name: Container-Laufzeit installieren
+  ansible.builtin.include_tasks: container/runtime.yml
+
+- name: Matrix-Homeserver vorbereiten
+  ansible.builtin.include_tasks: container/homeserver.yml
+
+- name: Mautrix-Bridges vorbereiten
+  ansible.builtin.include_tasks: container/mautrix.yml
+  loop: "{{ tuxmail_bridges_mautrix }}"
+  loop_control:
+    loop_var: tuxmail_bridge
+    label: "{{ tuxmail_bridge.name }}"
+
+- name: Homeserver – Bridges registrieren
+  ansible.builtin.include_tasks: container/register.yml
+
+- name: Compose-Projekt starten
+  ansible.builtin.include_tasks: container/compose.yml

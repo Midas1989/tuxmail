@@ -5,6 +5,8 @@
   the whole conversation as bubbles with the folder's messages highlighted.
 -->
 <script lang="ts">
+  import { comfort } from '../../state';
+  import CategoryTabs from '../comfort/CategoryTabs.svelte';
   import TeamBadge from '../team/TeamBadge.svelte';
   import Inbox from '@lucide/svelte/icons/inbox';
   import Paperclip from '@lucide/svelte/icons/paperclip';
@@ -38,6 +40,7 @@
     <h1>{title}</h1>
     <span class="sub">{subtitle} · {t('mail.hybrid.count', { count: app.conversations.length })}</span>
   </header>
+  <CategoryTabs />
   <div class="scroll" role="listbox" tabindex="0" aria-label={title} {onkeydown} data-list="conversations" aria-activedescendant={app.selectedConversationId != null ? `hc-${app.selectedConversationId}` : undefined}>
     {#if !app.conversations.length && !app.conversationsLoading}
       <div class="empty">
@@ -45,7 +48,7 @@
         <p>{t('mail.list.empty')}</p>
       </div>
     {/if}
-    {#each app.conversations as c (c.id)}
+    {#each comfort.filterConversations(app.conversations) as c (c.id)}
       {@const sel = c.id === app.selectedConversationId}
       <div id="hc-{c.id}" class="row" class:sel class:unread={c.unreadCount > 0} role="option" aria-selected={sel} tabindex="-1" onclick={() => app.selectConversation(c.id)} onkeydown={() => {}}>
         <ChatAvatar name={c.participantIds.length ? (app.person(c.participantIds[0])?.displayName ?? c.title) : c.title} seed={app.person(c.participantIds[0])?.handles[0]?.value ?? c.title} size={38} group={c.participantIds.length > 1} url={c.avatarUrl} />

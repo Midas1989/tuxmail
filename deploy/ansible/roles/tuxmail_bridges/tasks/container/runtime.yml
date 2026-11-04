@@ -4,13 +4,13 @@
   ansible.builtin.include_role:
     name: tuxmail_common
     tasks_from: epel.yml
-  when: tuxmail_bridges_runtime == 'podman'
+  when: tuxmail_bridges_engine_effective == 'podman'
 
-- name: Container-Pakete installieren
+- name: Container-Pakete installieren (podman; Docker CE bitte vorher selbst installieren)
   ansible.builtin.package:
-    name: "{{ tuxmail_bridges_packages }}"
+    name: [podman, podman-compose]
     state: present
-  when: tuxmail_bridges_packages | length > 0
+  when: tuxmail_bridges_engine_effective == 'podman'
 
 - name: Compose-Werkzeug ist verfügbar
   ansible.builtin.command:
@@ -21,21 +21,21 @@
   ansible.builtin.stat:
     path: /usr/lib/systemd/system/podman-restart.service
   register: tuxmail_bridges_podman_restart
-  when: tuxmail_bridges_runtime == 'podman'
+  when: tuxmail_bridges_engine_effective == 'podman'
 
 - name: Container mit Neustart-Richtlinie beim Booten starten (podman)
   ansible.builtin.systemd_service:
     name: podman-restart.service
     enabled: true
   when:
-    - tuxmail_bridges_runtime == 'podman'
+    - tuxmail_bridges_engine_effective == 'podman'
     - tuxmail_bridges_podman_restart.stat.exists
 
 - name: Hinweis – kein podman-restart.service
   ansible.builtin.debug:
     msg: "WARNUNG: podman-restart.service fehlt (ältere podman-Version) – Container starten nach einem Neustart nicht automatisch."
   when:
-    - tuxmail_bridges_runtime == 'podman'
+    - tuxmail_bridges_engine_effective == 'podman'
     - not tuxmail_bridges_podman_restart.stat.exists
 
 - name: Docker-Dienst aktivieren
@@ -43,7 +43,7 @@
     name: docker
     enabled: true
     state: started
-  when: tuxmail_bridges_runtime == 'docker'
+  when: tuxmail_bridges_engine_effective == 'docker'
 
 - name: Projektverzeichnis
   ansible.builtin.file:

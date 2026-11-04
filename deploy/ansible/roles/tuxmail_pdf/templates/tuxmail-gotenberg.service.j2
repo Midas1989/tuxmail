@@ -1,0 +1,28 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# {{ ansible_managed }}
+# Gotenberg (HTML -> PDF) als Container – nur bei tuxmail_pdf_renderer=gotenberg_container.
+# Standard ist die Installation OHNE Container (tuxmail_pdf_renderer=chromium).
+[Unit]
+Description=Gotenberg PDF renderer for TuxMail (container)
+Documentation=https://gotenberg.dev/
+After=network-online.target{{ ' docker.service' if tuxmail_pdf_container_engine == 'docker' else '' }}
+Wants=network-online.target
+{% if tuxmail_pdf_container_engine == 'docker' %}
+Requires=docker.service
+{% endif %}
+Before={{ tuxmail_service_name | default('tuxmail') }}.service
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/{{ tuxmail_pdf_container_engine }} rm -f {{ tuxmail_gotenberg_service_name }}
+ExecStart=/usr/bin/{{ tuxmail_pdf_container_engine }} run --rm --name {{ tuxmail_gotenberg_service_name }} \
+    --publish 127.0.0.1:{{ tuxmail_gotenberg_port | int }}:3000 \
+    --cap-drop ALL --security-opt no-new-privileges \
+    {{ tuxmail_gotenberg_image }}
+ExecStop=/usr/bin/{{ tuxmail_pdf_container_engine }} stop --time 10 {{ tuxmail_gotenberg_service_name }}
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=300s
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+tuxmail_bridges_os_continuwuity_packages:
+  - liburing
+tuxmail_bridges_os_postgres_packages:
+  - postgresql-server
+  - python3-psycopg2
+tuxmail_bridges_os_postgres_service: "postgresql"
