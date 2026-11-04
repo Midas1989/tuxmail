@@ -192,7 +192,11 @@ func (a *App) toPimContact(sc store.Contact, handles map[int64][]store.Handle) (
 	pc.HasPhoto = len(ct.Photo) > 0 || ct.PhotoURI != ""
 	if len(ct.Photo) > 0 {
 		pc.PhotoURL = fmt.Sprintf("/api/contacts/%d/photo?v=%s", sc.ID, shortHash(sc.ETag+sc.VCard[len(sc.VCard)/2:]))
-	} else if ct.PhotoURI != "" {
+	} else if isDataImage(ct.PhotoURI) {
+		// Remote PHOTO URIs (vCards from mails, subscriptions, CardDAV) are
+		// not loaded by the app: the app window would fetch them directly,
+		// telling the card's author when and from where it is viewed
+		// (audit B-07). Only inline data: images are shown.
 		pc.PhotoURL = ct.PhotoURI
 	}
 	pc.Photo = ""

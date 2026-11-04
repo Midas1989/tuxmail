@@ -301,6 +301,15 @@ type ReplyResult struct {
 // calendar (organizer copy). Replies with a lower SEQUENCE than the stored
 // item are ignored (RFC 5546 2.1.5).
 func ApplyReply(stored, reply *ical.Component) ([]ReplyResult, error) {
+	return ApplyReplyFrom(stored, reply, "")
+}
+
+// ApplyReplyFrom is ApplyReply for a REPLY received from sender: only the
+// ATTENDEE matching the sender address is applied, so that nobody can
+// change (or add) other attendees' answers with a forged REPLY. An empty
+// sender applies all attendees (trusted sources).
+func ApplyReplyFrom(stored, reply *ical.Component, sender string) ([]ReplyResult, error) {
+	sender = strings.ToLower(strings.TrimSpace(sender))
 	items := Items(reply)
 	if len(items) == 0 {
 		return nil, ErrNoEvent
@@ -319,7 +328,7 @@ func ApplyReply(stored, reply *ical.Component) ([]ReplyResult, error) {
 		for _, ap := range it.PropsNamed("ATTENDEE") {
 			email := ical.MailAddress(ap.Value)
 			ps := strings.ToUpper(ap.Param("PARTSTAT"))
-			if ps == "" {
+			if ps == "" || (sender != "" && !strings.EqualFold(email, sender)) {
 				continue
 			}
 			sp := findAttendee(target, email)

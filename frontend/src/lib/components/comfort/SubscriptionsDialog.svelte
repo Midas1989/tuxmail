@@ -6,6 +6,7 @@
   import { fmt, t } from '../../i18n/index.svelte';
   import Modal from '../common/Modal.svelte';
   import type { Subscription } from '../../api/comfort';
+  import { openExternal } from '../../platform';
 
   interface Props {
     onclose: () => void;
@@ -31,7 +32,7 @@
       if (what === 'unsubscribe') {
         const r = await comfort.api.unsubscribe(s.key);
         if (r.done) app.toast(t('comfort.newsletter.unsubscribed'));
-        else if (r.openUrl) window.open(r.openUrl, '_blank', 'noopener,noreferrer');
+        else if (r.openUrl) openExternal(r.openUrl);
         else app.toast(t('comfort.newsletter.failed', { error: r.error ?? '' }), undefined, 'error');
       } else if (what === 'archive') {
         app.toast(t('comfort.newsletter.archived', { count: await comfort.api.archiveSubscription(s.key) }));

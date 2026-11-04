@@ -631,6 +631,7 @@
       "recurring": "recurring",
       "reply": "{name} replied: {status}",
       "respond": "Respond",
+      "spoofWarning": "The organizer named in this invitation is not the sender ({sender}). Changes are not applied automatically.",
       "tentative": "Maybe",
       "title": "Invitation",
       "method": {

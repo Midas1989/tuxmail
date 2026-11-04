@@ -425,7 +425,7 @@ func eventFromComponent(cal store.CalendarWithMeta, obj store.CalObject, c *ical
 	occ rrule.Occurrence, me myAddrs) CalendarEvent {
 	ev := ical.ReadEvent(c, tz)
 	ce := CalendarEvent{ObjectID: obj.ID, CalendarID: obj.CalendarID, UID: obj.UID, Kind: "event", Title: ev.Summary,
-		Description: ev.Description, Location: ev.Location, URL: ev.URL, MeetingURL: ev.Conference,
+		Description: ev.Description, Location: ev.Location, URL: linkURL(ev.URL), MeetingURL: linkURL(ev.Conference),
 		Start: formatEventTime(occ.Start, occ.AllDay), End: formatEventTime(occ.End, occ.AllDay), AllDay: occ.AllDay,
 		Status: ev.Status, Busy: !ev.Transparent, Categories: ev.Categories, Color: ev.Color, Attendees: ev.Attendees,
 		Organizer: ev.Organizer, Alarms: toAlarms(ev.Alarms, occ.Start), Exception: occ.Override,

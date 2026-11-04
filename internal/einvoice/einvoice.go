@@ -113,13 +113,14 @@ func FromPDF(pdf []byte) (*Invoice, error) {
 		return nil, ErrNoInvoice
 	}
 	named := embeddedNameRe.Match(pdf)
-	for _, xmlData := range pdfStreams(pdf) {
+	var found *Invoice
+	pdfStreams(pdf, func(xmlData []byte) bool {
 		if !bytes.Contains(xmlData, []byte("CrossIndustry")) && !bytes.Contains(xmlData, []byte("Invoice")) {
-			continue
+			return true
 		}
 		inv, err := ParseXML(xmlData)
 		if err != nil {
-			continue
+			return true
 		}
 		switch inv.Format {
 		case FormatCII:
@@ -127,7 +128,11 @@ func FromPDF(pdf []byte) (*Invoice, error) {
 		case formatCII1:
 			inv.Format = FormatZUGFeRD1
 		}
-		return inv, nil
+		found = inv
+		return false
+	})
+	if found != nil {
+		return found, nil
 	}
 	if named {
 		return nil, errors.New("einvoice: PDF names an invoice XML but it could not be read")
@@ -135,9 +140,20 @@ func FromPDF(pdf []byte) (*Invoice, error) {
 	return nil, ErrNoInvoice
 }
 
-// pdfStreams returns the (decoded) contents of all streams.
-func pdfStreams(pdf []byte) [][]byte {
-	var out [][]byte
+// Limits for hostile attachments (audit B-10): a PDF may contain thousands
+// of small Flate "bombs", an XML document millions of nested elements.
+const (
+	maxStreamBytes   = 16 << 20 // one inflated stream
+	maxInflatedTotal = 64 << 20 // all inflated streams of a PDF
+	maxXMLBytes      = 16 << 20
+	maxXMLDepth      = 64
+	maxXMLElements   = 100000
+)
+
+// pdfStreams calls fn with the (decoded) contents of the streams that look
+// like markup, until fn returns false or the inflate budget is used up.
+func pdfStreams(pdf []byte, fn func([]byte) bool) {
+	budget := int64(maxInflatedTotal)
 	locs := streamRe.FindAllIndex(pdf, -1)
 	for _, loc := range locs {
 		start := loc[1]
@@ -150,21 +166,24 @@ func pdfStreams(pdf []byte) [][]byte {
 		dictStart := bytes.LastIndex(pdf[:loc[0]], []byte("obj"))
 		flate := dictStart >= 0 && bytes.Contains(pdf[dictStart:loc[0]], []byte("FlateDecode"))
 		if flate {
+			if budget <= 0 {
+				return
+			}
 			zr, err := zlib.NewReader(bytes.NewReader(data))
 			if err != nil {
 				continue
 			}
-			dec, err := io.ReadAll(io.LimitReader(zr, 32<<20))
+			dec, err := io.ReadAll(io.LimitReader(zr, min(budget, maxStreamBytes)))
+			budget -= int64(len(dec))
 			if err != nil && len(dec) == 0 {
 				continue
 			}
 			data = dec
 		}
-		if bytes.Contains(data, []byte("<")) {
-			out = append(out, data)
+		if bytes.Contains(data, []byte("<")) && !fn(data) {
+			return
 		}
 	}
-	return out
 }
 
 // ==== XML ========================================================================
@@ -181,6 +200,11 @@ type elem struct {
 // (Invoice, CreditNote) document.
 func ParseXML(data []byte) (*Invoice, error) {
 	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
+	if len(data) > maxXMLBytes {
+		return nil, ErrNoInvoice
+	}
+	// encoding/xml never resolves DTDs or external entities (no XXE, no
+	// entity expansion); depth and element count are bounded here.
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	dec.Strict = false
 	var stack []string
@@ -204,6 +228,12 @@ func ParseXML(data []byte) (*Invoice, error) {
 			if root == "" {
 				root = t.Name.Local
 			}
+			if len(stack) >= maxXMLDepth || len(elems) >= maxXMLElements {
+				if root == "" {
+					return nil, ErrNoInvoice
+				}
+				goto done
+			}
 			stack = append(stack, t.Name.Local)
 			at := map[string]string{}
 			for _, a := range t.Attr {
@@ -223,6 +253,7 @@ func ParseXML(data []byte) (*Invoice, error) {
 			text.Reset()
 		}
 	}
+done:
 	switch root {
 	case "CrossIndustryInvoice":
 		return cii(elems, FormatCII), nil
