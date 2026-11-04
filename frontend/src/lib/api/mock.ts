@@ -86,6 +86,17 @@ import type {
   WorkflowValidation,
 } from '../types';
 import type { ConversationScope } from './api';
+// --- OAuth/Cloud accounts ---
+import { MockOAuth, mockOAuthProvider } from './mockOAuth';
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
+} from '../types';
 
 const SEEN: Flag = '\\Seen';
 const ANSWERED: Flag = '\\Answered';
@@ -139,6 +150,21 @@ function waveform(seed: number, n = 40): number[] {
     return 0.2 + (x / 233280) * 0.8;
   });
 }
+
+// --- Cloud ---
+import { MockCloud } from './mockCloud';
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
+} from '../types';
 
 export interface MockOptions {
   latencyMs?: number;
@@ -671,6 +697,12 @@ export class MockTransport implements Api {
     };
     const k = known[domain];
     if (!domain) return this.reply({ source: 'none', kind: 'imap', displayName: email });
+    const oauthProvider = mockOAuthProvider(domain); // OAuth/Cloud accounts
+    if (oauthProvider === 'microsoft') {
+      return this.reply({ source: 'autoconfig', kind: 'imap', displayName: 'Microsoft 365', oauthAvailable: true, oauthProvider,
+        incoming: { host: 'outlook.office365.com', port: 993, tls: 'tls', auth: 'oauth2', username: email },
+        outgoing: { host: 'smtp.office365.com', port: 587, tls: 'starttls', auth: 'oauth2', username: email } });
+    }
     const [inHost, outHost, inPort, outPort, outTls] = k ?? [`imap.${domain}`, `smtp.${domain}`, 993, 587, 'starttls'];
     return this.reply({
       source: k ? 'autoconfig' : 'guess',
@@ -679,6 +711,7 @@ export class MockTransport implements Api {
       incoming: { host: inHost, port: inPort, tls: 'tls', auth: 'password', username: email },
       outgoing: { host: outHost, port: outPort, tls: outTls, auth: 'password', username: email },
       oauthAvailable: domain === 'gmail.com',
+      oauthProvider,
     });
   }
 
@@ -1042,6 +1075,19 @@ export class MockTransport implements Api {
     await this.reply(null);
   }
 
+  async saveSignature(signature: Signature): Promise<Signature> {
+    const s = clone(signature);
+    if (!s.html && s.plain) s.html = s.plain.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!).replace(/\n/g, '<br>');
+    if (!s.id) {
+      s.id = Math.max(0, ...this.signatures.map((x) => x.id)) + 1;
+      this.signatures.push(s);
+    } else this.signatures = this.signatures.map((x) => (x.id === s.id ? s : x));
+    return this.reply(s);
+  }
+  async deleteSignature(id: number): Promise<void> {
+    this.signatures = this.signatures.filter((x) => x.id !== id);
+    return this.reply(undefined);
+  }
   async updateIdentity(identity: Identity): Promise<Identity> {
     this.identities = this.identities.map((i) => (i.id === identity.id ? clone(identity) : i));
     return this.reply(identity);
@@ -2113,6 +2159,120 @@ export class MockTransport implements Api {
         this.incomingTimer = null;
       }
     };
+  }
+
+  // --- Cloud ---
+  /** In-memory cloud accounts, files and shares (mockCloud.ts). */
+  readonly cloud = new MockCloud();
+
+  listCloudAccounts(): Promise<CloudAccount[]> {
+    return this.run(() => this.cloud.listAccounts());
+  }
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow> {
+    return this.run(() => this.cloud.startLogin(input));
+  }
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow> {
+    return this.run(() => this.cloud.pollLogin(flowId));
+  }
+  cancelCloudLogin(flowId: string): Promise<void> {
+    return this.run(() => this.cloud.cancelLogin(flowId));
+  }
+  deleteCloudAccount(id: number): Promise<void> {
+    return this.run(() => this.cloud.deleteAccount(id));
+  }
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing> {
+    return this.run(() => this.cloud.list(accountId, path));
+  }
+  cloudQuota(accountId: number): Promise<CloudQuota> {
+    return this.run(() => this.cloud.quota(accountId));
+  }
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry> {
+    return this.run(() => this.cloud.mkdir(accountId, path));
+  }
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void> {
+    return this.run(() => this.cloud.move(accountId, from, to));
+  }
+  deleteCloudFile(accountId: number, path: string): Promise<void> {
+    return this.run(() => this.cloud.remove(accountId, path));
+  }
+  uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry> {
+    return this.run(() => this.cloud.store(accountId, dir, filename, file.size, file.type || undefined));
+  }
+  async downloadCloudFile(accountId: number, path: string): Promise<Blob> {
+    const { entry, data } = await this.run(() => this.cloud.read(accountId, path));
+    return new Blob([data], { type: entry.contentType ?? 'application/octet-stream' });
+  }
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult> {
+    return this.run(() => this.cloud.importFile(accountId, path));
+  }
+  async saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry> {
+    let name = input.filename ?? 'Datei';
+    let size = 0;
+    let type: string | undefined;
+    if (input.messageId != null) {
+      const m = await this.getMessage(input.messageId);
+      const a = m.attachments.find((x) => x.id === input.index) ?? m.attachments[input.index ?? 0];
+      if (!a) throw new ApiError('Anhang nicht gefunden', 404, 'not_found');
+      name = input.filename ?? a.filename;
+      size = a.size;
+      type = a.mimeType;
+    }
+    return this.run(() => this.cloud.save(input, name, size, type));
+  }
+  createCloudShare(input: CloudShareInput): Promise<CloudShare> {
+    const m = input.uploadToken?.match(/^mock-upload-\d+-(.*)-(\d+)$/);
+    const file = m ? { name: decodeURIComponent(m[1]), size: Number(m[2]) } : input.uploadToken ? { name: input.name ?? 'Datei', size: 0 } : undefined;
+    return this.run(() => this.cloud.createShare(input, file));
+  }
+  listCloudShares(): Promise<CloudShare[]> {
+    return this.run(() => this.cloud.listShares());
+  }
+  revokeCloudShare(id: number): Promise<CloudShare> {
+    return this.run(() => this.cloud.revoke(id));
+  }
+  cloudSharePassword(id: number): Promise<{ password: string }> {
+    return this.run(() => this.cloud.password(id));
+  }
+  generateCloudPassword(accountId: number): Promise<{ password: string }> {
+    return this.run(() => this.cloud.generatePassword(accountId));
+  }
+
+  // --- OAuth/Cloud accounts --- (mockOAuth.ts)
+  private oauthMock?: MockOAuth;
+  /** In-memory OAuth sign-in flows, client IDs and delegations (mockOAuth.ts). */
+  get oauth(): MockOAuth {
+    this.oauthMock ??= new MockOAuth({ accounts: () => this.accounts, identities: () => this.identities, createAccount: (i) => this.createAccount(i) });
+    return this.oauthMock;
+  }
+  listOAuthProviders(): Promise<OAuthProviderInfo[]> {
+    return this.reply(this.oauth.providers());
+  }
+  saveOAuthClient(input: OAuthClientInput): Promise<void> {
+    return this.run(() => this.oauth.saveClient(input));
+  }
+  deleteOAuthClient(provider: string): Promise<void> {
+    return this.run(() => this.oauth.deleteClient(provider));
+  }
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus> {
+    return this.run(() => this.oauth.start(input));
+  }
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus> {
+    return this.run(() => this.oauth.flow(id));
+  }
+  cancelOAuth(id: string): Promise<void> {
+    return this.run(() => this.oauth.cancel(id));
+  }
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account> {
+    return this.oauth.addShared(input);
+  }
+  listIdentityDelegations(): Promise<IdentityDelegation[]> {
+    return this.reply(this.oauth.listDelegations());
+  }
+  setIdentityDelegation(d: { identityId: number; mode: string; mailbox?: string }): Promise<void> {
+    return this.run(() => this.oauth.setDelegation(d));
+  }
+  syncCloudPim(accountId: number): Promise<CloudPimResult> {
+    return this.run(() => this.oauth.syncPim(accountId));
   }
 }
 

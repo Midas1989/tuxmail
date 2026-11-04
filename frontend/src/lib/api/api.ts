@@ -70,6 +70,16 @@ import type {
   WorkflowTemplate,
   WorkflowValidation,
 } from '../types';
+// --- OAuth/Cloud accounts ---
+import type {
+  CloudPimResult,
+  IdentityDelegation,
+  OAuthClientInput,
+  OAuthFlowStatus,
+  OAuthProviderInfo,
+  OAuthStartInput,
+  SharedMailboxInput,
+} from '../types';
 
 export type TransportKind = 'wails' | 'http' | 'mock';
 
@@ -170,6 +180,9 @@ export interface Api {
   createFromItem(conversationId: number, itemId: string, kind: 'task' | 'event'): Promise<{ id: string }>;
   /** Create/update the contact of a person from a parsed signature. */
   saveContactCard(personId: number, card: ContactCard): Promise<void>;
+  /** Create (id 0) or update a signature. */
+  saveSignature(signature: Signature): Promise<Signature>;
+  deleteSignature(id: number): Promise<void>;
   /** Update chat-mode signature settings of an identity. */
   updateIdentity(identity: Identity): Promise<Identity>;
 
@@ -332,6 +345,24 @@ export interface Api {
   deleteBackupSchedule(id: string): Promise<void>;
   runBackupSchedule(id: string): Promise<IO.IOJob>;
   listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]>;
+  // --- OAuth/Cloud accounts --- (KONZEPT 7.3–7.5; error codes oauth_not_configured, oauth_consent_required ...)
+  /** Sign-in services (Microsoft, Google) and their client configuration. */
+  listOAuthProviders(): Promise<OAuthProviderInfo[]>;
+  /** Own client ID ("Anmeldedienste"); may be forbidden by the server admin. */
+  saveOAuthClient(input: OAuthClientInput): Promise<void>;
+  deleteOAuthClient(provider: string): Promise<void>;
+  /** Start a sign-in: the desktop opens the browser (loopback), the web client opens status.authUrl. */
+  startOAuth(input: OAuthStartInput): Promise<OAuthFlowStatus>;
+  /** Poll until status !== 'pending'; on 'done' the account exists (accountId). */
+  getOAuthFlow(id: string): Promise<OAuthFlowStatus>;
+  cancelOAuth(id: string): Promise<void>;
+  /** Microsoft: add a shared/delegated mailbox of a Graph/EWS account. */
+  addSharedMailbox(input: SharedMailboxInput): Promise<Account>;
+  listIdentityDelegations(): Promise<IdentityDelegation[]>;
+  /** Change Send-As / Send-on-Behalf of an identity (mode '' removes it). */
+  setIdentityDelegation(delegation: { identityId: number; mode: string; mailbox?: string }): Promise<void>;
+  /** Import calendars, contacts and tasks of a Graph/Gmail/EWS account. */
+  syncCloudPim(accountId: number): Promise<CloudPimResult>;
 }
 
 export class ApiError extends Error {
@@ -371,3 +402,47 @@ export class EventHub {
 
 // --- Import/Export/Backup ---
 import type * as IO from '../types';
+// --- Cloud ---
+// Cloud files (KONZEPT 12). Declared as a second part of the Api interface
+// (declaration merging) so that parallel feature branches merge cleanly.
+
+import type {
+  CloudAccount,
+  CloudEntry,
+  CloudImportResult,
+  CloudListing,
+  CloudLoginFlow,
+  CloudLoginInput,
+  CloudQuota,
+  CloudSaveInput,
+  CloudShare,
+  CloudShareInput,
+} from '../types';
+
+
+export interface Api {
+  listCloudAccounts(): Promise<CloudAccount[]>;
+  /** Nextcloud/OpenCloud: a pending flow with loginUrl (open in the browser, then poll). Vaultwarden/WebDAV: done or two_factor. */
+  startCloudLogin(input: CloudLoginInput): Promise<CloudLoginFlow>;
+  pollCloudLogin(flowId: string): Promise<CloudLoginFlow>;
+  cancelCloudLogin(flowId: string): Promise<void>;
+  deleteCloudAccount(id: number): Promise<void>;
+  listCloudFiles(accountId: number, path: string): Promise<CloudListing>;
+  cloudQuota(accountId: number): Promise<CloudQuota>;
+  createCloudFolder(accountId: number, path: string): Promise<CloudEntry>;
+  moveCloudFile(accountId: number, from: string, to: string): Promise<void>;
+  deleteCloudFile(accountId: number, path: string): Promise<void>;
+  /** Upload a local file into dir (unique name on conflicts). */
+  uploadCloudFile(accountId: number, dir: string, file: Blob, filename: string): Promise<CloudEntry>;
+  downloadCloudFile(accountId: number, path: string): Promise<Blob>;
+  /** Copy a cloud file into an upload for the composer ("Attach from cloud"). */
+  importCloudFile(accountId: number, path: string): Promise<CloudImportResult>;
+  /** "Save to cloud" for attachments of mails and chats. */
+  saveAttachmentToCloud(input: CloudSaveInput): Promise<CloudEntry>;
+  createCloudShare(input: CloudShareInput): Promise<CloudShare>;
+  /** "My shares": all links, newest first. */
+  listCloudShares(): Promise<CloudShare[]>;
+  revokeCloudShare(id: number): Promise<CloudShare>;
+  cloudSharePassword(id: number): Promise<{ password: string }>;
+  generateCloudPassword(accountId: number): Promise<{ password: string }>;
+}

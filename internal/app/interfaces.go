@@ -52,6 +52,9 @@ type SendRequest struct {
 	// InReplyTo / ForwardOf are the stored messages being answered or forwarded.
 	InReplyTo *store.Message
 	ForwardOf *store.Message
+	// Unattended marks sends without a user waiting for the result (due
+	// scheduled messages): send-check warnings do not block them.
+	Unattended bool
 }
 
 // SendAttachment is an uploaded attachment.

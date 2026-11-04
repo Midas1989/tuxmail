@@ -57,6 +57,7 @@ type Options struct {
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
+	OAuth      *OAuthOptions   // OAuth clients/redirect (default: environment), oauth_app.go
 
 	// Locales are the built-in language files (locales/*.json); LocaleDir
 	// holds additional/override files (data_dir/locales).
@@ -79,6 +80,7 @@ type Options struct {
 // (api.ts) on top of the store and the core services. It is safe for
 // concurrent use.
 type App struct {
+	kick    chan struct{} // wakes the timer loop early (e.g. after adding an account)
 	opts    Options
 	st      *store.Store
 	blobs   *blob.Store
@@ -104,6 +106,11 @@ type App struct {
 
 	remoteMu sync.Mutex
 	remote   map[string]*remoteSession // provisioning sessions by server URL
+
+	syncCreds tsync.Credentials // credentials of the sync engine (EAS PIM, OOF)
+	easPIM    easPIM            // EAS calendar/contacts scheduling (eas.go)
+	cloud     cloudState        // cloud_accounts.go
+	oauth     *oauthState       // oauth_app.go
 }
 
 // New creates the application layer.
@@ -126,7 +133,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{Timeout: 60 * time.Second}
 	}
-	a := &App{opts: opts, st: opts.Store, bus: opts.Bus, hub: NewHub(), log: opts.Logger, idxDirty: true,
+	a := &App{kick: make(chan struct{}, 1), opts: opts, st: opts.Store, bus: opts.Bus, hub: NewHub(), log: opts.Logger, idxDirty: true,
 		remote: map[string]*remoteSession{}}
 	if a.bus == nil {
 		a.bus, a.ownsBus = events.New(), true
@@ -142,6 +149,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if a.opts.Secrets == nil {
 		a.opts.Secrets = newMemorySecrets()
 	}
+	a.oauth = newOAuthState(a)
 	a.render = opts.Renderer
 	if a.render == nil {
 		a.render = NewMIMERenderer()
@@ -174,9 +182,12 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		if ms, ok := a.opts.Sender.(*MailSender); ok {
 			cfg.Sender = syncSender{act: func() *send.Actions { return ms.Actions }}
 		}
+		a.configureEASSync(&cfg)
+		a.configureOAuthSync(&cfg)
 		if opts.Sync.Configure != nil {
 			opts.Sync.Configure(&cfg)
 		}
+		a.syncCreds = cfg.Credentials
 		m, err := tsync.New(cfg)
 		if err != nil {
 			return nil, err
@@ -187,7 +198,8 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		a.sync = &localSyncer{st: a.st}
 	}
 	a.wfReg = workflow.DefaultRegistry()
-	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient}
+	deps := workflow.Deps{Mail: mail, Tasks: &workflowTasks{a: a}, HTTPClient: opts.HTTPClient,
+		Cloud: workflowCloud{a: a}, PDF: workflowPDF{a: a}}
 	a.proj.Workflow().Deps(&deps)
 	loc := workflow.RunLocal
 	if opts.Mode == ModeServer {
@@ -271,7 +283,16 @@ func (a *App) timers(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+		case <-a.kick:
 		}
+	}
+}
+
+// kickTimers runs the timer loop's work now instead of at the next tick.
+func (a *App) kickTimers() {
+	select {
+	case a.kick <- struct{}{}:
+	default:
 	}
 }
 
@@ -284,6 +305,7 @@ func (a *App) tick(ctx context.Context) {
 	a.sendDueScheduled(ctx)
 	a.runSendOps(ctx)
 	a.RunDueBackups(ctx)
+	a.syncEASPIMDue(ctx)
 	if hashes, err := a.st.PurgeUploads(ctx, a.now().Add(-24*time.Hour)); err == nil && a.blobs != nil {
 		for _, h := range hashes {
 			_ = a.blobs.Delete(h)

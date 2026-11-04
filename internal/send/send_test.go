@@ -354,6 +354,30 @@ func TestSendCheckBlockAndOverride(t *testing.T) {
 	}
 }
 
+func TestSendCheckConfirmWarnings(t *testing.T) {
+	e := newEnv(t, nil, nil, 0)
+	ctx := context.Background()
+	req := Request{IdentityID: e.ident.ID, ConfirmWarnings: true,
+		Draft: compose.Draft{To: []domain.Address{{Email: "a@example.net"}}, Subject: "Vertrag", TextBody: "Hallo,\nanbei der Vertrag."}}
+	res, err := e.svc.Send(ctx, req)
+	var be *BlockedError
+	if !errors.As(err, &be) || !res.Blocked || be.Findings[0].Check != string(sendcheck.ForgottenAttachment) || be.Findings[0].Severity != events.SeverityWarn {
+		t.Fatalf("expected the warning to need confirmation: %v %+v", err, res)
+	}
+	if len(e.smtp.messages()) != 0 {
+		t.Fatal("unconfirmed mail was sent")
+	}
+	req.Override, req.Confirm = true, []string{string(sendcheck.ForgottenAttachment)}
+	if res, err = e.svc.Send(ctx, req); err != nil || !res.Sent {
+		t.Fatalf("confirmed: %v %+v", err, res)
+	}
+	// Without ConfirmWarnings (workflows, API) warnings do not block.
+	req = Request{IdentityID: e.ident.ID, Draft: req.Draft}
+	if res, err = e.svc.Send(ctx, req); err != nil || !res.Sent || len(res.Findings) == 0 {
+		t.Fatalf("non-interactive: %v %+v", err, res)
+	}
+}
+
 func TestCloudLinksSeparatePasswordMail(t *testing.T) {
 	e := newEnv(t, nil, nil, 0)
 	ctx := context.Background()

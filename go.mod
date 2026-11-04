@@ -3,6 +3,8 @@ module github.com/Midas1989/Mailclient
 go 1.24.0
 
 require (
+	filippo.io/age v1.2.1
+	github.com/Azure/go-ntlmssp v0.1.1
 	github.com/ProtonMail/go-crypto v1.5.2
 	github.com/SherClockHolmes/webpush-go v1.4.0
 	github.com/coreos/go-oidc/v3 v3.17.0
@@ -30,7 +32,6 @@ require (
 require github.com/cloudflare/circl v1.6.3 // indirect
 
 require (
-	filippo.io/age v1.2.1 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
 	github.com/danieljoos/wincred v1.2.3 // indirect

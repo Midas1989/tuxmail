@@ -65,6 +65,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		err = c.desktop(ctx, args[1:])
 	case "demo":
 		err = c.demoCmd(ctx, args[1:])
+	case "devserver": // hidden: development mail server (docs/ENTWICKLUNG.md)
+		err = c.devserverCmd(ctx, args[1:])
 	case "check-config":
 		err = c.checkConfig(args[1:])
 	case "user":

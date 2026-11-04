@@ -9,3 +9,7 @@ export const search = new SearchState(app.api);
 
 export { prefs } from './prefs.svelte';
 export type { Route, ViewMode, SidebarSel, ComposerInit, ChannelOption } from './app.svelte';
+
+// --- Cloud ---
+import { CloudState } from './cloud.svelte';
+export const cloud = new CloudState(app.api);

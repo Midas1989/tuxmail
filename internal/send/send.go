@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -121,6 +122,10 @@ type CloudOptions struct {
 	Files []compose.Attachment `json:"files,omitempty"`
 	// AccountID is the cloud account (Nextcloud, OpenCloud, Vaultwarden).
 	AccountID int64 `json:"accountId,omitempty"`
+	// FileAccounts optionally selects the cloud account per file (parallel
+	// to Files; 0 = AccountID), so every attachment can use its own
+	// delivery (KONZEPT 12.1 #3).
+	FileAccounts []int64 `json:"fileAccounts,omitempty"`
 	// Expiry of the shares (default 14 days).
 	Expiry time.Duration `json:"expiry,omitempty"`
 	// Delivery of the passwords (default in_mail).
@@ -161,6 +166,11 @@ type Request struct {
 	// Override confirms the blocking findings whose Check is in Confirm.
 	Override bool     `json:"override,omitempty"`
 	Confirm  []string `json:"confirm,omitempty"`
+	// ConfirmWarnings makes warnings (severity warn) block like blocking
+	// findings until they are confirmed (Override + Confirm). Interactive
+	// sends from the composer set it, so that hints such as "forgotten
+	// attachment" are shown before the mail leaves (KONZEPT 8.13).
+	ConfirmWarnings bool `json:"confirmWarnings,omitempty"`
 
 	Cloud CloudOptions `json:"cloud"`
 	PGP   PGPOptions   `json:"pgp"`
@@ -335,7 +345,10 @@ func (s *Service) runChecks(ctx context.Context, req *Request, res *Result) (*Bl
 		Source: req.Source, Chain: req.Chain, Draft: d,
 	})
 	res.Findings = hr.Findings
-	if !hr.Vetoed {
+	needsConfirm := func(f events.Finding) bool {
+		return f.Severity == events.SeverityBlock || (req.ConfirmWarnings && f.Severity == events.SeverityWarn)
+	}
+	if !hr.Vetoed && !slices.ContainsFunc(hr.Findings, needsConfirm) {
 		return nil, nil
 	}
 	confirmed := map[string]bool{}
@@ -346,11 +359,11 @@ func (s *Service) runChecks(ctx context.Context, req *Request, res *Result) (*Bl
 	}
 	var open []events.Finding
 	for _, f := range hr.Findings {
-		if f.Severity == events.SeverityBlock && !confirmed[f.Check] {
+		if needsConfirm(f) && !confirmed[f.Check] {
 			open = append(open, f)
 		}
 	}
-	if len(open) == 0 && !hasBlock(hr.Findings) {
+	if hr.Vetoed && len(open) == 0 && !hasBlock(hr.Findings) {
 		// Vetoed without a blocking finding (explicit hook veto).
 		if !req.Override || !confirmed["veto"] {
 			open = append(open, events.Finding{Check: "veto", Severity: events.SeverityBlock, Key: "send.vetoed",

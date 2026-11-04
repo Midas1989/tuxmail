@@ -19,10 +19,12 @@
   import ServerConnectWizard from '../components/settings/ServerConnectWizard.svelte';
   import Server from '@lucide/svelte/icons/server';
   import ScreenShell from './ScreenShell.svelte';
+  import SignatureSettings from '../components/settings/SignatureSettings.svelte';
   import TagSettings from '../components/settings/TagSettings.svelte';
   import WorkflowList from '../components/workflow/WorkflowList.svelte';
   import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
   import BackupSettings from '../components/settings/BackupSettings.svelte';
+  import CloudAccountsSettings from '../components/settings/CloudAccountsSettings.svelte'; // OAuth/Cloud accounts
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
   $effect(() => {
@@ -103,9 +105,13 @@
 
     <ChatSettings />
 
+    <SignatureSettings />
+
     <SnippetSettings />
 
     <AiSettingsCard />
+
+    <CloudAccountsSettings />
 
     <TagSettings />
 
