@@ -172,7 +172,7 @@ func TestSaveSignature(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	sig := must[app.Signature](t)(f.a.SaveSignature(ctx, app.Signature{Name: "Kurz", Plain: "Anna <Berger>\nTel. 123"}))
-	if sig.ID == 0 || sig.HTML != "Anna &lt;Berger&gt;<br>Tel. 123" {
+	if sig.ID == 0 || sig.HTML != "Anna &lt;Berger&gt;<br/>Tel. 123" || sig.Plain != "Anna <Berger>\nTel. 123" {
 		t.Fatalf("saved %+v", sig)
 	}
 	sig.Name = "Kurz 2"

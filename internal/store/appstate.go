@@ -721,10 +721,16 @@ func (s *Store) PurgeUploads(ctx context.Context, before time.Time) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	return collect(rows, func(sc scanner) (string, error) {
+	hashes, err := collect(rows, func(sc scanner) (string, error) {
 		var h string
 		return h, sc.Scan(&h)
 	})
+	if err != nil {
+		return nil, err
+	}
+	// Content-addressed: the same content may be a sent attachment or a
+	// signature image by now.
+	return s.UnreferencedBlobs(ctx, hashes)
 }
 
 // ==== Meeting proposals, contact cards, chat signatures ======================

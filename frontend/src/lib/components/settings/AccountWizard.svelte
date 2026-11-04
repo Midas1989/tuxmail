@@ -220,7 +220,7 @@
       ondone={() => (step = 'done')}
       onpassword={() => (usePassword = true)}
       onsettings={() => {
-        app.settingsAnchor = 'set-signin';
+        app.openSettings('security', 'signin');
         onclose();
       }}
     />

@@ -153,7 +153,7 @@ async function openMessage(page, subject) {
   });
 
   await step('2 account wizard: discovery (autoconfig/ISPDB) + create account', async () => {
-    await page.goto(base + '/#/settings');
+    await page.goto(base + '/#/settings/accounts');
     await page.getByRole('button', { name: 'Konto hinzufügen' }).first().click();
     const dlg = page.locator('[role=dialog]');
     await dlg.locator('input[autocomplete=name]').fill('Anna Berger');
@@ -249,7 +249,7 @@ async function openMessage(page, subject) {
 
 
   await step('8 settings: create a signature for the identity', async () => {
-    await page.goto(base + '/#/settings');
+    await page.goto(base + '/#/settings/accounts/signatures');
     await page.getByRole('button', { name: 'Neue Signatur' }).click();
     const ta = page.getByRole('textbox', { name: 'Signaturtext' }).first();
     await ta.waitFor({ timeout: 5000 });
@@ -395,7 +395,7 @@ async function openMessage(page, subject) {
   });
 
   await step('16 workflow (rule) created in the UI', async () => {
-    await page.goto(base + '/#/settings');
+    await page.goto(base + '/#/settings/automation/workflows');
     await page.getByRole('button', { name: 'Neuer Workflow' }).click();
     const dlg = page.locator('[role=dialog]');
     await dlg.locator('.meta input').first().fill('Kunden markieren');

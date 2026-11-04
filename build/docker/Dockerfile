@@ -19,6 +19,7 @@ ARG GO_IMAGE=docker.io/library/golang:1.26-alpine
 ARG RUNTIME_IMAGE=docker.io/library/alpine:3.22
 
 # ---------------------------------------------------------------- frontend
+# hadolint ignore=DL3006
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS frontend-build
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
@@ -35,6 +36,7 @@ COPY web/dist/ /out/
 FROM frontend-${FRONTEND} AS frontend
 
 # ---------------------------------------------------------------- go
+# hadolint ignore=DL3006
 FROM --platform=$BUILDPLATFORM ${GO_IMAGE} AS go
 ARG TARGETOS
 ARG TARGETARCH
@@ -49,8 +51,11 @@ RUN --mount=type=cache,target=/root/go/pkg/mod --mount=type=cache,target=/root/.
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/tuxmail ./cmd/tuxmail
 # Messenger plugins (WhatsApp, Telegram, Matrix, Signal), pure Go.
+# Limited build parallelism: amd64 and arm64 build side by side on one runner,
+# and the large messenger libraries otherwise exhaust the runner's memory.
+# hadolint ignore=DL3059
 RUN --mount=type=cache,target=/root/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
-    sh build/plugins.sh target "$TARGETOS" "$TARGETARCH" /out/plugins
+    GOFLAGS=-p=2 GOMEMLIMIT=3GiB sh build/plugins.sh target "$TARGETOS" "$TARGETARCH" /out/plugins
 
 # ---------------------------------------------------------------- runtime
 # hadolint ignore=DL3006
