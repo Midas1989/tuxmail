@@ -70,6 +70,23 @@ func TestDefaultsAndEnv(t *testing.T) {
 	}
 }
 
+func TestBackgroundSyncLimits(t *testing.T) {
+	c, err := Parse([]byte(contractYAML))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Limits.BackgroundSync || c.Limits.BackgroundSyncMaxUsers != 500 {
+		t.Fatalf("defaults: %+v", c.Limits)
+	}
+	c, err = Parse([]byte("limits: {background_sync: false, background_sync_max_users: 20}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Limits.BackgroundSync || c.Limits.BackgroundSyncMaxUsers != 20 {
+		t.Fatalf("explicit: %+v", c.Limits)
+	}
+}
+
 func TestEmptyFile(t *testing.T) {
 	if _, err := Parse(nil); err != nil {
 		t.Fatal(err)
@@ -92,6 +109,8 @@ func TestValidation(t *testing.T) {
 		"registration":  "auth: {registration: open}\n",
 		"oidc":          "auth: {oidc: {enabled: true}}\n",
 		"limits":        "limits: {max_upload_mb: 0}\n",
+		"bg max users":  "limits: {background_sync_max_users: 0}\n",
+		"bg sync type":  "limits: {background_sync: maybe}\n",
 	}
 	for name, y := range cases {
 		if _, err := Parse([]byte(y)); err == nil {

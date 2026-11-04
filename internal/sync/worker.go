@@ -335,7 +335,7 @@ func (w *Worker) nextDue(ctx context.Context) time.Duration {
 	}
 	next := w.lastList.Add(cfg.FolderListInterval)
 	for _, t := range w.lastSync {
-		if n := t.Add(cfg.PollInterval); n.Before(next) {
+		if n := t.Add(w.pollInterval()); n.Before(next) {
 			next = n
 		}
 	}
@@ -446,7 +446,7 @@ func (w *Worker) dueFolders(ctx context.Context) ([]domain.Folder, error) {
 			continue // not on the server yet
 		}
 		last, synced := w.lastSync[f.ID]
-		if w.syncAll || w.dirty[f.ID] || !synced || now.Sub(last) >= w.m.cfg.PollInterval {
+		if w.syncAll || w.dirty[f.ID] || !synced || now.Sub(last) >= w.pollInterval() {
 			out = append(out, f)
 			delete(w.dirty, f.ID)
 		}
@@ -597,7 +597,7 @@ func parentPath(f domain.Folder) string {
 // ==== watching =================================================================
 
 func (w *Worker) ensureWatches(ctx context.Context) {
-	if len(w.m.cfg.WatchRoles) == 0 {
+	if !w.watchesFolders() {
 		return
 	}
 	folders, err := w.m.st.ListFolders(ctx, w.acc.ID)
@@ -605,10 +605,7 @@ func (w *Worker) ensureWatches(ctx context.Context) {
 		return
 	}
 	for _, f := range folders {
-		watch := false
-		for _, r := range w.m.cfg.WatchRoles {
-			watch = watch || (r == f.Role && r != domain.RoleNone)
-		}
+		watch := w.watchFolder(f)
 		w.mu.Lock()
 		active := w.watching[f.ID]
 		w.mu.Unlock()

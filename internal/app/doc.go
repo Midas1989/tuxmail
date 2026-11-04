@@ -11,7 +11,9 @@
 //     WebSocket /api/events), one App per user on
 //     data_dir/users/<id>/tuxmail.db.
 //
-// Areas: accounts.go (accounts, identities, persons, folders), messages.go
+// Areas: accounts.go (accounts, identities, persons, folders),
+// account_edit.go (account edit dialog: settings, password change,
+// connection tests, delete/keep data, aliases, diagnostics), messages.go
 // (classic list, detail, attachments, move/flags), conversations.go and
 // items.go (thread and person grouping, hybrid scopes with inScope, chat
 // bubbles), chatfeatures.go (chat folders, drafts, scheduled messages,

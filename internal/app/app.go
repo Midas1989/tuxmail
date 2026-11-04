@@ -117,6 +117,7 @@ type App struct {
 	wfReg   *workflow.Registry
 	sync    Syncer
 	mgr     *tsync.Manager
+	provReg *tsync.Registry // providers of the sync engine (account tests, account_edit.go)
 	render  MessageRenderer
 	log     *slog.Logger
 	msgr    *messenger.Service
@@ -222,6 +223,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 			opts.Sync.Configure(&cfg)
 		}
 		a.syncCreds = cfg.Credentials
+		a.provReg = cfg.Providers
 		m, err := tsync.New(cfg)
 		if err != nil {
 			return nil, err
@@ -315,6 +317,28 @@ func (a *App) Close() error {
 		a.bus.Close()
 	}
 	return nil
+}
+
+// ReleaseUIState drops state that only serves an interactive session while
+// the App keeps running for background sync (server mode, idle users):
+// desktop provisioning sessions, finished sign-in flows and cached cloud
+// clients (rebuilt on demand). Sync, timers and workflows are unaffected.
+func (a *App) ReleaseUIState() {
+	a.remoteMu.Lock()
+	a.remote = map[string]*remoteSession{}
+	a.remoteMu.Unlock()
+	if a.oauth != nil {
+		a.oauth.mu.Lock()
+		for id, f := range a.oauth.flows {
+			if f.status.Status != "pending" {
+				delete(a.oauth.flows, id)
+			}
+		}
+		a.oauth.mu.Unlock()
+	}
+	a.cloud.mu.Lock()
+	a.cloud.clients = nil
+	a.cloud.mu.Unlock()
 }
 
 // Events returns the UI event hub.

@@ -38,6 +38,11 @@
   import ComfortSettingsCard from '../components/comfort/ComfortSettingsCard.svelte'; // spam, categories, spell, merge, PDF
   import SmimeSettingsCard from '../components/comfort/SmimeSettingsCard.svelte';
   import TeamSettings from '../components/team/TeamSettings.svelte'; // team mailboxes (server mode)
+  import AccountEditDialog from '../components/settings/AccountEditDialog.svelte'; // account edit
+  import ChevronRight from '@lucide/svelte/icons/chevron-right';
+
+  /** Account whose edit dialog is open ("Konto bearbeiten"). */
+  let editAccountId = $state<number | null>(null);
 
   // Deep links from the tree / palette ("Manage tags", "Workflows").
   $effect(() => {
@@ -94,6 +99,7 @@
       <ul class="accounts">
         {#each app.accounts as a (a.id)}
           <li>
+            <button class="acc-row" aria-label={t('settings.accountEdit.open', { name: a.displayName })} onclick={() => (editAccountId = a.id)}>
             <span class="dot" style:background={a.color}></span>
             <div class="acc">
               <span class="name">
@@ -104,6 +110,8 @@
             </div>
             <span class="kind">{t(`settings.protocol.${a.kind}` as 'settings.protocol.imap')}</span>
             <span class="state" class:on={a.enabled}>{a.enabled ? t('settings.active') : t('settings.inactive')}</span>
+            <ChevronRight size={15} class="chev" />
+            </button>
           </li>
         {/each}
       </ul>
@@ -216,6 +224,9 @@
 {#if connectOpen}
   <ServerConnectWizard onclose={() => (connectOpen = false)} />
 {/if}
+{#if editAccountId !== null}
+  <AccountEditDialog accountId={editAccountId} onclose={() => (editAccountId = null)} />
+{/if}
 
 <style>
   .cols {
@@ -259,11 +270,29 @@
     padding: 0;
   }
   .accounts li {
+    border-top: 1px solid var(--tm-line);
+  }
+  .acc-row {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 0;
-    border-top: 1px solid var(--tm-line);
+    width: 100%;
+    padding: 10px 4px;
+    background: none;
+    border: none;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    border-radius: 8px;
+  }
+  .acc-row:hover,
+  .acc-row:focus-visible {
+    background: var(--tm-surface-2, var(--tm-surface-3));
+  }
+  .acc-row :global(.chev) {
+    color: var(--tm-faint);
+    flex: none;
   }
   .dot {
     width: 10px;

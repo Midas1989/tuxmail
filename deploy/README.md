@@ -381,6 +381,7 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_auth_password_min_length` | `12` | Passwort-Mindestlänge |
 | `tuxmail_auth_session_lifetime` | `168h` | Sitzungsdauer |
 | `tuxmail_login_rate_per_minute` | `10` | Login-Ratenbegrenzung |
+| `tuxmail_background_sync` | `true` | Hintergrund-Sync (Mail, Workflows, Abwesenheit, Push) für nicht angemeldete Benutzer mit aktivem Konto (`limits.background_sync`) |
 | `tuxmail_oidc_enabled` | `false` | OIDC-Anmeldung |
 | `tuxmail_oidc_issuer` / `_client_id` | `""` | OIDC-Provider |
 | `tuxmail_oidc_client_secret` | `""` | **Vault!** → `/etc/tuxmail/oidc_client_secret` (0640) |

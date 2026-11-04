@@ -47,3 +47,7 @@ auth:
 limits:
   max_upload_mb: 50
   login_rate_per_minute: 10
+  # Keep mail sync, workflows, out-of-office and push notifications running
+  # for users who are not logged in (users with at least one enabled account).
+  background_sync: true
+  background_sync_max_users: 500

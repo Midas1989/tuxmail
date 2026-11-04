@@ -169,7 +169,8 @@ func (s *Server) Serve(ctx context.Context, l net.Listener) error {
 		BaseContext:       func(net.Listener) context.Context { return context.WithoutCancel(ctx) },
 	}
 	go s.housekeeping(ctx)
-	s.startTeam(ctx) // team.go
+	go s.apps.runBackground(ctx) // background.go: sync for users who are not logged in
+	s.startTeam(ctx)             // team.go
 	errc := make(chan error, 1)
 	go func() {
 		s.log.Info("tuxmail server listening", "addr", l.Addr().String(), "public_url", s.cfg.PublicURL, "version", s.version)

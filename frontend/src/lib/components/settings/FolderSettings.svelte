@@ -12,8 +12,18 @@
   import type { ArchiveMode, AssignableRole, FolderBehaviour, FolderConfig, FolderRoleEntry, TrashMode } from '../../types';
   import { badgeOf, folderOptions, folderSettingsTarget, missingRoles } from '../../folderconfig';
 
+  interface Props {
+    /** Fixed account (account edit dialog): no account picker, no card frame. */
+    fixedAccountId?: number;
+  }
+  let { fixedAccountId }: Props = $props();
+  const embedded = $derived(!!fixedAccountId);
+
   let accountId = $state(folderSettingsTarget.accountId || app.mailAccounts[0]?.id || 0);
   folderSettingsTarget.accountId = 0;
+  $effect.pre(() => {
+    if (fixedAccountId) accountId = fixedAccountId;
+  });
   let cfg = $state<FolderConfig | null>(null);
   let busy = $state(false);
 
@@ -67,10 +77,10 @@
   const saveSentMode = $derived(cfg ? (cfg.behaviour.saveSentAuto ? 'auto' : cfg.behaviour.saveSent ? 'on' : 'off') : 'auto');
 </script>
 
-<section class="card wide-card" id="set-folders" aria-labelledby="set-folders-h">
+<section class="card wide-card" class:embedded id={embedded ? undefined : 'set-folders'} aria-labelledby="set-folders-h">
   <div class="card-head">
     <h2 id="set-folders-h">{t('settings.folders.title')}</h2>
-    {#if app.mailAccounts.length}
+    {#if app.mailAccounts.length && !embedded}
       <select class="input acc" aria-label={t('settings.folders.account')} bind:value={accountId}>
         {#each app.mailAccounts as a (a.id)}<option value={a.id}>{a.displayName}</option>{/each}
       </select>
@@ -172,6 +182,11 @@
     background: var(--tm-surface);
     border: 1px solid var(--tm-line);
     border-radius: var(--tm-radius-lg);
+  }
+  .card.embedded {
+    padding: 0;
+    border: none;
+    background: none;
   }
   .card-head {
     display: flex;
