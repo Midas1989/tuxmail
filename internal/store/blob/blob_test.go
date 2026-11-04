@@ -191,3 +191,28 @@ func TestWalkAndConcurrentPut(t *testing.T) {
 		t.Fatalf("walk error not propagated: %v", err)
 	}
 }
+
+// Close is called by net/http's transport and by the caller's defer, possibly
+// at the same time (data race seen in CI).
+func TestReaderConcurrentClose(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := s.Put(strings.NewReader("hello blob"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 50; i++ {
+		rc, err := s.Open(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var wg sync.WaitGroup
+		for j := 0; j < 2; j++ {
+			wg.Add(1)
+			go func() { defer wg.Done(); rc.Close() }()
+		}
+		wg.Wait()
+	}
+}

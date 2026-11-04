@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -136,13 +137,21 @@ func (s *Store) Open(hash string) (io.ReadCloser, error) {
 type reader struct {
 	dec *zstd.Decoder
 	f   *os.File
+
+	// Close may be called twice and concurrently, e.g. by net/http's
+	// transport (request body) and by the caller's defer.
+	once     sync.Once
+	closeErr error
 }
 
 func (r *reader) Read(p []byte) (int, error) { return r.dec.Read(p) }
 
 func (r *reader) Close() error {
-	r.dec.Close()
-	return r.f.Close()
+	r.once.Do(func() {
+		r.dec.Close()
+		r.closeErr = r.f.Close()
+	})
+	return r.closeErr
 }
 
 // Has reports whether a blob exists.
