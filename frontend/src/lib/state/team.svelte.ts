@@ -94,10 +94,23 @@ export class TeamState {
   private async followHash(): Promise<void> {
     const q = new URLSearchParams(location.hash.split('?')[1] ?? '');
     const tid = Number(q.get('team'));
-    if (!tid || !this.mailboxes.some((m) => m.id === tid)) return;
-    if (this.activeId !== tid) await this.enter(tid);
+    if (!tid || !(await this.enterIfMember(tid))) return;
     const cid = Number(q.get('conversation'));
     if (cid) await this.app.selectConversation(cid);
+  }
+
+  /**
+   * Enter a team mailbox requested from outside (service-worker click, native
+   * deep link) - only if the signed-in user is a member according to the
+   * server-provided mailbox list (NG-10). Returns false (and changes nothing)
+   * for any other id.
+   */
+  async enterIfMember(id: number): Promise<boolean> {
+    if (!Number.isInteger(id) || id <= 0 || !this.client) return false;
+    if (!this.mailboxes.length) await this.loadMailboxes();
+    if (!this.mailboxes.some((m) => m.id === id)) return false;
+    if (this.activeId !== id) await this.enter(id);
+    return true;
   }
 
   async loadMailboxes(): Promise<void> {

@@ -191,6 +191,32 @@ describe('deep links behind the app lock (NG-03)', () => {
   });
 });
 
+describe('team deep link (NG-10)', () => {
+  it('does not enter a team mailbox the user is not a member of, nor select its conversation', async () => {
+    const { openTarget } = await import('./capacitor');
+    const { app, team } = await import('../state');
+    const enter = vi.spyOn(team, 'enter').mockResolvedValue();
+    const select = vi.spyOn(app, 'selectConversation').mockResolvedValue();
+    await openTarget({ hash: '#/mail?team=99&view=chat&conversation=5', conversationId: 5 });
+    expect(enter).not.toHaveBeenCalled();
+    expect(select).not.toHaveBeenCalled();
+    enter.mockRestore();
+    select.mockRestore();
+  });
+
+  it('enters through the membership check for a member mailbox', async () => {
+    const { openTarget } = await import('./capacitor');
+    const { app, team } = await import('../state');
+    const member = vi.spyOn(team, 'enterIfMember').mockResolvedValue(true);
+    const select = vi.spyOn(app, 'selectConversation').mockResolvedValue();
+    await openTarget({ hash: '#/mail?team=2&view=chat&conversation=5', conversationId: 5 });
+    expect(member).toHaveBeenCalledWith(2);
+    expect(select).toHaveBeenCalledWith(5);
+    member.mockRestore();
+    select.mockRestore();
+  });
+});
+
 describe('native transport selection', () => {
   it('uses HTTP with base URL + Bearer token inside Capacitor', async () => {
     (window as unknown as { Capacitor: unknown }).Capacitor = { isNativePlatform: () => true };

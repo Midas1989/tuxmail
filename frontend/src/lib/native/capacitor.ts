@@ -356,7 +356,7 @@ async function installBackButton(): Promise<void> {
   });
 }
 
-async function openTarget(target: DeepLinkTarget): Promise<void> {
+export async function openTarget(target: DeepLinkTarget): Promise<void> {
   if (target.hash.startsWith('#/native-settings')) {
     location.hash = target.hash;
     return;
@@ -365,9 +365,12 @@ async function openTarget(target: DeepLinkTarget): Promise<void> {
   if (location.hash !== target.hash.split('?')[0]) location.hash = target.hash.split('?')[0];
   if (q.get('view') === 'chat' && prefs.viewMode !== 'chat') await app.setViewMode('chat');
   // Team mailbox notifications carry #/mail?team=<id>&conversation=<id> (conversation ids of the team store).
+  // The id comes from outside the app: enter only mailboxes the user is a member of (NG-10); for any other
+  // id nothing is entered and the (team-store) conversation id is not applied to the personal mailbox.
   const teamId = Number(q.get('team'));
-  if (teamId && team.activeId !== teamId) await team.enter(teamId);
-  else if (!teamId && team.activeId != null) await team.leave();
+  if (teamId) {
+    if (!(await team.enterIfMember(teamId))) return;
+  } else if (team.activeId != null) await team.leave();
   if (target.conversationId != null) await app.selectConversation(target.conversationId);
   if (target.messageId != null) await app.selectMessage(target.messageId);
   if (target.compose) app.openCompose();
