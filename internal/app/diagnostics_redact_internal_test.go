@@ -37,3 +37,41 @@ func TestRedactTextSecrets(t *testing.T) {
 		t.Errorf("over-redaction: %q", got)
 	}
 }
+
+// NC-05: protocol lines without a key/value separator.
+func TestRedactTextProtocolSecrets(t *testing.T) {
+	pgp := "-----BEGIN PGP PRIVATE KEY BLOCK-----\nlQVYBFxxxxxSECRETKEYBYTES\nabcdefghij\n-----END PGP PRIVATE KEY BLOCK-----"
+	for _, tc := range []struct{ line, secret string }{
+		{`imap: C: a001 LOGIN "anna@example.org" "S3cr3tValue1"`, "S3cr3tValue1"},
+		{`imap: C: a001 LOGIN anna S3cr3tValue1`, "S3cr3tValue1"},
+		{`imap: C: a002 LOGIN "anna" "pa\"S3cr3tValue1"`, "S3cr3tValue1"},
+		{`smtp: C: AUTH PLAIN AGFubmEAUzNjcjN0VmFsdWUx`, "AGFubmEAUzNjcjN0VmFsdWUx"},
+		{`smtp: C: AUTH LOGIN YW5uYQ==`, "YW5uYQ=="},
+		{`smtp: C: AUTH XOAUTH2 dXNlcj1hbm5hAWF1dGg9QmVhcmVyIHlhMjkuQTBBUnJkYU0tdG9rAQE=`, "dXNlcj1hbm5hAWF1dGg9QmVhcmVyIHlhMjkuQTBBUnJkYU0tdG9rAQE="},
+		{`imap: C: a003 AUTHENTICATE XOAUTH2 dXNlcj1hbm5hAWF1dGg9QmVhcmVyIHlhMjkuQTBBUnJkYU0tdG9rAQE=`, "dXNlcj1hbm5hAWF1dGg9"},
+		{"level=DEBUG msg=" + pgp + " next=1", "SECRETKEYBYTES"},
+		{"level=DEBUG msg=\"-----BEGIN PGP PRIVATE KEY BLOCK-----\\nlQVYBFSECRETKEYBYTES\\n-----END PGP PRIVATE KEY BLOCK-----\" x=1", "SECRETKEYBYTES"},
+		{"-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAASECRETKEYBYTES", "SECRETKEYBYTES"},
+		{"-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEASECRETKEYBYTES\n-----END RSA PRIVATE KEY-----", "SECRETKEYBYTES"},
+	} {
+		out := redactText(tc.line)
+		if strings.Contains(out, tc.secret) {
+			t.Errorf("redactText(%q) = %q still contains %q", tc.line, out, tc.secret)
+		}
+	}
+	// Surrounding text and ordinary lines are kept.
+	if got := redactText("before " + "-----BEGIN PGP PRIVATE KEY BLOCK-----\nAAAA\n-----END PGP PRIVATE KEY BLOCK-----" + " after"); got != "before [redacted-private-key] after" {
+		t.Errorf("block: %q", got)
+	}
+	for _, line := range []string{
+		"login failed for user anna",
+		"imap: S: a001 OK LOGIN completed",
+		"smtp: auth plain not offered",
+		"-----BEGIN PGP PUBLIC KEY BLOCK-----\nmQENB\n-----END PGP PUBLIC KEY BLOCK-----",
+		"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+	} {
+		if got := redactText(line); got != line {
+			t.Errorf("over-redaction: %q -> %q", line, got)
+		}
+	}
+}

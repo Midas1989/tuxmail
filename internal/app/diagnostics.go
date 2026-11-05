@@ -259,6 +259,17 @@ var (
 	userinfoRe = regexp.MustCompile(`(://[^/\s:@]*:)[^@\s/]+@`)
 	// jwtRe matches JSON Web Tokens anywhere in the text.
 	jwtRe = regexp.MustCompile(`\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]*`)
+	// imapLoginRe matches the IMAP command LOGIN <user> <password> (atoms or
+	// quoted strings; protocol traces write the command in upper case, which
+	// keeps prose such as "login failed for user" untouched) (NC-05).
+	imapLoginRe = regexp.MustCompile(`\bLOGIN[ \t]+("(?:[^"\\]|\\.)*"|[^\s"]+)[ \t]+(?:"(?:[^"\\]|\\.)*"|[^\s"]+)`)
+	// smtpAuthRe matches SMTP AUTH / IMAP AUTHENTICATE with an initial
+	// response (AUTH PLAIN <base64>, AUTH XOAUTH2 <base64>, ...) (NC-05).
+	smtpAuthRe = regexp.MustCompile(`\b(AUTH(?:ENTICATE)?[ \t]+(?:PLAIN|LOGIN|XOAUTH2|OAUTHBEARER|CRAM-MD5|SCRAM-SHA-[0-9]+(?:-PLUS)?))[ \t]+[A-Za-z0-9+/=_\-]{4,}`)
+	// privateKeyRe matches armored private key blocks (PGP, PKCS#8, RSA, EC,
+	// OpenSSH); a block without END marker (truncated log) is cut at the end
+	// of the text (NC-05).
+	privateKeyRe = regexp.MustCompile(`(?s)-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----.*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|\z)`)
 )
 
 // maskEmail turns anna.berger@example.org into a***@example.org.
@@ -266,6 +277,9 @@ func maskEmail(s string) string { return emailRe.ReplaceAllString(s, "$1***@$2")
 
 // redactText masks e-mail addresses and key=value secrets in free text.
 func redactText(s string) string {
+	s = privateKeyRe.ReplaceAllString(s, "[redacted-private-key]")
+	s = smtpAuthRe.ReplaceAllString(s, "$1 [redacted]")
+	s = imapLoginRe.ReplaceAllString(s, `LOGIN $1 "[redacted]"`)
 	s = userinfoRe.ReplaceAllString(s, "$1[redacted]@")
 	s = jwtRe.ReplaceAllString(s, "[redacted-jwt]")
 	return secretRe.ReplaceAllString(maskEmail(s), "$1$2$3[redacted]")
