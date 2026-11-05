@@ -4,6 +4,7 @@ package opencloud
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -181,7 +182,8 @@ func StartLogin(ctx context.Context, hc *http.Client, server string, o LoginOpti
 
 // Exchange trades the authorization code for tokens.
 func (l *Login) Exchange(ctx context.Context, hc *http.Client, code, state string) (*oauth2.Token, error) {
-	if state != l.State {
+	// Constant-time compare, like the loopback handler of internal/oauth (NC-06).
+	if l.State == "" || subtle.ConstantTimeCompare([]byte(state), []byte(l.State)) != 1 {
 		return nil, errors.New("opencloud: OIDC state mismatch")
 	}
 	if code == "" {
