@@ -189,6 +189,42 @@ build/checksums.sh                         # dist/checksums.txt
 docker build -f build/docker/Dockerfile -t tuxmail:local .
 ```
 
+### Alles auf einmal: `build/build-all.sh`
+
+Das Skript ruft genau die obigen Skripte auf, prüft vorher die Voraussetzungen und fasst am Ende zusammen, was
+gebaut wurde. Es braucht weder GitHub noch Actions.
+
+```bash
+build/build-all.sh --check                  # was lässt sich auf diesem Rechner bauen, was fehlt?
+build/build-all.sh                          # alles, was möglich ist; Fehlendes wird übersprungen
+build/build-all.sh server windows-desktop   # nur diese Gruppen
+build/build-all.sh --strict                 # fehlende Voraussetzung = Fehler (z. B. für Skripte)
+build/build-all.sh --arch amd64 server      # nur eine Architektur (Server und Windows)
+build/build-all.sh --offline server         # ohne Netz: Go-/npm-Caches müssen gefüllt sein, kein signal-cli
+build/build-all.sh android --android-tasks "fossRelease playRelease"
+```
+
+| Gruppe | Ergebnis in `dist/` | Voraussetzungen auf dem Rechner |
+|---|---|---|
+| `frontend` | `web/dist` (Zwischenstand) | Go, Node 22 |
+| `server` | `tuxmail_<v>_linux_{amd64,arm64}.tar.gz`, `…_windows_{amd64,arm64}.zip` | Go, Node 22 (Cross-Build, kein C-Compiler) |
+| `linux-desktop` | `.deb`, `.rpm`, portables `tar.gz`, AppImage (nur für die **Host**-Architektur) | gcc, pkg-config, `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`; nfpm und die AppImage-Werkzeuge werden geprüft geladen |
+| `windows-desktop` | `…-windows-<arch>-portable.zip`, `…-setup.exe` (Cross-Build) | Go, go-winres (wird bei Bedarf installiert) |
+| `android` | `foss`-APK (Debug; mit `TUXMAIL_KEYSTORE_FILE` Release) | JDK 21, Android SDK (Platform 36, Build-Tools 36), Node 22 |
+| `docker` | Image `tuxmail:local` | docker oder podman |
+| `checksums` | `checksums.txt` | – |
+
+Hinweise:
+
+- **Signal-Komponente:** Ohne `TUXMAIL_SIGNAL_CLI=skip` lädt der Build signal-cli (geprüfte Pins in
+  `internal/messenger/signalcli/pins.env`). Mit `--offline` wird sie weggelassen; die App bietet sie dann zum
+  Nachinstallieren an.
+- **AppImage offline:** `LINUXDEPLOY`, `LINUXDEPLOY_PLUGIN_GTK` und `APPIMAGETOOL` müssen auf lokale Dateien zeigen.
+- **Eigene Server-Archive installieren:** `ansible-playbook … -e tuxmail_binary_src=/pfad/tuxmail_<v>_linux_amd64.tar.gz`
+  (siehe `deploy/README.md`). Diese Variante prüft keine Release-Signatur, weil nichts heruntergeladen wird.
+- **Android:** Der Android-Build braucht das Frontend im Modus `build:capacitor`; `mobile/scripts/build.sh` erledigt das.
+- **Windows-Binaries** sind nicht Authenticode-signiert; Windows zeigt „Unbekannter Herausgeber“.
+
 Ergebnisse liegen in `dist/`, Zwischenstände in `build/out/` (beide von git ignoriert).
 `TUXMAIL_VERSION=1.2.3` überschreibt die Version, `TUXMAIL_RELEASE=1` erzwingt die Release-Version aus `VERSION`.
 
