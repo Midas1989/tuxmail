@@ -156,6 +156,10 @@ func RestoreServer(ctx context.Context, src Source, passphrase, dataDir string) 
 	for _, f := range m.Files {
 		sums[f.Path] = f
 	}
+	lim := &extractLimits{total: MaxServerRestoreBytes}
+	if err := lim.checkManifest(m); err != nil {
+		return nil, err
+	}
 	for {
 		h, err := ar.next()
 		if err == io.EOF {
@@ -170,8 +174,11 @@ func RestoreServer(ctx context.Context, src Source, passphrase, dataDir string) 
 			(h.Typeflag != tar.TypeReg && h.Typeflag != 0) || !filepath.IsLocal(filepath.FromSlash(name)) {
 			return nil, fmt.Errorf("%w: unexpected entry %q", ErrTampered, h.Name)
 		}
+		if h.Size != fe.Size {
+			return nil, fmt.Errorf("%w: size of %s does not match the manifest", ErrTampered, name)
+		}
 		dst := filepath.Join(tmp, filepath.FromSlash(strings.TrimPrefix(name, serverPrefix)))
-		if err := writeEntry(dst, ar, h.Size); err != nil {
+		if err := writeEntry(dst, ar, h.Size, MaxServerRestoreBytes, lim); err != nil {
 			return nil, err
 		}
 		f, err := os.Open(dst)

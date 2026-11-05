@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"filippo.io/age"
@@ -196,10 +197,25 @@ type reader struct {
 	zr        *zstd.Decoder
 	tr        *tar.Reader
 	encrypted bool
+	in        *countingReader // compressed bytes read from the source
+}
+
+// countingReader counts the bytes read from the (compressed) archive; the
+// extraction limits compare it with the bytes the archive expands to.
+type countingReader struct {
+	r io.Reader
+	n atomic.Int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n.Add(int64(n))
+	return n, err
 }
 
 func openReader(r io.Reader, passphrase string) (*reader, error) {
-	br := bufio.NewReader(r)
+	cr := &countingReader{r: r}
+	br := bufio.NewReader(cr)
 	head, _ := br.Peek(len(ageMagic))
 	src := io.Reader(br)
 	encrypted := false
@@ -233,7 +249,7 @@ func openReader(r io.Reader, passphrase string) (*reader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrTampered, err)
 	}
-	return &reader{zr: zr, tr: tar.NewReader(zr), encrypted: encrypted}, nil
+	return &reader{zr: zr, tr: tar.NewReader(zr), encrypted: encrypted, in: cr}, nil
 }
 
 func (r *reader) close() { r.zr.Close() }

@@ -137,6 +137,7 @@ func peek(src Source, passphrase string) (*Manifest, error) {
 // extractOne unpacks one archive into dir. full also extracts the regular
 // files (db, secrets); bases only contribute blobs.
 func extractOne(ctx context.Context, src Source, passphrase, dir string, full bool) (*Manifest, error) {
+	lim := &extractLimits{total: MaxExtractBytes}
 	rc, err := src.Open()
 	if err != nil {
 		return nil, err
@@ -154,6 +155,9 @@ func extractOne(ctx context.Context, src Source, passphrase, dir string, full bo
 	sums := map[string]FileEntry{}
 	for _, f := range m.Files {
 		sums[f.Path] = f
+	}
+	if err := lim.checkManifest(m); err != nil {
+		return nil, err
 	}
 	got := map[string]bool{}
 	for {
@@ -181,23 +185,31 @@ func extractOne(ctx context.Context, src Source, passphrase, dir string, full bo
 				return nil, fmt.Errorf("%w: bad blob entry %q", ErrTampered, name)
 			}
 			dst := filepath.Join(dir, "blobs", hash[0:2], hash[2:4], hash)
-			if err := writeEntry(dst, ar, h.Size); err != nil {
+			if err := writeEntry(dst, ar, h.Size, MaxBlobEntryBytes, lim); err != nil {
 				return nil, err
 			}
 			if err := verifyBlob(dst, hash); err != nil {
 				return nil, err
 			}
 		case !full:
-			if _, err := io.Copy(io.Discard, ar.tr); err != nil {
-				return nil, fmt.Errorf("%w: %v", ErrTampered, err)
+			// Bases only contribute blobs; the rest is read (to advance
+			// the stream) but never stored. It still counts against the
+			// extraction limits.
+			if err := copyLimited(io.Discard, ar, h.Size, MaxExtractBytes, lim); err != nil {
+				return nil, err
 			}
 		default:
 			fe, ok := sums[name]
 			if !ok {
 				return nil, fmt.Errorf("%w: %q is not listed in the manifest", ErrTampered, name)
 			}
+			// The header size must equal the manifest size BEFORE anything
+			// is written (NC-03).
+			if h.Size != fe.Size {
+				return nil, fmt.Errorf("%w: size of %s does not match the manifest", ErrTampered, name)
+			}
 			dst := filepath.Join(dir, filepath.FromSlash(name))
-			if err := writeEntry(dst, ar, h.Size); err != nil {
+			if err := writeEntry(dst, ar, h.Size, MaxExtractBytes, lim); err != nil {
 				return nil, err
 			}
 			sum, size, err := fileSum(dst)
@@ -220,7 +232,108 @@ func extractOne(ctx context.Context, src Source, passphrase, dir string, full bo
 	return m, nil
 }
 
-func writeEntry(dst string, ar *reader, size int64) error {
+// Extraction limits (NC-03). A restore unpacks an archive that may come from
+// an untrusted uploader into a temporary directory; without bounds a few KiB
+// of zstd expand into gigabytes of disk. The variables are exported so
+// operators and tests can adjust them.
+var (
+	// MaxExtractBytes bounds the bytes one archive may expand to (and the
+	// size of any single non-blob entry): twice the upload limit of the app
+	// (8 GiB, app.MaxIOUpload).
+	MaxExtractBytes int64 = 16 << 30
+	// MaxBlobEntryBytes bounds a single blob entry (a stored zstd file of
+	// one message; the largest importable message is 256 MiB).
+	MaxBlobEntryBytes int64 = 512 << 20
+	// MaxServerRestoreBytes bounds RestoreServer, which restores a whole
+	// data directory for an administrator (no uploader involved).
+	MaxServerRestoreBytes int64 = 1 << 40
+	// ExpansionSlack and MaxExpansionRatio bound how far an archive may
+	// expand relative to the compressed bytes read so far: out <= slack +
+	// ratio*in. Real data stays far below (SQLite ~5-20x, blobs are
+	// already compressed); a zero-filled bomb is stopped early.
+	ExpansionSlack    int64 = 32 << 20
+	MaxExpansionRatio int64 = 1000
+)
+
+// ErrTooLarge is wrapped (together with ErrTampered) when an archive exceeds
+// the extraction limits.
+var ErrTooLarge = errors.New("backup: archive expands beyond the extraction limits")
+
+func tooLarge(format string, args ...any) error {
+	return fmt.Errorf("%w: %w: %s", ErrTampered, ErrTooLarge, fmt.Sprintf(format, args...))
+}
+
+// extractLimits is the running account of one archive extraction.
+type extractLimits struct {
+	total int64 // bytes the archive may expand to
+	used  int64 // bytes written/read so far
+}
+
+// checkManifest rejects a manifest that already declares more than allowed.
+func (l *extractLimits) checkManifest(m *Manifest) error {
+	var sum int64
+	for _, f := range m.Files {
+		if f.Size < 0 || f.Size > l.total || sum > l.total-f.Size {
+			return tooLarge("%s declares %d bytes", f.Path, f.Size)
+		}
+		sum += f.Size
+	}
+	return nil
+}
+
+// reserve accounts for an entry of the declared size before it is copied.
+func (l *extractLimits) reserve(name string, size, entryMax int64) error {
+	switch {
+	case size < 0:
+		return fmt.Errorf("%w: negative size for %s", ErrTampered, name)
+	case size > entryMax:
+		return tooLarge("%s declares %d bytes (limit %d)", name, size, entryMax)
+	case size > l.total-l.used:
+		return tooLarge("%s would exceed the %d byte total", name, l.total)
+	}
+	return nil
+}
+
+// copyLimited copies exactly size bytes of the current entry. The declared
+// size is checked against the limits first; while copying, the bytes written
+// are held against the compressed bytes consumed (expansion ratio).
+func copyLimited(dst io.Writer, ar *reader, size, entryMax int64, l *extractLimits) error {
+	if err := l.reserve("entry", size, entryMax); err != nil {
+		return err
+	}
+	buf := make([]byte, 256<<10)
+	var n int64
+	src := io.LimitReader(ar.tr, size)
+	for {
+		k, rerr := src.Read(buf)
+		if k > 0 {
+			if _, werr := dst.Write(buf[:k]); werr != nil {
+				return werr
+			}
+			n += int64(k)
+			l.used += int64(k)
+			if ar.in != nil && l.used > ExpansionSlack+MaxExpansionRatio*ar.in.n.Load() {
+				return tooLarge("archive expands by more than %dx", MaxExpansionRatio)
+			}
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return fmt.Errorf("%w: %v", ErrTampered, rerr)
+		}
+	}
+	if n != size {
+		return fmt.Errorf("%w: truncated entry", ErrTampered)
+	}
+	return nil
+}
+
+func writeEntry(dst string, ar *reader, size, entryMax int64, l *extractLimits) error {
+	// Reject oversized entries before a file is even created.
+	if err := l.reserve(filepath.Base(dst), size, entryMax); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o700); err != nil {
 		return err
 	}
@@ -228,13 +341,10 @@ func writeEntry(dst string, ar *reader, size int64) error {
 	if err != nil {
 		return err
 	}
-	n, err := io.Copy(f, ar.tr)
+	err = copyLimited(f, ar, size, entryMax, l)
 	cerr := f.Close()
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrTampered, err)
-	}
-	if n != size {
-		return fmt.Errorf("%w: truncated entry", ErrTampered)
+		return err
 	}
 	return cerr
 }
