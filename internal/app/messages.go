@@ -389,6 +389,9 @@ func (a *App) Move(ctx context.Context, ids []int64, folderID int64) error {
 	if len(ids) == 0 {
 		return nil
 	}
+	if err := checkBulk(len(ids)); err != nil {
+		return err
+	}
 	before, _ := a.st.FoldersFor(ctx, ids)
 	if err := a.sync.Move(ctx, ids, folderID); err != nil {
 		return err
@@ -401,6 +404,9 @@ func (a *App) Move(ctx context.Context, ids []int64, folderID int64) error {
 func (a *App) SetFlags(ctx context.Context, ids []int64, add, remove []Flag) error {
 	if len(ids) == 0 {
 		return nil
+	}
+	if err := checkBulk(len(ids)); err != nil {
+		return err
 	}
 	for _, f := range slices.Concat(add, remove) {
 		if store.FlagsFromDomain([]domain.Flag{f}) == 0 {

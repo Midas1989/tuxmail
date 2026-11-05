@@ -625,6 +625,9 @@ func (a *App) MergeContacts(ctx context.Context, ids []int64, merged *PimContact
 	if len(ids) < 2 {
 		return PimContact{}, invalid("at least two contacts are required")
 	}
+	if err := checkBulk(len(ids)); err != nil {
+		return PimContact{}, err
+	}
 	region := a.phoneRegion(ctx)
 	var (
 		primary store.Contact

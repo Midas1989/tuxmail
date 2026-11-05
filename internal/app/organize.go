@@ -101,6 +101,9 @@ func (a *App) DeleteTag(ctx context.Context, id int64) error {
 
 // MergeTags re-tags everything of the sources with the target.
 func (a *App) MergeTags(ctx context.Context, sources []int64, target int64) error {
+	if err := checkBulk(len(sources)); err != nil {
+		return err
+	}
 	sources = slices.DeleteFunc(slices.Clone(sources), func(id int64) bool { return id == target })
 	if len(sources) == 0 {
 		return nil
@@ -126,6 +129,9 @@ func toItems(refs []ItemRef) ([]store.Item, error) {
 
 // SetItemTags (un)assigns tags to items.
 func (a *App) SetItemTags(ctx context.Context, refs []ItemRef, add, remove []int64) error {
+	if err := checkBulk(max(len(refs), len(add), len(remove))); err != nil {
+		return err
+	}
 	items, err := toItems(refs)
 	if err != nil {
 		return err
@@ -492,6 +498,9 @@ func (a *App) ListProjectTemplates(ctx context.Context) ([]ProjectTemplate, erro
 
 // AddToProject links items to a project.
 func (a *App) AddToProject(ctx context.Context, projectID int64, refs []ItemRef) error {
+	if err := checkBulk(len(refs)); err != nil {
+		return err
+	}
 	items, err := toItems(refs)
 	if err != nil {
 		return err
@@ -505,6 +514,9 @@ func (a *App) AddToProject(ctx context.Context, projectID int64, refs []ItemRef)
 
 // RemoveFromProject unlinks items from a project.
 func (a *App) RemoveFromProject(ctx context.Context, projectID int64, refs []ItemRef) error {
+	if err := checkBulk(len(refs)); err != nil {
+		return err
+	}
 	items, err := toItems(refs)
 	if err != nil {
 		return err

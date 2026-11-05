@@ -323,6 +323,9 @@ func (a *App) MarkSpam(ctx context.Context, in MarkSpamInput) error {
 	if len(in.IDs) == 0 {
 		return nil
 	}
+	if err := checkBulk(len(in.IDs)); err != nil {
+		return err
+	}
 	s := a.comfortSettings()
 	for _, id := range in.IDs {
 		m, err := a.st.GetMessage(ctx, id)
@@ -541,6 +544,9 @@ func (a *App) CategoryMessages(ctx context.Context, category, role string, limit
 // MessageCategories returns the categories of the given messages (for
 // list filtering in the UI): message id -> category.
 func (a *App) MessageCategories(ctx context.Context, ids []int64) (map[int64]string, error) {
+	if err := checkBulk(len(ids)); err != nil {
+		return nil, err
+	}
 	out := map[int64]string{}
 	for _, id := range ids {
 		if in, err := a.st.GetInsight(ctx, id); err == nil && in.Category != "" {
