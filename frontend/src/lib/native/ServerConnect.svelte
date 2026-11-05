@@ -229,7 +229,7 @@
       {/if}
     {:else if step === 'choose' && info}
       <div class="form">
-        <p class="ok">{t('native.connect.serverFound', { version: info.version, server: info.serverUrl.replace(/^https:\/\//, '') })}</p>
+        <p class="ok">{t('native.connect.serverFound', { version: info.version, server: info.serverUrl.replace(/^https:\/\//, '') }).replace(/\s{2,}/g, ' ')}</p>
         <button class="btn btn-primary wide" onclick={() => void startDevice()} disabled={busy}>
           {#if busy}<LoaderCircle size={16} class="spin" />{:else}<ExternalLink size={16} />{/if}
           {t('native.connect.signInBrowser')}

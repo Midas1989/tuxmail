@@ -13,15 +13,54 @@ import (
 	"time"
 )
 
-// Login throttling policy (persistent in login_throttle). Failures are
-// counted per username and client network (strict) and per username across
-// all networks (lenient). A stranger can therefore only lock a user out of
-// their own network, not everywhere (E-03), while distributed guessing is
-// still bounded by the user-wide counter.
+// Login throttling and the defence against distributed guessing (E-03, NA-06).
+//
+// Goals: a stranger must never be able to lock the owner out of their own
+// account, and guessing spread over many source addresses must stay bounded.
+// Persistent state lives in login_throttle (counters) and
+// login_known_networks (hashed networks of past successful logins).
+//
+//  1. Per network (hard lock). Failures are counted per login name AND client
+//     network (IPv4 address, IPv6 /64), key "u:<name>|<net>". After
+//     throttleFreeFails failures that network is locked for 1 min, doubling up
+//     to 1 h; the counter resets after throttleWindow without failures. The
+//     lock only concerns the attacking network: the owner on another network
+//     is never affected.
+//
+//  2. Per user (soft signal, never a lock). Failures of one login name from
+//     ANY network are also counted, key "u:<name>", without ever setting
+//     locked_until. Once throttlePressureFails (50) of them happened within
+//     throttleWindow the account is "under pressure" until 15 minutes pass
+//     without a further failure. Unknown login names are counted and treated
+//     identically, so the signal reveals nothing about which names exist.
+//     Under pressure, password logins are
+//     a. accepted only from a KNOWN network of that user: one of the user's
+//     successful logins within knownNetworkTTL (90 days; IPv4 /24, IPv6
+//     /64, stored as HMAC(server key) only) or the network of one of the
+//     user's live sessions. Every other attempt is refused with
+//     ErrThrottled (Retry-After = end of the pressure window) WITHOUT the
+//     password being verified, and counts as a failure (the attacker's
+//     network gets locked and the signal stays up while the attack lasts).
+//     The owner therefore keeps working from home/office/phone networks
+//     during an attack; only logins from brand-new networks wait until the
+//     attack stops (or an administrator unlocks the account).
+//     b. serialised and slowed: one verification per account at a time, each
+//     after PressureDelay (default 1 s), at most pressureQueueMax waiting;
+//     further attempts are refused at once. A guesser sitting on a known
+//     /24 (shared NAT) is thus limited to about one guess per second per
+//     account, on top of the per-network locks.
+//     A successful login clears only the network counter, not the user-wide
+//     one: otherwise the owner's login would reset the attacker's budget.
+//     Failed second factors are bounded separately (challenge attempts, A-08).
+//
+//  3. Step-up checks of a logged-in user have their own per-user counter, see
+//     stepup.go (NA-05); it never interacts with the counters above.
+//
+// Disabled accounts, accounts without a local password and unknown names
+// answer exactly like a wrong password (NA-04) and are charged the same way.
 const (
 	throttleWindow      = 15 * time.Minute
 	throttleFreeFails   = 5
-	throttleUserFails   = 50
 	maxLoginLen         = 320 // longest e-mail address (254) plus slack; usernames are <= 64
 	throttleBaseLock    = time.Minute
 	throttleMaxLock     = time.Hour
@@ -89,16 +128,17 @@ func keysFor(login, ip string) loginKeys {
 	return loginKeys{user: u, net: u + "|" + clientNet(ip)}
 }
 
+// checkKeys fails while the attempting network is locked for this login name.
+// The user-wide counter is a soft signal only (see the top of this file) and
+// is deliberately not consulted here: a lock row left behind by earlier
+// versions is ignored.
 func (s *Service) checkKeys(ctx context.Context, k loginKeys) error {
-	if err := s.checkThrottle(ctx, k.net); err != nil {
-		return err
-	}
-	return s.checkThrottle(ctx, k.user)
+	return s.checkThrottle(ctx, k.net)
 }
 
 func (s *Service) failKeys(ctx context.Context, k loginKeys) {
-	s.recordFailure(ctx, k.net, throttleFreeFails)
-	s.recordFailure(ctx, k.user, throttleUserFails)
+	s.recordFailure(ctx, k.net, networkPolicy)
+	s.recordFailure(ctx, k.user, userPolicy)
 }
 
 func (s *Service) checkThrottle(ctx context.Context, key string) error {
@@ -116,7 +156,23 @@ func (s *Service) checkThrottle(ctx context.Context, key string) error {
 	return nil
 }
 
-func (s *Service) recordFailure(ctx context.Context, key string, free int) {
+// throttlePolicy parameterises recordFailure: the first free-1 failures are
+// free, every further one doubles the lock (base ... max); the counter resets
+// after a quiet period of window.
+type throttlePolicy struct {
+	free      int
+	window    time.Duration
+	baseLock  time.Duration
+	maxLock   time.Duration
+	countOnly bool // soft signal: count failures, never set locked_until
+}
+
+var (
+	networkPolicy = throttlePolicy{free: throttleFreeFails, window: throttleWindow, baseLock: throttleBaseLock, maxLock: throttleMaxLock}
+	userPolicy    = throttlePolicy{window: throttleWindow, countOnly: true}
+)
+
+func (s *Service) recordFailure(ctx context.Context, key string, p throttlePolicy) {
 	throttleKeyMu.Lock()
 	defer throttleKeyMu.Unlock()
 	ctx = context.WithoutCancel(ctx)
@@ -126,15 +182,15 @@ func (s *Service) recordFailure(ctx context.Context, key string, free int) {
 	var fails int
 	var last int64
 	err := s.db.QueryRowContext(ctx, `SELECT failures, first_failure FROM login_throttle WHERE key = ?`, key).Scan(&fails, &last)
-	if err != nil || now.Sub(time.Unix(last, 0)) > throttleWindow {
+	if err != nil || now.Sub(time.Unix(last, 0)) > p.window {
 		fails = 0
 	}
 	fails++
 	first := now.Unix()
 	var until int64
-	if fails >= free {
-		lock := throttleBaseLock << min(fails-free, 10)
-		until = now.Add(min(lock, throttleMaxLock)).Unix()
+	if !p.countOnly && fails >= p.free {
+		lock := p.baseLock << min(fails-p.free, 10)
+		until = now.Add(min(lock, p.maxLock)).Unix()
 	}
 	s.db.ExecContext(ctx, `INSERT INTO login_throttle(key, failures, first_failure, locked_until) VALUES (?,?,?,?)
 		ON CONFLICT(key) DO UPDATE SET failures = excluded.failures, first_failure = excluded.first_failure,
@@ -150,6 +206,9 @@ func (s *Service) UnlockLogin(ctx context.Context, username string) {
 	k := throttleKey(username)
 	// key = k, or k + "|" + network: "}" sorts right after "|" (binary collation).
 	s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM login_throttle WHERE key = ? OR (key >= ? AND key < ?)`, k, k+"|", k+"}")
+	if u, err := s.GetUserByName(ctx, username); err == nil {
+		s.ClearStepUp(ctx, u.ID)
+	}
 }
 
 var (
@@ -180,6 +239,13 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 	}
 	u, err := s.GetUserByName(ctx, req.Login)
 	if errors.Is(err, ErrNotFound) {
+		// Same answer as for an existing user from an unknown network while
+		// the name is under distributed attack: no enumeration (NA-06).
+		if active, until := s.underPressure(ctx, key.user); active {
+			s.failKeys(ctx, key)
+			s.Audit(ctx, "login", req.Login, false, "refused: login name under distributed attack")
+			return nil, &ThrottleError{Until: until}
+		}
 		s.dummyVerify(req.Password)
 		s.failKeys(ctx, key)
 		s.Audit(ctx, "login", req.Login, false, "unknown user")
@@ -198,6 +264,21 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 		}
 	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: req.Client.IP})
+	if active, until := s.underPressure(ctx, key.user); active {
+		// Distributed guessing (NA-06): only known networks may try, one at a
+		// time and slowly. The owner on a known network is never locked out.
+		if !s.networkKnown(ctx, u.ID, req.Client.IP) {
+			s.failKeys(ctx, key)
+			s.Audit(ctx, "login", u.Username, false, "refused: account under distributed attack, unknown network")
+			return nil, &ThrottleError{Until: until}
+		}
+		release, err := s.enterPressureGate(ctx, key.user)
+		if err != nil {
+			s.Audit(ctx, "login", u.Username, false, "refused: too many parallel attempts under attack")
+			return nil, err
+		}
+		defer release()
+	}
 	if u.passwordHash == "" {
 		s.dummyVerify(req.Password)
 		s.failKeys(ctx, key)
@@ -211,8 +292,12 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 		return nil, ErrInvalidCredentials
 	}
 	if u.Disabled {
-		s.Audit(ctx, "login", u.Username, false, "disabled")
-		return nil, ErrUserDisabled
+		// NA-04: a disabled account must not confirm a correct password. The
+		// caller sees (and the throttle counts) exactly what a wrong password
+		// looks like; only the audit log records the reason.
+		s.failKeys(ctx, key)
+		s.Audit(ctx, "login", u.Username, false, "disabled (correct password)")
+		return nil, ErrInvalidCredentials
 	}
 	if rehash {
 		if h, err := HashPassword(req.Password, s.PasswordParams); err == nil {
@@ -229,27 +314,29 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 			}
 			return &LoginResult{MFARequired: true, Challenge: ch, User: u}, nil
 		}
-		if err := s.VerifySecondFactor(ctx, u.ID, req.TOTPCode, req.RecoveryCode); err != nil {
+		if err := s.verifySecondFactor(ctx, u.ID, req.TOTPCode, req.RecoveryCode); err != nil {
 			s.failKeys(ctx, key)
 			s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 			return nil, err
 		}
 	}
-	return s.finishLogin(ctx, u, req.Kind, u.TOTPEnabled, req.Client)
+	return s.finishLogin(ctx, u, req.Kind, MethodPassword, u.TOTPEnabled, req.Client)
 }
 
-func (s *Service) finishLogin(ctx context.Context, u *User, kind string, mfa bool, ci ClientInfo) (*LoginResult, error) {
+func (s *Service) finishLogin(ctx context.Context, u *User, kind, method string, mfa bool, ci ClientInfo) (*LoginResult, error) {
 	if kind == "" {
 		kind = KindWeb
 	}
 	k := keysFor(u.Username, ci.IP)
+	// Only the counter of this network: the user-wide soft signal must not be
+	// resettable by the owner's login, it would reset an attacker's budget.
 	s.clearThrottle(ctx, k.net)
-	s.clearThrottle(ctx, k.user)
-	tok, sess, err := s.createSession(ctx, u.ID, kind, mfa, ci)
+	s.recordKnownNetwork(ctx, u.ID, ci.IP)
+	tok, sess, err := s.createSession(ctx, u.ID, kind, method, mfa, ci)
 	if err != nil {
 		return nil, err
 	}
-	s.Audit(ctx, "login", u.Username, true, fmt.Sprintf("kind=%s mfa=%v", kind, mfa))
+	s.Audit(ctx, "login", u.Username, true, fmt.Sprintf("kind=%s method=%s mfa=%v", kind, method, mfa))
 	u, err = s.GetUser(ctx, u.ID)
 	if err != nil {
 		return nil, err
@@ -280,26 +367,36 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: ci.IP})
 	if u.Disabled {
-		return nil, ErrUserDisabled
+		// NA-04: the challenge proves a correct password; do not reveal that
+		// the account was disabled in the meantime.
+		s.Audit(ctx, "login", u.Username, false, "disabled (second factor step)")
+		return nil, ErrInvalidCode
 	}
-	if err := s.VerifySecondFactor(ctx, u.ID, totpCode, recoveryCode); err != nil {
+	if err := s.verifySecondFactor(ctx, u.ID, totpCode, recoveryCode); err != nil {
 		s.failKeys(ctx, keysFor(u.Username, ci.IP))
 		s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 		return nil, err
 	}
 	s.db.ExecContext(ctx, `DELETE FROM mfa_challenges WHERE token_hash = ?`, h)
-	return s.finishLogin(ctx, u, kind, true, ci)
+	return s.finishLogin(ctx, u, kind, MethodPassword, true, ci)
 }
 
-// MFASetupRequired reports whether the user must enrol TOTP before using
-// privileged functions (auth.totp_required_for_admins).
-func (s *Service) MFASetupRequired(u *User) bool {
-	return s.cfg.Auth.TOTPRequiredForAdmins && u.IsAdmin() && !u.TOTPEnabled && !u.OIDC
+// MFASetupRequired reports whether the session must enrol TOTP before using
+// privileged functions (auth.totp_required_for_admins). Only sessions created
+// by the OIDC callback of an OIDC-linked account are exempt (their second
+// factor is the identity provider's); a password login of the very same
+// account is not (NA-02). A nil session is never exempt.
+func (s *Service) MFASetupRequired(u *User, sess *Session) bool {
+	if !s.cfg.Auth.TOTPRequiredForAdmins || !u.IsAdmin() || u.TOTPEnabled {
+		return false
+	}
+	return !(u.OIDC && sess != nil && sess.LoginMethod == MethodOIDC)
 }
 
-// VerifySecondFactor checks a TOTP code (with replay protection) or consumes
-// a recovery code.
-func (s *Service) VerifySecondFactor(ctx context.Context, userID int64, totpCode, recoveryCode string) error {
+// verifySecondFactor checks a TOTP code (with replay protection) or consumes
+// a recovery code. It has no lockout of its own: Login and CompleteMFA charge
+// the login counters, every other caller must use VerifyStepUpSecondFactor.
+func (s *Service) verifySecondFactor(ctx context.Context, userID int64, totpCode, recoveryCode string) error {
 	if recoveryCode != "" {
 		return s.useRecoveryCode(ctx, userID, recoveryCode)
 	}

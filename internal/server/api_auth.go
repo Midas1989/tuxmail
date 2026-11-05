@@ -17,13 +17,17 @@ func (s *Server) clientInfoFor(r *http.Request, deviceName string) auth.ClientIn
 }
 
 func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"version":           s.version,
+	out := map[string]any{
+		"product":           productMarker,
 		"registration":      s.cfg.Auth.Registration,
 		"oidcEnabled":       s.cfg.Auth.OIDC.Enabled,
 		"passwordMinLength": s.cfg.Auth.PasswordMinLength,
 		"maxUploadMB":       s.cfg.Limits.MaxUploadMB,
-	})
+	}
+	if s.cfg.Security.ExposeVersion { // NA-07: anonymous clients get no version by default
+		out["version"] = s.version
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleCSRF returns the CSRF token for SPA clients (also set as cookie).
@@ -67,7 +71,7 @@ func (s *Server) writeLoginResult(w http.ResponseWriter, res *auth.LoginResult) 
 		return
 	}
 	s.startSession(w, res)
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "user": res.User, "mfaSetupRequired": s.auth.MFASetupRequired(res.User)})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "user": res.User, "mfaSetupRequired": s.auth.MFASetupRequired(res.User, res.Session)})
 }
 
 func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
@@ -92,6 +96,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, a *authInf
 		s.writeAuthError(w, err)
 		return
 	}
+	s.streams.revokeSession(a.User.ID, a.Session.ID)
 	s.auth.Audit(r.Context(), "logout", a.User.Username, true, "")
 	if !a.Bearer {
 		s.setCookie(w, sessionCookie, "", -1, true, http.SameSiteLaxMode)
@@ -104,7 +109,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user":              a.User,
 		"session":           a.Session,
-		"mfaSetupRequired":  s.auth.MFASetupRequired(a.User),
+		"mfaSetupRequired":  s.auth.MFASetupRequired(a.User, a.Session),
 		"recoveryCodesLeft": left,
 	})
 }
@@ -113,14 +118,24 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, a 
 	var req struct {
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`
+		TOTPCode        string `json:"totpCode"`     // first password of an account with TOTP
+		RecoveryCode    string `json:"recoveryCode"` // alternative to totpCode
 	}
 	if !readJSON(w, r, &req) || !s.limitLogin(w, r, a.User.Username) {
 		return
 	}
-	if err := s.auth.ChangePassword(r.Context(), a.User.ID, req.CurrentPassword, req.NewPassword, a.Session.ID); err != nil {
+	var err error
+	if a.User.HasPassword {
+		err = s.auth.ChangePassword(r.Context(), a.User.ID, req.CurrentPassword, req.NewPassword, a.Session.ID)
+	} else {
+		// OIDC-only account: setting a first local password re-authenticates (NA-02).
+		err = s.auth.SetFirstPassword(r.Context(), a.User.ID, req.NewPassword, a.Session.ID, req.TOTPCode, req.RecoveryCode)
+	}
+	if err != nil {
 		s.writeAuthError(w, err)
 		return
 	}
+	s.streams.revokeUser(a.User.ID, a.Session.ID) // other sessions ended with the password change
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -155,6 +170,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, a *
 		s.writeAuthError(w, err)
 		return
 	}
+	s.streams.revokeSession(a.User.ID, id)
 	if id == a.Session.ID && !a.Bearer {
 		s.setCookie(w, sessionCookie, "", -1, true, http.SameSiteLaxMode)
 	}
@@ -166,6 +182,7 @@ func (s *Server) handleRevokeOthers(w http.ResponseWriter, r *http.Request, a *a
 		s.writeAuthError(w, err)
 		return
 	}
+	s.streams.revokeUser(a.User.ID, a.Session.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -199,18 +216,21 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request, a *authInfo, pas
 	if !s.limitLogin(w, r, a.User.Username) {
 		return false
 	}
+	// Wrong answers are counted persistently per user (NA-05): the in-memory
+	// rate limit alone can be bypassed from many source addresses.
 	if a.User.HasPassword {
-		if err := s.auth.VerifyUserPassword(r.Context(), a.User.ID, password); err != nil {
+		if err := s.auth.VerifyStepUpPassword(r.Context(), a.User.ID, password); err != nil {
 			s.writeAuthError(w, err)
 			return false
 		}
 	}
 	if a.User.TOTPEnabled {
-		if err := s.auth.VerifySecondFactor(r.Context(), a.User.ID, code, recovery); err != nil {
+		if err := s.auth.VerifyStepUpSecondFactor(r.Context(), a.User.ID, code, recovery); err != nil {
 			s.writeAuthError(w, err)
 			return false
 		}
 	}
+	s.auth.ClearStepUp(r.Context(), a.User.ID)
 	return true
 }
 

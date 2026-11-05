@@ -10,6 +10,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Midas1989/Mailclient/internal/app"
 )
@@ -37,7 +39,28 @@ type Options struct {
 	Skip map[string]bool
 	// AllowOrigin checks the Origin of WebSocket handshakes (nil: same host only).
 	AllowOrigin func(r *http.Request, origin string) bool
-	Logger      *slog.Logger
+	// OpenStream is called before an event WebSocket is upgraded. It either
+	// refuses the stream (writing the error response itself and returning
+	// nil) or returns the control used for the lifetime of the connection:
+	// connection cap and revocation handling are the embedding server's
+	// business (nil: no limits, no re-validation).
+	OpenStream func(w http.ResponseWriter, r *http.Request) *StreamControl
+	// RevalidateEvery is how often an open event stream re-checks its
+	// authentication (default 30 s).
+	RevalidateEvery time.Duration
+	Logger          *slog.Logger
+}
+
+// StreamControl ties an open event stream to the authentication it started
+// with (NH-08).
+type StreamControl struct {
+	// Valid reports whether the session / device token behind the stream is
+	// still valid. It is called periodically; false closes the stream.
+	Valid func(ctx context.Context) bool
+	// Revoked is closed when the session is revoked right now (logout, ...).
+	Revoked <-chan struct{}
+	// Done is called once when the stream ended.
+	Done func()
 }
 
 // Mount registers all routes on mux; wrap authenticates the request and

@@ -173,6 +173,13 @@ const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	hsts := s.cfg.SecureCookies()
+	// includeSubDomains only on request (security.hsts_include_subdomains):
+	// it commits every subdomain of the host to HTTPS for a year. "preload"
+	// is never sent.
+	hstsValue := "max-age=31536000"
+	if s.cfg.Security.HSTSIncludeSubdomains {
+		hstsValue += "; includeSubDomains"
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
@@ -183,7 +190,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
 		h.Set("Content-Security-Policy", contentSecurityPolicy)
 		if hsts {
-			h.Set("Strict-Transport-Security", "max-age=31536000")
+			h.Set("Strict-Transport-Security", hstsValue)
 		}
 		if isAPI(r.URL.Path) || r.URL.Path == "/healthz" {
 			h.Set("Cache-Control", "no-store")
@@ -400,7 +407,7 @@ func (s *Server) admin(h handlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusForbidden, "forbidden", "administrator role required")
 			return false
 		}
-		if s.auth.MFASetupRequired(a.User) {
+		if s.auth.MFASetupRequired(a.User, a.Session) {
 			writeError(w, http.StatusForbidden, "mfa_setup_required", "set up two-factor authentication first")
 			return false
 		}

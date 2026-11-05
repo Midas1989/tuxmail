@@ -25,6 +25,18 @@ describe('validateServer', () => {
     expect(f.mock.calls[0][1]).toMatchObject({ credentials: 'omit' });
   });
 
+  it('recognises a server that does not disclose its version (security.expose_version off)', async () => {
+    const f = fakeFetch((url) => {
+      if (url.endsWith('/healthz')) return { status: 200, body: { status: 'ok', product: 'tuxmail' } };
+      if (url.endsWith('/api/auth/config')) return { status: 200, body: { product: 'tuxmail', oidcEnabled: false, registration: 'disabled', maxUploadMB: 50 } };
+      return { status: 404 };
+    });
+    expect(await validateServer('mail.example.org', f)).toEqual({ serverUrl: 'https://mail.example.org', version: '', oidcEnabled: false, registration: 'disabled', maxUploadMB: 50 });
+    // A foreign server without marker and version is still refused.
+    const foreign = fakeFetch((url) => (url.endsWith('/healthz') ? { status: 200, body: { status: 'ok' } } : { status: 200, body: { hello: 'world' } }));
+    await expect(validateServer('other.example', foreign)).rejects.toMatchObject({ code: 'not_tuxmail' });
+  });
+
   it('rejects invalid and plain-http URLs without a request', async () => {
     const f = fakeFetch(() => ({ status: 200, body: {} }));
     await expect(validateServer('', f)).rejects.toMatchObject({ code: 'invalid_url' });

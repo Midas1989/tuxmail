@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -56,6 +55,10 @@ func (s *Server) writeAuthError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", err.Error())
 	case errors.Is(err, auth.ErrUserDisabled):
 		writeError(w, http.StatusForbidden, "user_disabled", err.Error())
+	case errors.Is(err, auth.ErrQuota):
+		writeError(w, http.StatusRequestEntityTooLarge, "quota_exceeded", err.Error())
+	case errors.Is(err, auth.ErrReauthRequired):
+		writeError(w, http.StatusForbidden, "reauth_required", err.Error())
 	case errors.Is(err, auth.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, auth.ErrExists):
@@ -90,7 +93,12 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
 	if err := dec.Decode(v); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("invalid JSON body: %v", err))
+		// Generic text only: the decoder's message names Go types and fields.
+		if mb := (*http.MaxBytesError)(nil); errors.As(err, &mb) {
+			writeError(w, http.StatusRequestEntityTooLarge, "too_large", "request body too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return false
 	}
 	return true

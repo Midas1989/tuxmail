@@ -4,15 +4,18 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
+	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -87,11 +90,33 @@ func (s *Server) writeDeviceToken(w http.ResponseWriter, res *auth.LoginResult) 
 	})
 }
 
+// Polling limits of /api/device/token (NA-08). A client polls every 5 s
+// (12/min), RFC 8628 clients slow down when told to.
+const (
+	deviceTokenCodePerMinute = 20
+	deviceTokenCodeBurst     = 10
+	deviceTokenIPPerMinute   = 120
+	deviceTokenIPBurst       = 60
+)
+
 func (s *Server) handleDeviceToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		DeviceCode string `json:"device_code"`
 	}
 	if !readJSON(w, r, &req) {
+		return
+	}
+	if ok, wait := s.deviceTokenIP.allow(limiterKey(clientFrom(r).IP)); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		deviceError(w, http.StatusTooManyRequests, "rate_limited", "too many token requests from this network")
+		return
+	}
+	// Per device code (keyed by its hash, the code itself is never kept in
+	// memory): RFC 8628 section 3.5 answers too-frequent polling with slow_down.
+	sum := sha256.Sum256([]byte(req.DeviceCode))
+	if ok, wait := s.deviceTokenCode.allow(string(sum[:16])); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		deviceError(w, http.StatusBadRequest, "slow_down", "polling too fast")
 		return
 	}
 	res, err := s.auth.PollDeviceToken(r.Context(), req.DeviceCode)
@@ -173,10 +198,11 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *
 	}
 	approve := req.Approve == nil || *req.Approve
 	if approve && a.User.TOTPEnabled {
-		if err := s.auth.VerifySecondFactor(r.Context(), a.User.ID, req.TOTPCode, req.RecoveryCode); err != nil {
+		if err := s.auth.VerifyStepUpSecondFactor(r.Context(), a.User.ID, req.TOTPCode, req.RecoveryCode); err != nil {
 			s.writeAuthError(w, err)
 			return
 		}
+		defer s.auth.ClearStepUp(r.Context(), a.User.ID)
 	}
 	if err := s.auth.ApproveDevice(r.Context(), a.User.ID, req.UserCode, approve); err != nil {
 		s.writeAuthError(w, err)

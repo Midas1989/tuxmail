@@ -15,6 +15,13 @@ const (
 	KindDevice = "device"
 )
 
+// Login methods: how a session was created (NA-02).
+const (
+	MethodPassword   = "password"    // local password (plus second factor if enabled)
+	MethodOIDC       = "oidc"        // identity provider callback
+	MethodDeviceCode = "device_code" // device authorization grant (approved elsewhere)
+)
+
 // DeviceTokenLifetime is the validity of device tokens issued to clients.
 const DeviceTokenLifetime = 365 * 24 * time.Hour
 
@@ -28,6 +35,7 @@ type Session struct {
 	IP           string    `json:"ip"`
 	UserAgent    string    `json:"userAgent"`
 	MFA          bool      `json:"mfa"`
+	LoginMethod  string    `json:"loginMethod"`
 	CreatedAt    time.Time `json:"createdAt"`
 	ExpiresAt    time.Time `json:"expiresAt"`
 	LastSeenAt   time.Time `json:"lastSeenAt"`
@@ -50,7 +58,7 @@ func truncate(s string, n int) string {
 }
 
 // createSession stores a new session and returns its token.
-func (s *Service) createSession(ctx context.Context, userID int64, kind string, mfa bool, ci ClientInfo) (string, *Session, error) {
+func (s *Service) createSession(ctx context.Context, userID int64, kind, method string, mfa bool, ci ClientInfo) (string, *Session, error) {
 	tok := randomToken(32)
 	now := s.now()
 	life := s.cfg.Auth.SessionLifetime.D()
@@ -58,9 +66,9 @@ func (s *Service) createSession(ctx context.Context, userID int64, kind string, 
 		life = DeviceTokenLifetime
 	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions(token_hash, user_id, kind, device_name, ip, user_agent, mfa,
-		client_pubkey, created_at, expires_at, last_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		login_method, client_pubkey, created_at, expires_at, last_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		hashToken(tok), userID, kind, truncate(ci.DeviceName, 100), truncate(ci.IP, 64), truncate(ci.UserAgent, 300), mfa,
-		ci.PubKey, now.Unix(), now.Add(life).Unix(), now.Unix())
+		method, ci.PubKey, now.Unix(), now.Add(life).Unix(), now.Unix())
 	if err != nil {
 		return "", nil, err
 	}
@@ -72,12 +80,12 @@ func (s *Service) createSession(ctx context.Context, userID int64, kind string, 
 	return tok, sess, err
 }
 
-const sessionCols = `id, user_id, kind, device_name, ip, user_agent, mfa, client_pubkey, created_at, expires_at, last_seen_at`
+const sessionCols = `id, user_id, kind, device_name, ip, user_agent, mfa, login_method, client_pubkey, created_at, expires_at, last_seen_at`
 
 func scanSession(sc interface{ Scan(...any) error }) (*Session, error) {
 	var x Session
 	var c, e, l int64
-	if err := sc.Scan(&x.ID, &x.UserID, &x.Kind, &x.DeviceName, &x.IP, &x.UserAgent, &x.MFA, &x.ClientPubKey, &c, &e, &l); err != nil {
+	if err := sc.Scan(&x.ID, &x.UserID, &x.Kind, &x.DeviceName, &x.IP, &x.UserAgent, &x.MFA, &x.LoginMethod, &x.ClientPubKey, &c, &e, &l); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -123,6 +131,31 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 		sess.LastSeenAt, sess.IP = now, ip
 	}
 	return sess, u, nil
+}
+
+// CheckSession reports whether session sessionID of userID is still valid:
+// it exists, is not expired and the user is not disabled. It returns
+// ErrNotFound or ErrUserDisabled otherwise. Unlike Authenticate it has no
+// side effects, so long-lived connections (the event WebSocket) can use it to
+// notice revocation, expiry and disabling (NH-08).
+func (s *Service) CheckSession(ctx context.Context, userID, sessionID int64) error {
+	var exp int64
+	var disabled bool
+	err := s.db.QueryRowContext(ctx, `SELECT s.expires_at, u.disabled FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.id = ? AND s.user_id = ?`, sessionID, userID).Scan(&exp, &disabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !s.now().Before(time.Unix(exp, 0)) {
+		return ErrNotFound
+	}
+	if disabled {
+		return ErrUserDisabled
+	}
+	return nil
 }
 
 // ListSessions returns the unexpired sessions and device tokens of a user.
@@ -180,6 +213,7 @@ func (s *Service) Cleanup(ctx context.Context) error {
 		`DELETE FROM oidc_states WHERE expires_at <= ?1`,
 		`DELETE FROM device_authorizations WHERE expires_at <= ?1 - 3600`,
 		`DELETE FROM login_throttle WHERE locked_until <= ?1 AND first_failure <= ?1 - 86400`,
+		`DELETE FROM login_known_networks WHERE last_seen <= ?1 - 7776000`, // knownNetworkTTL (90 days)
 	} {
 		if _, err := s.db.ExecContext(ctx, q, now); err != nil {
 			return err

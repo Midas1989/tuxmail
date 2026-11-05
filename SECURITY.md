@@ -15,7 +15,7 @@ Nutze stattdessen die private Meldung von GitHub:
 
 Hilfreich sind:
 
-- betroffene Version (`tuxmail version` oder `/healthz`) und Betriebsart (Server, Desktop, Android, Plugin),
+- betroffene Version (`tuxmail version`, „Info“ in den Einstellungen; `/healthz` nennt sie nur mit `security.expose_version: true`) und Betriebsart (Server, Desktop, Android, Plugin),
 - Beschreibung, Auswirkung und Schritte zum Nachvollziehen (Proof of Concept),
 - relevante Konfiguration (ohne Passwörter/Schlüssel), Logs, ggf. ein Vorschlag zur Behebung.
 
@@ -61,7 +61,7 @@ Use GitHub private vulnerability reporting instead:
 **Repository → Security → Advisories → "Report a vulnerability"**
 (<https://github.com/Midas1989/Mailclient/security/advisories/new>).
 
-Please include the affected version (`tuxmail version` or `/healthz`), the component (server, desktop,
+Please include the affected version (`tuxmail version` or Settings, About; `/healthz` only reports it with `security.expose_version: true`), the component (server, desktop,
 Android, plugin), a description with impact and reproduction steps (proof of concept), relevant
 configuration (without secrets) and logs, and a suggested fix if you have one.
 

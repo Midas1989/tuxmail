@@ -71,6 +71,12 @@ tuxmail_login_rate_per_minute: 10
 tuxmail_security_allow_private_networks: false
 # Zusätzlich immer erlaubte Ziele (IP/CIDR, optional :Port), z. B. ["192.168.10.5:993"].
 tuxmail_security_allowed_networks_extra: []
+# true = /healthz und /api/auth/config nennen anonymen Clients die exakte Version
+# (security.expose_version). Standard: aus; angemeldete Benutzer sehen sie immer.
+tuxmail_security_expose_version: false
+# true = includeSubDomains im HSTS-Header der Anwendung (nur wenn ALLE Subdomains HTTPS nutzen;
+# "preload" wird nie gesendet). Hinter nginx gilt tuxmail_nginx_hsts_include_subdomains.
+tuxmail_security_hsts_include_subdomains: false
 # Der lokale Matrix-Homeserver der Bridges (nur 127.0.0.1:Port) wird automatisch erlaubt.
 tuxmail_security_allowed_networks: >-
   {{ (['127.0.0.1:' ~ (tuxmail_matrix_port | string)] if tuxmail_bridges_enabled | bool else []) + tuxmail_security_allowed_networks_extra }}

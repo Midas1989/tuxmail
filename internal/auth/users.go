@@ -399,21 +399,85 @@ func (s *Service) ResetPassword(ctx context.Context, id int64) (string, error) {
 	return pw, nil
 }
 
+// FirstPasswordReauthWindow is how recent the OIDC login of the calling
+// session must be to set the first local password without a second factor.
+const FirstPasswordReauthWindow = 5 * time.Minute
+
+// SetFirstPassword gives an account without a local password (OIDC-provisioned)
+// one. This creates a login path that bypasses the identity provider (and its
+// MFA, deprovisioning), so a stolen session must not be enough (NA-02): with
+// TOTP enabled a valid second factor is required, otherwise the calling
+// session itself must have been created by an OIDC login at most
+// FirstPasswordReauthWindow ago. The change is always audited; other sessions
+// are revoked like for any password change.
+func (s *Service) SetFirstPassword(ctx context.Context, id int64, next string, sessionID int64, totpCode, recoveryCode string) error {
+	u, err := s.GetUser(ctx, id)
+	if err != nil {
+		return err
+	}
+	deny := func(reason string, err error) error {
+		s.Audit(ctx, "user.set_first_password", u.Username, false, reason)
+		return err
+	}
+	if u.passwordHash != "" {
+		return deny("a local password already exists", fmt.Errorf("%w: a local password is already set; use the password change", ErrInvalidInput))
+	}
+	method := ""
+	if u.TOTPEnabled {
+		if totpCode == "" && recoveryCode == "" {
+			return deny("second factor missing", fmt.Errorf("%w: enter your two-factor code to set a password", ErrReauthRequired))
+		}
+		if err := s.VerifyStepUpSecondFactor(ctx, id, totpCode, recoveryCode); err != nil {
+			return deny("second factor failed", err)
+		}
+		method = "totp"
+	} else {
+		sess, err := s.getSession(ctx, `id = ? AND user_id = ?`, sessionID, id)
+		if err != nil || sess.LoginMethod != MethodOIDC || s.now().Sub(sess.CreatedAt) > FirstPasswordReauthWindow {
+			return deny("no recent identity-provider login", fmt.Errorf("%w: sign in again with your identity provider and retry within %d minutes",
+				ErrReauthRequired, int(FirstPasswordReauthWindow/time.Minute)))
+		}
+		method = "fresh_oidc_session"
+	}
+	if err := s.SetPassword(ctx, id, next, sessionID); err != nil {
+		return deny("password rejected: "+err.Error(), err)
+	}
+	s.ClearStepUp(ctx, id)
+	s.Audit(ctx, "user.set_first_password", u.Username, true, "reauth="+method)
+	return nil
+}
+
 // ChangePassword verifies the current password and sets a new one; the
-// calling session (keepSessionID) stays valid.
+// calling session (keepSessionID) stays valid. Accounts without a local
+// password must use SetFirstPassword.
 func (s *Service) ChangePassword(ctx context.Context, id int64, current, next string, keepSessionID int64) error {
 	u, err := s.GetUser(ctx, id)
 	if err != nil {
 		return err
 	}
-	if u.passwordHash != "" {
+	if u.passwordHash == "" {
+		s.Audit(ctx, "user.change_password", u.Username, false, "no local password; re-authentication required")
+		return fmt.Errorf("%w: set a first password with a second factor or a fresh identity-provider login", ErrReauthRequired)
+	}
+	{
+		// Wrong current passwords count against the persistent step-up
+		// lockout of the user (NA-05): a stolen session must not be able to
+		// guess the password from many source addresses.
+		if err := s.StepUpCheck(ctx, id); err != nil {
+			return err
+		}
 		ok, _, err := VerifyPassword(current, u.passwordHash, s.PasswordParams)
 		if err != nil || !ok {
+			s.recordFailure(ctx, stepUpKey(id), stepUpPolicy)
 			s.Audit(ctx, "user.change_password", u.Username, false, "wrong current password")
 			return ErrInvalidCredentials
 		}
 	}
-	return s.SetPassword(ctx, id, next, keepSessionID)
+	if err := s.SetPassword(ctx, id, next, keepSessionID); err != nil {
+		return err
+	}
+	s.ClearStepUp(ctx, id)
+	return nil
 }
 
 func (s *Service) auditUser(ctx context.Context, action string, id int64, err error, details string) {

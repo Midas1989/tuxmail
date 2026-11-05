@@ -277,7 +277,7 @@ func TestSessions(t *testing.T) {
 	if _, _, err := s.Authenticate(ctx, res4.Token, ""); err == nil {
 		t.Fatal("disabled user's session valid")
 	}
-	if _, err := s.Login(ctx, LoginRequest{Login: "alice", Password: "another good password"}); !errors.Is(err, ErrUserDisabled) {
+	if _, err := s.Login(ctx, LoginRequest{Login: "alice", Password: "another good password"}); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatal(err)
 	}
 	if err := s.Cleanup(ctx); err != nil {
@@ -371,7 +371,7 @@ func TestTOTPLoginAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.cfg.Auth.TOTPRequiredForAdmins = true
-	if !s.MFASetupRequired(res.User) {
+	if !s.MFASetupRequired(res.User, res.Session) {
 		t.Fatal("admin without TOTP must enrol")
 	}
 }
