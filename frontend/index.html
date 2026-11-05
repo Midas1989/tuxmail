@@ -4,10 +4,25 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!--
+      Content-Security-Policy per shell (NG-08). The policy text lives in src/lib/csp.ts; vite.config.ts rewrites the
+      two tags below per build target (npm run build:capacitor = vite --mode capacitor) and for the dev server.
+      This file contains the default: web client (tuxmail serve) and Wails desktop, which share one build.
+
+        shell                 effective policy
+        web (tuxmail serve)   server header AND this meta (never looser than the header): connect 'self', img 'self' data: blob:
+        Wails desktop         this meta only: connect-src 'self', img-src 'self' data: blob: (no https:, no ws:)
+        Capacitor (Android)   connect-src 'self' https: wss: (server chosen by the user, no cleartext ws:), img-src + https:
+                              (image proxy of that server); narrowed at runtime to the active server's origin
+        vite dev server       web policy + ws:/wss: for hot reload
+
+      See docs/ENTWICKLUNG.md ("Content-Security-Policy je Schale").
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' ws: wss: https:; frame-src 'self' about:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self'; frame-src 'self' about:; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
     />
+    <meta name="tuxmail-csp-target" content="web" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#161920" media="(prefers-color-scheme: dark)" />

@@ -78,7 +78,7 @@ jobs:
           npm ci
           npm run check
           npm test
-          npm run build
+          npm run build:capacitor
 
       - name: Capacitor sync
         working-directory: mobile
@@ -172,7 +172,7 @@ jobs:
         working-directory: frontend
         run: |
           npm ci
-          npm run build
+          npm run build:capacitor
 
       - name: Capacitor sync
         working-directory: mobile

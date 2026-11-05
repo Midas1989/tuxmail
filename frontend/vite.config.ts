@@ -5,6 +5,7 @@ import { dirname, join, relative } from 'node:path';
 import { defineConfig, type Plugin } from 'vitest/config';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
+import { applyCsp, targetForMode } from './src/lib/csp.ts';
 
 /**
  * Emits dist/sw.js from src/pwa/sw.js with the precache manifest (all
@@ -79,13 +80,35 @@ function branding(): Plugin {
   };
 }
 
+/**
+ * Rewrites the CSP meta tag of index.html for the build target (NG-08, matrix
+ * in src/lib/csp.ts): `vite build --mode capacitor` (npm run build:capacitor)
+ * for the Android app, anything else is the strict web/Wails default; the dev
+ * server additionally allows its hot-reload websocket.
+ */
+function cspMeta(): Plugin {
+  let dev = false;
+  let mode = 'production';
+  return {
+    name: 'tuxmail-csp',
+    configResolved(cfg) {
+      dev = cfg.command === 'serve';
+      mode = cfg.mode;
+    },
+    transformIndexHtml: {
+      order: 'pre',
+      handler: (html) => applyCsp(html, targetForMode(mode), { dev }),
+    },
+  };
+}
+
 // The same build is embedded into the Wails desktop shell and served by
 // `tuxmail serve` for the web client, so asset paths must be relative.
 const root = import.meta.dirname;
 
 export default defineConfig({
   base: './',
-  plugins: [tailwindcss(), svelte(), serviceWorker(), branding()],
+  plugins: [tailwindcss(), svelte(), cspMeta(), serviceWorker(), branding()],
   resolve: {
     alias: {
       // Single source of truth for translations and branding at the repo root.

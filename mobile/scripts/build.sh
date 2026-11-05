@@ -21,7 +21,7 @@ tasks=("$@")
 
 if [ "${SKIP_WEB:-0}" != "1" ]; then
   echo "==> frontend build"
-  (cd "$repo/frontend" && { [ -d node_modules ] || npm ci; } && npm run build)
+  (cd "$repo/frontend" && { [ -d node_modules ] || npm ci; } && npm run build:capacitor)
 fi
 
 echo "==> capacitor sync"

@@ -25,6 +25,7 @@ import { fetchVapidKey, registrationKey, subscribeAtServer, type PushSession } f
 import { loadLockSettings, saveLockSettings, shouldLock, type LockSettings } from './applock';
 import type { NativeController, PushStatus } from './status';
 import { startNativeEffects } from './effects.svelte';
+import { applyNativeServerCsp } from '../csp';
 import { createDeferredSet, createLockGate } from './lockgate';
 import { clearTuxmailStorage } from '../session';
 import { cancelConnect, confirmConnect, requestConnect, type ConnectPromptState } from './connectprompt';
@@ -142,6 +143,8 @@ async function watchLock(settings: () => Promise<LockSettings>): Promise<void> {
  */
 export async function bootNative(target: HTMLElement, mountApp: () => void): Promise<void> {
   injectStyles();
+  // The Android build needs the Capacitor CSP (connect to the user's https server); the web/Wails default would block every request.
+  if (document.querySelector('meta[name="tuxmail-csp-target"]')?.getAttribute('content') !== 'capacitor') console.error('TuxMail: this web build was not made with "npm run build:capacitor"; requests to the server will be blocked by the Content-Security-Policy.');
   const lock = await loadLockSettings(prefsStore).catch(() => null);
   void watchLock(() => loadLockSettings(prefsStore));
   if (lock && shouldLock(lock, null, Date.now())) await showLock();
@@ -166,6 +169,8 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
     setSessionToken(token);
     setUnauthorizedHandler(onUnauthorized);
     await TuxMail.setActiveSession({ serverUrl: active.serverUrl, token, profileId: active.id }).catch(() => {});
+    // NG-08: from here on only the active server may be contacted / load images (a second meta CSP can only narrow).
+    applyNativeServerCsp(document, active.serverUrl);
     mountApp();
     return;
   }
