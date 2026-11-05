@@ -722,14 +722,14 @@ func (a *App) exportMail(ctx context.Context, j *ioJob, req ExportRequest, out s
 	var cleanup func() error
 	switch req.Format {
 	case "eml":
-		f, err := os.Create(out)
+		f, err := createPrivate(out)
 		if err != nil {
 			return err
 		}
 		zw := eml.NewZipWriter(f)
 		sink, cleanup = zw, f.Close
 	case "mbox":
-		f, err := os.Create(out)
+		f, err := createPrivate(out)
 		if err != nil {
 			return err
 		}
@@ -782,8 +782,25 @@ func (a *App) exportMail(ctx context.Context, j *ioJob, req ExportRequest, out s
 	return cleanup()
 }
 
+// createPrivate creates (or truncates) an export file that is readable by the
+// owner only (NC-04): exports hold complete mail, contacts or backups and are
+// written to user-chosen paths such as ~/Documents or a USB stick, where
+// os.Create's 0666&^umask would make them world-readable. An already existing
+// file is tightened to 0600 as well (best effort; not all file systems have
+// permissions).
+func createPrivate(path string) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if fi, err := f.Stat(); err == nil && fi.Mode().IsRegular() && fi.Mode().Perm() != 0o600 {
+		_ = f.Chmod(0o600)
+	}
+	return f, nil
+}
+
 func zipDir(dir, out string) error {
-	f, err := os.Create(out)
+	f, err := createPrivate(out)
 	if err != nil {
 		return err
 	}

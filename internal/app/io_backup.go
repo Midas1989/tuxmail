@@ -175,7 +175,7 @@ func copyPath(src, dst string) error {
 		return err
 	}
 	defer in.Close()
-	out, err := os.Create(dst)
+	out, err := createPrivate(dst)
 	if err != nil {
 		return err
 	}

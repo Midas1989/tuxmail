@@ -328,7 +328,7 @@ func csvMapping(header []string, o ImportOptions) []iecsv.Field {
 }
 
 func (a *App) exportPIM(ctx context.Context, j *ioJob, req ExportRequest, out string) error {
-	f, err := os.Create(out)
+	f, err := createPrivate(out)
 	if err != nil {
 		return err
 	}
