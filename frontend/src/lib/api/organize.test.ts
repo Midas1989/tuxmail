@@ -161,4 +161,16 @@ describe('workflows', () => {
     await a.deleteWorkflow(w.id);
     await expect(a.getWorkflow(w.id)).rejects.toMatchObject({ code: 'not_found' });
   });
+
+  it('needs the explicit confirmation for workflows with external effects', async () => {
+    const a = api();
+    const fwd = { id: '', name: 'Spiegel', enabled: true, trigger: { event: 'mail.received' }, actions: [{ type: 'forward', params: { to: ['boss@example.org'] } }] };
+    await expect(a.saveWorkflow(fwd)).rejects.toMatchObject({ code: 'confirmation_required', status: 409 });
+    const w = await a.saveWorkflow({ ...fwd, confirmExternal: true });
+    expect(w.externalEffects).toBe(true);
+    expect(w.confirmExternal).toBeUndefined();
+    await a.setWorkflowEnabled(w.id, false);
+    await expect(a.setWorkflowEnabled(w.id, true)).rejects.toMatchObject({ code: 'confirmation_required' });
+    expect((await a.setWorkflowEnabled(w.id, true, true)).enabled).toBe(true);
+  });
 });

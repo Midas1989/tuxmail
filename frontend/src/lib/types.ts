@@ -1104,6 +1104,14 @@ export interface Workflow {
   externalEffects?: boolean;
   lastRun?: WorkflowRunSummary;
   updatedAt?: string;
+  /**
+   * Input only: the user has seen the actions with external effect and
+   * confirmed them. Saving an enabled workflow with such actions without it
+   * is refused with the error code `confirmation_required`.
+   */
+  confirmExternal?: boolean;
+  /** Team mailboxes: the member who saved the workflow last. */
+  author?: string;
 }
 
 export interface WorkflowRunStep {
@@ -2367,6 +2375,8 @@ export interface VacationSettings {
   ownAddresses?: string[];
   oncePerDays?: number;
   forwardTo?: string[];
+  /** Input only: the user confirmed the forwarding to `forwardTo` (error code `confirmation_required` without it). */
+  confirmExternal?: boolean;
   chatAutoReply?: boolean;
   chatText?: string;
   chatChannels?: string[];

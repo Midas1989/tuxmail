@@ -2087,8 +2087,8 @@ export class MockTransport implements Api {
   deleteWorkflow(id: string): Promise<void> {
     return this.run(() => this.org.deleteWorkflow(id));
   }
-  setWorkflowEnabled(id: string, enabled: boolean): Promise<Workflow> {
-    return this.run(() => this.org.setWorkflowEnabled(id, enabled));
+  setWorkflowEnabled(id: string, enabled: boolean, confirmExternal = false): Promise<Workflow> {
+    return this.run(() => this.org.setWorkflowEnabled(id, enabled, confirmExternal));
   }
   listWorkflowTemplates(): Promise<WorkflowTemplate[]> {
     return this.run(() => this.org.templates());

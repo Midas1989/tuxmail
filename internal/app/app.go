@@ -15,9 +15,11 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/ai"
+	"github.com/Midas1989/Mailclient/internal/core/threading"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/imageproxy"
@@ -144,6 +146,17 @@ type App struct {
 	pim       *pimService
 	comfort   *comfortState // comfort_state.go (spam, categories, S/MIME, PDF, ...)
 	diag      diagState     // diagnostics.go
+
+	// Per-App state that used to live in package-level maps (audit NH-02,
+	// NH-04, NH-05, NH-06): nothing here is shared between users.
+	ioOnce         sync.Once
+	iom            *ioManager // I/O jobs (io_jobs.go)
+	localThreadMu  sync.Mutex
+	localEngine    *threading.Engine // threading without a sync engine (io_mail.go)
+	prefetch       bodyPrefetch      // bubbles.go
+	bubbles        bodyCache         // items.go
+	rendered       renderCache       // rendercache.go
+	chromiumBroken atomic.Bool       // comfort_pdf.go
 }
 
 // New creates the application layer.

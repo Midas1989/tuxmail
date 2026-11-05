@@ -205,7 +205,7 @@ func (a *App) SaveComfortSettings(ctx context.Context, s ComfortSettings) (Comfo
 	a.comfort.mu.Lock()
 	a.comfort.settings = &s
 	a.comfort.mu.Unlock()
-	chromiumBroken.Store(false) // retry the browser after a settings change
+	a.chromiumBroken.Store(false) // retry the browser after a settings change
 	return s, nil
 }
 

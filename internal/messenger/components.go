@@ -142,7 +142,7 @@ func (s *Service) Component(plugin string) *ComponentStatus {
 	st := &ComponentStatus{Name: "signal-cli"}
 	goos, goarch := s.componentPlatform()
 	plan, perr := s.pins().PlanFor(goos, goarch)
-	if perr == nil && plan.Pinned() == nil {
+	if perr == nil && plan.Pinned() == nil && !s.opts.RestrictHostSettings {
 		st.Installable, st.InstallVersion, st.Note = true, plan.Version, plan.Note
 	}
 	locate := s.opts.Components.Locate
@@ -178,6 +178,9 @@ func (s *Service) Component(plugin string) *ComponentStatus {
 func (s *Service) InstallComponent(ctx context.Context, plugin string) error {
 	if plugin != "signal" {
 		return ErrNoComponent
+	}
+	if s.opts.RestrictHostSettings {
+		return ErrInstallRestricted
 	}
 	goos, goarch := s.componentPlatform()
 	plan, err := s.pins().PlanFor(goos, goarch)

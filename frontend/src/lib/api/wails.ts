@@ -453,8 +453,8 @@ export class WailsTransport implements Api {
   deleteWorkflow(id: string): Promise<void> {
     return this.call('DeleteWorkflow', id);
   }
-  setWorkflowEnabled(id: string, enabled: boolean): Promise<Workflow> {
-    return this.call('SetWorkflowEnabled', id, enabled);
+  setWorkflowEnabled(id: string, enabled: boolean, confirmExternal = false): Promise<Workflow> {
+    return this.call('SetWorkflowEnabled', id, enabled, confirmExternal);
   }
   listWorkflowTemplates(): Promise<WorkflowTemplate[]> {
     return this.call('ListWorkflowTemplates');

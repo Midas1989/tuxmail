@@ -962,6 +962,14 @@ type Workflow struct {
 	ExternalEffects bool                `json:"externalEffects,omitempty"`
 	LastRun         *WorkflowRunSummary `json:"lastRun,omitempty"`
 	UpdatedAt       string              `json:"updatedAt,omitempty"`
+	// ConfirmExternal (input only) says that the user has seen the actions
+	// of the workflow that act outside TuxMail and confirmed them. Saving an
+	// enabled workflow with such actions without it fails with
+	// confirmation_required (workflow_confirm.go).
+	ConfirmExternal bool `json:"confirmExternal,omitempty"`
+	// Author is the team member who saved the workflow last (team
+	// mailboxes only).
+	Author string `json:"author,omitempty"`
 }
 
 // WorkflowRunStep is a step of a run.

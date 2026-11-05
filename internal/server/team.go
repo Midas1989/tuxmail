@@ -298,6 +298,9 @@ func (s *Server) teamMailArrived(ctx context.Context, mailboxID int64, a *app.Ap
 }
 
 func teamURL(mailboxID, convID int64) string {
+	if convID == 0 {
+		return fmt.Sprintf("/#/mail?team=%d", mailboxID)
+	}
 	return fmt.Sprintf("/#/mail?team=%d&conversation=%d", mailboxID, convID)
 }
 
@@ -320,6 +323,15 @@ func (s *Server) onTeamEvent(ev team.Event) {
 		case team.EventPresence:
 			change.Presence = ev.Presence
 			s.publishTeam(users, app.EventTeamPresence, change)
+			return
+		case team.EventWorkflow:
+			// A workflow with external effect was saved or enabled: only the
+			// other managers are told what and by whom.
+			if mb, err := s.team.svc.GetMailbox(ctx, ev.MailboxID); err == nil {
+				for _, uid := range ev.UserIDs {
+					s.teamNotice(ctx, uid, mb, ev, "workflow", ev.Text)
+				}
+			}
 			return
 		}
 		s.publishTeam(users, app.EventTeamChanged, change)

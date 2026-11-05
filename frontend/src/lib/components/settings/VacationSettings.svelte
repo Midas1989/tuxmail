@@ -7,6 +7,8 @@
 <script lang="ts">
   import Server from '@lucide/svelte/icons/server';
   import { app } from '../../state';
+  import { ApiError } from '../../api/api';
+  import ConfirmDialog from '../common/ConfirmDialog.svelte';
   import { t } from '../../i18n/index.svelte';
   import type { VacationSettings } from '../../types';
 
@@ -18,6 +20,7 @@
   let error = $state<string | null>(null);
   let saved = $state(false);
   let busy = $state(false);
+  let confirmForward = $state(false);
 
   /** RFC 3339 -> value of <input type="datetime-local"> (local time); zero dates are empty. */
   function toLocalInput(v?: string | null): string {
@@ -49,7 +52,7 @@
   }
   void load();
 
-  async function save() {
+  async function save(confirmed = false) {
     busy = true;
     error = null;
     saved = false;
@@ -62,9 +65,14 @@
         ownDomains: list(ownDomains),
         forwardTo: list(forwardTo),
         oncePerDays: Math.max(0, Number(rest.oncePerDays) || 0),
+        confirmExternal: confirmed || undefined,
       });
       saved = true;
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'confirmation_required' && !confirmed) {
+        confirmForward = true; // forwarding is new or changed: ask first
+        return;
+      }
       error = err instanceof Error ? err.message : String(err);
     } finally {
       busy = false;
@@ -105,6 +113,18 @@
     <div class="actions"><button class="btn btn-primary" type="submit" disabled={busy}>{t('common.action.save')}</button></div>
   </form>
 </section>
+{#if confirmForward}
+  <ConfirmDialog
+    title={t('settings.vacation.confirmForward.title')}
+    message={t('settings.vacation.confirmForward.text', { addresses: list(forwardTo).join(', ') })}
+    confirmLabel={t('settings.vacation.confirmForward.ok')}
+    onconfirm={() => {
+      confirmForward = false;
+      void save(true);
+    }}
+    oncancel={() => (confirmForward = false)}
+  />
+{/if}
 
 <style>
   .card {

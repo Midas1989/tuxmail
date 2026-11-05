@@ -17,6 +17,7 @@
   import { fmt, t } from '../../i18n/index.svelte';
   import type { Workflow as Wf, WorkflowDryRunResult, WorkflowEditorMode, WorkflowRun, WorkflowSchema, WorkflowTemplate } from '../../types';
   import { workflowToRule } from '../../workflow/lang';
+  import { ApiError } from '../../api/api';
   import ConfirmDialog from '../common/ConfirmDialog.svelte';
   import WorkflowEditor from './WorkflowEditor.svelte';
   import DryRunPanel from './DryRunPanel.svelte';
@@ -69,8 +70,16 @@
       confirmEnable = w;
       return;
     }
-    const saved = await app.api.setWorkflowEnabled(w.id, !w.enabled);
-    list = list.map((x) => (x.id === saved.id ? { ...x, enabled: saved.enabled } : x));
+    try {
+      const saved = await app.api.setWorkflowEnabled(w.id, !w.enabled, confirmed);
+      list = list.map((x) => (x.id === saved.id ? { ...x, enabled: saved.enabled } : x));
+    } catch (err) {
+      if (err instanceof ApiError && err.code === 'confirmation_required' && !confirmed) {
+        confirmEnable = w;
+        return;
+      }
+      throw err;
+    }
   }
 
   async function openRuns(w: Wf) {
@@ -132,6 +141,7 @@
               {#if w.projectId != null && projectId == null}{@const p = app.project(w.projectId)}{#if p}<span class="proj" style:--c={p.color}>{p.name}</span>{/if}{/if}
             </span>
             <code class="rule" title={summary(w)}>{summary(w)}</code>
+            {#if w.author}<span class="author">{t('workflow.author', { name: w.author })}</span>{/if}
           </div>
           <span class="last" title={w.lastRun?.message ?? ''}>
             {#if w.lastRun}
@@ -314,6 +324,10 @@
     gap: 6px;
     font-size: 13.5px;
     font-weight: 600;
+  }
+  .author {
+    font-size: 11px;
+    color: var(--tm-muted);
   }
   .rule {
     font-family: var(--tm-mono);

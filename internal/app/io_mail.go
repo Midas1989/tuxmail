@@ -415,23 +415,17 @@ func (a *App) importMail(ctx context.Context, j *ioJob, src ie.Source, req Impor
 	return nil
 }
 
-var localThreadMu sync.Mutex
-
 func (a *App) threadEngine() *threading.Engine {
 	if a.mgr != nil {
 		return a.mgr.Engine()
 	}
-	localThreadMu.Lock()
-	defer localThreadMu.Unlock()
-	if v, ok := localEngines.Load(a); ok {
-		return v.(*threading.Engine)
+	a.localThreadMu.Lock()
+	defer a.localThreadMu.Unlock()
+	if a.localEngine == nil {
+		a.localEngine = threading.NewEngine(a.st.ThreadRepository(), threading.Config{Now: a.opts.Now})
 	}
-	e := threading.NewEngine(a.st.ThreadRepository(), threading.Config{Now: a.opts.Now})
-	localEngines.Store(a, e)
-	return e
+	return a.localEngine
 }
-
-var localEngines sync.Map
 
 // ingestLocal stores one message in a local folder: blob, metadata,
 // addresses, attachments, full-text index and threading.

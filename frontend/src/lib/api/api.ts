@@ -312,7 +312,8 @@ export interface Api {
   getWorkflow(id: string): Promise<Workflow>;
   saveWorkflow(workflow: Workflow): Promise<Workflow>;
   deleteWorkflow(id: string): Promise<void>;
-  setWorkflowEnabled(id: string, enabled: boolean): Promise<Workflow>;
+  /** Enabling a workflow with external effects needs confirmExternal (else `confirmation_required`). */
+  setWorkflowEnabled(id: string, enabled: boolean, confirmExternal?: boolean): Promise<Workflow>;
   listWorkflowTemplates(): Promise<WorkflowTemplate[]>;
   /** Evaluate against recent sample items without side effects. */
   dryRunWorkflow(workflow: Workflow, options?: { limit?: number }): Promise<WorkflowDryRunResult>;

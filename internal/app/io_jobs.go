@@ -77,14 +77,13 @@ type ioDownload struct {
 	created          time.Time
 }
 
-var ioRegistry sync.Map // *App -> *ioManager
-
+// io returns the job manager of this App. It lives in the App itself (not in
+// a package-level registry), so a closed App is not kept reachable (NH-02).
 func (a *App) io() *ioManager {
-	if v, ok := ioRegistry.Load(a); ok {
-		return v.(*ioManager)
-	}
-	v, _ := ioRegistry.LoadOrStore(a, &ioManager{jobs: map[string]*ioJob{}, downloads: map[string]ioDownload{}})
-	return v.(*ioManager)
+	a.ioOnce.Do(func() {
+		a.iom = &ioManager{jobs: map[string]*ioJob{}, downloads: map[string]ioDownload{}}
+	})
+	return a.iom
 }
 
 func (j *ioJob) snapshot() IOJob {

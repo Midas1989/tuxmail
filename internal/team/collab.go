@@ -774,3 +774,33 @@ func withTx(ctx context.Context, db *sql.DB, fn func(tx *sql.Tx) error) error {
 	}
 	return tx.Commit()
 }
+
+// ==== Workflow changes ========================================================
+
+// RecordWorkflow writes the audit entry "team.workflow.<action>" for a change
+// of a workflow of a team mailbox (action: save, enable, disable, delete;
+// details: workflow id and, for external effects, their targets) and, if the
+// change has an effect outside TuxMail (external), tells the other managers
+// of the mailbox (EventWorkflow). Managers can read the mails of the whole
+// mailbox, so a forwarding or webhook workflow must never be invisible to
+// them (re-audit NH-03).
+func (s *Service) RecordWorkflow(ctx context.Context, a Actor, mailboxID int64, action, details string, external bool) {
+	s.auditf(ctx, a, "team.workflow."+action, mailboxID, 0, details)
+	if !external {
+		return
+	}
+	members, err := s.Members(ctx, mailboxID)
+	if err != nil {
+		return
+	}
+	var managers []int64
+	for _, m := range members {
+		if m.Role.Allows(RoleManage) && m.UserID != a.UserID {
+			managers = append(managers, m.UserID)
+		}
+	}
+	if len(managers) == 0 {
+		return
+	}
+	s.emit(Event{Kind: EventWorkflow, MailboxID: mailboxID, ActorID: a.UserID, ActorName: a.Name, UserIDs: managers, Text: details})
+}

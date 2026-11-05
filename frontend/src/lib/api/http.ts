@@ -808,8 +808,8 @@ export class HttpTransport implements Api {
   deleteWorkflow(id: string): Promise<void> {
     return this.request('DELETE', `/api/workflows/${encodeURIComponent(id)}`);
   }
-  setWorkflowEnabled(id: string, enabled: boolean): Promise<Workflow> {
-    return this.request('PUT', `/api/workflows/${encodeURIComponent(id)}/enabled`, { enabled });
+  setWorkflowEnabled(id: string, enabled: boolean, confirmExternal = false): Promise<Workflow> {
+    return this.request('PUT', `/api/workflows/${encodeURIComponent(id)}/enabled`, { enabled, confirmExternal });
   }
   listWorkflowTemplates(): Promise<WorkflowTemplate[]> {
     return this.request('GET', '/api/workflow-templates');

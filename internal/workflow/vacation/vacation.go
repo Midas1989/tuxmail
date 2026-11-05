@@ -21,6 +21,9 @@ package vacation
 import (
 	"errors"
 	"fmt"
+	"regexp"
+	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -58,11 +61,48 @@ type Settings struct {
 	// (0 = default 4).
 	OncePerDays int `json:"oncePerDays,omitempty"`
 	// ForwardTo optionally forwards incoming personal mail to a deputy.
+	// Every entry must be a plain mail address (Validate); turning the
+	// forwarding on or changing it needs ConfirmExternal.
 	ForwardTo []string `json:"forwardTo,omitempty"`
+	// ConfirmExternal (input only, never stored) says that the user has seen
+	// that mail is forwarded to ForwardTo and confirmed it (re-audit NH-10).
+	ConfirmExternal bool `json:"confirmExternal,omitempty"`
 	// ChatAutoReply enables auto replies in messenger chats (direct chats only).
 	ChatAutoReply bool     `json:"chatAutoReply,omitempty"`
 	ChatText      string   `json:"chatText,omitempty"` // default ExternalText
 	ChatChannels  []string `json:"chatChannels,omitempty"`
+}
+
+// MaxForwardTo is the maximum number of forwarding addresses.
+const MaxForwardTo = 5
+
+var plainAddr = regexp.MustCompile(`^[^@\s<>"(),:;\[\]\\]+@[A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?\.[A-Za-z0-9-]{2,}$`)
+
+// validAddress reports whether a is a plain addr-spec (no display name, no
+// control characters, no list syntax).
+func validAddress(a string) bool {
+	if len(a) > 254 || strings.TrimSpace(a) != a {
+		return false
+	}
+	for _, r := range a {
+		if r < 0x21 || r == 0x7f {
+			return false
+		}
+	}
+	return plainAddr.MatchString(a)
+}
+
+// SameForwardTo reports whether two forwarding lists name the same addresses.
+func SameForwardTo(a, b []string) bool {
+	norm := func(l []string) []string {
+		out := make([]string, 0, len(l))
+		for _, x := range l {
+			out = append(out, strings.ToLower(strings.TrimSpace(x)))
+		}
+		sort.Strings(out)
+		return out
+	}
+	return slices.Equal(norm(a), norm(b))
 }
 
 // DefaultSubject is used when Settings.Subject is empty.
@@ -79,6 +119,14 @@ func (s Settings) Validate() error {
 	}
 	if s.OncePerDays < 0 {
 		errs = append(errs, errors.New("oncePerDays must not be negative"))
+	}
+	if len(s.ForwardTo) > MaxForwardTo {
+		errs = append(errs, fmt.Errorf("forwardTo: at most %d addresses", MaxForwardTo))
+	}
+	for _, a := range s.ForwardTo {
+		if !validAddress(a) {
+			errs = append(errs, fmt.Errorf("forwardTo: %q is not a mail address", a))
+		}
 	}
 	for name, t := range map[string]string{"subject": s.Subject, "internalText": s.InternalText,
 		"externalText": s.ExternalText, "chatText": s.ChatText} {

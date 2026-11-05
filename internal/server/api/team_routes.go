@@ -214,6 +214,18 @@ func proxyTeam(need team.Role, h AppHandler) AppHandler {
 			writeErr(w, err)
 			return
 		}
+		if need.Allows(team.RoleManage) {
+			// Changes of the shared mailbox (workflows ...) run on the team
+			// App, which does not know who asks: hand it the acting member
+			// for the audit log, the author and the notice to the other
+			// managers (re-audit NH-03).
+			wa, err := a.TeamWorkflowActor(r.Context(), tid)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+			r = r.WithContext(app.WithWorkflowActor(r.Context(), wa))
+		}
 		rw := &teamRewriter{ResponseWriter: w, prefix: teamPrefix(tid)}
 		h(rw, r, ta)
 		rw.flush()

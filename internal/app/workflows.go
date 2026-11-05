@@ -255,6 +255,7 @@ func (a *App) decorate(ctx context.Context, w *workflow.Workflow, metas map[stri
 	out := workflowDTO(w, a.wfReg)
 	m := metas[w.ID]
 	out.ProjectID, out.TemplateID = m.ProjectID, m.TemplateID
+	out.Author = a.workflowAuthor(ctx, w.ID)
 	if rec, err := a.st.GetWorkflow(ctx, w.ID); err == nil {
 		out.UpdatedAt = rfc3339(rec.UpdatedAt)
 		out.Enabled = rec.Enabled
@@ -351,8 +352,11 @@ func (a *App) GetWorkflow(ctx context.Context, id string) (Workflow, error) {
 	return a.decorate(ctx, w, metas)
 }
 
-// SaveWorkflow validates and stores a workflow. Saving from the UI counts as
-// confirmation of actions with external effect (the editor shows the warning).
+// SaveWorkflow validates and stores a workflow. An enabled workflow with
+// actions that act outside TuxMail (forward, webhook, automatic reply ...) is
+// only stored when in.ConfirmExternal is set (the editor shows the effects
+// first); an unchanged workflow needs no new confirmation. Otherwise the
+// call fails with confirmation_required (workflow_confirm.go).
 func (a *App) SaveWorkflow(ctx context.Context, in Workflow) (Workflow, error) {
 	if strings.TrimSpace(in.Name) == "" {
 		return Workflow{}, invalid("a workflow needs a name")
@@ -371,7 +375,13 @@ func (a *App) SaveWorkflow(ctx context.Context, in Workflow) (Workflow, error) {
 	if err != nil {
 		return Workflow{}, err
 	}
-	if err := a.wf.Save(ctx, w, true); err != nil {
+	effects, need := a.needsConfirmation(ctx, w, false)
+	if need && !in.ConfirmExternal {
+		return Workflow{}, confirmationRequired(effects)
+	}
+	// Confirmed by the request, or unchanged since the last confirmation.
+	confirmed := in.ConfirmExternal || (w.Enabled && len(effects) > 0 && !need)
+	if err := a.wf.Save(ctx, w, confirmed); err != nil {
 		var ve *workflow.ValidationError
 		if errors.As(err, &ve) {
 			return Workflow{}, invalid("%s", strings.Join(ve.Problems, "; "))
@@ -384,6 +394,7 @@ func (a *App) SaveWorkflow(ctx context.Context, in Workflow) (Workflow, error) {
 	if in.ProjectID != 0 {
 		a.hub.Publish(Event{Type: EventProjectUpdated, ProjectID: in.ProjectID})
 	}
+	a.workflowChanged(ctx, w.ID, "save", w)
 	a.sieveSyncSoon() // mailproto.go
 	return a.GetWorkflow(ctx, w.ID)
 }
@@ -393,14 +404,29 @@ func (a *App) DeleteWorkflow(ctx context.Context, id string) error {
 	if err := a.wf.Delete(ctx, id); err != nil {
 		return err
 	}
+	a.workflowChanged(ctx, id, "delete", nil)
 	a.sieveSyncSoon() // mailproto.go
 	return nil
 }
 
-// SetWorkflowEnabled enables or disables a workflow.
-func (a *App) SetWorkflowEnabled(ctx context.Context, id string, enabled bool) (Workflow, error) {
-	if err := a.wf.SetEnabled(ctx, id, enabled, true); err != nil {
+// SetWorkflowEnabled enables or disables a workflow. Enabling a workflow with
+// actions that act outside TuxMail needs confirmExternal (see SaveWorkflow).
+func (a *App) SetWorkflowEnabled(ctx context.Context, id string, enabled, confirmExternal bool) (Workflow, error) {
+	w, ok := a.wf.Get(id)
+	if !ok {
+		return Workflow{}, errNotFound
+	}
+	w.Enabled = enabled
+	if effects, need := a.needsConfirmation(ctx, w, true); need && !confirmExternal {
+		return Workflow{}, confirmationRequired(effects)
+	}
+	if err := a.wf.SetEnabled(ctx, id, enabled, confirmExternal); err != nil {
 		return Workflow{}, err
+	}
+	if enabled {
+		a.workflowChanged(ctx, id, "enable", w)
+	} else {
+		a.workflowChanged(ctx, id, "disable", w)
 	}
 	a.sieveSyncSoon() // mailproto.go
 	return a.GetWorkflow(ctx, id)

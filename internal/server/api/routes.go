@@ -413,8 +413,11 @@ func Routes(opts Options) []Route {
 			send(w)(a.SaveWorkflow(r.Context(), in))
 		})},
 		{"DELETE /api/workflows/{id}", func(w w, r r, a A) { done(w, a.DeleteWorkflow(r.Context(), r.PathValue("id"))) }},
-		{"PUT /api/workflows/{id}/enabled", jsonHandler(func(w w, r r, a A, in struct{ Enabled bool }) {
-			send(w)(a.SetWorkflowEnabled(r.Context(), r.PathValue("id"), in.Enabled))
+		{"PUT /api/workflows/{id}/enabled", jsonHandler(func(w w, r r, a A, in struct {
+			Enabled         bool `json:"enabled"`
+			ConfirmExternal bool `json:"confirmExternal"`
+		}) {
+			send(w)(a.SetWorkflowEnabled(r.Context(), r.PathValue("id"), in.Enabled, in.ConfirmExternal))
 		})},
 		{"GET /api/workflow-templates", func(w w, r r, a A) { send(w)(a.ListWorkflowTemplates(r.Context())) }},
 		{"POST /api/workflows/dry-run", jsonHandler(func(w w, r r, a A, in struct {

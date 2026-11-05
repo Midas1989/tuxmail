@@ -838,6 +838,12 @@ export class MockOrganizer {
     rec.externalEffects = hasExternalEffects(DEFAULT_SCHEMA, rec.actions.map((a) => a.type));
     const errs = this.semanticErrors(rec);
     if (errs.length) throw new ApiError(errs[0], 400, 'invalid_workflow');
+    // Like the core: an enabled workflow with external effects needs the explicit confirmation.
+    const old = this.workflows.find((x) => x.id === rec.id);
+    if (rec.enabled && rec.externalEffects && !rec.confirmExternal && !(old?.enabled && old.externalEffects)) {
+      throw new ApiError('This workflow acts outside TuxMail; it has to be confirmed explicitly.', 409, 'confirmation_required');
+    }
+    delete rec.confirmExternal;
     const i = this.workflows.findIndex((x) => x.id === rec.id);
     if (i >= 0) {
       rec.lastRun = this.workflows[i].lastRun;
@@ -863,9 +869,12 @@ export class MockOrganizer {
     this.runs.delete(id);
   }
 
-  setWorkflowEnabled(id: string, enabled: boolean): Workflow {
+  setWorkflowEnabled(id: string, enabled: boolean, confirmExternal = false): Workflow {
     const w = this.workflows.find((x) => x.id === id);
     if (!w) throw new ApiError('Workflow nicht gefunden', 404, 'not_found');
+    if (enabled && w.externalEffects && !confirmExternal) {
+      throw new ApiError('This workflow acts outside TuxMail; it has to be confirmed explicitly.', 409, 'confirmation_required');
+    }
     w.enabled = enabled;
     return clone(w);
   }
