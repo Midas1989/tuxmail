@@ -375,6 +375,7 @@ func TestDiscoverWellKnownAndHTTPFallback(t *testing.T) {
 	f := newWebFixture(t)
 	f.set("http://example.org/.well-known/autoconfig/mail/config-v1.1.xml", simpleXML("wk.example.org"))
 	d := newTestDiscoverer(f, &fakeResolver{})
+	d.AllowHTTP = true // opt in: plain HTTP is off by default (audit NF-05)
 	cands, err := d.Discover(context.Background(), "bob@example.org")
 	if err != nil {
 		t.Fatal(err)

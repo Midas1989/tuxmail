@@ -20,6 +20,9 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
+
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
 )
 
 // XML namespaces.
@@ -60,6 +63,41 @@ type Client struct {
 	// Token returns an OAuth2 bearer token (used instead of basic auth).
 	Token     func(ctx context.Context) (string, error)
 	UserAgent string
+
+	// bound is the URL the credentials are bound to: the first URL the
+	// client is used for (the account's configured server). Credentials are
+	// only sent to the same host, or - over https - to hosts of the same
+	// registrable domain; redirects and server-supplied hrefs elsewhere are
+	// refused (audit NF-06).
+	bound atomic.Pointer[url.URL]
+}
+
+// bind returns the credential anchor, fixing it to u on first use.
+func (c *Client) bind(u *url.URL) *url.URL {
+	if o := c.bound.Load(); o != nil {
+		return o
+	}
+	c.bound.CompareAndSwap(nil, u)
+	return c.bound.Load()
+}
+
+// Trusted reports whether credentials may be sent to rawURL (see bound).
+func (c *Client) Trusted(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	return safehttp.CredentialsAllowed(c.bind(u), u)
+}
+
+// ResolveTrusted resolves a server-supplied href against base and returns ""
+// when the result points to a host credentials must not follow.
+func (c *Client) ResolveTrusted(base, href string) string {
+	abs := Resolve(base, href)
+	if !c.Trusted(abs) {
+		return ""
+	}
+	return abs
 }
 
 func (c *Client) httpClient() *http.Client {
@@ -84,6 +122,15 @@ func (c *Client) Do(ctx context.Context, method, rawURL string, header http.Head
 		req, err := http.NewRequestWithContext(ctx, method, target, rd)
 		if err != nil {
 			return nil, err
+		}
+		if !c.Trusted(target) {
+			if hop == 0 {
+				return nil, fmt.Errorf("dav: %s: %w", req.URL.Redacted(), safehttp.ErrForeignHost)
+			}
+			if o := c.bound.Load(); o != nil && strings.EqualFold(o.Scheme, "https") && req.URL.Scheme == "http" {
+				return nil, fmt.Errorf("dav: redirect to %s: %w", req.URL.Redacted(), safehttp.ErrInsecure)
+			}
+			return nil, fmt.Errorf("dav: redirect to %s refused: %w (enter the server address of the final host instead)", req.URL.Redacted(), safehttp.ErrForeignHost)
 		}
 		for k, v := range header {
 			req.Header[k] = v
@@ -416,7 +463,12 @@ func (c *Client) Principal(ctx context.Context, start, service string) (string, 
 		for _, r := range ms.Resources {
 			if p := r.Prop(NSDAV, "current-user-principal"); p != nil {
 				if hs := p.Hrefs(); len(hs) > 0 && hs[0] != "" {
-					return Resolve(cand, hs[0]), nil
+					// A principal on a foreign host is ignored: credentials
+					// must not follow server-supplied URLs (audit NF-06).
+					if abs := c.ResolveTrusted(cand, hs[0]); abs != "" {
+						return abs, nil
+					}
+					continue
 				}
 			}
 		}
@@ -435,7 +487,9 @@ func (c *Client) HomeSet(ctx context.Context, principal, ns, local string) (stri
 	for _, r := range ms.Resources {
 		if p := r.Prop(ns, local); p != nil {
 			if hs := p.Hrefs(); len(hs) > 0 {
-				return Resolve(principal, hs[0]), nil
+				if abs := c.ResolveTrusted(principal, hs[0]); abs != "" {
+					return abs, nil
+				}
 			}
 		}
 	}

@@ -49,10 +49,10 @@ func Discover(ctx context.Context, c *dav.Client, start string) (*Account, error
 	if err == nil {
 		for _, r := range ms.Resources {
 			if hs := r.Prop(dav.NSCalDAV, "calendar-home-set").Hrefs(); len(hs) > 0 {
-				acc.Home = dav.Resolve(principal, hs[0])
+				acc.Home = c.ResolveTrusted(principal, hs[0])
 			}
 			if ob := r.Prop(dav.NSCalDAV, "schedule-outbox-URL").Hrefs(); len(ob) > 0 {
-				acc.Outbox = dav.Resolve(principal, ob[0])
+				acc.Outbox = c.ResolveTrusted(principal, ob[0])
 			}
 		}
 	}

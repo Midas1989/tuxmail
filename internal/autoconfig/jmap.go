@@ -5,6 +5,8 @@ package autoconfig
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -58,7 +60,19 @@ func (d *Discoverer) probeJMAP(ctx context.Context, u, email, password string) *
 	if password != "" {
 		req.SetBasicAuth(email, password)
 	}
-	resp, err := d.HTTPClient.Do(req)
+	// Never follow a redirect to plain HTTP: the Basic credentials would go
+	// along (audit NF-06/NF-07). Redirects to other hosts drop them (net/http).
+	hc := *d.HTTPClient
+	hc.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		if r.URL.Scheme != "https" {
+			return fmt.Errorf("autoconfig: refusing redirect to %s", r.URL.Redacted())
+		}
+		if len(via) >= 10 {
+			return errors.New("autoconfig: stopped after 10 redirects")
+		}
+		return nil
+	}
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil
 	}
