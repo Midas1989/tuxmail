@@ -41,37 +41,98 @@ type Component struct {
 // ErrSyntax is returned for malformed input.
 var ErrSyntax = errors.New("ical: syntax error")
 
+// MaxDepth is the deepest component nesting ParseAll accepts. Real
+// calendars nest 3 levels (VCALENDAR > VEVENT > VALARM); the bound keeps
+// every consumer of the tree safe from stack exhaustion (NB-03).
+const MaxDepth = 64
+
+// ErrTooDeep is returned (wrapping ErrSyntax) when components nest deeper
+// than MaxDepth.
+var ErrTooDeep = fmt.Errorf("%w: components nested deeper than %d", ErrSyntax, MaxDepth)
+
 // ==== Parsing ==================================================================
 
 // unfold splits the input into logical lines: CRLF/LF line breaks followed
 // by a space or tab continue the previous line (RFC 5545 3.1). vCard 2.1
 // quoted-printable soft line breaks ("=" at the end of a line whose
 // parameters say QUOTED-PRINTABLE) are joined as well.
+//
+// The work is linear in the input size: the logical line is assembled in a
+// byte buffer and the "is this a quoted-printable line" decision is made
+// incrementally from the parameter part only (NB-02; joining by string
+// concatenation and re-scanning the whole line was quadratic).
 func unfold(s string) []string {
 	s = strings.TrimPrefix(s, "\ufeff")
 	var out []string
 	sc := bufio.NewScanner(strings.NewReader(s))
 	sc.Buffer(make([]byte, 0, 64*1024), 64<<20)
+	var cur logicalLine
+	flush := func() {
+		if cur.active {
+			out = append(out, string(cur.buf))
+		}
+	}
 	qpCont := false
 	for sc.Scan() {
 		line := strings.TrimRight(sc.Text(), "\r")
 		switch {
-		case len(out) > 0 && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")):
-			out[len(out)-1] += line[1:]
-		case qpCont && len(out) > 0:
-			out[len(out)-1] += line
+		case cur.active && (strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t")):
+			cur.add(line[1:])
+		case qpCont && cur.active:
+			cur.add(line)
 		case line == "":
 			continue
 		default:
-			out = append(out, line)
+			flush()
+			cur.start(line)
 		}
-		last := out[len(out)-1]
-		qpCont = strings.HasSuffix(last, "=") && isQPLine(last)
+		qpCont = cur.qp && len(cur.buf) > 0 && cur.buf[len(cur.buf)-1] == '='
 		if qpCont {
-			out[len(out)-1] = strings.TrimSuffix(last, "=")
+			cur.buf = cur.buf[:len(cur.buf)-1]
 		}
 	}
+	flush()
 	return out
+}
+
+// maxHeadScan bounds how much of a line's parameter part is examined for
+// QUOTED-PRINTABLE; longer heads are not quoted-printable lines.
+const maxHeadScan = 64 << 10
+
+// logicalLine is the unfolded line being assembled by unfold.
+type logicalLine struct {
+	buf    []byte
+	active bool
+	// Incremental isQPLine: the head is everything before the first ':'
+	// outside double quotes.
+	inQ      bool
+	headDone bool
+	qp       bool
+	head     []byte
+}
+
+func (l *logicalLine) start(s string) {
+	*l = logicalLine{buf: make([]byte, 0, len(s)+len(s)/4), active: true, head: l.head[:0]}
+	l.add(s)
+}
+
+func (l *logicalLine) add(s string) {
+	l.buf = append(l.buf, s...)
+	for i := 0; !l.headDone && i < len(s); i++ {
+		switch c := s[i]; {
+		case c == '"':
+			l.inQ = !l.inQ
+			l.head = append(l.head, c)
+		case c == ':' && !l.inQ:
+			l.headDone = true
+			l.qp = strings.Contains(strings.ToUpper(string(l.head)), "QUOTED-PRINTABLE")
+		default:
+			l.head = append(l.head, c)
+		}
+		if !l.headDone && len(l.head) > maxHeadScan {
+			l.headDone = true
+		}
+	}
 }
 
 func isQPLine(l string) bool {
@@ -192,6 +253,9 @@ func ParseAll(s string) ([]*Component, error) {
 		}
 		switch p.Name {
 		case "BEGIN":
+			if len(stack) >= MaxDepth {
+				return nil, ErrTooDeep
+			}
 			c := &Component{Name: strings.ToUpper(strings.TrimSpace(p.Value))}
 			if n := len(stack); n > 0 {
 				stack[n-1].Children = append(stack[n-1].Children, c)
@@ -242,15 +306,33 @@ func (c *Component) Encode() string {
 	return b.String()
 }
 
+// encode writes c without recursion, so a hand-built component of any depth
+// cannot overflow the stack (NB-03).
 func (c *Component) encode(b *strings.Builder) {
-	writeFolded(b, "BEGIN:"+c.Name)
-	for _, p := range c.Props {
-		writeFolded(b, p.Line())
+	begin := func(c *Component) {
+		writeFolded(b, "BEGIN:"+c.Name)
+		for _, p := range c.Props {
+			writeFolded(b, p.Line())
+		}
 	}
-	for _, ch := range c.Children {
-		ch.encode(b)
+	type frame struct {
+		c    *Component
+		next int
 	}
-	writeFolded(b, "END:"+c.Name)
+	begin(c)
+	stack := []frame{{c: c}}
+	for len(stack) > 0 {
+		f := &stack[len(stack)-1]
+		if f.next < len(f.c.Children) {
+			ch := f.c.Children[f.next]
+			f.next++
+			begin(ch)
+			stack = append(stack, frame{c: ch})
+			continue
+		}
+		writeFolded(b, "END:"+f.c.Name)
+		stack = stack[:len(stack)-1]
+	}
 }
 
 // Line returns the unfolded content line of p.
@@ -439,14 +521,33 @@ func (c *Component) RemoveChildren(drop func(*Component) bool) {
 
 // Clone returns a deep copy.
 func (c *Component) Clone() *Component {
-	n := &Component{Name: c.Name}
-	for _, p := range c.Props {
-		n.Props = append(n.Props, p.Clone())
+	shallow := func(c *Component) *Component {
+		n := &Component{Name: c.Name}
+		for _, p := range c.Props {
+			n.Props = append(n.Props, p.Clone())
+		}
+		return n
 	}
-	for _, ch := range c.Children {
-		n.Children = append(n.Children, ch.Clone())
+	type frame struct {
+		src, dst *Component
+		next     int
 	}
-	return n
+	root := shallow(c)
+	// Iterative so that a component of any depth cannot overflow the stack (NB-03).
+	stack := []frame{{src: c, dst: root}}
+	for len(stack) > 0 {
+		f := &stack[len(stack)-1]
+		if f.next >= len(f.src.Children) {
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		ch := f.src.Children[f.next]
+		f.next++
+		n := shallow(ch)
+		f.dst.Children = append(f.dst.Children, n)
+		stack = append(stack, frame{src: ch, dst: n})
+	}
+	return root
 }
 
 // Clone returns a deep copy.

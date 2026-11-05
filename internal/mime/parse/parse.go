@@ -884,16 +884,43 @@ func (p *parser) calendar(part *Part, data []byte, inAttached bool) {
 	}
 }
 
+// unfoldICal joins folded iCalendar lines (RFC 5545 3.1). It is linear in the
+// input size: a logical line is assembled in a strings.Builder instead of by
+// repeated string concatenation, which was quadratic for a line folded over
+// many continuation lines (NB-02).
 func unfoldICal(s string) []string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
-	var out []string
-	for _, l := range strings.Split(s, "\n") {
-		if (strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")) && len(out) > 0 {
-			out[len(out)-1] += l[1:]
+	var (
+		out      []string
+		cur      strings.Builder
+		pending  string // current logical line while it has no continuation
+		building bool   // a continuation was seen; cur holds the line
+		have     bool
+	)
+	flush := func() {
+		switch {
+		case !have:
+		case building:
+			out = append(out, cur.String())
+			cur = strings.Builder{}
+			building = false
+		default:
+			out = append(out, pending)
+		}
+	}
+	for l := range strings.SplitSeq(s, "\n") {
+		if have && (strings.HasPrefix(l, " ") || strings.HasPrefix(l, "\t")) {
+			if !building {
+				cur.WriteString(pending)
+				building = true
+			}
+			cur.WriteString(l[1:])
 			continue
 		}
-		out = append(out, l)
+		flush()
+		pending, have = l, true
 	}
+	flush()
 	return out
 }
 
