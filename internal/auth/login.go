@@ -257,21 +257,21 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 			return nil, err
 		}
 	}
-	return s.finishLogin(ctx, u, req.Kind, u.TOTPEnabled, req.Client)
+	return s.finishLogin(ctx, u, req.Kind, MethodPassword, u.TOTPEnabled, req.Client)
 }
 
-func (s *Service) finishLogin(ctx context.Context, u *User, kind string, mfa bool, ci ClientInfo) (*LoginResult, error) {
+func (s *Service) finishLogin(ctx context.Context, u *User, kind, method string, mfa bool, ci ClientInfo) (*LoginResult, error) {
 	if kind == "" {
 		kind = KindWeb
 	}
 	k := keysFor(u.Username, ci.IP)
 	s.clearThrottle(ctx, k.net)
 	s.clearThrottle(ctx, k.user)
-	tok, sess, err := s.createSession(ctx, u.ID, kind, mfa, ci)
+	tok, sess, err := s.createSession(ctx, u.ID, kind, method, mfa, ci)
 	if err != nil {
 		return nil, err
 	}
-	s.Audit(ctx, "login", u.Username, true, fmt.Sprintf("kind=%s mfa=%v", kind, mfa))
+	s.Audit(ctx, "login", u.Username, true, fmt.Sprintf("kind=%s method=%s mfa=%v", kind, method, mfa))
 	u, err = s.GetUser(ctx, u.ID)
 	if err != nil {
 		return nil, err
@@ -313,13 +313,19 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 		return nil, err
 	}
 	s.db.ExecContext(ctx, `DELETE FROM mfa_challenges WHERE token_hash = ?`, h)
-	return s.finishLogin(ctx, u, kind, true, ci)
+	return s.finishLogin(ctx, u, kind, MethodPassword, true, ci)
 }
 
-// MFASetupRequired reports whether the user must enrol TOTP before using
-// privileged functions (auth.totp_required_for_admins).
-func (s *Service) MFASetupRequired(u *User) bool {
-	return s.cfg.Auth.TOTPRequiredForAdmins && u.IsAdmin() && !u.TOTPEnabled && !u.OIDC
+// MFASetupRequired reports whether the session must enrol TOTP before using
+// privileged functions (auth.totp_required_for_admins). Only sessions created
+// by the OIDC callback of an OIDC-linked account are exempt (their second
+// factor is the identity provider's); a password login of the very same
+// account is not (NA-02). A nil session is never exempt.
+func (s *Service) MFASetupRequired(u *User, sess *Session) bool {
+	if !s.cfg.Auth.TOTPRequiredForAdmins || !u.IsAdmin() || u.TOTPEnabled {
+		return false
+	}
+	return !(u.OIDC && sess != nil && sess.LoginMethod == MethodOIDC)
 }
 
 // verifySecondFactor checks a TOTP code (with replay protection) or consumes

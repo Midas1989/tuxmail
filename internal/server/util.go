@@ -56,6 +56,8 @@ func (s *Server) writeAuthError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", err.Error())
 	case errors.Is(err, auth.ErrUserDisabled):
 		writeError(w, http.StatusForbidden, "user_disabled", err.Error())
+	case errors.Is(err, auth.ErrReauthRequired):
+		writeError(w, http.StatusForbidden, "reauth_required", err.Error())
 	case errors.Is(err, auth.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", err.Error())
 	case errors.Is(err, auth.ErrExists):

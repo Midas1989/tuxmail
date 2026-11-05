@@ -176,5 +176,5 @@ func (s *Service) PollDeviceToken(ctx context.Context, deviceCode string) (*Logi
 		return nil, ErrAccessDenied
 	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: ip})
-	return s.finishLogin(ctx, u, KindDevice, false, ClientInfo{IP: ip, UserAgent: ua, DeviceName: name, PubKey: pub})
+	return s.finishLogin(ctx, u, KindDevice, MethodDeviceCode, false, ClientInfo{IP: ip, UserAgent: ua, DeviceName: name, PubKey: pub})
 }

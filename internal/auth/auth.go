@@ -50,6 +50,7 @@ var (
 	ErrInvalidInput       = errors.New("auth: invalid input")
 	ErrLastAdmin          = errors.New("auth: cannot remove the last active administrator")
 	ErrRegistration       = errors.New("auth: registration is disabled")
+	ErrReauthRequired     = errors.New("auth: re-authentication required")
 )
 
 // Role is a user role.

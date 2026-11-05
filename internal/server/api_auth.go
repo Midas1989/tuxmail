@@ -67,7 +67,7 @@ func (s *Server) writeLoginResult(w http.ResponseWriter, res *auth.LoginResult) 
 		return
 	}
 	s.startSession(w, res)
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "user": res.User, "mfaSetupRequired": s.auth.MFASetupRequired(res.User)})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "user": res.User, "mfaSetupRequired": s.auth.MFASetupRequired(res.User, res.Session)})
 }
 
 func (s *Server) handleLoginTOTP(w http.ResponseWriter, r *http.Request) {
@@ -104,7 +104,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"user":              a.User,
 		"session":           a.Session,
-		"mfaSetupRequired":  s.auth.MFASetupRequired(a.User),
+		"mfaSetupRequired":  s.auth.MFASetupRequired(a.User, a.Session),
 		"recoveryCodesLeft": left,
 	})
 }
@@ -113,11 +113,20 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, a 
 	var req struct {
 		CurrentPassword string `json:"currentPassword"`
 		NewPassword     string `json:"newPassword"`
+		TOTPCode        string `json:"totpCode"`     // first password of an account with TOTP
+		RecoveryCode    string `json:"recoveryCode"` // alternative to totpCode
 	}
 	if !readJSON(w, r, &req) || !s.limitLogin(w, r, a.User.Username) {
 		return
 	}
-	if err := s.auth.ChangePassword(r.Context(), a.User.ID, req.CurrentPassword, req.NewPassword, a.Session.ID); err != nil {
+	var err error
+	if a.User.HasPassword {
+		err = s.auth.ChangePassword(r.Context(), a.User.ID, req.CurrentPassword, req.NewPassword, a.Session.ID)
+	} else {
+		// OIDC-only account: setting a first local password re-authenticates (NA-02).
+		err = s.auth.SetFirstPassword(r.Context(), a.User.ID, req.NewPassword, a.Session.ID, req.TOTPCode, req.RecoveryCode)
+	}
+	if err != nil {
 		s.writeAuthError(w, err)
 		return
 	}

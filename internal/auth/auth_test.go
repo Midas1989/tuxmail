@@ -371,7 +371,7 @@ func TestTOTPLoginAndRecovery(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.cfg.Auth.TOTPRequiredForAdmins = true
-	if !s.MFASetupRequired(res.User) {
+	if !s.MFASetupRequired(res.User, res.Session) {
 		t.Fatal("admin without TOTP must enrol")
 	}
 }

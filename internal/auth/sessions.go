@@ -15,6 +15,13 @@ const (
 	KindDevice = "device"
 )
 
+// Login methods: how a session was created (NA-02).
+const (
+	MethodPassword   = "password"    // local password (plus second factor if enabled)
+	MethodOIDC       = "oidc"        // identity provider callback
+	MethodDeviceCode = "device_code" // device authorization grant (approved elsewhere)
+)
+
 // DeviceTokenLifetime is the validity of device tokens issued to clients.
 const DeviceTokenLifetime = 365 * 24 * time.Hour
 
@@ -28,6 +35,7 @@ type Session struct {
 	IP           string    `json:"ip"`
 	UserAgent    string    `json:"userAgent"`
 	MFA          bool      `json:"mfa"`
+	LoginMethod  string    `json:"loginMethod"`
 	CreatedAt    time.Time `json:"createdAt"`
 	ExpiresAt    time.Time `json:"expiresAt"`
 	LastSeenAt   time.Time `json:"lastSeenAt"`
@@ -50,7 +58,7 @@ func truncate(s string, n int) string {
 }
 
 // createSession stores a new session and returns its token.
-func (s *Service) createSession(ctx context.Context, userID int64, kind string, mfa bool, ci ClientInfo) (string, *Session, error) {
+func (s *Service) createSession(ctx context.Context, userID int64, kind, method string, mfa bool, ci ClientInfo) (string, *Session, error) {
 	tok := randomToken(32)
 	now := s.now()
 	life := s.cfg.Auth.SessionLifetime.D()
@@ -58,9 +66,9 @@ func (s *Service) createSession(ctx context.Context, userID int64, kind string, 
 		life = DeviceTokenLifetime
 	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions(token_hash, user_id, kind, device_name, ip, user_agent, mfa,
-		client_pubkey, created_at, expires_at, last_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		login_method, client_pubkey, created_at, expires_at, last_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		hashToken(tok), userID, kind, truncate(ci.DeviceName, 100), truncate(ci.IP, 64), truncate(ci.UserAgent, 300), mfa,
-		ci.PubKey, now.Unix(), now.Add(life).Unix(), now.Unix())
+		method, ci.PubKey, now.Unix(), now.Add(life).Unix(), now.Unix())
 	if err != nil {
 		return "", nil, err
 	}
@@ -72,12 +80,12 @@ func (s *Service) createSession(ctx context.Context, userID int64, kind string, 
 	return tok, sess, err
 }
 
-const sessionCols = `id, user_id, kind, device_name, ip, user_agent, mfa, client_pubkey, created_at, expires_at, last_seen_at`
+const sessionCols = `id, user_id, kind, device_name, ip, user_agent, mfa, login_method, client_pubkey, created_at, expires_at, last_seen_at`
 
 func scanSession(sc interface{ Scan(...any) error }) (*Session, error) {
 	var x Session
 	var c, e, l int64
-	if err := sc.Scan(&x.ID, &x.UserID, &x.Kind, &x.DeviceName, &x.IP, &x.UserAgent, &x.MFA, &x.ClientPubKey, &c, &e, &l); err != nil {
+	if err := sc.Scan(&x.ID, &x.UserID, &x.Kind, &x.DeviceName, &x.IP, &x.UserAgent, &x.MFA, &x.LoginMethod, &x.ClientPubKey, &c, &e, &l); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

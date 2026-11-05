@@ -400,7 +400,7 @@ func (s *Server) admin(h handlerFunc) http.HandlerFunc {
 			writeError(w, http.StatusForbidden, "forbidden", "administrator role required")
 			return false
 		}
-		if s.auth.MFASetupRequired(a.User) {
+		if s.auth.MFASetupRequired(a.User, a.Session) {
 			writeError(w, http.StatusForbidden, "mfa_setup_required", "set up two-factor authentication first")
 			return false
 		}

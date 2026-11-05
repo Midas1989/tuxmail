@@ -184,7 +184,7 @@ func (s *Service) OIDCCallback(ctx context.Context, state, code string, ci Clien
 		s.Audit(ctx, "login.oidc", u.Username, false, "disabled")
 		return nil, "", ErrUserDisabled
 	}
-	res, err := s.finishLogin(ctx, u, KindWeb, true, ci)
+	res, err := s.finishLogin(ctx, u, KindWeb, MethodOIDC, true, ci)
 	return res, returnTo, err
 }
 
