@@ -90,7 +90,6 @@ func TestChromiumPathSettingIgnoredInServerMode(t *testing.T) {
 	if err := os.WriteFile(prog, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	chromiumBroken.Store(false)
 	var s ComfortSettings
 	s.PDF.ChromiumPath = prog
 

@@ -94,6 +94,11 @@ type oauthFlow struct {
 	flow   *oauth.Flow
 }
 
+// refuseOpener is the browser opener of server-mode Apps.
+func refuseOpener(context.Context, string) error {
+	return errors.New("oauth: the server cannot open a browser")
+}
+
 func newOAuthState(a *App) *oauthState {
 	opt := OAuthOptions{}
 	if a.opts.OAuth != nil {
@@ -101,6 +106,11 @@ func newOAuthState(a *App) *oauthState {
 	}
 	if opt.Clients == nil {
 		opt.Clients = oauth.ClientsFromEnv(nil)
+	}
+	if a.opts.Mode == ModeServer {
+		// The server host has no browser the user could see: never run the
+		// default opener (xdg-open & co.) on behalf of a remote user (NH-01).
+		opt.Opener = refuseOpener
 	}
 	s := &oauthState{a: a, opt: opt, flows: map[string]*oauthFlow{}}
 	s.mgr = oauth.NewManager(oauth.Config{Clients: s, Secrets: a.opts.Secrets, HTTPClient: a.opts.HTTPClient, Opener: opt.Opener,
@@ -156,7 +166,13 @@ func (a *App) OAuthManager() *oauth.Manager { return a.oauth.mgr }
 
 // SetOAuthOpener replaces the browser opener (the Wails shell passes
 // runtime.BrowserOpenURL).
-func (a *App) SetOAuthOpener(o oauth.Opener) { a.oauth.mgr.SetOpener(o) }
+// Ignored in server mode (NH-01).
+func (a *App) SetOAuthOpener(o oauth.Opener) {
+	if a.opts.Mode == ModeServer {
+		return
+	}
+	a.oauth.mgr.SetOpener(o)
+}
 
 func (a *App) oauthTokens() send.TokenFunc {
 	return func(_ context.Context, acc domain.Account) (smtp.TokenSource, error) {
@@ -368,6 +384,12 @@ func (a *App) StartOAuth(ctx context.Context, in OAuthStartInput) (OAuthFlowStat
 				in.Mode = "device"
 			}
 		}
+	}
+	if in.Mode == "loopback" && a.opts.Mode == ModeServer {
+		// The loopback flow binds a listener on the host and opens a browser
+		// there: desktop only. Server users sign in with redirect or device
+		// code (NH-01).
+		return OAuthFlowStatus{}, invalid("sign-in mode %q is not available on the server (use redirect or device)", in.Mode)
 	}
 	req := oauth.StartRequest{Provider: in.Provider, Kind: domain.AccountKind(in.Kind), LoginHint: in.Email, Tenant: in.Tenant}
 	f := &oauthFlow{in: in, status: OAuthFlowStatus{ID: newID("oa_"), Provider: in.Provider, Mode: in.Mode, Status: "pending", Email: in.Email}}

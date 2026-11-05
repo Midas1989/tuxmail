@@ -15,18 +15,33 @@ import (
 // immutable (blob hash), so the rendered result is cached: reopening a mail,
 // switching back and forth with J/K and the mail window are instant. The
 // key includes the message id because cid: URLs contain it.
+//
+// The cache belongs to one App: the rendered HTML carries image-proxy URLs
+// signed for that user (server mode), so entries must never be served to
+// another user (NH-05).
 
 var errNoBody = errors.New("app: body not available")
 
-const maxRenderCache = 256
+const (
+	maxRenderCache      = 256
+	maxRenderCacheBytes = 64 << 20 // per App
+)
 
 type renderCache struct {
 	mu    sync.Mutex
 	m     map[string]RenderedMessage
+	size  map[string]int
 	order []string
+	bytes int
 }
 
-var rendered = &renderCache{m: map[string]RenderedMessage{}}
+func (r RenderedMessage) cost() int {
+	n := 256 + len(r.Text) + len(r.HTML)
+	for _, a := range r.Attachments {
+		n += 64 + len(a.Filename) + len(a.MIMEType) + len(a.ContentID)
+	}
+	return n
+}
 
 func (c *renderCache) get(k string) (RenderedMessage, bool) {
 	c.mu.Lock()
@@ -36,17 +51,28 @@ func (c *renderCache) get(k string) (RenderedMessage, bool) {
 }
 
 func (c *renderCache) put(k string, r RenderedMessage) {
+	cost := r.cost()
+	if cost > maxRenderCacheBytes/4 {
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m, c.size = map[string]RenderedMessage{}, map[string]int{}
+	}
 	if _, ok := c.m[k]; ok {
 		return
 	}
-	if len(c.order) >= maxRenderCache {
-		delete(c.m, c.order[0])
+	for len(c.order) > 0 && (len(c.m) >= maxRenderCache || c.bytes+cost > maxRenderCacheBytes) {
+		old := c.order[0]
 		c.order = c.order[1:]
+		c.bytes -= c.size[old]
+		delete(c.m, old)
+		delete(c.size, old)
 	}
-	c.m[k] = r
+	c.m[k], c.size[k] = r, cost
 	c.order = append(c.order, k)
+	c.bytes += cost
 }
 
 // renderCached renders a stored mail (downloading its body on demand);
@@ -55,7 +81,7 @@ func (a *App) renderCached(ctx context.Context, m store.Message) (RenderedMessag
 	key := ""
 	if m.BlobHash != "" {
 		key = m.BlobHash + "#" + strconv.FormatInt(m.ID, 10)
-		if r, ok := rendered.get(key); ok {
+		if r, ok := a.rendered.get(key); ok {
 			return r, nil
 		}
 	}
@@ -73,7 +99,7 @@ func (a *App) renderCached(ctx context.Context, m store.Message) (RenderedMessag
 		}
 	}
 	if key != "" {
-		rendered.put(key, r)
+		a.rendered.put(key, r)
 	}
 	return r, nil
 }

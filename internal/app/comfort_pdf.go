@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
@@ -101,9 +100,9 @@ func (a *App) renderArchivePDF(ctx context.Context, raw []byte, req PDFRenderReq
 				if gotenberg != "" {
 					out, err = pdf.GotenbergToPDF(ctx, a.opts.HTTPClient, gotenberg, html)
 				} else if out, err = pdf.HTMLToPDF(ctx, browser, html); err == nil {
-					chromiumBroken.Store(false)
+					a.chromiumBroken.Store(false)
 				} else {
-					chromiumBroken.Store(true) // do not wait for a broken browser again
+					a.chromiumBroken.Store(true) // do not wait for a broken browser again
 				}
 				if err == nil {
 					if enriched, err := pdf.Enrich(out, meta, files); err == nil {
@@ -158,12 +157,12 @@ func formatDate(t time.Time, lang string) string {
 	return t.Local().Format("Jan 2, 2006 3:04 PM")
 }
 
-// chromiumBroken is set after a failed Chromium run; later renders use the
-// built-in renderer right away (until the settings change).
-var chromiumBroken atomic.Bool
-
+// App.chromiumBroken is set after a failed Chromium run; later renders of
+// this App use the built-in renderer right away (until its settings change).
+// It is per App: one user's failing input must not change the rendering path
+// of the others (NH-06).
 func (a *App) chromium(s ComfortSettings) (string, error) {
-	if chromiumBroken.Load() {
+	if a.chromiumBroken.Load() {
 		return "", pdf.ErrNoChromium
 	}
 	// In server mode the browser is chosen by the administrator only

@@ -30,15 +30,29 @@ type bodyParts struct {
 }
 
 // bodyCache caches rendered bubble texts by blob hash (raw mails are
-// immutable, so entries never go stale).
+// immutable, so entries never go stale). It belongs to one App (never shared
+// between users) and is bounded by entries and by bytes (NH-05); the oldest
+// entries are dropped first.
 type bodyCache struct {
-	mu sync.Mutex
-	m  map[string]bodyParts
+	mu    sync.Mutex
+	m     map[string]bodyParts
+	size  map[string]int
+	order []string
+	bytes int
 }
 
-var bubbleCache = &bodyCache{m: map[string]bodyParts{}}
+const (
+	maxBodyCache      = 2000
+	maxBodyCacheBytes = 32 << 20 // per App
+)
 
-const maxBodyCache = 2000
+func (p bodyParts) cost() int {
+	n := 128 + len(p.visible) + len(p.quoted) + len(p.signature)
+	for _, a := range p.attachments {
+		n += 64 + len(a.Filename) + len(a.MIMEType) + len(a.ContentID)
+	}
+	return n
+}
 
 func (c *bodyCache) get(k string) (bodyParts, bool) {
 	c.mu.Lock()
@@ -48,15 +62,28 @@ func (c *bodyCache) get(k string) (bodyParts, bool) {
 }
 
 func (c *bodyCache) put(k string, v bodyParts) {
+	cost := v.cost()
+	if cost > maxBodyCacheBytes/8 { // one huge mail must not flush the cache
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.m) >= maxBodyCache {
-		for key := range c.m { // drop an arbitrary entry
-			delete(c.m, key)
-			break
-		}
+	if c.m == nil {
+		c.m, c.size = map[string]bodyParts{}, map[string]int{}
 	}
-	c.m[k] = v
+	if _, ok := c.m[k]; ok {
+		return
+	}
+	for len(c.order) > 0 && (len(c.m) >= maxBodyCache || c.bytes+cost > maxBodyCacheBytes) {
+		old := c.order[0]
+		c.order = c.order[1:]
+		c.bytes -= c.size[old]
+		delete(c.m, old)
+		delete(c.size, old)
+	}
+	c.m[k], c.size[k] = v, cost
+	c.order = append(c.order, k)
+	c.bytes += cost
 }
 
 // bubble returns the bubble text of a mail.
@@ -64,7 +91,7 @@ func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
 	if m.BlobHash == "" {
 		return bodyParts{visible: m.Snippet}
 	}
-	if v, ok := bubbleCache.get(m.BlobHash); ok {
+	if v, ok := a.bubbles.get(m.BlobHash); ok {
 		return v
 	}
 	raw, err := a.rawMessage(m)
@@ -100,7 +127,7 @@ func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
 			v.quoted, v.signature = "", ""
 		}
 	}
-	bubbleCache.put(m.BlobHash, v)
+	a.bubbles.put(m.BlobHash, v)
 	return v
 }
 

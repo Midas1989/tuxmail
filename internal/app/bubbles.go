@@ -34,12 +34,33 @@ func noReplyFrom(addrs []store.MessageAddress) bool {
 // conversation (header-only initial sync) in the background, newest first,
 // at most a few at a time; the timeline is refreshed with
 // conversation.updated when they arrive.
+//
+// The bookkeeping lives in the App: message ids are per-user store ids, so a
+// process-wide map would let one user's prefetch block another user's (NH-04).
 type bodyPrefetch struct {
 	mu      sync.Mutex
 	pending map[int64]bool
 }
 
-var prefetch = &bodyPrefetch{pending: map[int64]bool{}}
+// claim marks id as being downloaded; false when it already is.
+func (p *bodyPrefetch) claim(id int64) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.pending == nil {
+		p.pending = map[int64]bool{}
+	}
+	if p.pending[id] {
+		return false
+	}
+	p.pending[id] = true
+	return true
+}
+
+func (p *bodyPrefetch) release(id int64) {
+	p.mu.Lock()
+	delete(p.pending, id)
+	p.mu.Unlock()
+}
 
 const maxPrefetchPerOpen = 30
 
@@ -54,13 +75,7 @@ func (a *App) prefetchBodies(convID int64, msgs []store.Message) {
 		if m.BlobHash != "" {
 			continue
 		}
-		prefetch.mu.Lock()
-		busy := prefetch.pending[m.ID]
-		if !busy {
-			prefetch.pending[m.ID] = true
-		}
-		prefetch.mu.Unlock()
-		if !busy {
+		if a.prefetch.claim(m.ID) {
 			ids = append(ids, m.ID)
 		}
 	}
@@ -77,9 +92,7 @@ func (a *App) prefetchBodies(convID int64, msgs []store.Message) {
 			} else {
 				a.log.Debug("app: prefetch body", "message", id, "err", err)
 			}
-			prefetch.mu.Lock()
-			delete(prefetch.pending, id)
-			prefetch.mu.Unlock()
+			a.prefetch.release(id)
 		}
 		if got > 0 {
 			a.NotifyConversationUpdated(ctx, convID, "")
