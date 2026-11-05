@@ -12,8 +12,9 @@ import (
 	"testing"
 )
 
-// NC-08: the Google client secret of the desktop registration is linked into
-// desktop release binaries but never into server/Docker builds.
+// NC-08 / ND-16: the Google client secret of the desktop registration is
+// linked only when a desktop build asks for it (TUXMAIL_LINK_CLIENT_SECRET=1)
+// and never into server/Docker builds.
 func TestServerBuildFlagsOmitGoogleSecret(t *testing.T) {
 	sh, err := exec.LookPath("sh")
 	if err != nil {
@@ -28,8 +29,9 @@ func TestServerBuildFlagsOmitGoogleSecret(t *testing.T) {
 		t.Skip("build/lib.sh not found")
 	}
 	script := `. "$1" >/dev/null 2>&1
-printf 'DESKTOP:%s\n' "$(go_ldflags)"
-printf 'SERVER:%s\n' "$(go_ldflags_server)"`
+printf 'PLAIN:%s\n' "$(go_ldflags)"
+printf 'DESKTOP:%s\n' "$(TUXMAIL_LINK_CLIENT_SECRET=1 go_ldflags)"
+printf 'SERVER:%s\n' "$(TUXMAIL_LINK_CLIENT_SECRET=1 go_ldflags_server)"`
 	cmd := exec.Command(sh, "-c", script, "sh", lib)
 	cmd.Dir = filepath.Join(root, "build")
 	cmd.Env = append(os.Environ(), "TUXMAIL_VERSION=0.0.0-test", "TUXMAIL_BUILD_GOOGLE_CLIENT_ID=gid", "TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET=S3CRET-value", "SOURCE_DATE_EPOCH=1")
@@ -37,14 +39,19 @@ printf 'SERVER:%s\n' "$(go_ldflags_server)"`
 	if err != nil {
 		t.Fatalf("lib.sh: %v", err)
 	}
-	var desktop, server string
+	var plain, desktop, server string
 	for _, l := range strings.Split(string(out), "\n") {
 		switch {
+		case strings.HasPrefix(l, "PLAIN:"):
+			plain = l
 		case strings.HasPrefix(l, "DESKTOP:"):
 			desktop = l
 		case strings.HasPrefix(l, "SERVER:"):
 			server = l
 		}
+	}
+	if plain == "" || strings.Contains(plain, "S3CRET-value") {
+		t.Errorf("a build that does not ask for the secret must not link it: %q", plain)
 	}
 	if !strings.Contains(desktop, "builtinGoogleClientSecret=S3CRET-value") {
 		t.Errorf("desktop flags lost the secret: %q", desktop)
