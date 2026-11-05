@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-//go:build !unix
+//go:build !unix && !windows
 
 package host
 
-// checkTrusted: on Windows the plugins live in the installation folder,
-// whose ACL the setup protects (Program Files or a protected DACL for other
-// all-users folders, AUDIT-D D-05); per-user installations are only
-// writable by that user.
+// checkTrusted: platforms other than Unix and Windows (Plan 9, js ...) do
+// not host plugins in practice; there is no ownership model to check.
+// Windows: trust_windows.go. Unix: trust_unix.go.
 func checkTrusted(string) error { return nil }

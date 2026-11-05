@@ -31,6 +31,9 @@ type Plugin struct {
 	// Calls records the method names of state changing calls
 	// (react, edit, delete, mark_read, typing).
 	Calls []string
+	// MediaName is the file name DownloadMedia reports (tests of the host's
+	// handling of plugin-supplied names).
+	MediaName string
 	// CrashOn makes the process exit when the named call arrives
 	// (only meaningful when running as a separate process).
 	CrashOn string
@@ -315,7 +318,7 @@ func (p *Plugin) DownloadMedia(_ context.Context, req wire.MediaRequest) (wire.M
 	if err := os.WriteFile(req.Path, b, 0o600); err != nil {
 		return wire.MediaResult{}, err
 	}
-	return wire.MediaResult{Size: int64(len(b))}, nil
+	return wire.MediaResult{Size: int64(len(b)), Name: p.MediaName}, nil
 }
 
 // Shutdown implements sdk.Plugin.

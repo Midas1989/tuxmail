@@ -95,10 +95,13 @@ func isExecutable(path string) bool {
 
 // DefaultDirs returns the plugin directories of an installation: an
 // explicit development directory (TUXMAIL_PLUGIN_DIR), plugins/ next to the
-// executable (Windows, portable and server archives), ../lib/tuxmail/plugins
+// executable (Windows, portable and server archives) and ../lib/tuxmail/plugins
 // relative to it (FHS packages: /usr/bin/tuxmail -> /usr/lib/tuxmail/plugins,
-// AppImage, Docker /usr/local/lib/tuxmail/plugins) and the executable's
-// directory. bin/plugins of the working directory (build/plugins.sh output)
+// AppImage, Docker /usr/local/lib/tuxmail/plugins). The executable's own
+// directory is not searched: no package puts plugins there, and a TuxMail.exe
+// in a shared download or tools folder would otherwise run any
+// tuxmail-plugin-*.exe lying next to it (audit ND-13). Every candidate must
+// also pass checkTrusted. bin/plugins of the working directory (build/plugins.sh output)
 // is only searched by "go run" binaries: an installed TuxMail must never run
 // programs from wherever it was started (AUDIT-D D-06).
 func DefaultDirs() []string {
@@ -140,7 +143,6 @@ func installDirs(exeDir string) []string {
 	return []string{
 		filepath.Join(exeDir, "plugins"),
 		filepath.Join(filepath.Dir(exeDir), "lib", "tuxmail", "plugins"),
-		exeDir,
 	}
 }
 
@@ -166,6 +168,9 @@ type ExecLauncher struct {
 	Logger *slog.Logger
 	// Env is appended to the environment of the plugin.
 	Env []string
+	// FullEnv hands the complete environment of the host to the plugins
+	// (tests, development); by default they get PluginEnv.
+	FullEnv bool
 }
 
 // Launch implements Launcher.
@@ -174,7 +179,11 @@ func (l ExecLauncher) Launch(ctx context.Context, m Manifest) (Proc, error) {
 		return InProcess(m.New(), l.Logger), nil
 	}
 	cmd := exec.Command(m.Path)
-	cmd.Env = append(os.Environ(), l.Env...)
+	if l.FullEnv {
+		cmd.Env = append(os.Environ(), l.Env...)
+	} else {
+		cmd.Env = append(PluginEnv(os.Environ(), m.Name), l.Env...)
+	}
 	cmd.Dir = filepath.Dir(m.Path)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

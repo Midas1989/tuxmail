@@ -16,6 +16,7 @@ import (
 
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/messenger/wire"
+	"github.com/Midas1989/Mailclient/internal/mime/parse"
 	"github.com/Midas1989/Mailclient/internal/store"
 )
 
@@ -423,8 +424,10 @@ func (s *Service) Media(ctx context.Context, chatMessageID int64) (MediaContent,
 	if res.MIMEType != "" && out.MIMEType == "" {
 		out.MIMEType = res.MIMEType
 	}
-	if res.Name != "" && (out.Name == "" || out.Name == defaultMediaName(out.MIMEType)) {
-		out.Name = res.Name
+	// The name comes from the plugin (from the remote peer): no paths, no
+	// bidi spoofing, like the names of incoming events (ingest.go).
+	if name := parse.CleanFilename(res.Name); name != "" && (out.Name == "" || out.Name == defaultMediaName(out.MIMEType)) {
+		out.Name = name
 	}
 	h, err := s.blobs.Put(bytes.NewReader(out.Data))
 	if err != nil {
