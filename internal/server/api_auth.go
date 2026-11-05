@@ -199,18 +199,21 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request, a *authInfo, pas
 	if !s.limitLogin(w, r, a.User.Username) {
 		return false
 	}
+	// Wrong answers are counted persistently per user (NA-05): the in-memory
+	// rate limit alone can be bypassed from many source addresses.
 	if a.User.HasPassword {
-		if err := s.auth.VerifyUserPassword(r.Context(), a.User.ID, password); err != nil {
+		if err := s.auth.VerifyStepUpPassword(r.Context(), a.User.ID, password); err != nil {
 			s.writeAuthError(w, err)
 			return false
 		}
 	}
 	if a.User.TOTPEnabled {
-		if err := s.auth.VerifySecondFactor(r.Context(), a.User.ID, code, recovery); err != nil {
+		if err := s.auth.VerifyStepUpSecondFactor(r.Context(), a.User.ID, code, recovery); err != nil {
 			s.writeAuthError(w, err)
 			return false
 		}
 	}
+	s.auth.ClearStepUp(r.Context(), a.User.ID)
 	return true
 }
 

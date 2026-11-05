@@ -173,10 +173,11 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *
 	}
 	approve := req.Approve == nil || *req.Approve
 	if approve && a.User.TOTPEnabled {
-		if err := s.auth.VerifySecondFactor(r.Context(), a.User.ID, req.TOTPCode, req.RecoveryCode); err != nil {
+		if err := s.auth.VerifyStepUpSecondFactor(r.Context(), a.User.ID, req.TOTPCode, req.RecoveryCode); err != nil {
 			s.writeAuthError(w, err)
 			return
 		}
+		defer s.auth.ClearStepUp(r.Context(), a.User.ID)
 	}
 	if err := s.auth.ApproveDevice(r.Context(), a.User.ID, req.UserCode, approve); err != nil {
 		s.writeAuthError(w, err)

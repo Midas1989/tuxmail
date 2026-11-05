@@ -431,7 +431,7 @@ func TestAdminAuthorization(t *testing.T) {
 	}
 	fred := e.browser()
 	fred.fetchCSRF()
-	if resp, _ := fred.do("POST", "/api/auth/login", map[string]string{"username": "fred", "password": fredPW}); resp.StatusCode != 403 {
+	if resp, _ := fred.do("POST", "/api/auth/login", map[string]string{"username": "fred", "password": fredPW}); resp.StatusCode != 401 {
 		t.Fatal("disabled user logged in", resp.Status)
 	}
 	admin.do("PATCH", "/api/admin/users/"+itoa(fredID), map[string]any{"disabled": false})

@@ -97,8 +97,8 @@ func (s *Service) checkKeys(ctx context.Context, k loginKeys) error {
 }
 
 func (s *Service) failKeys(ctx context.Context, k loginKeys) {
-	s.recordFailure(ctx, k.net, throttleFreeFails)
-	s.recordFailure(ctx, k.user, throttleUserFails)
+	s.recordFailure(ctx, k.net, networkPolicy)
+	s.recordFailure(ctx, k.user, userPolicy)
 }
 
 func (s *Service) checkThrottle(ctx context.Context, key string) error {
@@ -116,7 +116,22 @@ func (s *Service) checkThrottle(ctx context.Context, key string) error {
 	return nil
 }
 
-func (s *Service) recordFailure(ctx context.Context, key string, free int) {
+// throttlePolicy parameterises recordFailure: the first free-1 failures are
+// free, every further one doubles the lock (base ... max); the counter resets
+// after a quiet period of window.
+type throttlePolicy struct {
+	free     int
+	window   time.Duration
+	baseLock time.Duration
+	maxLock  time.Duration
+}
+
+var (
+	networkPolicy = throttlePolicy{free: throttleFreeFails, window: throttleWindow, baseLock: throttleBaseLock, maxLock: throttleMaxLock}
+	userPolicy    = throttlePolicy{free: throttleUserFails, window: throttleWindow, baseLock: throttleBaseLock, maxLock: throttleMaxLock}
+)
+
+func (s *Service) recordFailure(ctx context.Context, key string, p throttlePolicy) {
 	throttleKeyMu.Lock()
 	defer throttleKeyMu.Unlock()
 	ctx = context.WithoutCancel(ctx)
@@ -126,15 +141,15 @@ func (s *Service) recordFailure(ctx context.Context, key string, free int) {
 	var fails int
 	var last int64
 	err := s.db.QueryRowContext(ctx, `SELECT failures, first_failure FROM login_throttle WHERE key = ?`, key).Scan(&fails, &last)
-	if err != nil || now.Sub(time.Unix(last, 0)) > throttleWindow {
+	if err != nil || now.Sub(time.Unix(last, 0)) > p.window {
 		fails = 0
 	}
 	fails++
 	first := now.Unix()
 	var until int64
-	if fails >= free {
-		lock := throttleBaseLock << min(fails-free, 10)
-		until = now.Add(min(lock, throttleMaxLock)).Unix()
+	if fails >= p.free {
+		lock := p.baseLock << min(fails-p.free, 10)
+		until = now.Add(min(lock, p.maxLock)).Unix()
 	}
 	s.db.ExecContext(ctx, `INSERT INTO login_throttle(key, failures, first_failure, locked_until) VALUES (?,?,?,?)
 		ON CONFLICT(key) DO UPDATE SET failures = excluded.failures, first_failure = excluded.first_failure,
@@ -150,6 +165,9 @@ func (s *Service) UnlockLogin(ctx context.Context, username string) {
 	k := throttleKey(username)
 	// key = k, or k + "|" + network: "}" sorts right after "|" (binary collation).
 	s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM login_throttle WHERE key = ? OR (key >= ? AND key < ?)`, k, k+"|", k+"}")
+	if u, err := s.GetUserByName(ctx, username); err == nil {
+		s.ClearStepUp(ctx, u.ID)
+	}
 }
 
 var (
@@ -233,7 +251,7 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 			}
 			return &LoginResult{MFARequired: true, Challenge: ch, User: u}, nil
 		}
-		if err := s.VerifySecondFactor(ctx, u.ID, req.TOTPCode, req.RecoveryCode); err != nil {
+		if err := s.verifySecondFactor(ctx, u.ID, req.TOTPCode, req.RecoveryCode); err != nil {
 			s.failKeys(ctx, key)
 			s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 			return nil, err
@@ -289,7 +307,7 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 		s.Audit(ctx, "login", u.Username, false, "disabled (second factor step)")
 		return nil, ErrInvalidCode
 	}
-	if err := s.VerifySecondFactor(ctx, u.ID, totpCode, recoveryCode); err != nil {
+	if err := s.verifySecondFactor(ctx, u.ID, totpCode, recoveryCode); err != nil {
 		s.failKeys(ctx, keysFor(u.Username, ci.IP))
 		s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 		return nil, err
@@ -304,9 +322,10 @@ func (s *Service) MFASetupRequired(u *User) bool {
 	return s.cfg.Auth.TOTPRequiredForAdmins && u.IsAdmin() && !u.TOTPEnabled && !u.OIDC
 }
 
-// VerifySecondFactor checks a TOTP code (with replay protection) or consumes
-// a recovery code.
-func (s *Service) VerifySecondFactor(ctx context.Context, userID int64, totpCode, recoveryCode string) error {
+// verifySecondFactor checks a TOTP code (with replay protection) or consumes
+// a recovery code. It has no lockout of its own: Login and CompleteMFA charge
+// the login counters, every other caller must use VerifyStepUpSecondFactor.
+func (s *Service) verifySecondFactor(ctx context.Context, userID int64, totpCode, recoveryCode string) error {
 	if recoveryCode != "" {
 		return s.useRecoveryCode(ctx, userID, recoveryCode)
 	}

@@ -407,13 +407,24 @@ func (s *Service) ChangePassword(ctx context.Context, id int64, current, next st
 		return err
 	}
 	if u.passwordHash != "" {
+		// Wrong current passwords count against the persistent step-up
+		// lockout of the user (NA-05): a stolen session must not be able to
+		// guess the password from many source addresses.
+		if err := s.StepUpCheck(ctx, id); err != nil {
+			return err
+		}
 		ok, _, err := VerifyPassword(current, u.passwordHash, s.PasswordParams)
 		if err != nil || !ok {
+			s.recordFailure(ctx, stepUpKey(id), stepUpPolicy)
 			s.Audit(ctx, "user.change_password", u.Username, false, "wrong current password")
 			return ErrInvalidCredentials
 		}
 	}
-	return s.SetPassword(ctx, id, next, keepSessionID)
+	if err := s.SetPassword(ctx, id, next, keepSessionID); err != nil {
+		return err
+	}
+	s.ClearStepUp(ctx, id)
+	return nil
 }
 
 func (s *Service) auditUser(ctx context.Context, action string, id int64, err error, details string) {
