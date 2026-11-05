@@ -153,6 +153,59 @@ func (l *lazyVault) Unlock(password []byte) error {
 	return nil
 }
 
+// Secret store kinds persisted in desktop.json.
+const (
+	secretStoreKeyring = "keyring"
+	secretStoreVault   = "vault"
+)
+
+// chooseSecretStore decides which credential store a desktop start uses.
+// Portable installs always use the vault. An installed client uses what it
+// chose on its first start (saved); only then the keyring probe decides, and
+// the result is persisted. A later unavailable keyring therefore never
+// changes the store (NC-07).
+func chooseSecretStore(portable bool, saved string, keyringAvailable func() bool) (kind string, persist bool) {
+	switch {
+	case portable:
+		return secretStoreVault, false
+	case saved == secretStoreKeyring || saved == secretStoreVault:
+		return saved, false
+	case keyringAvailable():
+		return secretStoreKeyring, true
+	}
+	return secretStoreVault, true
+}
+
+// ErrKeyringUnavailable is returned by a keyring store that was chosen on the
+// first start but cannot be reached now.
+var ErrKeyringUnavailable = errors.New("the OS keyring is not available (is the Secret Service / credential manager running and unlocked?); TuxMail keeps using it and does not switch to a password vault by itself")
+
+// requiredKeyring wraps the OS keyring so that failures of an unreachable
+// keyring are reported as ErrKeyringUnavailable instead of an opaque D-Bus
+// error. It never falls back to another store.
+type requiredKeyring struct {
+	inner     domain.SecretStore
+	available func() bool
+}
+
+var _ domain.SecretStore = (*requiredKeyring)(nil)
+
+func (r *requiredKeyring) wrap(err error) error {
+	if err == nil || errors.Is(err, secrets.ErrNotFound) || r.available() {
+		return err
+	}
+	return fmt.Errorf("%w: %v", ErrKeyringUnavailable, err)
+}
+
+func (r *requiredKeyring) Get(ref string) ([]byte, error) {
+	b, err := r.inner.Get(ref)
+	return b, r.wrap(err)
+}
+
+func (r *requiredKeyring) Set(ref string, value []byte) error { return r.wrap(r.inner.Set(ref, value)) }
+
+func (r *requiredKeyring) Delete(ref string) error { return r.wrap(r.inner.Delete(ref)) }
+
 // openDesktopApp opens the store and the application layer of the desktop
 // client (sync and send enabled).
 func openDesktopApp(ctx context.Context, loc dataLocation, log *slog.Logger) (*app.App, *store.Store, error) {
@@ -171,11 +224,25 @@ func openDesktopApp(ctx context.Context, loc dataLocation, log *slog.Logger) (*a
 	opts := app.Options{Store: st, DataDir: loc.Dir, Mode: app.ModeDesktop, Version: version, Logger: log,
 		Locales: locales.FS, LocaleDir: filepath.Join(loc.Dir, "locales"), Sync: &app.SyncOptions{}, Send: &app.SendOptions{}, Messenger: &app.MessengerOptions{}}
 	kr := secrets.NewKeyring()
-	switch {
-	case !loc.Portable && kr.Available():
-		opts.Secrets = kr
+	prefs := loadDesktopPrefs(loc.Dir)
+	kind, persist := chooseSecretStore(loc.Portable, prefs.SecretStore, kr.Available)
+	if persist {
+		prefs.SecretStore = kind
+		if err := saveDesktopPrefs(loc.Dir, prefs); err != nil {
+			log.Warn("could not remember the secret store", "kind", kind, "err", err)
+		}
+	}
+	switch kind {
+	case secretStoreKeyring:
+		if !kr.Available() {
+			// Do not fall back to a vault: the credentials are in the keyring
+			// and become reachable again once it is. Operations fail with
+			// ErrKeyringUnavailable until then.
+			log.Warn("the OS keyring is not available; stored passwords cannot be read until it is (TuxMail does not switch to a password vault by itself)")
+		}
+		opts.Secrets = &requiredKeyring{inner: kr, available: kr.Available}
 	default:
-		// Portable mode, or no OS keyring (e.g. no Secret Service running).
+		// Portable mode, or a vault chosen on the first start.
 		v := &lazyVault{path: filepath.Join(loc.Dir, "secrets.vault")}
 		opts.Secrets, opts.Vault = v, v
 	}

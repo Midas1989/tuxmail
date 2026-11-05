@@ -157,6 +157,21 @@ verschlüsselten Tresor (`data/secrets.vault`). Beim ersten Start fragt TuxMail
 nach einem neuen Master-Passwort (mit Wiederholung, mindestens 8 Zeichen), bei
 jedem weiteren Start nach dem Entsperren; ein falsches Passwort wird gemeldet.
 
+**Wahl des Passwortspeichers (Sicherheitsprüfung NC-07):** Der installierte
+Client (nicht portabel) entscheidet beim allerersten Start, ob der
+Betriebssystem-Schlüsselbund oder ein Master-Passwort-Tresor genutzt wird, und
+merkt sich die Wahl in `desktop.json` (`"secretStore": "keyring"` oder
+`"vault"`). Ist der Schlüsselbund bei einem späteren Start vorübergehend nicht
+erreichbar (z. B. Secret Service startet beim Login erst später), wechselt
+TuxMail **nicht** still auf einen neuen Tresor: Es schreibt eine Warnung ins
+Log, und Zugriffe auf gespeicherte Passwörter melden den Fehler „the OS keyring
+is not available …“, bis der Schlüsselbund wieder läuft (es wird bei jedem
+Zugriff neu versucht, ein Neustart ist nicht nötig). Wer bewusst wechseln will,
+ändert den Wert in `desktop.json` (bei `"vault"` fragt TuxMail beim nächsten
+Start nach dem Master-Passwort; bereits im Schlüsselbund gespeicherte
+Kontopasswörter müssen dann neu eingegeben werden). Der portable Modus nutzt
+immer den Tresor.
+
 Ohne Bildschirm (CI, Container) läuft das Fenster unter Xvfb:
 
 ```sh

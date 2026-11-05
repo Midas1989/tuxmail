@@ -18,6 +18,13 @@ type desktopPrefs struct {
 	// NativeTitleBar keeps the operating system's title bar; nil means the
 	// platform default (Windows: custom title bar, Linux/macOS: native).
 	NativeTitleBar *bool `json:"nativeTitleBar,omitempty"`
+	// SecretStore is the credential store chosen on the first start of an
+	// installed (non-portable) client: "keyring" (OS keyring) or "vault"
+	// (master-password vault). It is persisted so that a keyring that is
+	// temporarily unavailable at a later start (Secret Service not yet
+	// running at login) never makes TuxMail silently create a second,
+	// empty vault (NC-07). Edit the value to switch the store on purpose.
+	SecretStore string `json:"secretStore,omitempty"`
 }
 
 func desktopPrefsPath(dataDir string) string { return filepath.Join(dataDir, "desktop.json") }
