@@ -568,6 +568,23 @@ export class HttpTransport implements Api {
   }
   /** Loads the provisioning profile with a fresh device token (web variant; the desktop keeps tokens in the core). */
   private async profileResult(serverUrl: string, token: string): Promise<DeviceTokenResult> {
+    // The remote device token is used for this single request and lives only in this call frame (never stored).
+    // It is revoked on the remote server afterwards - on success and on every failure path (NG-04).
+    try {
+      return await this.profileResultWithToken(serverUrl, token);
+    } finally {
+      await this.revokeRemoteToken(serverUrl, token);
+    }
+  }
+  /** POST {serverUrl}/api/auth/logout with the bearer; best effort (the token also expires server-side). */
+  private async revokeRemoteToken(serverUrl: string, token: string): Promise<void> {
+    try {
+      await this.remoteCall(this.remote(serverUrl, '/api/auth/logout'), {}, token);
+    } catch {
+      /* unreachable server: nothing more to do from here */
+    }
+  }
+  private async profileResultWithToken(serverUrl: string, token: string): Promise<DeviceTokenResult> {
     const { status, data } = await this.remoteCall(this.remote(serverUrl, '/api/provisioning/profile'), undefined, token);
     if (status !== 200) return { status: 'denied', error: String(data.message ?? data.error ?? status) };
     const user = (data.user ?? {}) as Record<string, string>;
