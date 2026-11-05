@@ -188,6 +188,7 @@ func (s *Service) Cleanup(ctx context.Context) error {
 		`DELETE FROM oidc_states WHERE expires_at <= ?1`,
 		`DELETE FROM device_authorizations WHERE expires_at <= ?1 - 3600`,
 		`DELETE FROM login_throttle WHERE locked_until <= ?1 AND first_failure <= ?1 - 86400`,
+		`DELETE FROM login_known_networks WHERE last_seen <= ?1 - 7776000`, // knownNetworkTTL (90 days)
 	} {
 		if _, err := s.db.ExecContext(ctx, q, now); err != nil {
 			return err

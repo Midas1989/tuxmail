@@ -13,15 +13,54 @@ import (
 	"time"
 )
 
-// Login throttling policy (persistent in login_throttle). Failures are
-// counted per username and client network (strict) and per username across
-// all networks (lenient). A stranger can therefore only lock a user out of
-// their own network, not everywhere (E-03), while distributed guessing is
-// still bounded by the user-wide counter.
+// Login throttling and the defence against distributed guessing (E-03, NA-06).
+//
+// Goals: a stranger must never be able to lock the owner out of their own
+// account, and guessing spread over many source addresses must stay bounded.
+// Persistent state lives in login_throttle (counters) and
+// login_known_networks (hashed networks of past successful logins).
+//
+//  1. Per network (hard lock). Failures are counted per login name AND client
+//     network (IPv4 address, IPv6 /64), key "u:<name>|<net>". After
+//     throttleFreeFails failures that network is locked for 1 min, doubling up
+//     to 1 h; the counter resets after throttleWindow without failures. The
+//     lock only concerns the attacking network: the owner on another network
+//     is never affected.
+//
+//  2. Per user (soft signal, never a lock). Failures of one login name from
+//     ANY network are also counted, key "u:<name>", without ever setting
+//     locked_until. Once throttlePressureFails (50) of them happened within
+//     throttleWindow the account is "under pressure" until 15 minutes pass
+//     without a further failure. Unknown login names are counted and treated
+//     identically, so the signal reveals nothing about which names exist.
+//     Under pressure, password logins are
+//     a. accepted only from a KNOWN network of that user: one of the user's
+//     successful logins within knownNetworkTTL (90 days; IPv4 /24, IPv6
+//     /64, stored as HMAC(server key) only) or the network of one of the
+//     user's live sessions. Every other attempt is refused with
+//     ErrThrottled (Retry-After = end of the pressure window) WITHOUT the
+//     password being verified, and counts as a failure (the attacker's
+//     network gets locked and the signal stays up while the attack lasts).
+//     The owner therefore keeps working from home/office/phone networks
+//     during an attack; only logins from brand-new networks wait until the
+//     attack stops (or an administrator unlocks the account).
+//     b. serialised and slowed: one verification per account at a time, each
+//     after PressureDelay (default 1 s), at most pressureQueueMax waiting;
+//     further attempts are refused at once. A guesser sitting on a known
+//     /24 (shared NAT) is thus limited to about one guess per second per
+//     account, on top of the per-network locks.
+//     A successful login clears only the network counter, not the user-wide
+//     one: otherwise the owner's login would reset the attacker's budget.
+//     Failed second factors are bounded separately (challenge attempts, A-08).
+//
+//  3. Step-up checks of a logged-in user have their own per-user counter, see
+//     stepup.go (NA-05); it never interacts with the counters above.
+//
+// Disabled accounts, accounts without a local password and unknown names
+// answer exactly like a wrong password (NA-04) and are charged the same way.
 const (
 	throttleWindow      = 15 * time.Minute
 	throttleFreeFails   = 5
-	throttleUserFails   = 50
 	maxLoginLen         = 320 // longest e-mail address (254) plus slack; usernames are <= 64
 	throttleBaseLock    = time.Minute
 	throttleMaxLock     = time.Hour
@@ -89,11 +128,12 @@ func keysFor(login, ip string) loginKeys {
 	return loginKeys{user: u, net: u + "|" + clientNet(ip)}
 }
 
+// checkKeys fails while the attempting network is locked for this login name.
+// The user-wide counter is a soft signal only (see the top of this file) and
+// is deliberately not consulted here: a lock row left behind by earlier
+// versions is ignored.
 func (s *Service) checkKeys(ctx context.Context, k loginKeys) error {
-	if err := s.checkThrottle(ctx, k.net); err != nil {
-		return err
-	}
-	return s.checkThrottle(ctx, k.user)
+	return s.checkThrottle(ctx, k.net)
 }
 
 func (s *Service) failKeys(ctx context.Context, k loginKeys) {
@@ -120,15 +160,16 @@ func (s *Service) checkThrottle(ctx context.Context, key string) error {
 // free, every further one doubles the lock (base ... max); the counter resets
 // after a quiet period of window.
 type throttlePolicy struct {
-	free     int
-	window   time.Duration
-	baseLock time.Duration
-	maxLock  time.Duration
+	free      int
+	window    time.Duration
+	baseLock  time.Duration
+	maxLock   time.Duration
+	countOnly bool // soft signal: count failures, never set locked_until
 }
 
 var (
 	networkPolicy = throttlePolicy{free: throttleFreeFails, window: throttleWindow, baseLock: throttleBaseLock, maxLock: throttleMaxLock}
-	userPolicy    = throttlePolicy{free: throttleUserFails, window: throttleWindow, baseLock: throttleBaseLock, maxLock: throttleMaxLock}
+	userPolicy    = throttlePolicy{window: throttleWindow, countOnly: true}
 )
 
 func (s *Service) recordFailure(ctx context.Context, key string, p throttlePolicy) {
@@ -147,7 +188,7 @@ func (s *Service) recordFailure(ctx context.Context, key string, p throttlePolic
 	fails++
 	first := now.Unix()
 	var until int64
-	if fails >= p.free {
+	if !p.countOnly && fails >= p.free {
 		lock := p.baseLock << min(fails-p.free, 10)
 		until = now.Add(min(lock, p.maxLock)).Unix()
 	}
@@ -198,6 +239,13 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 	}
 	u, err := s.GetUserByName(ctx, req.Login)
 	if errors.Is(err, ErrNotFound) {
+		// Same answer as for an existing user from an unknown network while
+		// the name is under distributed attack: no enumeration (NA-06).
+		if active, until := s.underPressure(ctx, key.user); active {
+			s.failKeys(ctx, key)
+			s.Audit(ctx, "login", req.Login, false, "refused: login name under distributed attack")
+			return nil, &ThrottleError{Until: until}
+		}
 		s.dummyVerify(req.Password)
 		s.failKeys(ctx, key)
 		s.Audit(ctx, "login", req.Login, false, "unknown user")
@@ -216,6 +264,21 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 		}
 	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: req.Client.IP})
+	if active, until := s.underPressure(ctx, key.user); active {
+		// Distributed guessing (NA-06): only known networks may try, one at a
+		// time and slowly. The owner on a known network is never locked out.
+		if !s.networkKnown(ctx, u.ID, req.Client.IP) {
+			s.failKeys(ctx, key)
+			s.Audit(ctx, "login", u.Username, false, "refused: account under distributed attack, unknown network")
+			return nil, &ThrottleError{Until: until}
+		}
+		release, err := s.enterPressureGate(ctx, key.user)
+		if err != nil {
+			s.Audit(ctx, "login", u.Username, false, "refused: too many parallel attempts under attack")
+			return nil, err
+		}
+		defer release()
+	}
 	if u.passwordHash == "" {
 		s.dummyVerify(req.Password)
 		s.failKeys(ctx, key)
@@ -265,8 +328,10 @@ func (s *Service) finishLogin(ctx context.Context, u *User, kind, method string,
 		kind = KindWeb
 	}
 	k := keysFor(u.Username, ci.IP)
+	// Only the counter of this network: the user-wide soft signal must not be
+	// resettable by the owner's login, it would reset an attacker's budget.
 	s.clearThrottle(ctx, k.net)
-	s.clearThrottle(ctx, k.user)
+	s.recordKnownNetwork(ctx, u.ID, ci.IP)
 	tok, sess, err := s.createSession(ctx, u.ID, kind, method, mfa, ci)
 	if err != nil {
 		return nil, err

@@ -77,6 +77,11 @@ type Service struct {
 	Now func() time.Time
 	// PasswordParams are used for new password hashes.
 	PasswordParams ArgonParams
+	// PressureDelay is the pause before each password verification of an
+	// account under distributed guessing (NA-06).
+	PressureDelay time.Duration
+
+	gates *[pressureStripes]pressureGate
 
 	vaultMu sync.Mutex
 	vaults  map[int64]*secrets.Vault
@@ -106,6 +111,8 @@ func Open(ctx context.Context, cfg *config.Config) (*Service, error) {
 		db: db, cfg: cfg, master: master, dataDir: cfg.DataDir,
 		Now:            time.Now,
 		PasswordParams: DefaultArgonParams,
+		PressureDelay:  DefaultPressureDelay,
+		gates:          newPressureGates(),
 		vaults:         map[int64]*secrets.Vault{},
 	}
 	if err := migrate(ctx, db); err != nil {
