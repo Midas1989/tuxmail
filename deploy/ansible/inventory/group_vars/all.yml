@@ -40,6 +40,10 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 
 # --- Binary ---
 # tuxmail_release_base_url: "https://github.com/Midas1989/Mailclient/releases/download/v{{ tuxmail_version }}/"
+# PFLICHT: Fingerabdruck des Release-Schlüssels (GPG-Signatur von checksums.txt, siehe deploy/README.md).
+# tuxmail_release_gpg_fingerprint: "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
+# tuxmail_release_gpg_key_src: ""           # öffentlicher Schlüssel als Datei auf dem Steuerrechner (sonst aus dem Release)
+# tuxmail_allow_unsigned_release: false     # Opt-out: nur die Prüfsumme aus dem Release gilt (nicht empfohlen)
 # tuxmail_binary_src: ""                    # lokale Datei auf dem Steuerrechner (Binary oder .tar.gz)
 # tuxmail_keep_versions: 3
 
@@ -87,6 +91,8 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 
 # --- Backups ---
 # tuxmail_backup_compression: zstd          # zstd | gzip
+# tuxmail_backup_age_recipients: []          # öffentliche age-Schlüssel (age1...) - Sicherungen enthalten master.key
+# tuxmail_backup_allow_plaintext: false      # ohne age-Empfänger verweigert das Backup-Skript den Lauf, außer true
 # tuxmail_backup_before_upgrade: true
 # tuxmail_backup_keep_upgrade: 5
 # tuxmail_backup_timer_enabled: false
@@ -103,7 +109,11 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_nginx_proxy_timeout: 300
 # tuxmail_nginx_websocket_timeout: 3600
 # tuxmail_nginx_hsts_max_age: 31536000
-# tuxmail_nginx_csp: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
+# tuxmail_nginx_csp: ""                     # leer = CSP von TuxMail; sonst ersetzt nginx sie
+# tuxmail_nginx_snippet_frame_options: ""   # Snippet-Modus: z. B. "SAMEORIGIN" statt DENY
+# tuxmail_nginx_hsts_include_subdomains: false
+# tuxmail_nginx_upstream_terminates_tls: false   # tls_mode=none hinter einem TLS-beendenden Proxy: true
+# tuxmail_nginx_ocsp_stapling: (auto)       # custom-Zertifikat: an; Let's Encrypt: aus
 # tuxmail_nginx_extra_server_config: ""
 
 # --- TLS ---

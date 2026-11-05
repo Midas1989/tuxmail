@@ -6,6 +6,33 @@
     fail_msg: "Nicht unterstützte Architektur: {{ ansible_facts['architecture'] }} (nur amd64/arm64)."
     quiet: true
 
+- name: Release-Signatur ist konfiguriert (oder ausdrücklich abgeschaltet)
+  ansible.builtin.assert:
+    that: >-
+      tuxmail_binary_src | length > 0
+      or tuxmail_allow_unsigned_release | bool
+      or tuxmail_release_gpg_fingerprint_norm is match('^[0-9A-F]{40}$')
+    quiet: true
+    fail_msg: >-
+      Die Herkunft des Releases kann nicht geprüft werden: tuxmail_release_gpg_fingerprint ist nicht gesetzt.
+      Setze den 40-stelligen Fingerabdruck des Release-Schlüssels (inventory/group_vars/all.yml; siehe
+      deploy/README.md, Abschnitt "Release-Signatur"), nutze eine lokale Datei (tuxmail_binary_src) oder
+      verzichte AUSDRÜCKLICH auf die Prüfung mit tuxmail_allow_unsigned_release: true (nur die Prüfsumme
+      aus demselben Release gilt dann). Es wurde nichts installiert oder verändert.
+
+- name: Sicherungen sind verschlüsselt (oder Klartext ist ausdrücklich erlaubt)
+  ansible.builtin.assert:
+    that: >-
+      tuxmail_backup_age_recipients | length > 0
+      or tuxmail_backup_allow_plaintext | bool
+      or not (tuxmail_backup_before_upgrade | bool or tuxmail_backup_timer_enabled | bool)
+    quiet: true
+    fail_msg: >-
+      Sicherungen (vor einem Versionswechsel bzw. per Timer) würden master.key unverschlüsselt ablegen.
+      Setze tuxmail_backup_age_recipients (öffentliche age-Schlüssel, age1...) oder erlaube Klartext ausdrücklich
+      mit tuxmail_backup_allow_plaintext: true (nur root liest die Archive; relevant, sobald sie das System verlassen).
+      Es wurde nichts verändert.
+
 - name: Pakete und Verzeichnisse
   ansible.builtin.import_tasks: directories.yml
 

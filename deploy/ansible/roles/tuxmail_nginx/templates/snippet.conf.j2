@@ -15,5 +15,5 @@
 {% if tuxmail_matrix_nginx_enabled | bool %}
 
     # Matrix (Bridge-Modus) liegt immer unter /_matrix/ an der Wurzel dieses server-Blocks.
-{{ matrix_locations('$scheme', tuxmail_nginx_snippet_hsts | bool) }}
+{{ matrix_locations('$scheme', tuxmail_nginx_snippet_hsts | bool, true) }}
 {% endif %}

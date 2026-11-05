@@ -113,7 +113,14 @@ tuxmail_mautrix_log_level: "info"
 tuxmail_bridges_dir: "/opt/tuxmail-bridges"
 tuxmail_bridges_project: "tuxmail-bridges"
 # Images – feste Versionen setzen!
-tuxmail_bridges_synapse_image: "docker.io/matrixdotorg/synapse:latest"
+# Feste Version statt ":latest" (Re-Audit ND-08): bewusst anheben, Hinweise der Synapse-Releases
+# beachten (Datenbankmigrationen sind nicht rückwärtskompatibel). Besser noch: Image zusätzlich
+# per "@sha256:..." festlegen (tuxmail_bridges_synapse_image überschreiben).
+tuxmail_synapse_container_version: "1.164.2"
+tuxmail_bridges_synapse_image: "docker.io/matrixdotorg/synapse:v{{ tuxmail_synapse_container_version }}"
+# GID, unter der der Synapse-Container (UID/GID-Standard des Images) Dateien liest; die
+# Appservice-Registrierungen (as_token/hs_token) gehören root:<GID> mit Modus 0640.
+tuxmail_bridges_synapse_container_gid: 991
 tuxmail_bridges_continuwuity_image: "forgejo.ellis.link/continuwuation/continuwuity:v{{ tuxmail_continuwuity_version }}"
 tuxmail_bridges_whatsapp_image: "dock.mau.dev/mautrix/whatsapp:v{{ tuxmail_mautrix_whatsapp_version }}"
 tuxmail_bridges_signal_image: "dock.mau.dev/mautrix/signal:v{{ tuxmail_mautrix_signal_version }}"

@@ -1,0 +1,154 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Prüft die Herkunft eines Releases, BEVOR das Binary als root-eigener Dienst
+# installiert wird (Re-Audit ND-05): checksums.txt wird zusammen mit der
+# abgetrennten GPG-Signatur (checksums.txt.asc) geladen und gegen den
+# konfigurierten Fingerabdruck (tuxmail_release_gpg_fingerprint) geprüft; erst
+# der SHA-256 aus der so bestätigten Datei gilt für das Archiv. Eine
+# Prüfsumme aus demselben Release allein würde nur Übertragungsfehler
+# erkennen, nicht ein manipuliertes Release.
+#
+# Ergebnis: Fakt tuxmail_archive_sha256. Eingebunden aus install.yml, wenn
+# kein lokales Archiv (tuxmail_binary_src) verwendet und die Signatur nicht
+# ausdrücklich abgeschaltet wird.
+
+- name: GnuPG installieren (Signaturprüfung)
+  ansible.builtin.package:
+    name: "{{ 'gnupg2' if ansible_facts['os_family'] == 'RedHat' else 'gpg' }}"
+    state: present
+
+- name: Arbeitsverzeichnis der Signaturprüfung (nur root)
+  ansible.builtin.file:
+    path: "{{ tuxmail_verify_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Signaturprüfung des Releases
+  block:
+    - name: Eigenes GnuPG-Verzeichnis (leerer Schlüsselbund)
+      ansible.builtin.file:
+        path: "{{ tuxmail_verify_dir }}/gnupg"
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Prüfsummendatei checksums.txt des Releases laden
+      ansible.builtin.get_url:
+        url: "{{ tuxmail_checksums_url }}"
+        dest: "{{ tuxmail_verify_dir }}/checksums.txt"
+        owner: root
+        group: root
+        mode: "0600"
+        force: true
+
+    - name: Abgetrennte Signatur checksums.txt.asc laden
+      block:
+        - name: Signatur herunterladen
+          ansible.builtin.get_url:
+            url: "{{ tuxmail_checksums_sig_url }}"
+            dest: "{{ tuxmail_verify_dir }}/checksums.txt.asc"
+            owner: root
+            group: root
+            mode: "0600"
+            force: true
+      rescue:
+        - name: Release ist nicht signiert
+          ansible.builtin.fail:
+            msg: >-
+              Das Release v{{ tuxmail_version }} hat keine abrufbare Signatur ({{ tuxmail_checksums_sig_url }}:
+              {{ ansible_failed_result.msg | default('unbekannter Fehler') }}). Ohne Signatur kann die Herkunft des
+              Binaries nicht geprüft werden und es wird NICHT installiert. Entweder ein signiertes Release verwenden
+              (die Release-Pipeline signiert, wenn das Secret GPG_PRIVATE_KEY gesetzt ist, siehe docs/RELEASE.md)
+              oder bewusst auf eigene Verantwortung tuxmail_allow_unsigned_release: true setzen (dann gilt nur
+              die Prüfsumme aus dem Release selbst).
+
+    - name: Öffentlichen Release-Schlüssel vom Steuerrechner kopieren
+      ansible.builtin.copy:
+        src: "{{ tuxmail_release_gpg_key_src }}"
+        dest: "{{ tuxmail_verify_dir }}/release-key.asc"
+        owner: root
+        group: root
+        mode: "0600"
+      when: tuxmail_release_gpg_key_src | length > 0
+
+    - name: Öffentlichen Release-Schlüssel laden (der Fingerabdruck entscheidet über das Vertrauen)
+      ansible.builtin.get_url:
+        url: "{{ tuxmail_release_gpg_key_url }}"
+        dest: "{{ tuxmail_verify_dir }}/release-key.asc"
+        owner: root
+        group: root
+        mode: "0600"
+        force: true
+      when: tuxmail_release_gpg_key_src | length == 0
+
+    - name: Release-Schlüssel in den leeren Schlüsselbund importieren
+      ansible.builtin.command:
+        argv:
+          - gpg
+          - --batch
+          - --no-default-keyring
+          - --homedir
+          - "{{ tuxmail_verify_dir }}/gnupg"
+          - --import
+          - "{{ tuxmail_verify_dir }}/release-key.asc"
+      changed_when: false
+
+    - name: Signatur von checksums.txt prüfen
+      ansible.builtin.command:
+        argv:
+          - gpg
+          - --batch
+          - --no-default-keyring
+          - --homedir
+          - "{{ tuxmail_verify_dir }}/gnupg"
+          - --status-fd
+          - "1"
+          - --verify
+          - "{{ tuxmail_verify_dir }}/checksums.txt.asc"
+          - "{{ tuxmail_verify_dir }}/checksums.txt"
+      register: tuxmail_gpg_verify
+      changed_when: false
+
+    - name: Signatur ist gültig und stammt vom konfigurierten Schlüssel
+      ansible.builtin.assert:
+        that:
+          - tuxmail_gpg_verify.stdout_lines | select('match', '^\[GNUPG:\] GOODSIG ') | list | length == 1
+          - tuxmail_gpg_verify.stdout_lines | select('match', '^\[GNUPG:\] (BADSIG|ERRSIG|EXPSIG|EXPKEYSIG|REVKEYSIG) ') | list | length == 0
+          - tuxmail_valid_sigs | length == 1
+          - (tuxmail_valid_sigs[0].split())[11] | upper == tuxmail_release_gpg_fingerprint_norm
+        quiet: true
+        fail_msg: >-
+          Die Signatur von checksums.txt ist ungültig oder stammt nicht vom Schlüssel mit dem Fingerabdruck
+          {{ tuxmail_release_gpg_fingerprint_norm }}. Das Release wird NICHT installiert.
+          gpg: {{ tuxmail_gpg_verify.stdout_lines | default([]) | join(' | ') }}
+      vars:
+        # VALIDSIG <fpr> <date> <ts> <expire> <ver> <res> <pk> <hash> <class> <Fingerabdruck des Hauptschlüssels>
+        tuxmail_valid_sigs: "{{ tuxmail_gpg_verify.stdout_lines | select('match', '^\\[GNUPG:\\] VALIDSIG ') | list }}"
+
+    - name: Geprüfte checksums.txt lesen
+      ansible.builtin.slurp:
+        src: "{{ tuxmail_verify_dir }}/checksums.txt"
+      register: tuxmail_checksums_file
+
+    - name: SHA-256 des Archivs aus der geprüften checksums.txt übernehmen
+      ansible.builtin.set_fact:
+        tuxmail_archive_sha256: >-
+          {{ (tuxmail_checksums_file.content | b64decode).splitlines()
+             | map('regex_search', '^([0-9a-f]{64}) [ *]' ~ (tuxmail_archive_name | regex_escape) ~ '$', '\1')
+             | select('truthy') | map('first') | list | first | default('') }}
+
+    - name: Archiv steht in der geprüften checksums.txt
+      ansible.builtin.assert:
+        that: tuxmail_archive_sha256 is match('^[0-9a-f]{64}$')
+        quiet: true
+        fail_msg: "{{ tuxmail_archive_name }} steht nicht in der signierten checksums.txt von v{{ tuxmail_version }}."
+
+  always:
+    - name: Arbeitsverzeichnis der Signaturprüfung entfernen
+      ansible.builtin.file:
+        path: "{{ tuxmail_verify_dir }}"
+        state: absent

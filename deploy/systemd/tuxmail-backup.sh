@@ -12,6 +12,10 @@
 #   TAG     optionaler Zusatz im Dateinamen (z. B. Version)
 #
 # Ergebnis: /var/backups/tuxmail/tuxmail-LABEL-JJJJMMTT-HHMMSS[-TAG].tar.zst
+#
+# Verschlüsselung: Das Archiv enthält master.key. Trage unten AGE_ARGS="-r age1..." ein (und hänge
+# ".age" an EXT) oder starte bewusst im Klartext: TUXMAIL_BACKUP_ALLOW_PLAINTEXT=1 tuxmail-backup ...
+# Ohne beides bricht das Skript ab, bevor der Dienst angehalten wird.
 set -euo pipefail
 umask 077
 
@@ -21,6 +25,7 @@ SERVICE=tuxmail.service
 EXT=tar.zst
 COMPRESS_OPT=--zstd
 AGE_ARGS=""
+ALLOW_PLAINTEXT=0
 
 stop=0
 if [ "${1:-}" = "--stop" ]; then
@@ -41,6 +46,17 @@ if [ "$keep" -lt 1 ]; then
     keep=1
 fi
 tag=$(printf '%s' "$tag" | tr -c 'A-Za-z0-9._-' '_')
+
+# Klartext-Sicherungen nur ausdrücklich (Re-Audit ND-14): das Archiv enthält master.key (entschlüsselt
+# alle Benutzer-Geheimnisse). Ohne age-Empfänger läuft das Skript nur mit
+# TUXMAIL_BACKUP_ALLOW_PLAINTEXT=1 (Umgebung) bzw. tuxmail_backup_allow_plaintext: true (Ansible).
+# Die Prüfung steht vor dem Anhalten des Dienstes.
+if [ -z "$AGE_ARGS" ] && [ "${TUXMAIL_BACKUP_ALLOW_PLAINTEXT:-$ALLOW_PLAINTEXT}" != 1 ]; then
+    echo "Sicherung abgelehnt: keine age-Empfänger konfiguriert, das Archiv wäre unverschlüsselt (enthält master.key)." >&2
+    echo "Setze tuxmail_backup_age_recipients (öffentliche age-Schlüssel) oder erlaube Klartext ausdrücklich mit" >&2
+    echo "TUXMAIL_BACKUP_ALLOW_PLAINTEXT=1 (bzw. tuxmail_backup_allow_plaintext: true in Ansible)." >&2
+    exit 3
+fi
 
 ts=$(date +%Y%m%d-%H%M%S)
 name="tuxmail-${label}-${ts}${tag:+-$tag}.${EXT}"

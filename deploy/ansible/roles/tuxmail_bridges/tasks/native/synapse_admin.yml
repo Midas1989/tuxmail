@@ -11,14 +11,25 @@
     - name: Passwort bestimmen
       ansible.builtin.include_tasks: native/admin_password.yml
 
+    # Das Passwort steht nicht in der Kommandozeile (sichtbar in /proc und ps für jeden lokalen
+    # Benutzer), sondern in einer kurzlebigen root-eigenen Datei (--password-file, 0600 in /run).
+    - name: Passwortdatei für register_new_matrix_user (0600, wird danach gelöscht)
+      ansible.builtin.copy:
+        content: "{{ tuxmail_bridges_admin_password }}"
+        dest: /run/tuxmail-matrix-admin.pw
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+
     - name: Konto per register_new_matrix_user anlegen (gemeinsames Geheimnis)
       ansible.builtin.command:
         argv:
           - register_new_matrix_user
           - --user
           - "{{ tuxmail_matrix_admin_user }}"
-          - --password
-          - "{{ tuxmail_bridges_admin_password }}"
+          - --password-file
+          - /run/tuxmail-matrix-admin.pw
           - --admin
           - --config
           - /etc/matrix-synapse/conf.d/tuxmail-secret.yaml
@@ -40,3 +51,9 @@
 
     - name: Zugangsdaten anzeigen (nur einmal)
       ansible.builtin.include_tasks: native/admin_show.yml
+
+  always:
+    - name: Passwortdatei entfernen
+      ansible.builtin.file:
+        path: /run/tuxmail-matrix-admin.pw
+        state: absent
