@@ -133,6 +133,31 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 	return sess, u, nil
 }
 
+// CheckSession reports whether session sessionID of userID is still valid:
+// it exists, is not expired and the user is not disabled. It returns
+// ErrNotFound or ErrUserDisabled otherwise. Unlike Authenticate it has no
+// side effects, so long-lived connections (the event WebSocket) can use it to
+// notice revocation, expiry and disabling (NH-08).
+func (s *Service) CheckSession(ctx context.Context, userID, sessionID int64) error {
+	var exp int64
+	var disabled bool
+	err := s.db.QueryRowContext(ctx, `SELECT s.expires_at, u.disabled FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.id = ? AND s.user_id = ?`, sessionID, userID).Scan(&exp, &disabled)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if !s.now().Before(time.Unix(exp, 0)) {
+		return ErrNotFound
+	}
+	if disabled {
+		return ErrUserDisabled
+	}
+	return nil
+}
+
 // ListSessions returns the unexpired sessions and device tokens of a user.
 func (s *Service) ListSessions(ctx context.Context, userID int64) ([]*Session, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT `+sessionCols+` FROM sessions WHERE user_id = ? AND expires_at > ?

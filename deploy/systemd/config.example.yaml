@@ -34,6 +34,8 @@ auth:
   password_min_length: 12
   # disabled | invite
   registration: "disabled"
+  # Only sessions created by an OIDC login are exempt (the IdP is the second
+  # factor); a password login of an OIDC-linked admin must enrol TOTP too.
   totp_required_for_admins: true
   oidc:
     enabled: false
@@ -67,3 +69,7 @@ security:
   # anonymous clients (default: false, they only report "product": "tuxmail").
   # Logged-in users and `tuxmail version` always show it.
   expose_version: false
+  # true = the Strict-Transport-Security header of the server (HTTPS public_url,
+  # not behind a proxy that sets its own) gets includeSubDomains. Only if EVERY
+  # subdomain of the host name is served via HTTPS. "preload" is never sent.
+  hsts_include_subdomains: false

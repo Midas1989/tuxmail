@@ -60,6 +60,7 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_security_allow_private_networks: false   # true = Benutzer dürfen private Netze/Loopback erreichen
 # tuxmail_security_allowed_networks_extra: []      # z. B. ["192.168.10.5:993"]
 # tuxmail_security_expose_version: false           # true = /healthz nennt anonymen Clients die Version
+# tuxmail_security_hsts_include_subdomains: false  # true = includeSubDomains im HSTS der Anwendung
 # tuxmail_auth_session_lifetime: "168h"
 # tuxmail_auth_password_min_length: 12
 # tuxmail_auth_registration: disabled       # disabled | invite

@@ -52,6 +52,9 @@ type Options struct {
 	TeamAppOptions func(teamID int64, o *app.Options)
 	// FCM replaces the Firebase client configured by push.fcm (tests).
 	FCM push.FCMClient
+	// StreamRevalidateEvery is how often open event WebSockets re-check their
+	// session (default 30 s; tests shorten it).
+	StreamRevalidateEvery time.Duration
 }
 
 // Server is the HTTP server of the server mode.
@@ -77,6 +80,13 @@ type Server struct {
 
 	ipLimiter   *rateLimiter
 	userLimiter *rateLimiter
+	// deviceTokenIP / deviceTokenCode limit the polling of /api/device/token
+	// per client network and per device code (NA-08).
+	deviceTokenIP   *rateLimiter
+	deviceTokenCode *rateLimiter
+
+	streams          streamHub     // open event WebSockets (streams.go)
+	streamRevalidate time.Duration // 0 = default (30 s)
 
 	handler http.Handler
 }
@@ -124,6 +134,11 @@ func New(cfg *config.Config, svc *auth.Service, opts Options) (*Server, error) {
 	perMin := float64(cfg.Limits.LoginRatePerMinute)
 	s.userLimiter = newRateLimiter(perMin, perMin)   // per IP + username
 	s.ipLimiter = newRateLimiter(5*perMin, 5*perMin) // per IP across usernames
+	// A client polls every 5 s (12/min) and slows down on request; allow
+	// headroom per device code, and a generous cap per network (NAT) (NA-08).
+	s.deviceTokenCode = newRateLimiter(deviceTokenCodePerMinute, deviceTokenCodeBurst)
+	s.deviceTokenIP = newRateLimiter(deviceTokenIPPerMinute, deviceTokenIPBurst)
+	s.streamRevalidate = opts.StreamRevalidateEvery
 	s.handler = s.routes()
 	return s, nil
 }
@@ -217,6 +232,8 @@ func (s *Server) housekeeping(ctx context.Context) {
 		}
 		s.ipLimiter.prune()
 		s.userLimiter.prune()
+		s.deviceTokenCode.prune()
+		s.deviceTokenIP.prune()
 		s.apps.prune()
 		select {
 		case <-ctx.Done():
@@ -309,7 +326,7 @@ func (s *Server) routes() http.Handler {
 	// The Web Push routes above are served by this package directly.
 	mux.HandleFunc("POST /api/conversations/{id}/reply", s.appHandler(s.handleConversationReply))
 	mux.HandleFunc("GET /api/proxy/image", s.handleImageProxy) // imageproxy.go (signed links without session)
-	api.Mount(mux, s.appHandler, api.Options{Logger: s.log, AllowOrigin: s.wsOriginAllowed, Skip: map[string]bool{
+	api.Mount(mux, s.appHandler, api.Options{Logger: s.log, AllowOrigin: s.wsOriginAllowed, OpenStream: s.openEventStream, RevalidateEvery: s.streamRevalidate, Skip: map[string]bool{
 		"GET /api/push/vapid-public-key": true, "POST /api/push/subscribe": true, "DELETE /api/push/subscribe": true,
 		"POST /api/push/test": true, "GET /api/proxy/image": true,
 	}})

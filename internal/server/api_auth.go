@@ -96,6 +96,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, a *authInf
 		s.writeAuthError(w, err)
 		return
 	}
+	s.streams.revokeSession(a.User.ID, a.Session.ID)
 	s.auth.Audit(r.Context(), "logout", a.User.Username, true, "")
 	if !a.Bearer {
 		s.setCookie(w, sessionCookie, "", -1, true, http.SameSiteLaxMode)
@@ -134,6 +135,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, a 
 		s.writeAuthError(w, err)
 		return
 	}
+	s.streams.revokeUser(a.User.ID, a.Session.ID) // other sessions ended with the password change
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -168,6 +170,7 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, a *
 		s.writeAuthError(w, err)
 		return
 	}
+	s.streams.revokeSession(a.User.ID, id)
 	if id == a.Session.ID && !a.Bearer {
 		s.setCookie(w, sessionCookie, "", -1, true, http.SameSiteLaxMode)
 	}
@@ -179,6 +182,7 @@ func (s *Server) handleRevokeOthers(w http.ResponseWriter, r *http.Request, a *a
 		s.writeAuthError(w, err)
 		return
 	}
+	s.streams.revokeUser(a.User.ID, a.Session.ID)
 	w.WriteHeader(http.StatusNoContent)
 }
 

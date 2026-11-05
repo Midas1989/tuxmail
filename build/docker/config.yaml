@@ -46,3 +46,5 @@ security:
   allowed_networks: []
   # true = /healthz and /api/auth/config report the exact version to anonymous clients.
   expose_version: false
+  # true = add includeSubDomains to the HSTS header (only if all subdomains use HTTPS).
+  hsts_include_subdomains: false

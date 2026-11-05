@@ -26,6 +26,13 @@ func eventsHandler(opts Options) AppHandler {
 			writeJSON(w, http.StatusBadRequest, errorBody{Error: "websocket_required", Message: "use a WebSocket connection"})
 			return
 		}
+		var ctl *StreamControl
+		if opts.OpenStream != nil {
+			if ctl = opts.OpenStream(w, r); ctl == nil {
+				return // refused; the response was written
+			}
+			defer ctl.Done()
+		}
 		srv := websocket.Server{
 			Handshake: func(cfg *websocket.Config, req *http.Request) error {
 				// Subprotocols: "tuxmail.v1" (+ "tuxmail.bearer.<token>",
@@ -50,7 +57,7 @@ func eventsHandler(opts Options) AppHandler {
 				}
 				return websocket.ErrBadWebSocketOrigin
 			},
-			Handler: func(ws *websocket.Conn) { streamEvents(r.Context(), ws, a) },
+			Handler: func(ws *websocket.Conn) { streamEvents(r.Context(), ws, a, ctl, opts.RevalidateEvery) },
 		}
 		srv.ServeHTTP(w, r)
 	}
@@ -58,7 +65,15 @@ func eventsHandler(opts Options) AppHandler {
 
 const writeTimeout = 10 * time.Second
 
-func streamEvents(parent context.Context, ws *websocket.Conn, a *app.App) {
+// defaultRevalidateEvery is how often an open stream re-checks that its
+// session / device token still exists (NH-08).
+const defaultRevalidateEvery = 30 * time.Second
+
+// closePolicyViolation is the WebSocket close code 1008 sent when the
+// authentication behind a stream ended.
+const closePolicyViolation = 1008
+
+func streamEvents(parent context.Context, ws *websocket.Conn, a *app.App, ctl *StreamControl, revalidate time.Duration) {
 	defer ws.Close()
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
@@ -91,10 +106,34 @@ func streamEvents(parent context.Context, ws *websocket.Conn, a *app.App) {
 	}
 	keepalive := time.NewTicker(45 * time.Second)
 	defer keepalive.Stop()
+	if revalidate <= 0 {
+		revalidate = defaultRevalidateEvery
+	}
+	var recheck <-chan time.Time
+	var revoked <-chan struct{}
+	if ctl != nil {
+		t := time.NewTicker(revalidate)
+		defer t.Stop()
+		recheck, revoked = t.C, ctl.Revoked
+	}
+	// closeRevoked ends the stream with a policy-violation close frame: the
+	// session or device token it was opened with is gone (NH-08).
+	closeRevoked := func() {
+		_ = ws.SetWriteDeadline(time.Now().Add(writeTimeout))
+		_ = ws.WriteClose(closePolicyViolation)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
+		case <-revoked:
+			closeRevoked()
+			return
+		case <-recheck:
+			if !ctl.Valid(ctx) {
+				closeRevoked()
+				return
+			}
 		case ev, ok := <-events:
 			if !ok || !send(ev) {
 				return

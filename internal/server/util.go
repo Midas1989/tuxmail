@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -94,7 +93,12 @@ func readJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 	}
 	dec := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxJSONBody))
 	if err := dec.Decode(v); err != nil && !errors.Is(err, io.EOF) {
-		writeError(w, http.StatusBadRequest, "bad_request", fmt.Sprintf("invalid JSON body: %v", err))
+		// Generic text only: the decoder's message names Go types and fields.
+		if mb := (*http.MaxBytesError)(nil); errors.As(err, &mb) {
+			writeError(w, http.StatusRequestEntityTooLarge, "too_large", "request body too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return false
 	}
 	return true
