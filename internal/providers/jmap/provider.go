@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
 )
 
 // ErrNotFound is returned for messages or mailboxes that do not exist (any more).
@@ -47,6 +48,35 @@ type Config struct {
 	MinBackoff, MaxBackoff time.Duration
 	// PageSize is the Email/query page size (default 1000).
 	PageSize int
+	// AllowInsecure permits a plain-http session URL for non-loopback hosts
+	// (explicit user confirmation, see ApplyAccountOptions).
+	AllowInsecure bool
+	// TrustedHosts are confirmed hosts besides the session host's
+	// registrable domain that may receive the credentials (download host).
+	TrustedHosts []string
+}
+
+// Account options (Account.Extra) that affect the transport rules.
+const (
+	// ExtraAllowInsecure ("true") records that the user confirmed a plain
+	// http:// endpoint for the account.
+	ExtraAllowInsecure = safehttp.ExtraAllowInsecure
+	// ExtraTrustedHosts is a comma separated list of additional hosts of
+	// the session document that may receive the credentials.
+	ExtraTrustedHosts = "jmapTrustedHosts"
+)
+
+// ApplyAccountOptions copies the transport options of acc into cfg.
+func ApplyAccountOptions(cfg *Config, acc domain.Account) {
+	if acc.Extra == nil {
+		return
+	}
+	cfg.AllowInsecure = acc.Extra[ExtraAllowInsecure] == "true"
+	for _, h := range strings.Split(acc.Extra[ExtraTrustedHosts], ",") {
+		if h = strings.TrimSpace(h); h != "" {
+			cfg.TrustedHosts = append(cfg.TrustedHosts, h)
+		}
+	}
 }
 
 // Provider is a JMAP mail provider.
@@ -107,7 +137,11 @@ func New(cfg Config) (*Provider, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
-	return &Provider{cfg: cfg, log: log, c: &Client{SessionURL: cfg.SessionURL, HTTP: cfg.HTTPClient, Auth: cfg.Auth}}, nil
+	c := &Client{SessionURL: cfg.SessionURL, HTTP: cfg.HTTPClient, Auth: cfg.Auth, AllowInsecure: cfg.AllowInsecure, TrustedHosts: cfg.TrustedHosts}
+	if err := c.checkURL("session URL", cfg.SessionURL); err != nil {
+		return nil, err
+	}
+	return &Provider{cfg: cfg, log: log, c: c}, nil
 }
 
 // Client returns the underlying JMAP client.
@@ -845,6 +879,9 @@ func (p *Provider) Watch(ctx context.Context, folderRemoteID string) (<-chan dom
 func (p *Provider) eventStream(ctx context.Context, tpl string, hint func()) error {
 	u := expand(tpl, map[string]string{"types": "Email,Mailbox", "closeafter": "no", "ping": "60"})
 	u = strings.ReplaceAll(u, "Email%2CMailbox", "Email,Mailbox")
+	if err := p.c.checkURL("eventSourceUrl", u); err != nil {
+		return err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return err
@@ -856,7 +893,7 @@ func (p *Provider) eventStream(ctx context.Context, tpl string, hint func()) err
 		}
 	}
 	// The stream is long-lived: no client timeout.
-	hc := &http.Client{Transport: p.cfg.HTTPClient.Transport}
+	hc := &http.Client{Transport: p.cfg.HTTPClient.Transport, CheckRedirect: safehttp.CheckRedirect(nil, 10)}
 	resp, err := hc.Do(req)
 	if err != nil {
 		return err

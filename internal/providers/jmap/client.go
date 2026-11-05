@@ -14,6 +14,8 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
 )
 
 // Capability URNs (RFC 8620, RFC 8621).
@@ -90,12 +92,97 @@ type Client struct {
 	SessionURL string
 	HTTP       *http.Client
 	Auth       Auth
+	// AllowInsecure accepts a plain-http session URL (credentials in clear)
+	// for hosts other than loopback; it must reflect an explicit confirmation
+	// of the user (audit NF-07/NF-08).
+	AllowInsecure bool
+	// TrustedHosts are extra host names the user confirmed to receive the
+	// credentials although they are not part of the session host's
+	// registrable domain (e.g. a separate download host).
+	TrustedHosts []string
 
 	mu      sync.Mutex
 	session *Session
 }
 
+// knownDownloadHosts maps the registrable domain of a session host to
+// registrable domains of its documented companion hosts.
+var knownDownloadHosts = map[string][]string{
+	"fastmail.com": {"fastmailusercontent.com"},
+}
+
+// checkURL enforces the transport rules for a URL of the session document
+// (or the session URL itself): https (plain http only for loopback or when
+// confirmed, and never as a downgrade from an https session), and - with
+// credentials configured - the host of the session, its registrable domain,
+// a confirmed host or a known companion host (audit NF-07).
+func (c *Client) checkURL(what, raw string) error {
+	bad := func(err error) error {
+		return fmt.Errorf("jmap: %s %s refused: %w", what, redactTemplate(raw), err)
+	}
+	u, err := url.Parse(strings.NewReplacer("{", "", "}", "").Replace(raw))
+	if err != nil || u.Host == "" {
+		return bad(errors.New("invalid URL"))
+	}
+	base, err := url.Parse(c.SessionURL)
+	if err != nil || base.Host == "" {
+		return bad(errors.New("invalid session URL"))
+	}
+	bothLoopback := safehttp.IsLoopbackURL(base) && safehttp.IsLoopbackURL(u)
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+	case "http":
+		if !bothLoopback {
+			if base.Scheme == "https" {
+				return bad(safehttp.ErrInsecure)
+			}
+			if !c.AllowInsecure && !safehttp.IsLoopbackURL(u) {
+				return bad(safehttp.ErrInsecure)
+			}
+		}
+	default:
+		return bad(errors.New("unsupported URL scheme"))
+	}
+	if c.Auth != nil && !c.hostTrusted(base, u) {
+		return bad(fmt.Errorf("%w (credentials are only sent to the session host, its domain or confirmed hosts)", safehttp.ErrForeignHost))
+	}
+	return nil
+}
+
+func (c *Client) hostTrusted(base, u *url.URL) bool {
+	if safehttp.CredentialsAllowed(base, u) || (safehttp.IsLoopbackURL(base) && safehttp.IsLoopbackURL(u)) {
+		return true
+	}
+	host := strings.ToLower(u.Hostname())
+	for _, h := range c.TrustedHosts {
+		if strings.EqualFold(strings.TrimSpace(h), host) {
+			return true
+		}
+	}
+	if strings.EqualFold(u.Scheme, "https") {
+		if d := safehttp.RegistrableDomain(host); d != "" {
+			for _, k := range knownDownloadHosts[safehttp.RegistrableDomain(base.Hostname())] {
+				if k == d {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// redactTemplate hides query strings (tokens) of a URL for error messages.
+func redactTemplate(raw string) string {
+	if i := strings.IndexAny(raw, "?#"); i >= 0 {
+		return raw[:i]
+	}
+	return raw
+}
+
 func (c *Client) do(ctx context.Context, method, u string, body io.Reader, ctype string) (*http.Response, error) {
+	if err := c.checkURL("request URL", u); err != nil {
+		return nil, err
+	}
 	req, err := http.NewRequestWithContext(ctx, method, u, body)
 	if err != nil {
 		return nil, err
@@ -113,6 +200,8 @@ func (c *Client) do(ctx context.Context, method, u string, body io.Reader, ctype
 	if hc == nil {
 		hc = http.DefaultClient
 	}
+	// Redirects stay on the requested host and never leave https.
+	hc = safehttp.ClientWithRedirectPolicy(hc, nil)
 	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, err
@@ -150,8 +239,17 @@ func (c *Client) Session(ctx context.Context, refresh bool) (*Session, error) {
 		return nil, errors.New("jmap: session without apiUrl")
 	}
 	base, _ := url.Parse(c.SessionURL)
-	for _, p := range []*string{&ns.APIURL, &ns.DownloadURL, &ns.UploadURL, &ns.EventSourceURL} {
-		*p = resolveURL(base, *p)
+	for _, d := range []struct {
+		name string
+		p    *string
+	}{{"apiUrl", &ns.APIURL}, {"downloadUrl", &ns.DownloadURL}, {"uploadUrl", &ns.UploadURL}, {"eventSourceUrl", &ns.EventSourceURL}} {
+		*d.p = resolveURL(base, *d.p)
+		if *d.p == "" {
+			continue
+		}
+		if err := c.checkURL("session "+d.name, *d.p); err != nil {
+			return nil, err
+		}
 	}
 	c.mu.Lock()
 	c.session = &ns

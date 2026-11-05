@@ -22,6 +22,12 @@ import (
 	"strings"
 )
 
+// ExtraAllowInsecure is the Account.Extra key ("true") that records the
+// user's explicit confirmation to use unencrypted http:// endpoints (EAS,
+// JMAP, CalDAV/CardDAV). It is set by the account create/update API when the
+// request carries allowInsecure.
+const ExtraAllowInsecure = "allowInsecure"
+
 // ErrInsecure is returned for plain-http endpoints that were not confirmed.
 var ErrInsecure = errors.New("insecure http:// endpoint refused: credentials would be sent unencrypted")
 

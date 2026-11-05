@@ -19,6 +19,22 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/providers/eas/wbxml"
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
+)
+
+// DefaultMaxResponse bounds one HTTP response body (ClientConfig.MaxResponse).
+// EAS truncates bodies and attachments are fetched one by one, so responses
+// in the tens of megabytes are already unusual (audit NF-10; was 512 MiB).
+const DefaultMaxResponse = 64 << 20
+
+// Provisioning that the server asks for (HTTP 449, status 140-144) is
+// restarted automatically at most maxReprovisions times within
+// reprovisionWindow; further requests fail with ErrProvisioning (audit
+// NF-11: a hostile server cannot keep the client in a provisioning loop).
+// Variables for tests.
+var (
+	maxReprovisions   = 6
+	reprovisionWindow = 15 * time.Minute
 )
 
 // TokenSource returns a currently valid OAuth2 access token.
@@ -56,6 +72,9 @@ var (
 	ErrItemNotFound = errors.New("eas: item not found")
 	// ErrProvisioning is returned when provisioning fails.
 	ErrProvisioning = errors.New("eas: provisioning failed")
+	// ErrResponseTooLarge is returned when a response exceeds
+	// ClientConfig.MaxResponse.
+	ErrResponseTooLarge = errors.New("eas: response too large")
 )
 
 // HTTPError is a non-success HTTP status.
@@ -174,6 +193,10 @@ type ClientConfig struct {
 	// Timeout bounds ordinary requests (default 2 minutes); Ping uses the
 	// heartbeat plus a margin.
 	Timeout time.Duration
+	// MaxResponse bounds the size of one response body (default
+	// DefaultMaxResponse, 64 MiB); larger answers fail with
+	// ErrResponseTooLarge instead of being buffered.
+	MaxResponse int64
 	// MaxRetryWait is the longest Retry-After honoured transparently
 	// (default 30 s); longer waits are returned as *HTTPError.
 	MaxRetryWait time.Duration
@@ -221,6 +244,8 @@ type Client struct {
 	policyKey string
 	policy    Policy
 	provGen   int
+	provTimes []time.Time // recent automatic provisioning runs
+	anchor    *url.URL    // configured endpoint credentials are bound to
 	provMu    sync.Mutex
 	state     accountState
 	stateErr  error
@@ -249,6 +274,9 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 2 * time.Minute
 	}
+	if cfg.MaxResponse <= 0 {
+		cfg.MaxResponse = DefaultMaxResponse
+	}
 	if cfg.MaxRetryWait <= 0 {
 		cfg.MaxRetryWait = 30 * time.Second
 	}
@@ -268,7 +296,8 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 			},
 		}
 	}
-	c := &Client{cfg: cfg, log: log, http: hc, url: u}
+	anchor, _ := url.Parse(u)
+	c := &Client{cfg: cfg, log: log, http: hc, url: u, anchor: anchor}
 	return c, nil
 }
 
@@ -306,7 +335,13 @@ func (c *Client) loadState(ctx context.Context) {
 	}
 	c.state = st
 	if st.URL != "" {
-		c.url = st.URL
+		// A stored endpoint (451 redirect) is only trusted while it still
+		// lies within the configured server's trust boundary.
+		if pu, perr := url.Parse(st.URL); perr == nil && c.endpointAllowed(pu) {
+			c.url = st.URL
+		} else {
+			c.log.Warn("eas: ignoring stored endpoint outside the configured server", "url", st.URL)
+		}
 	}
 	if c.cfg.ProtocolVersion == "" && st.Version != "" {
 		c.version = st.Version
@@ -503,6 +538,17 @@ func (c *Client) authorize(ctx context.Context, req *http.Request) error {
 	return nil
 }
 
+// endpointAllowed reports whether the credentials may be sent to u: the
+// configured host, the same registrable domain over https, or - for local
+// dev/test servers - any other loopback address when the configured server is
+// a loopback address too (the traffic never leaves the machine).
+func (c *Client) endpointAllowed(u *url.URL) bool {
+	if safehttp.CredentialsAllowed(c.anchor, u) {
+		return true
+	}
+	return safehttp.IsLoopbackURL(c.anchor) && safehttp.IsLoopbackURL(u) && (u.Scheme == "http" || u.Scheme == "https")
+}
+
 // handleRedirect processes HTTP 451 (and 3xx with Location) by switching
 // the endpoint. It reports whether the request must be repeated.
 func (c *Client) handleRedirect(ctx context.Context, resp *http.Response) (bool, error) {
@@ -525,6 +571,12 @@ func (c *Client) handleRedirect(ctx context.Context, resp *http.Response) (bool,
 	}
 	if strings.HasPrefix(c.URL(), "https://") && !strings.HasPrefix(nu, "https://") {
 		return false, fmt.Errorf("eas: refusing redirect from HTTPS to %s", nu)
+	}
+	// The credentials may only follow a redirect to the configured host or,
+	// over https, to a host of the same registrable domain (Exchange
+	// datacenter moves); anything else is refused (audit NF-06).
+	if pu, perr := url.Parse(nu); perr != nil || !c.endpointAllowed(pu) {
+		return false, fmt.Errorf("eas: refusing redirect to %s: %w", nu, safehttp.ErrForeignHost)
 	}
 	c.log.Info("eas: server redirected to new endpoint", "url", nu, "status", resp.StatusCode)
 	c.mu.Lock()
@@ -649,8 +701,11 @@ func (c *Client) send(ctx context.Context, r *request) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		body, rerr := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+		body, rerr := io.ReadAll(io.LimitReader(resp.Body, c.cfg.MaxResponse+1))
 		resp.Body.Close()
+		if int64(len(body)) > c.cfg.MaxResponse {
+			return nil, fmt.Errorf("%w (limit %d bytes): %s", ErrResponseTooLarge, c.cfg.MaxResponse, r.cmd)
+		}
 		if redirected, err := c.handleRedirect(ctx, resp); err != nil {
 			return nil, err
 		} else if redirected {

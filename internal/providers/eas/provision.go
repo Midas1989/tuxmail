@@ -5,6 +5,7 @@ package eas
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Midas1989/Mailclient/internal/providers/eas/wbxml"
 )
@@ -40,6 +41,23 @@ func (c *Client) reprovision(ctx context.Context, reason int) error {
 	if done {
 		return nil // someone else provisioned meanwhile
 	}
+	// Retry cap: a server that keeps asking for provisioning (or for a
+	// wipe) is not served in an endless loop.
+	now := time.Now()
+	c.mu.Lock()
+	recent := c.provTimes[:0]
+	for _, t := range c.provTimes {
+		if now.Sub(t) < reprovisionWindow {
+			recent = append(recent, t)
+		}
+	}
+	c.provTimes = recent
+	if len(recent) >= maxReprovisions {
+		c.mu.Unlock()
+		return fmt.Errorf("%w: server demanded provisioning %d times within %s", ErrProvisioning, maxReprovisions, reprovisionWindow)
+	}
+	c.provTimes = append(c.provTimes, now)
+	c.mu.Unlock()
 	c.log.Info("eas: server requires provisioning", "reason", reason)
 	_, err := c.provisionLocked(ctx)
 	return err
