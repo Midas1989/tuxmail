@@ -51,6 +51,7 @@ var (
 	ErrLastAdmin          = errors.New("auth: cannot remove the last active administrator")
 	ErrRegistration       = errors.New("auth: registration is disabled")
 	ErrReauthRequired     = errors.New("auth: re-authentication required")
+	ErrQuota              = errors.New("auth: quota exceeded")
 )
 
 // Role is a user role.

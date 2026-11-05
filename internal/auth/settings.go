@@ -18,6 +18,13 @@ var settingKeyRE = regexp.MustCompile(`^[a-z][a-z0-9_.-]{0,63}$`)
 
 const maxSettingSize = 1 << 20
 
+// Per-user limits of user_settings (NA-03). The frontend and the server use a
+// handful of keys; 64 keys of up to 1 MiB, 8 MiB in total, leave ample room.
+const (
+	MaxSettingKeys   = 64
+	MaxSettingsBytes = 8 << 20
+)
+
 // GetSetting returns the JSON value of a user setting.
 func (s *Service) GetSetting(ctx context.Context, userID int64, key string) (json.RawMessage, error) {
 	var v string
@@ -36,10 +43,28 @@ func (s *Service) SetSetting(ctx context.Context, userID int64, key string, valu
 	if len(value) > maxSettingSize || !json.Valid(value) {
 		return fmt.Errorf("%w: setting must be valid JSON up to 1 MiB", ErrInvalidInput)
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO user_settings(user_id, key, value_json, updated_at) VALUES (?,?,?,?)
-		ON CONFLICT(user_id, key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
-		userID, key, string(value), s.now().Unix())
-	return err
+	// Per-user quota (NA-03): the table lives in the shared server.db, so a
+	// single user must not be able to grow it without bound. The check and the
+	// write share one (immediate) transaction.
+	return s.withTx(ctx, func(tx *sql.Tx) error {
+		var count, total, old int64
+		var exists bool
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(LENGTH(CAST(value_json AS BLOB))), 0),
+			COALESCE(SUM(CASE WHEN key = ?1 THEN LENGTH(CAST(value_json AS BLOB)) ELSE 0 END), 0),
+			COALESCE(MAX(key = ?1), 0) FROM user_settings WHERE user_id = ?2`, key, userID).Scan(&count, &total, &old, &exists); err != nil {
+			return err
+		}
+		if !exists && count >= MaxSettingKeys {
+			return fmt.Errorf("%w: at most %d settings per user", ErrQuota, MaxSettingKeys)
+		}
+		if total-old+int64(len(value)) > MaxSettingsBytes {
+			return fmt.Errorf("%w: settings of one user may not exceed %d MiB in total", ErrQuota, MaxSettingsBytes>>20)
+		}
+		_, err := tx.ExecContext(ctx, `INSERT INTO user_settings(user_id, key, value_json, updated_at) VALUES (?,?,?,?)
+			ON CONFLICT(user_id, key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+			userID, key, string(value), s.now().Unix())
+		return err
+	})
 }
 
 // Settings returns all settings of a user.
