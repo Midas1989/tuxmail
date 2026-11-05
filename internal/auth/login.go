@@ -211,8 +211,12 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 		return nil, ErrInvalidCredentials
 	}
 	if u.Disabled {
-		s.Audit(ctx, "login", u.Username, false, "disabled")
-		return nil, ErrUserDisabled
+		// NA-04: a disabled account must not confirm a correct password. The
+		// caller sees (and the throttle counts) exactly what a wrong password
+		// looks like; only the audit log records the reason.
+		s.failKeys(ctx, key)
+		s.Audit(ctx, "login", u.Username, false, "disabled (correct password)")
+		return nil, ErrInvalidCredentials
 	}
 	if rehash {
 		if h, err := HashPassword(req.Password, s.PasswordParams); err == nil {
@@ -280,7 +284,10 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: ci.IP})
 	if u.Disabled {
-		return nil, ErrUserDisabled
+		// NA-04: the challenge proves a correct password; do not reveal that
+		// the account was disabled in the meantime.
+		s.Audit(ctx, "login", u.Username, false, "disabled (second factor step)")
+		return nil, ErrInvalidCode
 	}
 	if err := s.VerifySecondFactor(ctx, u.ID, totpCode, recoveryCode); err != nil {
 		s.failKeys(ctx, keysFor(u.Username, ci.IP))
