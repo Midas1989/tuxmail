@@ -7,6 +7,7 @@
       ansible.builtin.slurp:
         src: "{{ tuxmail_bridges_dir }}/synapse/homeserver.yaml"
       register: tuxmail_bridges_hs_raw
+      no_log: true # enthält Geheimnisse (macaroon_secret_key, form_secret ...)
 
     - name: Gewünschte Synapse-Einstellungen berechnen
       ansible.builtin.set_fact:
@@ -16,13 +17,16 @@
           app_service_config_files: >-
             {{ tuxmail_bridges_mautrix | map(attribute='name')
                | map('regex_replace', '^(.*)$', '/data/appservices/\\1.yaml') | list }}
+      no_log: true
 
     - name: Datei homeserver.yaml aktualisieren
       ansible.builtin.copy:
         content: "{{ tuxmail_bridges_hs_current | combine(tuxmail_bridges_hs_overrides) | to_nice_yaml(indent=2, width=1000) }}"
         dest: "{{ tuxmail_bridges_dir }}/synapse/homeserver.yaml"
-        mode: "0644"
+        mode: "0640" # enthält Geheimnisse; Besitzer (Synapse-Container) bleibt unverändert
       register: tuxmail_bridges_hs_written
+      no_log: true
+      diff: false
       when: (tuxmail_bridges_hs_current | combine(tuxmail_bridges_hs_overrides)) != tuxmail_bridges_hs_current
 
     - name: Neustart vormerken

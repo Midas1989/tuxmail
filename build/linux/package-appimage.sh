@@ -36,30 +36,59 @@ export APPIMAGE_EXTRACT_AND_RUN=1 ARCH=$arch
 tools=$ROOT/build/out/tools
 mkdir -p "$tools"
 
-# Sources: rolling "continuous" builds (these projects publish no versioned
-# release assets). The SHA-256 of each download is printed for the build log.
-# Optional pinning (AUDIT-D D-13): set LINUXDEPLOY_SHA256,
-# LINUXDEPLOY_PLUGIN_GTK_SHA256 and/or APPIMAGETOOL_SHA256 to the expected
-# hashes (e.g. in a release pipeline) and the build stops on a mismatch.
+# Sources: versioned releases, pinned by SHA-256 (re-audit ND-07; these
+# were rolling "continuous" downloads before). Overrides:
+#   LINUXDEPLOY / LINUXDEPLOY_PLUGIN_GTK / APPIMAGETOOL   local files
+#   LINUXDEPLOY_VERSION, APPIMAGETOOL_VERSION, LINUXDEPLOY_PLUGIN_GTK_REF
+#     (release tag / commit) together with LINUXDEPLOY_SHA256,
+#     APPIMAGETOOL_SHA256, LINUXDEPLOY_PLUGIN_GTK_SHA256
+# A download without a pin is refused unless TUXMAIL_ALLOW_UNPINNED_TOOLS=1
+# (development only). Refresh the defaults deliberately: download the new
+# release, compare with the upstream checksum or review the change, update
+# the version and the hashes together.
+LD_VERSION_DEFAULT=1-alpha-20250213-2
+AT_VERSION_DEFAULT=1.9.0
+GTK_REF_DEFAULT=7a3fbc31a9e5075073ff8790f26effbac5f84453
+GTK_SHA_DEFAULT=b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171
+case $arch in
+x86_64)
+	LD_SHA_DEFAULT=4648f278ab3ef31f819e67c30d50f462640e5365a77637d7e6f2ad9fd0b4522a
+	AT_SHA_DEFAULT=46fdd785094c7f6e545b61afcfb0f3d98d8eab243f644b4b17698c01d06083d1
+	;;
+aarch64)
+	LD_SHA_DEFAULT=06706ac8189797dccd36bd384105892cb5e6e71f784f4df526cc958adc223cd6
+	AT_SHA_DEFAULT=04f45ea45b5aa07bb2b071aed9dbf7a5185d3953b11b47358c1311f11ea94a96
+	;;
+esac
+LINUXDEPLOY_VERSION=${LINUXDEPLOY_VERSION:-$LD_VERSION_DEFAULT}
+APPIMAGETOOL_VERSION=${APPIMAGETOOL_VERSION:-$AT_VERSION_DEFAULT}
+LINUXDEPLOY_PLUGIN_GTK_REF=${LINUXDEPLOY_PLUGIN_GTK_REF:-$GTK_REF_DEFAULT}
+# The built-in hashes belong to the built-in versions only.
+[ "$LINUXDEPLOY_VERSION" = "$LD_VERSION_DEFAULT" ] && : "${LINUXDEPLOY_SHA256:=$LD_SHA_DEFAULT}"
+[ "$APPIMAGETOOL_VERSION" = "$AT_VERSION_DEFAULT" ] && : "${APPIMAGETOOL_SHA256:=$AT_SHA_DEFAULT}"
+[ "$LINUXDEPLOY_PLUGIN_GTK_REF" = "$GTK_REF_DEFAULT" ] && : "${LINUXDEPLOY_PLUGIN_GTK_SHA256:=$GTK_SHA_DEFAULT}"
 fetch() { # fetch URL FILE [EXPECTED_SHA256]
 	if [ ! -s "$2" ]; then
+		if [ -z "${3:-}" ] && [ "${TUXMAIL_ALLOW_UNPINNED_TOOLS:-}" != 1 ]; then
+			die "refusing to download $1 without a SHA-256 pin (set the matching *_SHA256 variable)"
+		fi
 		log "downloading $1"
-		curl -fsSL --retry 3 -o "$2.tmp" "$1"
+		curl --proto '=https' --tlsv1.2 -fsSL --retry 3 -o "$2.tmp" "$1"
 		mv "$2.tmp" "$2"
 	fi
 	chmod +x "$2"
 	sha256 "$2" >&2
 	if [ -n "${3:-}" ]; then
 		got=$(sha256 "$2" | cut -d' ' -f1)
-		[ "$got" = "$3" ] || die "$2: SHA-256 $got does not match the pinned $3"
+		[ "$got" = "$3" ] || die "$2: SHA-256 $got does not match the pinned $3 (stale download? remove it from build/out/tools)"
 	fi
 }
-LINUXDEPLOY=${LINUXDEPLOY:-$tools/linuxdeploy-$arch.AppImage}
-LINUXDEPLOY_PLUGIN_GTK=${LINUXDEPLOY_PLUGIN_GTK:-$tools/linuxdeploy-plugin-gtk.sh}
-APPIMAGETOOL=${APPIMAGETOOL:-$tools/appimagetool-$arch.AppImage}
-fetch "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-$arch.AppImage" "$LINUXDEPLOY" "${LINUXDEPLOY_SHA256:-}"
-fetch "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" "$LINUXDEPLOY_PLUGIN_GTK" "${LINUXDEPLOY_PLUGIN_GTK_SHA256:-}"
-fetch "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-$arch.AppImage" "$APPIMAGETOOL" "${APPIMAGETOOL_SHA256:-}"
+LINUXDEPLOY=${LINUXDEPLOY:-$tools/linuxdeploy-$arch-$LINUXDEPLOY_VERSION.AppImage}
+LINUXDEPLOY_PLUGIN_GTK=${LINUXDEPLOY_PLUGIN_GTK:-$tools/linuxdeploy-plugin-gtk.sh}  # the name linuxdeploy looks for
+APPIMAGETOOL=${APPIMAGETOOL:-$tools/appimagetool-$arch-$APPIMAGETOOL_VERSION.AppImage}
+fetch "https://github.com/linuxdeploy/linuxdeploy/releases/download/$LINUXDEPLOY_VERSION/linuxdeploy-$arch.AppImage" "$LINUXDEPLOY" "${LINUXDEPLOY_SHA256:-}"
+fetch "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/$LINUXDEPLOY_PLUGIN_GTK_REF/linuxdeploy-plugin-gtk.sh" "$LINUXDEPLOY_PLUGIN_GTK" "${LINUXDEPLOY_PLUGIN_GTK_SHA256:-}"
+fetch "https://github.com/AppImage/appimagetool/releases/download/$APPIMAGETOOL_VERSION/appimagetool-$arch.AppImage" "$APPIMAGETOOL" "${APPIMAGETOOL_SHA256:-}"
 # linuxdeploy finds plugins named linuxdeploy-plugin-<name>(.sh) in PATH or next to itself.
 PATH="$(dirname "$LINUXDEPLOY_PLUGIN_GTK"):$PATH"
 export PATH

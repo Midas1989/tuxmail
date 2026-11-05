@@ -11,11 +11,27 @@
     group: root
     mode: "0755"
 
-- name: Release herunterladen und Prüfsumme (sha256, checksums.txt) verifizieren
+- name: Herkunft des Releases prüfen (GPG-Signatur von checksums.txt, ND-05)
+  ansible.builtin.include_tasks: verify_release.yml
+  when:
+    - tuxmail_binary_src | length == 0
+    - not (tuxmail_allow_unsigned_release | bool)
+
+- name: WARNUNG - unsigniertes Release, nur die Prüfsumme aus dem Release selbst gilt
+  ansible.builtin.debug:
+    msg: >-
+      tuxmail_allow_unsigned_release=true: Die Herkunft von v{{ tuxmail_version }} wird NICHT geprüft
+      (kein Abgleich mit tuxmail_release_gpg_fingerprint).
+  when:
+    - tuxmail_binary_src | length == 0
+    - tuxmail_allow_unsigned_release | bool
+
+- name: Release herunterladen und Prüfsumme (sha256) verifizieren
   ansible.builtin.get_url:
     url: "{{ tuxmail_archive_url }}"
     dest: "{{ tuxmail_download_dir }}/{{ tuxmail_archive_name }}"
-    checksum: "sha256:{{ tuxmail_checksums_url }}"
+    # Signiert: SHA-256 aus der per GPG bestätigten checksums.txt; sonst (ausdrücklich erlaubt) aus dem Release.
+    checksum: "sha256:{{ tuxmail_checksums_url if tuxmail_allow_unsigned_release | bool else tuxmail_archive_sha256 }}"
     owner: root
     group: root
     mode: "0644"

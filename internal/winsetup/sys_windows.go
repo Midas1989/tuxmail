@@ -68,16 +68,18 @@ func WebView2Version() string {
 	return v
 }
 
-// WebView2BootstrapperURL is Microsoft's Evergreen bootstrapper.
-const WebView2BootstrapperURL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
-
 // WebView2DownloadPage is shown when the installation fails.
 const WebView2DownloadPage = "https://developer.microsoft.com/microsoft-edge/webview2/#download"
 
-// InstallWebView2 runs the Evergreen bootstrapper: the embedded copy if
-// the setup carries one, else a download. The bootstrapper elevates
-// itself when needed and installs per machine (per user without rights).
-func InstallWebView2(ctx context.Context, embedded []byte) error {
+// InstallWebView2 runs the Evergreen bootstrapper: the embedded copy if the
+// setup carries one (embeddedPin is its SHA-256 from the payload, recorded
+// by build/windows/package-setup.sh), else a download from Microsoft over
+// https. The bootstrapper elevates itself when needed and installs per
+// machine (per user without rights). Before it is executed - often with
+// administrator rights - its Authenticode signature must be valid and
+// Microsoft's (re-audit ND-04); an embedded copy must also match its pin, and
+// without a pin it is not used.
+func InstallWebView2(ctx context.Context, embedded []byte, embeddedPin string) error {
 	// Private folder: an elevated setup must not run a program from the
 	// user-writable %TEMP% (AUDIT-D D-03).
 	dir, err := PrivateTempDir("TuxMail-WebView2-")
@@ -87,11 +89,17 @@ func InstallWebView2(ctx context.Context, embedded []byte) error {
 	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "MicrosoftEdgeWebview2Setup.exe")
 	if len(embedded) > 0 {
-		if err := os.WriteFile(path, embedded, 0o755); err != nil {
+		if err := VerifySHA256(embedded, embeddedPin); err != nil {
+			return fmt.Errorf("embedded WebView2 bootstrapper: %w", err)
+		}
+		if err := os.WriteFile(path, embedded, 0o700); err != nil {
 			return err
 		}
 	} else if err := download(ctx, WebView2BootstrapperURL, path); err != nil {
 		return fmt.Errorf("download WebView2 bootstrapper: %w", err)
+	}
+	if err := VerifyAuthenticode(path, TrustedPublisher); err != nil {
+		return fmt.Errorf("WebView2 bootstrapper rejected: %w", err)
 	}
 	cmd := exec.CommandContext(ctx, path, "/silent", "/install")
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -111,7 +119,12 @@ func download(ctx context.Context, url, dst string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := http.DefaultClient.Do(req)
+	if err := CheckBootstrapperURL(req.URL); err != nil {
+		return err
+	}
+	// https only, Microsoft hosts only, on every redirect hop (ND-04).
+	client := &http.Client{CheckRedirect: CheckBootstrapperRedirect}
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}

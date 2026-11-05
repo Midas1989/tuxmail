@@ -86,6 +86,21 @@ type HelloParams struct {
 	DataDir string `json:"dataDir"`
 	// Config holds plugin settings (e.g. Telegram api_id, signal-cli path).
 	Config map[string]string `json:"config,omitempty"`
+	// NetPolicy is the outbound connection policy of the server mode
+	// (internal/netguard); nil means unrestricted (desktop mode). The
+	// plugin installs it for its own HTTP client so that user-chosen
+	// destinations (the Matrix homeserver) cannot reach loopback, private
+	// or metadata addresses from the plugin process either.
+	NetPolicy *NetPolicy `json:"netPolicy,omitempty"`
+}
+
+// NetPolicy is the serialised netguard.Policy.
+type NetPolicy struct {
+	// AllowPrivate permits private networks and loopback.
+	AllowPrivate bool `json:"allowPrivate,omitempty"`
+	// Allowed are the always-reachable networks in the notation of
+	// security.allowed_networks ("10.0.0.0/8", "[::1]:8008").
+	Allowed []string `json:"allowed,omitempty"`
 }
 
 // HelloResult describes a plugin.

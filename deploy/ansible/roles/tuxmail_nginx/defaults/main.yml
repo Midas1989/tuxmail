@@ -32,16 +32,36 @@ tuxmail_nginx_proxy_timeout: 300
 tuxmail_nginx_websocket_timeout: 3600
 tuxmail_nginx_upstream_keepalive: 16
 
-# Sicherheits-Header
+# Sicherheits-Header (Re-Audit ND-12)
+# TuxMail sendet selbst einen vollständigen Satz (nosniff, X-Frame-Options: DENY,
+# Referrer-Policy, COOP/CORP, Permissions-Policy und eine strikte CSP mit
+# frame-ancestors 'none'). nginx reicht diese unverändert durch und ergänzt nur HSTS.
 tuxmail_nginx_hsts_max_age: 31536000
+# includeSubDomains erst setzen, wenn ALLE Subdomains der Domain HTTPS können.
 tuxmail_nginx_hsts_include_subdomains: false
 tuxmail_nginx_hsts_preload: false
-# TuxMail setzt seine eigene, strikte CSP. Hier nur Einschränkungen, die die
-# Oberfläche nicht beeinträchtigen. Leer = nginx setzt keine CSP.
-tuxmail_nginx_csp: "frame-ancestors 'self'; base-uri 'self'; object-src 'none'"
-tuxmail_nginx_referrer_policy: "same-origin"
+# Leer (Standard) = die CSP von TuxMail gilt allein. Nur wenn hier ein Wert steht, ersetzt nginx die
+# CSP von TuxMail durch genau diese (eine einzige maßgebliche CSP, nie zwei Header nebeneinander).
+tuxmail_nginx_csp: ""
+# Nur im Snippet-Modus (TuxMail neben einer anderen Anwendung): X-Frame-Options statt des DENY von
+# TuxMail, z. B. "SAMEORIGIN". Leer (Standard) = DENY bleibt.
+tuxmail_nginx_snippet_frame_options: ""
 # Weitere Header (Name: Wert).
 tuxmail_nginx_extra_headers: {}
+
+# X-Forwarded-Proto: nginx meldet TuxMail das Schema seiner eigenen Verbindung ($scheme).
+# Bei tuxmail_tls_mode=none vor einem vorgelagerten Proxy, der TLS beendet, muss der Betreiber
+# das ausdrücklich bestätigen (dann wird "https" gesendet und TuxMail setzt "Secure"-Cookies).
+# Ohne diesen Proxy NICHT setzen: sonst wären Cookies über reines HTTP als "Secure" markiert.
+tuxmail_nginx_upstream_terminates_tls: false
+
+# OCSP-Stapling im vHost, der TLS selbst beendet. Standard: bei eigenen Zertifikaten (custom) an;
+# Let's Encrypt betreibt seit 2025 keine OCSP-Responder mehr (nginx meldet dann nur eine Warnung).
+tuxmail_nginx_ocsp_stapling: "{{ tuxmail_tls_mode == 'custom' }}"
+# DNS-Server für den OCSP-Responder (nginx liest /etc/resolv.conf nicht): IPv4-Adressen, durch
+# Leerzeichen getrennt. Standard: die DNS-Server des Hosts; leer = kein Stapling.
+tuxmail_nginx_resolver: >-
+  {{ ansible_facts.get('dns', {}).get('nameservers', []) | select('match', '^[0-9]{1,3}([.][0-9]{1,3}){3}$') | list | join(' ') }}
 # Im Snippet-Modus HSTS mitsenden (der umgebende server-Block ist i. d. R. HTTPS).
 tuxmail_nginx_snippet_hsts: true
 

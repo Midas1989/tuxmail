@@ -26,6 +26,11 @@ Linux-Server zu betreiben (siehe [KONZEPT.md, Kap. 4.5, 15.5, 15.6](../docs/KONZ
 - systemd, SSH-Zugang mit `sudo`-Rechten (oder root)
 - Für Let's Encrypt: DNS-Eintrag der Domain zeigt auf den Server, Port 80 und 443 aus dem Internet erreichbar
 - Ausgehender HTTPS-Zugriff auf die Release-URL (sonst `tuxmail_binary_src` verwenden)
+- **Release-Signatur:** Das Binary läuft als root-eigener Dienst, daher wird das Release vor der Installation
+  über die GPG-Signatur von `checksums.txt` geprüft – siehe „Release-Signatur“ unten (Fingerabdruck
+  `tuxmail_release_gpg_fingerprint` ist **Pflicht**, sonst bricht das Playbook vor jeder Änderung ab).
+- **Sicherungen:** ohne age-Empfänger (`tuxmail_backup_age_recipients`) verweigert das Backup-Skript den Lauf, siehe
+  Abschnitt 7 (`tuxmail_backup_allow_plaintext: true` erlaubt Klartext ausdrücklich).
 
 **Steuerrechner** (von dem aus Ansible läuft):
 
@@ -214,6 +219,33 @@ sudo systemctl start mautrix-whatsapp
 Synapse wird über apt aktualisiert (`tuxmail_synapse_version` oder `apt upgrade`), Chromium und
 PostgreSQL mit den normalen Systemupdates.
 
+### Release-Signatur (Pflicht, Re-Audit ND-05)
+
+Die Rolle `tuxmail` lädt `checksums.txt` **und** die abgetrennte Signatur `checksums.txt.asc` und prüft sie mit
+`gpg` gegen den Fingerabdruck, den du festlegst. Erst der SHA-256 aus der so bestätigten Datei gilt für das
+Archiv (`get_url … checksum`). Eine Prüfsumme aus demselben Release allein würde nur Übertragungsfehler erkennen.
+Der Schlüssel selbst darf aus dem Release kommen (`tuxmail-release-key.asc`): das Vertrauen hängt allein am
+Fingerabdruck, den du über einen zweiten Kanal bestätigst.
+
+```yaml
+# inventory/group_vars/all.yml
+tuxmail_release_gpg_fingerprint: "ABCD EF01 2345 6789 ABCD  EF01 2345 6789 ABCD EF01"   # 40 Hex-Zeichen
+# optional, unabhängig vom Release: öffentlicher Schlüssel als Datei auf dem Steuerrechner
+# tuxmail_release_gpg_key_src: files/tuxmail-release-key.asc
+```
+
+Fingerabdruck ermitteln (nach dem Anlegen des Release-Schlüssels, `GPG_PRIVATE_KEY` in der Pipeline, docs/RELEASE.md):
+`gpg --show-keys --with-colons tuxmail-release-key.asc | awk -F: '$1=="fpr"{print $10; exit}'`.
+Die Prüfung läuft auf dem Zielsystem in einem leeren, temporären Schlüsselbund (Paket `gpg`/`gnupg2` wird
+installiert) und bricht ab, wenn die Signatur fehlt, ungültig ist, von einem anderen Schlüssel stammt oder das
+Archiv nicht in `checksums.txt` steht.
+
+- **Release ohne Signatur** (die Pipeline signiert nur mit dem Secret `GPG_PRIVATE_KEY`): erst signieren lassen
+  oder auf eigene Verantwortung `tuxmail_allow_unsigned_release: true` setzen (nur die Prüfsumme aus dem Release
+  gilt dann; das Playbook gibt eine Warnung aus).
+- `tuxmail_binary_src` (lokales Archiv/Binary vom Steuerrechner) braucht keine Signatur.
+- Die Bridges-Rolle verlangt unverändert operatorseitig gepinnte SHA-256-Werte für ihre Binaries.
+
 ## 3. Schnellstart
 
 Alle Befehle aus `deploy/ansible/` heraus. Einstellungen können in `inventory/group_vars/all.yml`
@@ -372,7 +404,10 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_tls_cert_path` / `_key_path` | LE: `/etc/letsencrypt/live/<domain>/…`, sonst `/etc/ssl/tuxmail/<domain>.crt/.key` | Zertifikat/Schlüssel |
 | `tuxmail_tls_chain_path` | `""` | Zwischenzertifikate (custom) |
 | `tuxmail_tls_copy_from_controller` | `false` | Zertifikatsdateien vom Steuerrechner kopieren |
-| `tuxmail_release_base_url` | GitHub-Release `v<version>/` | Quelle für Archiv und `checksums.txt` |
+| `tuxmail_release_base_url` | GitHub-Release `v<version>/` | Quelle für Archiv, `checksums.txt`, `checksums.txt.asc` |
+| `tuxmail_release_gpg_fingerprint` | `""` (**Pflicht**) | 40-stelliger Fingerabdruck des Release-Schlüssels; Leerzeichen erlaubt |
+| `tuxmail_release_gpg_key_src` / `_key_url` | `""` / `<release>/tuxmail-release-key.asc` | öffentlicher Schlüssel (Datei auf dem Steuerrechner bevorzugt) |
+| `tuxmail_allow_unsigned_release` | `false` | **Opt-out** der Signaturprüfung (nur Prüfsumme aus dem Release); Warnung im Lauf |
 | `tuxmail_binary_src` | `""` | lokales Binary/`.tar.gz` auf dem Steuerrechner statt Download |
 | `tuxmail_keep_versions` | `3` | installierte Versionen (für Rollback) |
 | `tuxmail_max_upload_mb` | `50` | Upload-Limit (TuxMail und nginx) |
@@ -401,9 +436,14 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_backup_keep_scheduled` | `14` | aufbewahrte tägliche Sicherungen |
 | `tuxmail_backup_compression` | `zstd` | `zstd` (tar.zst) \| `gzip` (tar.gz) |
 | `tuxmail_backup_age_recipients` | `[]` | öffentliche age-Schlüssel → Sicherungen verschlüsseln |
+| `tuxmail_backup_allow_plaintext` | `false` | Sicherungen ohne age-Empfänger zulassen (sonst bricht das Skript ab) |
 | `tuxmail_service_environment` | `{}` | zusätzliche Umgebungsvariablen (z. B. `TUXMAIL_LOG_LEVEL`) |
 | `tuxmail_nginx_strip_subpath` | `false` | Unterpfad vor dem Weiterreichen entfernen |
-| `tuxmail_nginx_csp` | `frame-ancestors 'self'; …` | zusätzliche CSP von nginx (`""` = keine) |
+| `tuxmail_nginx_csp` | `""` | `""` = die CSP von TuxMail gilt allein; sonst ersetzt nginx sie durch genau diese (nie zwei CSP-Header) |
+| `tuxmail_nginx_snippet_frame_options` | `""` | nur Snippet-Modus: `X-Frame-Options` (z. B. `SAMEORIGIN`) statt `DENY` von TuxMail; sonst bleibt `DENY` |
+| `tuxmail_nginx_hsts_max_age` / `_include_subdomains` / `_preload` | `31536000` / `false` / `false` | HSTS von nginx; `includeSubDomains` erst, wenn alle Subdomains HTTPS können |
+| `tuxmail_nginx_upstream_terminates_tls` | `false` | bei `tuxmail_tls_mode=none`: ein vorgelagerter Proxy beendet TLS → `X-Forwarded-Proto https`; sonst `$scheme` |
+| `tuxmail_nginx_ocsp_stapling` / `_resolver` | custom: `true`, sonst `false` / DNS-Server des Hosts | OCSP-Stapling im TLS-vHost (Let's Encrypt hat keine OCSP-Responder mehr) |
 | `tuxmail_nginx_ipv6` | automatisch | auch auf `[::]` lauschen |
 | `tuxmail_nginx_disable_default_site` | `true` | Debian-Standardseite entfernen (nur `new`) |
 | `tuxmail_firewall_enabled` | `false` | ufw/firewalld: SSH, 80, 443 freigeben |
@@ -429,6 +469,7 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_mautrix_<bridge>_version` / `_sha256` | `0.2610.0` / vorbelegt (amd64, arm64) | mautrix-Binaries |
 | `tuxmail_mautrix_config_overrides` | `{}` | eigene Werte je Bridge (rekursiv) |
 | `tuxmail_synapse_version` / `_extra_config` | `""` / `{}` | Synapse-Paketversion / zusätzliche Einstellungen |
+| `tuxmail_synapse_container_version` / `tuxmail_bridges_synapse_container_gid` | `1.164.2` / `991` | nur Container-Modus: feste Synapse-Version statt `:latest`; GID des Containers für die Appservice-Registrierungen (0640) |
 
 **Geheimnisse mit Ansible Vault:**
 
@@ -492,6 +533,11 @@ sie mit `umask 077` (Archive 0600, Verzeichnis 0700). Werden Sicherungen außerh
 abgelegt, **verschlüsseln** (`tuxmail_backup_age_recipients: ["age1…"]`, privaten age-Schlüssel
 getrennt aufbewahren). Beim Zurückspielen Rechte erhalten (`tar -p` als root).
 
+**Klartext nur ausdrücklich (Re-Audit ND-14):** Ohne age-Empfänger verweigert das Skript `tuxmail-backup` den
+Lauf (Exit 3, bevor der Dienst angehalten wird) – auch die Sicherung vor einem Versionswechsel. Das Playbook
+prüft das schon vorab. Wer bewusst unverschlüsselt sichert (Archive sind nur für root lesbar), setzt
+`tuxmail_backup_allow_plaintext: true` bzw. startet das Skript manuell mit `TUXMAIL_BACKUP_ALLOW_PLAINTEXT=1`.
+
 ## 8. Benutzerverwaltung
 
 Die Kommandozeile läuft als Dienstbenutzer (damit neue Dateien `tuxmail` gehören):
@@ -549,6 +595,23 @@ Admin-Raum aus; das Matrix-Konto wird hier nicht automatisch angelegt (Befehl wi
 Die alten Werte `tuxmail_bridges_runtime: podman|docker` werden noch als Container-Modus erkannt
 (mit Warnung). Gotenberg ist nicht mehr Teil des Compose-Projekts, sondern
 `tuxmail_pdf_renderer: gotenberg_container`.
+
+### Sicherheits-Header und Weitergabe (Re-Audit ND-12)
+
+TuxMail sendet selbst einen vollständigen Satz von Sicherheits-Headern (`nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy`, COOP/CORP, `Permissions-Policy`, strikte CSP mit `frame-ancestors 'none'`). Die nginx-Vorlagen
+reichen sie **unverändert** durch und ergänzen nur HSTS; früher wurde `X-Frame-Options` auf `SAMEORIGIN`
+heruntergesetzt und eine zweite CSP hinzugefügt. Wer im Snippet-Modus `SAMEORIGIN` braucht, setzt
+`tuxmail_nginx_snippet_frame_options`. `X-Forwarded-Proto` ist das Schema der nginx-Verbindung (`$scheme`);
+steht nginx hinter einem TLS-beendenden Proxy (`tuxmail_tls_mode: none`), muss das mit
+`tuxmail_nginx_upstream_terminates_tls: true` bestätigt werden (Änderung gegenüber früher: dort wurde `https`
+immer gesendet). Wird TLS vom verwalteten vHost beendet, kann OCSP-Stapling aktiviert werden
+(`tuxmail_nginx_ocsp_stapling`, Standard nur bei eigenem Zertifikat).
+
+**Secrets im Play-Protokoll:** Generierte Passwörter (TuxMail-Admin, Matrix-Admin) werden nie ausgegeben; sie
+liegen nur in `credentials/<host>/` auf dem Steuerrechner (Datei 0600, Verzeichnis 0700) und das Playbook nennt
+den Pfad. Das Synapse-Admin-Konto wird mit `register_new_matrix_user --password-file` angelegt (kurzlebige
+root-Datei in `/run`), nicht mit dem Passwort in der Kommandozeile.
 
 ## 10. Fehlerbehebung
 

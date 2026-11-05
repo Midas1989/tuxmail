@@ -23,6 +23,7 @@
   ansible.builtin.slurp:
     src: "{{ tuxmail_bridges_dir }}/{{ tuxmail_bridge.name }}/config.yaml"
   register: tuxmail_bridges_cfg_raw
+  no_log: true # enthält as_token/hs_token
 
 - name: "Gewünschte Konfiguration berechnen (mautrix-{{ tuxmail_bridge.name }})"
   ansible.builtin.set_fact:
@@ -40,6 +41,7 @@
         uri: "file:/data/mautrix-{{ tuxmail_bridge.name }}.db?_txlock=immediate"
     tuxmail_bridges_cfg_permissions: >-
       {{ tuxmail_bridges_permissions }}
+  no_log: true
 
 - name: "Konfiguration zusammenführen (mautrix-{{ tuxmail_bridge.name }})"
   ansible.builtin.set_fact:
@@ -47,6 +49,7 @@
       {{ (tuxmail_bridges_cfg_current | combine(tuxmail_bridges_cfg_overrides, recursive=True))
          | combine({'bridge': (tuxmail_bridges_cfg_current.bridge | default({}))
                               | combine({'permissions': tuxmail_bridges_cfg_permissions})}) }}
+  no_log: true
 
 - name: "Konfiguration schreiben (mautrix-{{ tuxmail_bridge.name }})"
   ansible.builtin.copy:
@@ -56,6 +59,8 @@
   register: tuxmail_bridges_cfg_written
   # Vergleich auf Datenebene: die Bridge formatiert ihre Datei beim Start selbst um.
   when: tuxmail_bridges_cfg_desired != tuxmail_bridges_cfg_current
+  no_log: true
+  diff: false
 
 - name: "Registrierung erzeugen (mautrix-{{ tuxmail_bridge.name }})"
   ansible.builtin.command:
@@ -71,8 +76,12 @@
     src: "{{ tuxmail_bridges_dir }}/{{ tuxmail_bridge.name }}/registration.yaml"
     dest: "{{ tuxmail_bridges_dir }}/synapse/appservices/{{ tuxmail_bridge.name }}.yaml"
     remote_src: true
-    mode: "0644"
+    # enthält as_token/hs_token: nur root und die Gruppe des Synapse-Containers (Standard 991)
+    owner: root
+    group: "{{ tuxmail_bridges_synapse_container_gid }}"
+    mode: "0640"
   register: tuxmail_bridges_reg_copied
+  diff: false
   when: tuxmail_matrix_server == 'synapse'
 
 - name: "Änderungen merken (mautrix-{{ tuxmail_bridge.name }})"

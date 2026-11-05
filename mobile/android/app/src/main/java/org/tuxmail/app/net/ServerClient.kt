@@ -12,6 +12,26 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URI
 
+/**
+ * https for any host; plain http only for the loopback hosts of a local test
+ * server, compared by the parsed host (a prefix test accepted
+ * http://localhost.evil.example). No user info, no other schemes.
+ */
+internal fun isAllowedServerUrl(url: String): Boolean {
+    val uri = try {
+        URI(url)
+    } catch (e: Exception) {
+        return false
+    }
+    val host = uri.host ?: return false
+    if (uri.userInfo != null) return false
+    return when (uri.scheme?.lowercase()) {
+        "https" -> true
+        "http" -> host == "localhost" || host == "127.0.0.1" || host == "[::1]"
+        else -> false
+    }
+}
+
 /** Server URL + device token of the active profile (mirrored from the web layer). */
 data class ActiveSession(val serverUrl: String, val token: String, val profileId: String) {
     fun toJson(): String = JSONObject().put("serverUrl", serverUrl).put("token", token).put("profileId", profileId).toString()
@@ -22,7 +42,7 @@ data class ActiveSession(val serverUrl: String, val token: String, val profileId
             return try {
                 val o = JSONObject(raw)
                 val url = o.getString("serverUrl")
-                if (!url.startsWith("https://") && !url.startsWith("http://localhost") && !url.startsWith("http://127.0.0.1")) return null
+                if (!isAllowedServerUrl(url)) return null
                 ActiveSession(url.trimEnd('/'), o.getString("token"), o.optString("profileId"))
             } catch (e: Exception) {
                 null

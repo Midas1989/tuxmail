@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/messenger/wire"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 const (
@@ -37,7 +38,34 @@ type Env struct {
 	Config      map[string]string
 	HostVersion string
 	Logger      *slog.Logger
-	emit        func(wire.Event)
+	// NetPolicy is the outbound policy the host handed over (nil: none).
+	// The sdk has already installed it for the process (ApplyNetPolicy).
+	NetPolicy *wire.NetPolicy
+	emit      func(wire.Event)
+}
+
+// ApplyNetPolicy installs the host's outbound connection policy in this
+// process: every dial of http.DefaultTransport (and therefore of every
+// http.Client without its own transport, e.g. the Matrix client talking to a
+// user-chosen homeserver) is checked against it after DNS resolution
+// (internal/netguard). A nil policy leaves the process unrestricted. A policy
+// that is already installed (plugin running inside the server process, as in
+// tests) is kept. Entries that cannot be parsed are an error: the plugin must
+// not start with a weaker policy than the host intended.
+func ApplyNetPolicy(np *wire.NetPolicy) error {
+	if np == nil || netguard.Current() != nil {
+		return nil
+	}
+	p := &netguard.Policy{AllowPrivate: np.AllowPrivate}
+	for _, s := range np.Allowed {
+		r, err := netguard.ParseRule(s)
+		if err != nil {
+			return wire.Errorf(wire.CodeInvalidParams, "netPolicy: %v", err)
+		}
+		p.Allowed = append(p.Allowed, r)
+	}
+	netguard.SetPolicy(p)
+	return nil
 }
 
 // Emit sends an event to the host (safe for concurrent use).
@@ -287,7 +315,10 @@ func (s *Server) handle(ctx context.Context, method string, params json.RawMessa
 		if hp.ProtocolVersion != wire.ProtocolVersion {
 			return nil, wire.Errorf(wire.CodeOutdated, "host speaks protocol %d, plugin %d", hp.ProtocolVersion, wire.ProtocolVersion)
 		}
-		s.env.DataDir, s.env.Config, s.env.HostVersion = hp.DataDir, hp.Config, hp.HostVersion
+		if err := ApplyNetPolicy(hp.NetPolicy); err != nil {
+			return nil, err
+		}
+		s.env.DataDir, s.env.Config, s.env.HostVersion, s.env.NetPolicy = hp.DataDir, hp.Config, hp.HostVersion, hp.NetPolicy
 		if s.env.DataDir == "" {
 			return nil, wire.Errorf(wire.CodeInvalidParams, "dataDir is required")
 		}

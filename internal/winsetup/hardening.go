@@ -2,7 +2,10 @@
 
 package winsetup
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // Hardening decisions of the setup (docs/security/AUDIT-D-endpoint.md).
 // The decisions are plain functions so they can be tested on any OS; the
@@ -51,4 +54,32 @@ func ElevateBeforeTempCopy(scope Scope, elevated bool) bool {
 // even inside quotes, '"' would end the quoting (D-07).
 func SafeForCmd(p string) bool {
 	return p != "" && !strings.ContainsAny(p, "%\"\r\n")
+}
+
+// DeleteCommandLine builds the command line of the hidden cmd.exe that
+// ScheduleDelete starts (re-audit ND-03). Every program is addressed by its
+// full path below the system directory sysDir (C:\Windows\System32): cmd.exe
+// looks up a command without a path in its current directory first, so a
+// planted ping.exe/ping.cmd in the user's %TEMP% would otherwise run with
+// the administrator rights of an all-users uninstall. del and rmdir are
+// built-in commands of cmd.exe. Paths that cannot be quoted safely are
+// skipped (SafeForCmd, D-07); an unsafe sysDir is an error.
+func DeleteCommandLine(sysDir string, files, dirs []string) (string, error) {
+	if !SafeForCmd(sysDir) || !strings.Contains(sysDir, `\`) {
+		return "", fmt.Errorf("unsafe system directory %q", sysDir)
+	}
+	sysDir = strings.TrimRight(sysDir, `\`)
+	var b strings.Builder
+	fmt.Fprintf(&b, `"%s\ping.exe" -n 4 127.0.0.1 >nul`, sysDir)
+	for _, f := range files {
+		if SafeForCmd(f) {
+			fmt.Fprintf(&b, ` & del /f /q "%s"`, f)
+		}
+	}
+	for _, d := range dirs {
+		if SafeForCmd(d) {
+			fmt.Fprintf(&b, ` & rmdir "%s"`, d)
+		}
+	}
+	return `"` + sysDir + `\cmd.exe" /d /s /c "` + b.String() + `"`, nil
 }

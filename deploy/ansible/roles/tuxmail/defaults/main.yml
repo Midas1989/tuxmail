@@ -18,6 +18,28 @@ tuxmail_arch: "{{ tuxmail_arch_map.get(ansible_facts['architecture'], 'unsupport
 tuxmail_archive_name: "tuxmail_{{ tuxmail_version }}_linux_{{ tuxmail_arch }}.tar.gz"
 tuxmail_archive_url: "{{ tuxmail_release_base_url }}{{ tuxmail_archive_name }}"
 tuxmail_checksums_url: "{{ tuxmail_release_base_url }}checksums.txt"
+
+# --- Herkunft des Releases: GPG-Signatur von checksums.txt (Re-Audit ND-05) --------
+# Das Binary läuft als root-eigener Dienst. Deshalb wird checksums.txt nur akzeptiert,
+# wenn die abgetrennte Signatur (checksums.txt.asc) von dem Schlüssel stammt, dessen
+# Fingerabdruck HIER festgelegt ist; erst dann wird der SHA-256 des Archivs verglichen.
+# PFLICHT (40 Hex-Zeichen, Leerzeichen erlaubt), z. B. aus
+#   gpg --show-keys --with-colons tuxmail-release-key.asc   (Zeile "fpr", Feld 10)
+# Den Fingerabdruck über einen zweiten Kanal bestätigen (Projektseite, SECURITY.md).
+tuxmail_release_gpg_fingerprint: ""
+tuxmail_release_gpg_fingerprint_norm: "{{ tuxmail_release_gpg_fingerprint | regex_replace('[^0-9A-Fa-f]', '') | upper }}"
+# Öffentlicher Schlüssel: Datei auf dem Steuerrechner (empfohlen, unabhängig vom Release)
+# oder, wenn leer, tuxmail-release-key.asc aus dem Release (der Fingerabdruck entscheidet).
+tuxmail_release_gpg_key_src: ""
+tuxmail_release_gpg_key_url: "{{ tuxmail_release_base_url }}tuxmail-release-key.asc"
+tuxmail_checksums_sig_url: "{{ tuxmail_checksums_url }}.asc"
+# Ausdrücklicher Verzicht auf die Signaturprüfung (nur die Prüfsumme aus demselben Release
+# gilt dann; sie erkennt Übertragungsfehler, aber kein manipuliertes Release). Nur setzen,
+# wenn das Release nicht signiert ist (Secret GPG_PRIVATE_KEY fehlt in der Pipeline) und
+# die Quelle anderweitig vertrauenswürdig ist, oder tuxmail_binary_src nutzen.
+tuxmail_allow_unsigned_release: false
+# Arbeitsverzeichnis der Prüfung (wird danach gelöscht).
+tuxmail_verify_dir: "{{ tuxmail_download_dir }}/verify-{{ tuxmail_version }}"
 # Alternative: lokale Datei auf dem Steuerrechner (Binary oder .tar.gz).
 # Ist der Wert gesetzt, wird nichts heruntergeladen.
 tuxmail_binary_src: ""
@@ -117,6 +139,9 @@ tuxmail_backup_compression: "zstd"
 # Archive sind 0600 im Verzeichnis 0700. Zusätzlich mit age verschlüsseln, wenn
 # hier öffentliche age-Schlüssel (age1...) angegeben sind (empfohlen bei externer Ablage).
 tuxmail_backup_age_recipients: []
+# Ohne age-Empfänger verweigert das Backup-Skript den Lauf (Re-Audit ND-14), auch die Sicherung
+# vor einem Versionswechsel. Klartext-Archive (nur root lesbar, 0600 in 0700) ausdrücklich erlauben:
+tuxmail_backup_allow_plaintext: false
 # Vor einem Versionswechsel /var/lib/tuxmail sichern (Dienst wird dafür kurz gestoppt).
 tuxmail_backup_before_upgrade: true
 tuxmail_backup_keep_upgrade: 5

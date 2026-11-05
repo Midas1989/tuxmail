@@ -54,7 +54,9 @@ gpg --verify checksums.txt.asc checksums.txt
 ## 1. Windows
 
 **Voraussetzungen:** Windows 10 22H2 oder Windows 11 (64 Bit). Microsoft Edge WebView2 ist dort normalerweise
-vorinstalliert – fehlt es, installiert das Setup es automatisch.
+vorinstalliert – fehlt es, installiert das Setup es automatisch (Microsofts Bootstrapper wird vorher auf eine gültige
+Authenticode-Signatur von „Microsoft Corporation“ geprüft; schlägt das fehl, wird nichts ausgeführt und das Setup
+verweist auf die Download-Seite von Microsoft).
 
 ### 1a) Setup (empfohlen) – `TuxMail-<v>-windows-<arch>-setup.exe`
 
@@ -99,6 +101,16 @@ Weitere Schalter: `--scope=user|machine|portable`, `--dir=C:\Pfad`, `--no-start-
 
 Alle Daten liegen im Ordner `data` neben `TuxMail.exe`. **Update:** neues ZIP entpacken und den alten Ordner
 `data` (sowie die leere Datei `portable`) hinüberkopieren.
+
+**Messenger-Plugins (WhatsApp, Telegram, Matrix, Signal):** TuxMail startet sie nur aus `plugins\` neben
+`TuxMail.exe` und nur, wenn weder die Plugin-Datei noch ihr Ordner für andere Benutzer oder die Gruppe „Benutzer“
+beschreibbar sind (Besitzer: Administratoren, SYSTEM oder du). Ein portabler Ordner mit den Standardrechten eines
+Benutzerprofils oder `Programme` erfüllt das; ein für alle beschreibbarer Ordner (z. B. `C:\Tools` mit
+Standard-ACL, Netzlaufwerk) oder ein FAT/exFAT-USB-Stick (keine ACLs) nicht – dort bleiben die Plugins aus, die
+Meldung steht im Protokoll (`ignoring plugin`); wer das Risiko eines gemeinsam genutzten Datenträgers bewusst
+trägt, setzt die Umgebungsvariable `TUXMAIL_ALLOW_UNSAFE_PLUGIN_DIR=1`. Auch unter Linux gilt: Besitzer root oder du, nicht für andere
+beschreibbar. Plugins sehen nur eine gefilterte Umgebung (PATH, Heimatverzeichnis, Proxy, Sprache,
+`TUXMAIL_<PLUGIN>_*`), nicht die Geheimnisse des Servers.
 
 ---
 
@@ -208,6 +220,12 @@ ansible-playbook -i inventory/hosts.ini site.yml
 ```
 Varianten (vorhandenes nginx, eigenes Zertifikat, Unterpfad neben Nextcloud, ohne nginx), Updates, Backups
 und Benutzerverwaltung: **[deploy/README.md](../deploy/README.md)**.
+
+**Pflicht vor dem ersten Lauf:** `tuxmail_release_gpg_fingerprint` (Fingerabdruck des Release-Schlüssels) in
+`group_vars/all.yml` setzen – das Playbook prüft die GPG-Signatur von `checksums.txt` und bricht sonst ab.
+Ist ein Release (noch) nicht signiert, geht es nur mit der ausdrücklichen Ausnahme
+`tuxmail_allow_unsigned_release: true`. Sicherungen verlangen age-Empfänger (`tuxmail_backup_age_recipients`) oder
+`tuxmail_backup_allow_plaintext: true`. Einzelheiten: [deploy/README.md](../deploy/README.md), „Release-Signatur“.
 
 ### 5b) Manuell (ohne Ansible)
 

@@ -236,8 +236,7 @@ func TestInstallDirs(t *testing.T) {
 	want := []string{
 		filepath.Join(bin, "plugins"),                           // Windows, portable and server archives
 		filepath.Join(root, "usr", "lib", "tuxmail", "plugins"), // .deb/.rpm, AppImage, Docker
-		bin,
-	}
+	} // not bin itself (audit ND-13)
 	if len(got) != len(want) {
 		t.Fatalf("installDirs = %v", got)
 	}

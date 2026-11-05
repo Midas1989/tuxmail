@@ -203,26 +203,24 @@ func Launch(exe string) error {
 
 // ScheduleDelete removes files and then (empty) folders a few seconds
 // after the setup has exited, with a hidden cmd.exe (a running program
-// cannot delete itself).
+// cannot delete itself). cmd.exe and ping are started by their full path in
+// the system directory and cmd.exe runs there, not in the user's %TEMP%, so
+// that nothing planted in a user-writable folder can run with the rights of
+// an elevated uninstall (re-audit ND-03; DeleteCommandLine).
 func ScheduleDelete(files []string, dirs []string) error {
-	var b strings.Builder
-	b.WriteString("ping -n 4 127.0.0.1 >nul")
-	// Paths with '%' or '"' are skipped: cmd.exe would expand or unquote
-	// them (AUDIT-D D-07); such leftovers stay on disk.
-	for _, f := range files {
-		if SafeForCmd(f) {
-			fmt.Fprintf(&b, ` & del /f /q "%s"`, f)
-		}
+	sysDir, err := windows.GetSystemDirectory()
+	if err != nil {
+		return err
 	}
-	for _, d := range dirs {
-		if SafeForCmd(d) {
-			fmt.Fprintf(&b, ` & rmdir "%s"`, d)
-		}
+	cmdLine, err := DeleteCommandLine(sysDir, files, dirs)
+	if err != nil {
+		return err
 	}
-	cmd := exec.Command(filepath.Join(os.Getenv("SystemRoot"), "System32", "cmd.exe"))
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW,
-		CmdLine: `cmd.exe /d /s /c "` + b.String() + `"`}
-	cmd.Dir = os.TempDir()
+	cmd := exec.Command(filepath.Join(sysDir, "cmd.exe"))
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW, CmdLine: cmdLine}
+	cmd.Dir = sysDir
+	// cmd.exe must not search the current directory for commands either.
+	cmd.Env = append(os.Environ(), "NoDefaultCurrentDirectoryInExePath=1")
 	return cmd.Start()
 }
 

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+<!--
+  Resource shrinking (release builds, build.gradle) is deliberately conservative:
+  drawables, mipmaps, XML configs (network security, FileProvider paths, data
+  extraction rules, locale config), raw files and strings are looked up by
+  Android, Capacitor or the manifest by name and are never removed.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/*,@mipmap/*,@xml/*,@raw/*,@string/*"
+    tools:shrinkMode="safe" />

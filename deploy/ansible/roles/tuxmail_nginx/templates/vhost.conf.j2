@@ -64,6 +64,14 @@ server {
     ssl_session_timeout 1d;
     ssl_session_cache shared:TuxMailSSL:10m;
     ssl_session_tickets off;
+{% if tuxmail_nginx_ocsp_stapling | bool and tuxmail_nginx_resolver | trim | length > 0 %}
+    # OCSP-Stapling (der vHost beendet TLS selbst)
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    ssl_trusted_certificate {{ tuxmail_tls_effective_cert_path | trim }};
+    resolver {{ tuxmail_nginx_resolver | trim }} valid=300s;
+    resolver_timeout 5s;
+{% endif %}
 
 {% if tuxmail_nginx_extra_server_config | length > 0 %}
     # tuxmail_nginx_extra_server_config
@@ -93,10 +101,10 @@ server {
     }
 
 {% endif %}
-{# Ohne TLS: entweder Bootstrap (Let's Encrypt folgt) oder TLS am vorgelagerten Proxy #}
-{{ locations(false, (tuxmail_public_scheme if tuxmail_tls_mode == 'none' else '$scheme'), false) }}
+{# Ohne TLS: entweder Bootstrap (Let's Encrypt folgt) oder TLS am vorgelagerten Proxy; "https" nur, wenn der Betreiber das bestätigt hat #}
+{{ locations(false, ('https' if tuxmail_tls_mode == 'none' and tuxmail_nginx_upstream_terminates_tls | bool else '$scheme'), false) }}
 {% if tuxmail_matrix_nginx_enabled | bool %}
-{{ matrix_locations((tuxmail_public_scheme if tuxmail_tls_mode == 'none' else '$scheme'), false) }}
+{{ matrix_locations(('https' if tuxmail_tls_mode == 'none' and tuxmail_nginx_upstream_terminates_tls | bool else '$scheme'), false) }}
 {% endif %}
 }
 {% endif %}

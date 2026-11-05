@@ -53,11 +53,31 @@
         group: root
         mode: "0600"
 
-    - name: Zugangsdaten anzeigen (nur einmal)
+    # Ein generiertes Passwort steht nur in einer Datei (0600, Verzeichnis 0700) auf dem
+    # Steuerrechner, nie im Play-Protokoll (AWX/ARA/CI-Logs): angezeigt wird nur der Pfad.
+    - name: Verzeichnis der Zugangsdaten auf dem Steuerrechner schützen (0700)
+      ansible.builtin.file:
+        path: "{{ tuxmail_credentials_dir }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+      when: tuxmail_admin_password_generated | bool
+
+    - name: Datei mit dem generierten Passwort schützen (0600)
+      ansible.builtin.file:
+        path: "{{ tuxmail_credentials_dir }}/admin_password"
+        state: file
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      when: tuxmail_admin_password_generated | bool
+
+    - name: Zugangsdaten anzeigen (nur einmal, ohne Passwort)
       ansible.builtin.debug:
         msg:
           - "TuxMail-Administrator angelegt: {{ tuxmail_admin_username }} <{{ tuxmail_admin_email }}>"
           - "Anmeldung: {{ tuxmail_public_url }}"
-          - "Passwort: {{ (tuxmail_admin_password_effective | trim) if tuxmail_admin_password_generated | bool else '(aus tuxmail_admin_password / Vault)' }}"
-          - "{{ ('Gespeichert auf dem Steuerrechner: ' ~ tuxmail_credentials_dir ~ '/admin_password') if tuxmail_admin_password_generated | bool else '' }}"
+          - "{{ ('Passwort (generiert): Datei auf dem Steuerrechner ' ~ tuxmail_credentials_dir ~ '/admin_password (0600) - dort lesen, nicht in Logs kopieren')
+                if tuxmail_admin_password_generated | bool else 'Passwort: aus tuxmail_admin_password (Vault)' }}"
           - "Bitte nach der ersten Anmeldung das Passwort ändern und TOTP einrichten."

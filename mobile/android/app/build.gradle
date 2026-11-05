@@ -83,7 +83,10 @@ android {
             versionNameSuffix '-debug'
         }
         release {
-            minifyEnabled false
+            // R8 code shrinking/obfuscation (re-audit ND-15); the rules are conservative, see
+            // proguard-rules.pro and res/raw/keep.xml. Debug builds stay unminified.
+            minifyEnabled true
+            shrinkResources true
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             if (hasReleaseSigning) signingConfig signingConfigs.release
             // Reproducible builds: no VCS metadata in the APK.

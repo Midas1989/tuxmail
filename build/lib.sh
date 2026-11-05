@@ -34,7 +34,13 @@ go_ldflags() {
 	# variables. Empty values keep the "not configured" behaviour.
 	[ -n "${TUXMAIL_BUILD_MS_CLIENT_ID:-}" ] && _ldx="$_ldx -X $_oauth_pkg.builtinMSClientID=$TUXMAIL_BUILD_MS_CLIENT_ID"
 	[ -n "${TUXMAIL_BUILD_GOOGLE_CLIENT_ID:-}" ] && _ldx="$_ldx -X $_oauth_pkg.builtinGoogleClientID=$TUXMAIL_BUILD_GOOGLE_CLIENT_ID"
-	[ -n "${TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET:-}" ] && _ldx="$_ldx -X $_oauth_pkg.builtinGoogleClientSecret=$TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET"
+	# The Google client secret ("installed app" model: not confidential, but
+	# still a credential of the project) is only linked into desktop builds
+	# (build/linux/build.sh, build/windows/build.sh set TUXMAIL_LINK_CLIENT_SECRET=1).
+	# Server archives and the Docker image never carry it (re-audit ND-16);
+	# operators of a server register their own Google app.
+	[ "${TUXMAIL_LINK_CLIENT_SECRET:-}" = 1 ] && [ -n "${TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET:-}" ] &&
+		_ldx="$_ldx -X $_oauth_pkg.builtinGoogleClientSecret=$TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET"
 	printf '%s' "-s -w -X main.version=$VERSION$_ldx $*"
 }
 
