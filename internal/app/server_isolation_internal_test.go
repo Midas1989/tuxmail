@@ -95,6 +95,15 @@ func TestStartOAuthLoopbackRefusedInServerMode(t *testing.T) {
 	}
 }
 
+// NH-09: a server user cannot make the server download and install programs.
+func TestInstallMessengerComponentRefusedInServerMode(t *testing.T) {
+	a := newIsolationApp(t, Options{Mode: ModeServer})
+	err := a.InstallMessengerComponent(context.Background(), "signal")
+	if e := AsError(err); e == nil || e.Status != 403 {
+		t.Fatalf("InstallMessengerComponent in server mode: %v, want 403", err)
+	}
+}
+
 // NH-02: Close leaves nothing behind that keeps the App reachable.
 func TestClosedAppIsGarbageCollected(t *testing.T) {
 	ctx := context.Background()

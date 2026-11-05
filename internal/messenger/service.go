@@ -110,6 +110,11 @@ type Options struct {
 // names a program on the server (RestrictHostSettings).
 var ErrHostSetting = errors.New("messenger: this setting can only be changed by the administrator (environment variable)")
 
+// ErrInstallRestricted is returned when a user tries to download and install
+// an external program (signal-cli) on a server (RestrictHostSettings): the
+// administrator installs it with the deployment (NH-09).
+var ErrInstallRestricted = errors.New("messenger: components can only be installed by the administrator on this server")
+
 // Service is the messenger integration of one user.
 type Service struct {
 	opts   Options

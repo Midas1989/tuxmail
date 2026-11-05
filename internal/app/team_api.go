@@ -47,7 +47,49 @@ func (a *App) TeamRole(ctx context.Context, mailboxID int64) (team.Role, error) 
 	return r, teamErr(err)
 }
 
-const teamScanLimit = 5000
+// teamScanLimit bounds how many conversations the views "unassigned" and
+// "open" look at per request (they are defined by the assignment state in
+// server.db, which cannot be joined with the mailbox store).
+const teamScanLimit = 2000
+
+// scanTeamView returns the page (q.Offset, q.Limit) of the conversations of
+// the scope that belong to view and the total: exact when the scan reached
+// the end, otherwise a lower bound that is larger than the page end so the UI
+// keeps paging. It reads the mailbox in steps of 500 and looks up the
+// assignment state per step.
+func scanTeamView(ctx context.Context, q ConversationQuery, view string, uid int64,
+	list func(context.Context, ConversationQuery) (Page[Conversation], error),
+	assignments func(context.Context, []int64) (map[int64]team.Assignment, error)) ([]Conversation, int, error) {
+	want := q.Offset + q.Limit + 1
+	scan := q
+	scan.Offset, scan.Limit = 0, 500
+	var matched []Conversation
+	for read := 0; read < teamScanLimit && len(matched) < want; {
+		p, err := list(ctx, scan)
+		if err != nil {
+			return nil, 0, err
+		}
+		states, err := assignments(ctx, convIDs(p.Items))
+		if err != nil {
+			return nil, 0, err
+		}
+		for _, c := range p.Items {
+			var st *team.Assignment
+			if s, ok := states[c.ID]; ok {
+				st = &s
+			}
+			if team.MatchesView(view, uid, st) {
+				matched = append(matched, c)
+			}
+		}
+		read += len(p.Items)
+		scan.Offset += len(p.Items)
+		if len(p.Items) < scan.Limit || scan.Offset >= p.Total {
+			break
+		}
+	}
+	return window(matched, q.Offset, q.Limit), len(matched), nil
+}
 
 // TeamConversations lists the conversations of a team mailbox. Team
 // conversations are always grouped by thread (assignments belong to
@@ -85,36 +127,18 @@ func (a *App) TeamConversations(ctx context.Context, mailboxID int64, q Conversa
 		total = len(convs)
 		convs = window(convs, q.Offset, q.Limit)
 	} else if view == team.ViewUnassigned || view == team.ViewOpen {
-		// Filter all conversations of the scope by their state.
-		scan := q
-		scan.Offset, scan.Limit = 0, 500
-		var all []Conversation
-		for len(all) < teamScanLimit {
-			p, err := ta.ListConversations(ctx, scan)
-			if err != nil {
-				return Page[TeamConversation]{}, err
-			}
-			all = append(all, p.Items...)
-			if len(p.Items) < scan.Limit || len(all) >= p.Total {
-				break
-			}
-			scan.Offset += len(p.Items)
-		}
-		states, err := svc.Assignments(ctx, mailboxID, convIDs(all))
+		// Filter the conversations of the scope by their state. The scan
+		// stops as soon as the requested page (plus one row, to tell the UI
+		// that more follow) is filled and never reads more than
+		// teamScanLimit conversations (NH-11).
+		var err error
+		convs, total, err = scanTeamView(ctx, q, view, uid, ta.ListConversations,
+			func(ctx context.Context, ids []int64) (map[int64]team.Assignment, error) {
+				return svc.Assignments(ctx, mailboxID, ids)
+			})
 		if err != nil {
 			return Page[TeamConversation]{}, err
 		}
-		for _, c := range all {
-			var st *team.Assignment
-			if s, ok := states[c.ID]; ok {
-				st = &s
-			}
-			if team.MatchesView(view, uid, st) {
-				convs = append(convs, c)
-			}
-		}
-		total = len(convs)
-		convs = window(convs, q.Offset, q.Limit)
 	} else {
 		p, err := ta.ListConversations(ctx, q)
 		if err != nil {

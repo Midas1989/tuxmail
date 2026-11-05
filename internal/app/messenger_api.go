@@ -200,6 +200,11 @@ func (a *App) RestartMessengerPlugin(ctx context.Context, name string) error {
 // plugin needs (signal-cli, pinned and checksum-verified) in the
 // background; progress arrives as messenger.plugin events.
 func (a *App) InstallMessengerComponent(ctx context.Context, name string) error {
+	if a.opts.Mode == ModeServer {
+		// The server downloads and executes programs for nobody but the
+		// administrator, who installs signal-cli with the deployment (NH-09).
+		return msgrErr(messenger.ErrInstallRestricted)
+	}
 	m, err := a.messengerOrError()
 	if err != nil {
 		return err

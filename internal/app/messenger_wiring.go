@@ -93,7 +93,7 @@ func msgrErr(err error) error {
 		return &Error{Code: CodeRiskNotAccepted, Status: http.StatusConflict, Message: err.Error(), Err: err}
 	case errors.Is(err, messenger.ErrUnknownPair), errors.Is(err, messenger.ErrNotMessenger):
 		return &Error{Code: CodeNotFound, Status: http.StatusNotFound, Message: err.Error(), Err: err}
-	case errors.Is(err, messenger.ErrHostSetting):
+	case errors.Is(err, messenger.ErrHostSetting), errors.Is(err, messenger.ErrInstallRestricted):
 		return &Error{Code: "forbidden", Status: http.StatusForbidden, Message: err.Error(), Err: err}
 	case errors.Is(err, messenger.ErrNoChat):
 		return &Error{Code: CodeInvalidInput, Status: http.StatusBadRequest, Message: err.Error(), Err: err}
