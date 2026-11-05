@@ -251,17 +251,31 @@ func propName(ln string) string {
 }
 
 func unfold(s string) []string {
+	// Linear in the input size (audit NB-02): a continuation line is
+	// appended to a builder, never concatenated onto a growing string.
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	var out []string
+	var cur strings.Builder
+	have := false
+	flush := func() {
+		if have {
+			out = append(out, cur.String())
+			cur.Reset()
+			have = false
+		}
+	}
 	for _, ln := range strings.Split(s, "\n") {
-		if (strings.HasPrefix(ln, " ") || strings.HasPrefix(ln, "\t")) && len(out) > 0 {
-			out[len(out)-1] += ln[1:]
+		if (strings.HasPrefix(ln, " ") || strings.HasPrefix(ln, "\t")) && have {
+			cur.WriteString(ln[1:])
 			continue
 		}
 		if ln != "" {
-			out = append(out, ln)
+			flush()
+			cur.WriteString(ln)
+			have = true
 		}
 	}
+	flush()
 	return out
 }
 
