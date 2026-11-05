@@ -249,6 +249,14 @@ jobs:
           path: dist-android/*
           if-no-files-found: error
 
+      # R8 mapping files (release builds are minified): needed to read crash reports; not published.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tuxmail-android-r8-mapping
+          path: mobile/android/app/build/outputs/mapping/**/mapping.txt
+          if-no-files-found: warn
+          retention-days: 90
+
       # Same tag as release.yml: the APKs land in the one release of this version.
       - uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
