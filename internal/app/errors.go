@@ -3,9 +3,15 @@
 package app
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"strings"
+	"sync/atomic"
+	"unicode"
 
 	"github.com/Midas1989/Mailclient/internal/secrets"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -51,6 +57,9 @@ const (
 	CodeConflict         = "conflict"
 	CodeSendNotAvailable = "send_not_configured"
 	CodeInternal         = "internal"
+	// CodeInsecureEndpoint: an unencrypted http:// endpoint (ActiveSync, JMAP,
+	// CalDAV/CardDAV) needs the explicit allowInsecure confirmation.
+	CodeInsecureEndpoint = "insecure_endpoint"
 )
 
 var (
@@ -85,5 +94,98 @@ func AsError(err error) *Error {
 	case errors.Is(err, secrets.ErrLocked):
 		return &Error{Code: CodeVaultLocked, Status: http.StatusLocked, Message: "the secret vault is locked", Err: err}
 	}
-	return &Error{Code: CodeInternal, Status: http.StatusInternalServerError, Message: err.Error(), Err: err}
+	return &Error{Code: CodeInternal, Status: http.StatusInternalServerError, Message: PublicMessage(err), Err: err}
+}
+
+// ==== untrusted error text ======================================================
+
+// Errors of providers embed text the remote server controls (IMAP "NO [ALERT]
+// ...", HTTP bodies) and local details (dial addresses). In server mode they are
+// replaced by a generic message with a correlation id, the details stay in the
+// log; on the desktop the details are kept but stripped of control characters
+// and bounded in length (audit NF-12).
+
+// maxErrorMessage bounds foreign error text shown to the user (runes).
+const maxErrorMessage = 300
+
+var serverErrorMode atomic.Bool
+
+// setErrorMode selects the error policy of the process (App.New).
+func setErrorMode(mode string) { serverErrorMode.Store(mode == ModeServer) }
+
+// SanitizeErrorText removes control characters (a server cannot forge extra
+// lines or terminal sequences), collapses whitespace, replaces invalid UTF-8
+// and bounds the length.
+func SanitizeErrorText(s string) string {
+	var b strings.Builder
+	lastSpace := true
+	n := 0
+	for _, r := range strings.ToValidUTF8(s, "\uFFFD") {
+		space := unicode.IsSpace(r) || unicode.IsControl(r)
+		switch {
+		case space && lastSpace:
+			continue
+		case !space && !unicode.IsPrint(r):
+			continue // format characters (bidi overrides, zero-width), private use
+		}
+		if n >= maxErrorMessage {
+			b.WriteString("...")
+			break
+		}
+		if space {
+			r = ' '
+		}
+		b.WriteRune(r)
+		lastSpace = space
+		n++
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func newErrorRef() string {
+	var b [5]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "unknown"
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// PublicMessage returns the text to show a user for an error that is not an
+// application error: sanitized details on the desktop, a generic message with
+// a correlation id in server mode (the details are logged with the id).
+func PublicMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if !serverErrorMode.Load() {
+		return SanitizeErrorText(err.Error())
+	}
+	ref := newErrorRef()
+	slog.Error("app: unmapped error", "ref", ref, "err", SanitizeErrorText(err.Error()))
+	return "internal error (reference " + ref + ")"
+}
+
+// connectionMessage is PublicMessage for connection and login failures: in
+// server mode the generic text names the class (code from classifyConnErr).
+func connectionMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if !serverErrorMode.Load() {
+		return SanitizeErrorText(err.Error())
+	}
+	ref := newErrorRef()
+	slog.Warn("app: connection error", "ref", ref, "err", SanitizeErrorText(err.Error()))
+	text := "the connection failed"
+	switch classifyConnErr(err) {
+	case "auth_failed":
+		text = "login failed"
+	case "unreachable":
+		text = "the server is not reachable"
+	case "timeout":
+		text = "the server did not answer in time"
+	case "tls":
+		text = "the TLS connection could not be verified"
+	}
+	return text + " (reference " + ref + ")"
 }

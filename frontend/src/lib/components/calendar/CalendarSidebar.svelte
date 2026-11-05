@@ -13,6 +13,7 @@
   import { fmt, t } from '../../i18n/index.svelte';
   import { tk } from '../../calendar/i18n';
   import type { PimCalendar } from '../../types';
+  import { isPlainHttpUrl } from '../../insecure';
   import Modal from '../common/Modal.svelte';
 
   interface Props {
@@ -74,7 +75,12 @@
     error = '';
     try {
       if (dialog === 'dav') {
-        await app.api.addDavAccount({ displayName: name, url, username: user, password });
+        const plain = isPlainHttpUrl(url);
+        if (plain && !window.confirm(t('onboarding.account.insecureWarning'))) {
+          busy = false;
+          return;
+        }
+        await app.api.addDavAccount({ displayName: name, url, username: user, password, allowInsecure: plain ? true : undefined });
         app.toast(t('calendar.dav.added'));
       } else if (edit) {
         await app.api.saveCalendar({ id: edit.id, name, color, url: dialog === 'subscription' ? url : undefined, refreshMinutes: refresh });

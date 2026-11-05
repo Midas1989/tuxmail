@@ -35,14 +35,29 @@ func (a *App) easOptions() tsync.EASOptions {
 		State: a.easState(),
 		OnRemoteWipe: func(ctx context.Context, acc domain.Account, accountOnly bool) error {
 			a.log.Warn("app: remote wipe requested by the server, deleting the local data of the account",
-				"account", acc.ID, "accountOnly", accountOnly)
+				"audit", "eas_remote_wipe", "account", acc.ID, "accountOnly", accountOnly)
 			if err := tsync.WipeEASAccountData(ctx, a.st, acc.ID); err != nil {
+				a.log.Error("app: remote wipe failed", "audit", "eas_remote_wipe", "account", acc.ID, "err", err)
 				return err
 			}
+			a.recordEASWipe(ctx, acc.ID, accountOnly)
 			a.invalidateViews()
 			a.hub.Publish(Event{Type: EventAccountUpdated, AccountID: acc.ID})
 			return nil
 		},
+	}
+}
+
+// easWipeKey is the app setting that records the last remote wipe of an EAS
+// account: {"at": RFC3339, "accountOnly": bool}. The account is disabled
+// afterwards; the record tells the user (and an admin) why its data is gone
+// (audit NF-11, docs/EAS.md).
+const easWipeKey = "eas.remoteWipe."
+
+func (a *App) recordEASWipe(ctx context.Context, accountID int64, accountOnly bool) {
+	rec := map[string]any{"at": a.now().UTC().Format(time.RFC3339), "accountOnly": accountOnly}
+	if err := a.st.SetAppSetting(ctx, easWipeKey+strconv.FormatInt(accountID, 10), rec); err != nil {
+		a.log.Warn("app: recording the remote wipe failed", "audit", "eas_remote_wipe", "account", accountID, "err", err)
 	}
 }
 

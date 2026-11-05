@@ -514,6 +514,8 @@ export interface NewAccountInput {
   pop3?: Pop3Options;
   /** JMAP: session URL (default https://<incoming host>/.well-known/jmap). */
   jmapUrl?: string;
+  /** Explicit confirmation of an unencrypted http:// ActiveSync/JMAP endpoint (error code "insecure_endpoint" without it). */
+  allowInsecure?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1641,6 +1643,8 @@ export interface DavAccountInput {
   username: string;
   password: string;
   email?: string;
+  /** Confirms an unencrypted http:// server (error code "insecure_endpoint" without it). */
+  allowInsecure?: boolean;
 }
 
 export interface PimAddressBook {
@@ -2425,6 +2429,8 @@ export interface AccountUpdate {
   idleFolders?: number[];
   index?: AccountIndexOptions;
   sieve?: SieveConfig;
+  /** Confirms an unencrypted http:// ActiveSync/JMAP endpoint (error code "insecure_endpoint" without it). */
+  allowInsecure?: boolean;
   /** Log in with the new settings first; error code "connection_failed" saves nothing. */
   verify?: boolean;
 }
