@@ -22,6 +22,7 @@
   import { app } from '../../state';
   import { i18n, t, type MessageKey } from '../../i18n/index.svelte';
   import type { Workflow, WorkflowDiagnostic, WorkflowDryRunResult, WorkflowEditorMode, WorkflowSchema } from '../../types';
+  import { ApiError } from '../../api/api';
   import { workflowToRule, workflowToYamlChecked } from '../../workflow/lang';
   import { hasExternalEffects } from '../../workflow/schema';
 
@@ -147,10 +148,15 @@
       return;
     }
     try {
-      const saved = await app.api.saveWorkflow($state.snapshot(model) as Workflow);
+      // The core only stores an enabled workflow with external effects when the request says the user confirmed it.
+      const saved = await app.api.saveWorkflow({ ...($state.snapshot(model) as Workflow), confirmExternal: confirmed || undefined });
       onsaved(saved);
       onclose();
     } catch (err) {
+      if (err instanceof ApiError && err.code === 'confirmation_required' && !confirmed) {
+        confirmExternal = true; // e.g. a changed forward address of an already enabled workflow
+        return;
+      }
       saveError = err instanceof Error ? err.message : String(err);
     }
   }

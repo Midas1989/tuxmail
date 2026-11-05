@@ -5,6 +5,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	stdsync "sync"
 	"time"
 
@@ -132,6 +133,14 @@ func (a *App) SaveVacationSettings(ctx context.Context, s vacation.Settings) (Va
 	if err := r.Load(ctx); err != nil {
 		return VacationSettings{}, err
 	}
+	// Forwarding incoming mail to another address is an effect outside
+	// TuxMail: turning it on or changing the addresses needs the explicit
+	// confirmation of the request (re-audit NH-10). Unchanged, active
+	// forwarding stays as the user confirmed it.
+	if prev := r.Settings(); s.Enabled && len(s.ForwardTo) > 0 && !s.ConfirmExternal &&
+		!(prev.Enabled && vacation.SameForwardTo(prev.ForwardTo, s.ForwardTo)) {
+		return VacationSettings{}, confirmationRequired([]string{"forward to " + strings.Join(s.ForwardTo, ", ")})
+	}
 	if err := r.Apply(ctx, s); err != nil {
 		return VacationSettings{}, err
 	}
@@ -148,6 +157,8 @@ func (a *App) installVacationWorkflows(ctx context.Context, s vacation.Settings)
 	keep := map[string]bool{}
 	for _, w := range vacation.Workflows(s) {
 		keep[w.ID] = true
+		// The forwarding was confirmed in SaveVacationSettings; the automatic
+		// reply is the feature the user switches on here.
 		if err := a.wf.Save(ctx, w, true); err != nil {
 			return err
 		}

@@ -117,6 +117,7 @@ func (r *Responder) Apply(ctx context.Context, s Settings) error {
 	if err := s.Validate(); err != nil {
 		return err
 	}
+	s.ConfirmExternal = false // a request flag, not a setting
 	js, err := json.Marshal(s)
 	if err != nil {
 		return err

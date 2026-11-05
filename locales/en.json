@@ -1194,6 +1194,11 @@
       "ownDomains": "Own domains",
       "oncePerDays": "At most one reply per sender within (days)",
       "forwardTo": "Forward to deputy (optional)",
+      "confirmForward": {
+        "title": "Forward your mail to another address?",
+        "text": "While the out-of-office note is active, incoming mail is forwarded automatically to {addresses}. Only continue if you trust this address.",
+        "ok": "Forward"
+      },
       "placeholders": "Placeholders such as {{betreff}} are filled in by TuxMail; servers use the subject \"Auto: <subject>\" instead.",
       "serverHandled": "Answered by the server: {accounts}",
       "saved": "Out-of-office settings saved."
@@ -1798,10 +1803,11 @@
       "running": "Running"
     },
     "confirmExternal": {
-      "title": "Enable a workflow with external effects?",
-      "text": "This workflow sends messages or calls services outside TuxMail automatically. Test it with a dry run first.",
-      "ok": "Enable"
+      "title": "Save a workflow with external effects?",
+      "text": "This workflow sends messages or calls services outside TuxMail automatically (for example forwarding mail or calling a webhook). Check the recipients and addresses, and test it with a dry run first.",
+      "ok": "Confirm"
     },
+    "author": "Last edited by {name}",
     "dry": {
       "title": "Dry run",
       "summary": "{matched} of {checked} recent items would trigger it — nothing was changed."

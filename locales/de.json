@@ -1193,6 +1193,11 @@
       "ownDomains": "Eigene Domains",
       "oncePerDays": "Höchstens eine Antwort pro Absender innerhalb von (Tagen)",
       "forwardTo": "An Vertretung weiterleiten (optional)",
+      "confirmForward": {
+        "title": "E-Mails an eine andere Adresse weiterleiten?",
+        "text": "Solange die Abwesenheitsnotiz aktiv ist, wird eingehende Post automatisch an {addresses} weitergeleitet. Fahre nur fort, wenn du dieser Adresse vertraust.",
+        "ok": "Weiterleiten"
+      },
       "placeholders": "Platzhalter wie {{betreff}} füllt TuxMail aus; Server verwenden stattdessen den Betreff „Auto: <Betreff>“.",
       "serverHandled": "Vom Server beantwortet: {accounts}",
       "saved": "Abwesenheitsnotiz gespeichert."
@@ -1797,10 +1802,11 @@
       "running": "Läuft"
     },
     "confirmExternal": {
-      "title": "Workflow mit externer Wirkung aktivieren?",
-      "text": "Dieser Workflow sendet automatisch Nachrichten oder ruft Dienste außerhalb von TuxMail auf. Teste ihn vorher mit einem Trockenlauf.",
-      "ok": "Aktivieren"
+      "title": "Workflow mit externer Wirkung speichern?",
+      "text": "Dieser Workflow sendet automatisch Nachrichten oder ruft Dienste außerhalb von TuxMail auf (z. B. Weiterleitung oder Webhook). Prüfe Empfänger und Adressen und teste ihn vorher mit einem Trockenlauf.",
+      "ok": "Bestätigen"
     },
+    "author": "Zuletzt bearbeitet von {name}",
     "dry": {
       "title": "Trockenlauf",
       "summary": "{matched} von {checked} aktuellen Elementen würden auslösen – es wurde nichts verändert."

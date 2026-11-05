@@ -345,8 +345,8 @@ func (x *Api) ListWorkflows(q *WorkflowListQuery) ([]Workflow, error) {
 func (x *Api) GetWorkflow(id string) (Workflow, error)   { return r1(x.app.GetWorkflow(x.ctx, id)) }
 func (x *Api) SaveWorkflow(w Workflow) (Workflow, error) { return r1(x.app.SaveWorkflow(x.ctx, w)) }
 func (x *Api) DeleteWorkflow(id string) error            { return werr(x.app.DeleteWorkflow(x.ctx, id)) }
-func (x *Api) SetWorkflowEnabled(id string, enabled bool) (Workflow, error) {
-	return r1(x.app.SetWorkflowEnabled(x.ctx, id, enabled))
+func (x *Api) SetWorkflowEnabled(id string, enabled, confirmExternal bool) (Workflow, error) {
+	return r1(x.app.SetWorkflowEnabled(x.ctx, id, enabled, confirmExternal))
 }
 func (x *Api) ListWorkflowTemplates() ([]WorkflowTemplate, error) {
 	return r1(x.app.ListWorkflowTemplates(x.ctx))

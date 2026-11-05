@@ -264,6 +264,7 @@ const (
 	EventPresence = "presence" // presence of a conversation changed
 	EventDraft    = "draft"    // a (shared) draft changed
 	EventMailbox  = "mailbox"  // mailbox created/changed/deleted or grants changed
+	EventWorkflow = "workflow" // a workflow with external effect was saved/enabled (UserIDs: the managers to tell)
 )
 
 // Event is a change of collaboration state. Listeners fan it out to the
@@ -280,6 +281,8 @@ type Event struct {
 	Presence       []Presence  `json:"presence,omitempty"`
 	// Previous assignee for EventAssigned (0 = was unassigned).
 	PreviousAssigneeID int64 `json:"previousAssigneeId,omitempty"`
+	// Text describes the change for notifications (EventWorkflow).
+	Text string `json:"text,omitempty"`
 }
 
 // Actor is the user performing an action.
