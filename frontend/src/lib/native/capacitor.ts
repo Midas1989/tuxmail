@@ -25,6 +25,7 @@ import { fetchVapidKey, registrationKey, subscribeAtServer, type PushSession } f
 import { loadLockSettings, saveLockSettings, shouldLock, type LockSettings } from './applock';
 import type { NativeController, PushStatus } from './status';
 import { startNativeEffects } from './effects.svelte';
+import { createDeferredSet, createLockGate } from './lockgate';
 import { cancelConnect, confirmConnect, requestConnect, type ConnectPromptState } from './connectprompt';
 import ServerConnect from './ServerConnect.svelte';
 import ConnectLinkDialog from './ConnectLinkDialog.svelte';
@@ -53,6 +54,18 @@ let active: ServerProfile | null = null;
 let activeToken = '';
 let backgroundSince: number | null = null;
 let locked = false;
+
+// NG-03: nothing arriving from outside (deep links, notification taps, share intents) may act on the app
+// while the lock overlay is shown; it is queued and applied after the unlock.
+type Inbound = { kind: 'link'; url: string } | { kind: 'share'; payload: SharePayload };
+let linkHandler: (url: string) => void = () => {};
+let shareHandler: (p: SharePayload) => void = () => {};
+const inbound = createLockGate<Inbound>((item) => (item.kind === 'link' ? linkHandler(item.url) : shareHandler(item.payload)));
+// Opening a conversation dismisses its notifications; behind the lock this waits for the unlock.
+const pendingCancels = createDeferredSet<number>(
+  (id) => void TuxMail.cancelConversationNotifications({ conversationId: String(id) }).catch(() => {}),
+  () => locked,
+);
 let pushStatus: PushStatus = { state: 'idle' };
 
 function injectStyles(): void {
@@ -83,6 +96,7 @@ async function authenticate(): Promise<boolean> {
 function showLock(): Promise<void> {
   if (locked) return Promise.resolve();
   locked = true;
+  inbound.lock();
   hideSplash();
   return new Promise((resolve) => {
     const host = document.createElement('div');
@@ -95,6 +109,8 @@ function showLock(): Promise<void> {
           void unmount(cmp);
           host.remove();
           locked = false;
+          inbound.unlock();
+          pendingCancels.flush();
           resolve();
         },
       },
@@ -242,7 +258,8 @@ function showConnect(target: HTMLElement, list: ServerProfile[], prefill: string
     cmp = mount(ServerConnect, { target, props: connectProps(list, server, expired && !isLink, isLink) });
   };
   render(prefill, false);
-  void App.addListener('appUrlOpen', ({ url }) => promptConnect(url, (server) => render(server, true)));
+  linkHandler = (url) => promptConnect(url, (server) => render(server, true));
+  void App.addListener('appUrlOpen', ({ url }) => inbound.submit({ kind: 'link', url }));
   void App.addListener('backButton', () => void App.minimizeApp());
   hideSplash();
   return render;
@@ -269,7 +286,7 @@ export async function startNative(): Promise<void> {
   if (!active) return;
   startNativeEffects({
     setBarStyle: (dark) => void SystemBars.setStyle({ style: dark ? SystemBarsStyle.Dark : SystemBarsStyle.Light }).catch(() => {}),
-    cancelConversation: (id) => void TuxMail.cancelConversationNotifications({ conversationId: String(id) }).catch(() => {}),
+    cancelConversation: (id) => pendingCancels.request(id),
   });
   void installBackButton();
   void installDeepLinks();
@@ -357,7 +374,7 @@ async function openTarget(target: DeepLinkTarget): Promise<void> {
 }
 
 async function installDeepLinks(): Promise<void> {
-  const handle = (url: string) => {
+  linkHandler = (url: string) => {
     if (parseConnectLink(url)) {
       // Adding another server from a link while signed in: confirm first, keep the current session
       // until the new login has succeeded (NG-01).
@@ -373,9 +390,9 @@ async function installDeepLinks(): Promise<void> {
       wait();
     }
   };
-  await App.addListener('appUrlOpen', ({ url }) => handle(url));
+  await App.addListener('appUrlOpen', ({ url }) => inbound.submit({ kind: 'link', url }));
   const launch = await App.getLaunchUrl().catch(() => undefined);
-  if (launch?.url) handle(launch.url);
+  if (launch?.url) inbound.submit({ kind: 'link', url: launch.url });
 }
 
 async function deliverShare(p: SharePayload): Promise<void> {
@@ -392,16 +409,15 @@ async function deliverShare(p: SharePayload): Promise<void> {
 }
 
 async function installShareTarget(): Promise<void> {
-  await TuxMail.addListener('shareReceived', (p) => {
-    const run = () => void deliverShare(p);
-    if (app.ready) run();
-    else setTimeout(run, 800);
-  });
+  shareHandler = (p) => {
+    const wait = () => (app.ready || app.loadError ? void deliverShare(p) : setTimeout(wait, 100));
+    wait();
+  };
+  await TuxMail.addListener('shareReceived', (p) => inbound.submit({ kind: 'share', payload: p }));
   const pending = await TuxMail.getPendingShare().catch(() => null);
   if (pending && (pending.text || pending.files?.length || pending.to?.length)) {
     const p: SharePayload = { text: pending.text, subject: pending.subject, to: pending.to, files: pending.files ?? [] };
-    const wait = () => (app.ready || app.loadError ? void deliverShare(p) : setTimeout(wait, 100));
-    wait();
+    inbound.submit({ kind: 'share', payload: p });
   }
 }
 

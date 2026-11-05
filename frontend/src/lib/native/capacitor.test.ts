@@ -162,6 +162,35 @@ describe('tuxmail://connect link while signed in (NG-01)', () => {
   });
 });
 
+describe('deep links behind the app lock (NG-03)', () => {
+  beforeEach(() => {
+    prefs.clear();
+    secure.clear();
+    mounted.length = 0;
+    localStorage.clear();
+    vi.clearAllMocks();
+    for (const k of Object.keys(listeners)) delete listeners[k];
+  });
+
+  it('queues an appUrlOpen link while locked and applies it after the unlock', async () => {
+    const { bootNative } = await import('./capacitor');
+    await bootNative(document.createElement('div'), vi.fn());
+    const { mount } = await import('svelte');
+    const mountCalls = (mount as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    // App goes to the background and comes back past the grace period: the lock overlay appears.
+    prefs.set('tuxmail.appLock', JSON.stringify({ enabled: true, graceSeconds: 0 }));
+    listeners['App.appStateChange'].forEach((fn) => fn({ isActive: false }));
+    listeners['App.appStateChange'].forEach((fn) => fn({ isActive: true }));
+    await vi.waitFor(() => expect(mounted.some((n) => /AppLock/.test(n))).toBe(true));
+    // A (hostile or notification) link arrives while locked.
+    listeners['App.appUrlOpen'].forEach((fn) => fn({ url: 'tuxmail://connect?server=' + encodeURIComponent('https://other.example.org') }));
+    expect(mounted.some((n) => /ConnectLinkDialog/.test(n))).toBe(false);
+    const lock = mountCalls.find((c) => /AppLock/.test((c[0] as { name?: string }).name ?? ''))!;
+    (lock[1].props as { onunlocked: () => void }).onunlocked();
+    expect(mounted.some((n) => /ConnectLinkDialog/.test(n))).toBe(true);
+  });
+});
+
 describe('native transport selection', () => {
   it('uses HTTP with base URL + Bearer token inside Capacitor', async () => {
     (window as unknown as { Capacitor: unknown }).Capacitor = { isNativePlatform: () => true };
