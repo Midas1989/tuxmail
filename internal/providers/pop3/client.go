@@ -189,12 +189,33 @@ func (c *conn) cmd(format string, args ...any) (string, error) {
 	return c.response()
 }
 
+// Limits for multi-line answers (audit NF-09). A UIDL/LIST line is about 50
+// bytes, so 16 MiB / 500 000 lines cover mailboxes far beyond what POP3 is
+// used for.
+const (
+	maxListingBytes = 16 << 20
+	maxListingLines = 500_000
+)
+
+// maxDrain bounds the data skipped after a limit was exceeded to keep the
+// session in sync; beyond it the connection is dropped. (A variable for
+// tests.)
+var maxDrain int64 = 256 << 20
+
 // multi reads a dot-terminated multi-line body (with dot unstuffing). limit
-// bounds the total size (0 = unlimited); the rest is drained to keep the
-// session in sync.
+// bounds the total size (0 = unlimited); the rest is drained (up to maxDrain)
+// to keep the session in sync.
 func (c *conn) multi(limit int64) ([]byte, error) {
+	return c.multiLimited(limit, 0)
+}
+
+// multiLimited is multi with an additional bound on the number of lines
+// (maxLines <= 0: unlimited). Exceeding either bound fails the call.
+func (c *conn) multiLimited(limit int64, maxLines int) ([]byte, error) {
 	var buf bytes.Buffer
 	over := false
+	var lines int
+	var seen int64
 	for {
 		_ = c.nc.SetReadDeadline(time.Now().Add(c.timeout))
 		line, err := c.readLine()
@@ -204,16 +225,29 @@ func (c *conn) multi(limit int64) ([]byte, error) {
 		if line == "." {
 			break
 		}
+		lines++
+		seen += int64(len(line)) + 2
+		if over {
+			if seen > limit+maxDrain {
+				c.nc.Close()
+				return nil, fmt.Errorf("pop3: response larger than %d bytes", limit)
+			}
+			continue
+		}
+		if maxLines > 0 && lines > maxLines {
+			// The line count is exceeded without a byte limit to drain
+			// against: give up on this connection right away.
+			c.nc.Close()
+			return nil, fmt.Errorf("pop3: response longer than %d lines", maxLines)
+		}
 		if strings.HasPrefix(line, ".") {
 			line = line[1:]
-		}
-		if over {
-			continue
 		}
 		buf.WriteString(line)
 		buf.WriteString("\r\n")
 		if limit > 0 && int64(buf.Len()) > limit {
 			over = true
+			buf = bytes.Buffer{}
 		}
 	}
 	if over {
@@ -228,6 +262,14 @@ func (c *conn) multiCmd(limit int64, format string, args ...any) ([]byte, error)
 		return nil, err
 	}
 	return c.multi(limit)
+}
+
+// listingCmd sends UIDL/LIST: answers are bounded in bytes and lines.
+func (c *conn) listingCmd(format string, args ...any) ([]byte, error) {
+	if _, err := c.cmd(format, args...); err != nil {
+		return nil, err
+	}
+	return c.multiLimited(maxListingBytes, maxListingLines)
 }
 
 // capa reads the capability list (RFC 2449).
@@ -314,7 +356,7 @@ type listing struct {
 
 // uidlList returns the unique ids of all messages by message number.
 func (c *conn) uidlList() (map[int]string, error) {
-	body, err := c.multiCmd(0, "UIDL")
+	body, err := c.listingCmd("UIDL")
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +377,7 @@ func (c *conn) uidlList() (map[int]string, error) {
 
 // list returns the sizes of all messages by message number.
 func (c *conn) list() (map[int]int64, error) {
-	body, err := c.multiCmd(0, "LIST")
+	body, err := c.listingCmd("LIST")
 	if err != nil {
 		return nil, err
 	}

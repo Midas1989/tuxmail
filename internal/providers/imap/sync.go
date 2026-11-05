@@ -63,6 +63,9 @@ func (p *Provider) syncLocked(ctx context.Context, c *imapclient.Client, folder 
 		delta.FullResync = true
 		prev = &folderState{}
 	}
+	if int64(sel.NumMessages) > int64(p.cfg.MaxFolderMessages) {
+		return nil, fmt.Errorf("imap: folder %q announces %d messages (limit %d): %w", folder, sel.NumMessages, p.cfg.MaxFolderMessages, ErrFolderTooLarge)
+	}
 	initial := prev.UIDValidity == 0
 	useModSeq := condstore && sel.HighestModSeq > 0
 
@@ -131,7 +134,7 @@ func (p *Provider) syncLocked(ctx context.Context, c *imapclient.Client, folder 
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		msgs, err := c.Fetch(uidSet(batch), headerFetchOptions()).Collect()
+		msgs, err := collectFetch(c, c.Fetch(uidSet(batch), headerFetchOptions()), maxFetchSection, maxFetchTotal, 2*len(batch)+100)
 		if err != nil {
 			return nil, fmt.Errorf("imap: fetch headers: %w", err)
 		}
@@ -170,7 +173,7 @@ func (p *Provider) syncLocked(ctx context.Context, c *imapclient.Client, folder 
 		if sel.HighestModSeq != prev.ModSeq {
 			set := imap.UIDSet{}
 			set.AddRange(imap.UID(kept[0]), imap.UID(kept[len(kept)-1]))
-			msgs, err := c.Fetch(set, &imap.FetchOptions{UID: true, Flags: true, ChangedSince: prev.ModSeq}).Collect()
+			msgs, err := collectFetch(c, c.Fetch(set, &imap.FetchOptions{UID: true, Flags: true, ChangedSince: prev.ModSeq}), maxFetchSection, maxFetchTotal, len(kept)+100)
 			if err != nil {
 				return nil, fmt.Errorf("imap: fetch changed flags: %w", err)
 			}
@@ -187,7 +190,7 @@ func (p *Provider) syncLocked(ctx context.Context, c *imapclient.Client, folder 
 		}
 	default:
 		for _, batch := range batches(kept, 5000) {
-			msgs, err := c.Fetch(uidSet(batch), &imap.FetchOptions{UID: true, Flags: true}).Collect()
+			msgs, err := collectFetch(c, c.Fetch(uidSet(batch), &imap.FetchOptions{UID: true, Flags: true}), maxFetchSection, maxFetchTotal, 2*len(batch)+100)
 			if err != nil {
 				return nil, fmt.Errorf("imap: fetch flags: %w", err)
 			}

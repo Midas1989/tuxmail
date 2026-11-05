@@ -74,6 +74,12 @@ type Config struct {
 	// FirstSyncChunk for a folder without known messages (fast first rows),
 	// SyncChunk afterwards. Defaults 50 / 500.
 	FirstSyncChunk, SyncChunk int
+	// MaxMessageSize bounds the size of a message FetchRaw buffers
+	// (default DefaultMaxMessageSize, 64 MiB).
+	MaxMessageSize int64
+	// MaxFolderMessages bounds the message count of a synchronised folder
+	// and of a SEARCH result (default DefaultMaxFolderMessages, 2 million).
+	MaxFolderMessages int
 	// DebugWriter receives the raw protocol trace (contains credentials!).
 	DebugWriter io.Writer
 }
@@ -141,6 +147,12 @@ func New(cfg Config) (*Provider, error) {
 	}
 	if cfg.SyncChunk <= 0 {
 		cfg.SyncChunk = 500
+	}
+	if cfg.MaxMessageSize <= 0 {
+		cfg.MaxMessageSize = DefaultMaxMessageSize
+	}
+	if cfg.MaxFolderMessages <= 0 {
+		cfg.MaxFolderMessages = DefaultMaxFolderMessages
 	}
 	log := cfg.Logger
 	if log == nil {

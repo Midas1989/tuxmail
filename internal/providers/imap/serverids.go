@@ -136,23 +136,53 @@ func (ic *idConn) close() {
 	ic.conn.Close()
 }
 
+const (
+	// maxIDLine bounds one response line of the ID connection.
+	maxIDLine = 1 << 20
+	// maxIDResponse bounds all untagged lines of one command.
+	maxIDResponse = 32 << 20
+	// maxIDLiteral bounds a literal that is skipped (streamed, not buffered).
+	maxIDLiteral = 256 << 20
+)
+
+// readBoundedLine reads up to and including '\n' but fails once the line
+// exceeds max bytes, before the excess is buffered.
+func readBoundedLine(br *bufio.Reader, max int) (string, error) {
+	var sb strings.Builder
+	for {
+		part, err := br.ReadSlice('\n')
+		if sb.Len()+len(part) > max {
+			return "", errors.New("imap: response line too long")
+		}
+		sb.Write(part)
+		switch {
+		case err == nil:
+			return sb.String(), nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		default:
+			return "", err
+		}
+	}
+}
+
 // readLine reads one response line, replacing literals by "{}".
 func (ic *idConn) readLine() (string, error) {
 	var sb strings.Builder
 	for {
-		line, err := ic.br.ReadString('\n')
+		line, err := readBoundedLine(ic.br, maxIDLine-sb.Len())
 		if err != nil {
 			return "", err
 		}
 		line = strings.TrimRight(line, "\r\n")
-		if sb.Len()+len(line) > 1<<20 {
-			return "", errors.New("imap: response line too long")
-		}
 		// literal: ... {n}\r\n<n bytes>
 		if strings.HasSuffix(line, "}") {
 			if i := strings.LastIndexByte(line, '{'); i >= 0 {
 				n, err := strconv.ParseInt(strings.TrimSuffix(line[i+1:len(line)-1], "+"), 10, 64)
 				if err == nil {
+					if n < 0 || n > maxIDLiteral {
+						return "", errors.New("imap: literal too large")
+					}
 					sb.WriteString(line[:i])
 					sb.WriteString(`""`)
 					if _, err := io.CopyN(io.Discard, ic.br, n); err != nil {
@@ -180,10 +210,17 @@ func (ic *idConn) cmdCont(command string, cont func(challenge string) string) ([
 		return nil, err
 	}
 	var untagged []string
+	untaggedBytes := 0
 	for {
 		line, err := ic.readLine()
 		if err != nil {
 			return untagged, err
+		}
+		if strings.HasPrefix(line, "* ") {
+			untaggedBytes += len(line)
+			if untaggedBytes > maxIDResponse {
+				return untagged, errors.New("imap: response too large")
+			}
 		}
 		switch {
 		case strings.HasPrefix(line, "+"):
