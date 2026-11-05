@@ -59,6 +59,7 @@ type app struct {
 	reg       winsetup.Registry
 	existing  []winsetup.Existing
 	webview2  []byte // embedded bootstrapper (optional)
+	wv2Pin    string // its SHA-256 from the payload (winsetup.WebView2PinFile)
 	elevated  bool
 	setupDir  string
 	installer *winsetup.Installer
@@ -153,6 +154,9 @@ func newApp(cfg winsetup.Config, lang string) *app {
 		a.log.Printf("payload: %v", err)
 	}
 	a.webview2, _ = payloadFS.ReadFile("payload/MicrosoftEdgeWebview2Setup.exe")
+	if pin, err := payloadFS.ReadFile("payload/" + winsetup.WebView2PinFile); err == nil {
+		a.wv2Pin = string(pin)
+	}
 	a.existing = winsetup.DetectExisting(a.reg)
 	a.installer = &winsetup.Installer{
 		Reg: a.reg, Links: winsetup.ShellLinker{}, Folders: winsetup.ShellFolders,
@@ -420,7 +424,7 @@ func (a *app) install(ctx context.Context, req winsetup.Request, closeApps bool,
 	if winsetup.WebView2Version() == "" && req.Scope != winsetup.ScopePortable {
 		// Silent mode (the window already ensured it): TuxMail needs the runtime.
 		report(winsetup.Progress{Step: winsetup.StepWebView2, Percent: 1})
-		if err := winsetup.InstallWebView2(ctx, a.webview2); err != nil {
+		if err := winsetup.InstallWebView2(ctx, a.webview2, a.wv2Pin); err != nil {
 			a.log.Printf("WebView2: %v (TuxMail will ask for it at the first start)", err)
 		}
 	}
@@ -468,7 +472,7 @@ func (a *app) ensureWebView2() bool {
 	if winsetup.MessageBox(msg(a.lang, "title"), msg(a.lang, "wv2Missing"), windows.MB_OKCANCEL|windows.MB_ICONINFORMATION) != 1 /* IDOK */ {
 		return false
 	}
-	if err := winsetup.InstallWebView2(context.Background(), a.webview2); err != nil {
+	if err := winsetup.InstallWebView2(context.Background(), a.webview2, a.wv2Pin); err != nil {
 		a.log.Printf("WebView2 install: %v", err)
 		if winsetup.MessageBox(msg(a.lang, "title"), fmt.Sprintf(msg(a.lang, "wv2Failed"), err), windows.MB_YESNO|windows.MB_ICONWARNING) == 6 /* IDYES */ {
 			_ = winsetup.OpenURL(winsetup.WebView2DownloadPage)
