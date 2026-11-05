@@ -33,7 +33,7 @@ exe=tuxmail
 
 log "building server binary $goos/$goarch version $VERSION"
 (cd "$ROOT" && CGO_ENABLED=0 GOOS=$goos GOARCH=$goarch \
-	go build -trimpath -ldflags "$(go_ldflags)" -o "$work/$exe" ./cmd/tuxmail)
+	go build -trimpath -ldflags "$(go_ldflags_server)" -o "$work/$exe" ./cmd/tuxmail)
 cp "$ROOT/LICENSE" "$ROOT/NOTICE" "$ROOT/README.md" "$work/"
 stage_plugins "$goos" "$goarch" "$work/plugins"
 entries="$exe LICENSE NOTICE README.md"

@@ -76,6 +76,18 @@ Reihenfolge, in der TuxMail eine Client-ID sucht:
 3. **Umgebungsvariablen**.
 4. **Eingebaute TuxMail-Registrierung** (sobald der Projektinhaber die Client-IDs geliefert hat; Release-Builds setzen sie per `-ldflags "-X github.com/Midas1989/Mailclient/internal/oauth.builtinMSClientID=…"`, ebenso `builtinGoogleClientID` / `builtinGoogleClientSecret`).
 
+> **Hinweis zum Google-Client-Secret (Sicherheitsprüfung NC-08, bewusst so):**
+> Google verlangt für „Desktop-App“-Registrierungen ein Client-Secret im
+> Token-Request, behandelt es aber ausdrücklich nicht als vertraulich (es steht
+> in jedem Desktop-Client). Release-Builds des Desktop-Clients dürfen es daher
+> per `-ldflags` einkompilieren (`TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET` in
+> `build/lib.sh`). Server- und Docker-Builds enthalten es **nicht**
+> (`go_ldflags_server`, `build/package-server.sh`, `build/docker/Dockerfile`);
+> Server-Betreiber hinterlegen ihre eigene Registrierung (Abschnitt 4.1/4.2).
+> Microsoft nutzt einen öffentlichen Client ohne Secret. Das Secret gehört nie
+> in das Repository oder in Logs; im CI nur als Secret/Variable des
+> Release-Jobs setzen.
+
 Ist nichts davon gesetzt, zeigt der Assistent: *„Die Anmeldung mit Microsoft/Google ist noch nicht eingerichtet …“* (Fehlercode `oauth_not_configured`) mit einem Knopf zu den Anmeldediensten.
 
 ### 4.1 Umgebungsvariablen (Desktop und Server)

@@ -60,6 +60,12 @@ const (
 // are empty until the project owner registered the apps
 // (docs/AUFGABEN-PROJEKTINHABER.md 3 and 4); release builds can set them with
 // -ldflags "-X github.com/Midas1989/Mailclient/internal/oauth.builtinMSClientID=…".
+//
+// builtinGoogleClientSecret is the secret of Google's "installed app"
+// registration. Google documents that such a secret is not confidential, so
+// compiling it into DESKTOP release binaries is by design (NC-08); Microsoft
+// is a public client without a secret. Server and Docker builds must not
+// carry it: build/lib.sh go_ldflags_server omits it (docs/MICROSOFT-GOOGLE.md).
 var (
 	builtinMSClientID         = ""
 	builtinGoogleClientID     = ""

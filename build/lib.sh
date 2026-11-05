@@ -38,6 +38,15 @@ go_ldflags() {
 	printf '%s' "-s -w -X main.version=$VERSION$_ldx $*"
 }
 
+# go_ldflags_server [extra...]: like go_ldflags for server/Docker binaries,
+# but WITHOUT the Google client secret (NC-08). The secret belongs to the
+# project's desktop ("installed app") registration, which only accepts
+# loopback redirects; a server binary has no use for it and must not carry
+# it. Server operators configure their own registration (docs/MICROSOFT-GOOGLE.md).
+go_ldflags_server() {
+	TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET= go_ldflags "$@"
+}
+
 # check_frontend: warn loudly when web/dist holds no built frontend.
 check_frontend() {
 	if [ ! -f "$ROOT/web/dist/index.html" ]; then
