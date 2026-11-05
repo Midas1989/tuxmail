@@ -2381,7 +2381,7 @@
       "continue": "Weiter",
       "expired": "Deine Sitzung auf {server} ist beendet (abgelaufen oder auf einem anderen Gerät abgemeldet). Bitte melde dich erneut an.",
       "lead": "Gib die Adresse deines TuxMail-Servers ein. Die App bleibt mit ihm verbunden; Mails, Chats und Kalender synchronisiert der Server.",
-      "linkPrefilled": "Serveradresse aus dem Link übernommen – bitte prüfen.",
+      "linkWarning": "Serveradresse aus einem Link: {server}. Nur fortfahren, wenn du diesem Server vertraust und ihn hinzufügen wolltest.",
       "openPage": "Anmeldeseite öffnen",
       "placeholder": "mail.example.org",
       "profiles": "Gespeicherte Server",
@@ -2391,6 +2391,13 @@
       "title": "Server verbinden",
       "totpHint": "Dieses Konto nutzt Zwei-Faktor-Anmeldung. Gib den 6-stelligen Code aus deiner Authenticator-App ein.",
       "useProfile": "Mit {server} verbinden"
+    },
+    "connectLink": {
+      "continue": "Weiter",
+      "message": "Ein Link möchte diese App mit {server} verbinden.",
+      "messageSignedIn": "Ein Link möchte {server} hinzufügen. Du bist aktuell bei {current} angemeldet.",
+      "title": "Server {server} hinzufügen?",
+      "warning": "Diese Anfrage kam über einen Link außerhalb der App. Prüfe die vollständige Adresse oben. Deine aktuelle Sitzung bleibt aktiv, bis die neue Anmeldung erfolgreich war."
     },
     "error": {
       "access_denied": "Die Anmeldung wurde abgelehnt.",

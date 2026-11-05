@@ -3,6 +3,8 @@
 //
 // Android back button and deep links (pure decision logic + small adapters).
 
+import { normalizeServerUrl } from '../platform';
+
 export type BackAction =
   | 'handled'
   | 'close-dialog'
@@ -123,13 +125,32 @@ export function parseDeepLink(url: string): DeepLinkTarget | null {
   return t;
 }
 
+/**
+ * tuxmail://connect?server=<url>. The link is attacker-controllable (exported
+ * BROWSABLE intent filter), so the server value is normalised with
+ * normalizeServerUrl(): https only (plain http only for loopback development),
+ * no query/fragment. Anything else is refused.
+ */
 export function parseConnectLink(url: string): ConnectLink | null {
   try {
     const u = new URL(url);
     if (u.protocol !== 'tuxmail:' || u.host !== 'connect') return null;
-    const server = u.searchParams.get('server');
+    const raw = (u.searchParams.get('server') ?? '').trim();
+    // "https://mail.example.org@evil.example" is a classic look-alike trick: refuse userinfo (and whitespace/backslashes) outright.
+    if (!raw || /[\s@\\]/.test(raw)) return null;
+    const server = normalizeServerUrl(raw);
     return server ? { server } : null;
   } catch {
     return null;
+  }
+}
+
+/** Full host (punycode, with port) and path of a normalised server URL, e.g. "mail.example.org:8443/tuxmail". Never abbreviated. */
+export function serverDisplay(serverUrl: string): string {
+  try {
+    const u = new URL(serverUrl);
+    return (u.host + u.pathname).replace(/\/+$/, '');
+  } catch {
+    return serverUrl;
   }
 }

@@ -2382,7 +2382,7 @@
       "continue": "Continue",
       "expired": "Your session on {server} has ended (expired or signed out on another device). Please sign in again.",
       "lead": "Enter the address of your TuxMail server. The app stays connected to it; mail, chats and calendars are synchronised by the server.",
-      "linkPrefilled": "Server address taken from the link – please check it.",
+      "linkWarning": "Server address from a link: {server}. Only continue if you trust this server and expected to add it.",
       "openPage": "Open sign-in page",
       "placeholder": "mail.example.org",
       "profiles": "Saved servers",
@@ -2392,6 +2392,13 @@
       "title": "Connect to server",
       "totpHint": "This account uses two-factor authentication. Enter the 6-digit code from your authenticator app.",
       "useProfile": "Connect to {server}"
+    },
+    "connectLink": {
+      "continue": "Continue",
+      "message": "A link wants to connect this app to {server}.",
+      "messageSignedIn": "A link wants to add {server}. You are currently signed in to {current}.",
+      "title": "Add server {server}?",
+      "warning": "This request came from a link outside the app. Check the full address above. Your current session stays active until the new sign-in has succeeded."
     },
     "error": {
       "access_denied": "The sign-in was declined.",

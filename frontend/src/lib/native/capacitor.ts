@@ -25,7 +25,9 @@ import { fetchVapidKey, registrationKey, subscribeAtServer, type PushSession } f
 import { loadLockSettings, saveLockSettings, shouldLock, type LockSettings } from './applock';
 import type { NativeController, PushStatus } from './status';
 import { startNativeEffects } from './effects.svelte';
+import { cancelConnect, confirmConnect, requestConnect, type ConnectPromptState } from './connectprompt';
 import ServerConnect from './ServerConnect.svelte';
+import ConnectLinkDialog from './ConnectLinkDialog.svelte';
 import AppLock from './AppLock.svelte';
 import NativeSettings from './NativeSettings.svelte';
 import nativeCss from './native.css?inline';
@@ -153,37 +155,97 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
 
   if (mirror) writeActiveMirror(null);
   const launch = await App.getLaunchUrl().catch(() => undefined);
-  const link = launch?.url ? parseConnectLink(launch.url) : null;
-  showConnect(target, list, link?.server ?? active?.serverUrl ?? '', !!active?.needsLogin, !!link);
+  const render = showConnect(target, list, active?.serverUrl ?? '', !!active?.needsLogin);
+  // A connect link never pre-fills silently: the user confirms the full host first (NG-01).
+  if (launch?.url) promptConnect(launch.url, (server) => render(server, true));
 }
 
-function showConnect(target: HTMLElement, list: ServerProfile[], prefill: string, expired: boolean, fromLink: boolean): void {
+// ---------------------------------------------------------------------------
+// tuxmail://connect confirmation (NG-01)
+// ---------------------------------------------------------------------------
+
+let closePrompt: (() => void) | null = null;
+
+/**
+ * Ask the user whether to add the server of a tuxmail://connect link. The
+ * current session (UI, profile, token) is left untouched; `proceed` runs only
+ * after an explicit confirmation. Links that are not https (or loopback) are refused.
+ */
+export function promptConnect(url: string, proceed: (serverUrl: string) => void): void {
+  let state: ConnectPromptState = requestConnect(url, active?.serverUrl ?? null);
+  if (state.phase !== 'confirm') return;
+  closePrompt?.();
+  const { host, current } = state;
+  const el = document.createElement('div');
+  document.body.appendChild(el);
+  const cmp = mount(ConnectLinkDialog, {
+    target: el,
+    props: {
+      host,
+      current,
+      onconfirm: () => {
+        state = confirmConnect(state);
+        close();
+        if (state.phase === 'connect') proceed(state.server);
+      },
+      oncancel: () => {
+        state = cancelConnect();
+        close();
+      },
+    },
+  });
+  function close() {
+    void unmount(cmp);
+    el.remove();
+    if (closePrompt === close) closePrompt = null;
+  }
+  closePrompt = close;
+}
+
+/** Login screen for the confirmed server as an overlay; the running session stays active until the new login succeeded. */
+async function showConnectOverlay(server: string): Promise<void> {
+  const list = await profiles.list().catch(() => [] as ServerProfile[]);
+  const host = document.createElement('div');
+  host.setAttribute('role', 'dialog');
+  host.setAttribute('aria-modal', 'true');
+  document.body.appendChild(host);
+  let cmp: ReturnType<typeof mount> | null = null;
+  const close = () => {
+    if (cmp) void unmount(cmp);
+    cmp = null;
+    host.remove();
+  };
+  host.addEventListener('keydown', (e) => e.key === 'Escape' && close());
+  cmp = mount(ServerConnect, { target: host, props: { ...connectProps(list, server, false, true), oncancel: close } });
+}
+
+function connectProps(list: ServerProfile[], prefill: string, expired: boolean, fromLink: boolean) {
+  return {
+    store: profiles,
+    profiles: list,
+    deviceName: deviceName(),
+    prefill,
+    expired,
+    fromLink,
+    openUrl: (url: string) => Browser.open({ url, toolbarColor: '#1c2b45' }),
+    closeBrowser: () => Browser.close(),
+    // upsert() has activated the new profile after a successful login: now (and only now) switch.
+    ondone: () => location.reload(),
+  };
+}
+
+function showConnect(target: HTMLElement, list: ServerProfile[], prefill: string, expired: boolean): (server: string, isLink: boolean) => void {
   target.replaceChildren();
   let cmp: ReturnType<typeof mount> | null = null;
   const render = (server: string, isLink: boolean) => {
     if (cmp) void unmount(cmp);
-    cmp = mount(ServerConnect, {
-      target,
-      props: {
-        store: profiles,
-        profiles: list,
-        deviceName: deviceName(),
-        prefill: server,
-        expired: expired && !isLink,
-        fromLink: isLink,
-        openUrl: (url: string) => Browser.open({ url, toolbarColor: '#1c2b45' }),
-        closeBrowser: () => Browser.close(),
-        ondone: () => location.reload(),
-      },
-    });
+    cmp = mount(ServerConnect, { target, props: connectProps(list, server, expired && !isLink, isLink) });
   };
-  render(prefill, fromLink);
-  void App.addListener('appUrlOpen', ({ url }) => {
-    const link = parseConnectLink(url);
-    if (link) render(link.server, true);
-  });
+  render(prefill, false);
+  void App.addListener('appUrlOpen', ({ url }) => promptConnect(url, (server) => render(server, true)));
   void App.addListener('backButton', () => void App.minimizeApp());
   hideSplash();
+  return render;
 }
 
 let unauthorizedOnce = false;
@@ -297,8 +359,9 @@ async function openTarget(target: DeepLinkTarget): Promise<void> {
 async function installDeepLinks(): Promise<void> {
   const handle = (url: string) => {
     if (parseConnectLink(url)) {
-      // Adding another server from a link while signed in: switch to the connect screen.
-      void profiles.deactivate().then(() => location.reload());
+      // Adding another server from a link while signed in: confirm first, keep the current session
+      // until the new login has succeeded (NG-01).
+      promptConnect(url, (server) => void showConnectOverlay(server));
       return;
     }
     const target = parseDeepLink(url);

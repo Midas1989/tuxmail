@@ -106,6 +106,62 @@ describe('bootNative', () => {
   });
 });
 
+describe('tuxmail://connect link while signed in (NG-01)', () => {
+  const kv = (m: Map<string, string>) => ({ get: async (k: string) => m.get(k) ?? null, set: async (k: string, v: string) => void m.set(k, v), remove: async (k: string) => void m.delete(k) });
+
+  beforeEach(() => {
+    prefs.clear();
+    secure.clear();
+    mounted.length = 0;
+    localStorage.clear();
+    vi.clearAllMocks();
+    for (const k of Object.keys(listeners)) delete listeners[k];
+  });
+
+  async function signedIn() {
+    const { ProfileStore } = await import('./profiles');
+    const p = await new ProfileStore(kv(prefs), kv(secure)).upsert({ serverUrl: 'https://mail.example.org', username: 'anna' }, 'device-token');
+    const { bootNative } = await import('./capacitor');
+    await bootNative(document.createElement('div'), vi.fn());
+    return p;
+  }
+  const lastDialogProps = async () => {
+    const { mount } = await import('svelte');
+    const calls = (mount as unknown as ReturnType<typeof vi.fn>).mock.calls;
+    return calls[calls.length - 1][1].props as { host: string; current: string | null; onconfirm: () => void; oncancel: () => void };
+  };
+
+  it('keeps the session, asks with the full host and proceeds only after confirmation', async () => {
+    const p = await signedIn();
+    const { promptConnect } = await import('./capacitor');
+    const proceed = vi.fn();
+    promptConnect('tuxmail://connect?server=' + encodeURIComponent('https://mail.example.org.evil.tld'), proceed);
+    expect(mounted.some((n) => /ConnectLinkDialog/.test(n))).toBe(true);
+    const props = await lastDialogProps();
+    expect(props.host).toBe('mail.example.org.evil.tld');
+    expect(props.current).toBe('mail.example.org');
+    // Nothing happened to the running session yet.
+    expect(proceed).not.toHaveBeenCalled();
+    expect(prefs.get('tuxmail.activeProfile')).toBe(p.id);
+    expect(TuxMail.clearActiveSession).not.toHaveBeenCalled();
+    props.onconfirm();
+    expect(proceed).toHaveBeenCalledWith('https://mail.example.org.evil.tld');
+    expect(prefs.get('tuxmail.activeProfile')).toBe(p.id); // still signed in until the new login succeeded
+  });
+
+  it('cancel does nothing and cleartext links never prompt', async () => {
+    await signedIn();
+    const { promptConnect } = await import('./capacitor');
+    const proceed = vi.fn();
+    const before = mounted.length;
+    promptConnect('tuxmail://connect?server=' + encodeURIComponent('http://evil.example'), proceed);
+    expect(mounted.length).toBe(before);
+    promptConnect('tuxmail://connect?server=' + encodeURIComponent('https://other.example.org'), proceed);
+    (await lastDialogProps()).oncancel();
+    expect(proceed).not.toHaveBeenCalled();
+  });
+});
+
 describe('native transport selection', () => {
   it('uses HTTP with base URL + Bearer token inside Capacitor', async () => {
     (window as unknown as { Capacitor: unknown }).Capacitor = { isNativePlatform: () => true };
