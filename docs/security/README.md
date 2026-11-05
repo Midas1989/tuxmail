@@ -12,6 +12,7 @@ Meldung von Schwachstellen: [SECURITY.md](../../SECURITY.md) (GitHub Private Vul
 | C | Speicher, Kryptografie, Injection (SQL, IMAP, Sieve, …) / storage, crypto, injection | [AUDIT-C-storage-crypto.md](AUDIT-C-storage-crypto.md) |
 | D | Desktop, Installer, Android, Messenger-Plugins / desktop, installer, Android, plugins | [AUDIT-D-endpoint.md](AUDIT-D-endpoint.md) |
 | E | CI-Sicherheitsscans und dynamischer Black-Box-Pentest / CI scanning and dynamic pentest | [PENTEST-E-dynamic.md](PENTEST-E-dynamic.md) |
+| Re-Audit | Vollständige Wiederholung aller Bereiche A–E, 5.11.2026 / full re-audit of all scopes | [REAUDIT-2026-11-05.md](REAUDIT-2026-11-05.md) |
 
 
 ## Kontinuierliche Prüfungen / Continuous checks

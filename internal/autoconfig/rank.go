@@ -5,6 +5,7 @@ package autoconfig
 import (
 	"context"
 	"errors"
+	"net"
 	"sort"
 	"strings"
 	"sync"
@@ -60,7 +61,7 @@ func (d *Discoverer) ProbeAndRank(ctx context.Context, cands []Candidate, opts P
 		results = map[key]Check{}
 		wg      sync.WaitGroup
 	)
-	probe := func(kind domain.AccountKind, s domain.ServerConfig) {
+	probe := func(cand Candidate, kind domain.AccountKind, s domain.ServerConfig) {
 		k := key{kind, s}
 		mu.Lock()
 		if _, ok := results[k]; ok || s.Host == "" {
@@ -76,7 +77,7 @@ func (d *Discoverer) ProbeAndRank(ctx context.Context, cands []Candidate, opts P
 			err := d.ProbeConnect(ctx, kind, s)
 			if err == nil {
 				c.Reachable = true
-				if opts.Password != "" && s.Auth != domain.AuthOAuth2 {
+				if opts.Password != "" && s.Auth != domain.AuthOAuth2 && loginAllowed(cand, s, opts.Domains) {
 					switch lerr := d.ProbeLogin(ctx, kind, s, s.Username, opts.Password); {
 					case lerr == nil:
 						c.Login = "ok"
@@ -98,8 +99,8 @@ func (d *Discoverer) ProbeAndRank(ctx context.Context, cands []Candidate, opts P
 		if c.Kind == domain.KindEAS {
 			continue // HTTPS endpoint, checked when the account is added
 		}
-		probe(c.Kind, c.Incoming)
-		probe(domain.KindSMTP, c.Outgoing)
+		probe(c, c.Kind, c.Incoming)
+		probe(c, domain.KindSMTP, c.Outgoing)
 	}
 	wg.Wait()
 	out := make([]Ranked, len(cands))
@@ -119,6 +120,34 @@ func (d *Discoverer) ProbeAndRank(ctx context.Context, cands []Candidate, opts P
 	return out
 }
 
+// loginAllowed reports whether the user's password may be used for a test
+// login against s (audit NF-01). The probe sends the real credentials, so it
+// must not happen
+//
+//   - over an unencrypted connection (TLS "none"), or for a configuration
+//     that was fetched over plain HTTP (Candidate.Insecure), because anybody
+//     on the network path could have written that configuration, and
+//   - towards a host that only an unauthenticated source (DNS SRV/MX answers,
+//     guessed names) points to, unless the host belongs to the mail domain
+//     or the domain of its MX hosts.
+//
+// Built-in providers, the ISPDB and HTTPS autoconfig documents of the mail
+// domain are trusted. Candidates that fail this check are still probed for
+// reachability, and the user can choose them; the password is then only
+// sent after the account has been added.
+func loginAllowed(c Candidate, s domain.ServerConfig, domains []string) bool {
+	// Loopback is the one exception: the traffic never leaves the machine
+	// (development servers, the e2e setup).
+	if (c.Insecure || s.TLS == domain.TLSNone) && !isLoopbackHost(s.Host) {
+		return false
+	}
+	switch c.Source {
+	case SourceKnown, SourceISPDB, SourceAutoconfig, SourceWellKnown:
+		return true
+	}
+	return underDomain(s.Host, domains)
+}
+
 func tlsScore(m domain.TLSMode) int {
 	switch m {
 	case domain.TLSImplicit:
@@ -127,6 +156,15 @@ func tlsScore(m domain.TLSMode) int {
 		return 50
 	}
 	return 0
+}
+
+func isLoopbackHost(host string) bool {
+	h := strings.ToLower(strings.TrimSuffix(host, "."))
+	if h == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(h, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 func underDomain(host string, doms []string) bool {

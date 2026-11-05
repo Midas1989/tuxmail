@@ -50,7 +50,7 @@ func (s *Service) Audit(ctx context.Context, action, target string, success bool
 	}
 	_, err := s.db.ExecContext(context.WithoutCancel(ctx),
 		`INSERT INTO audit_log(at, actor_id, actor, action, target, ip, success, details) VALUES (?,?,?,?,?,?,?,?)`,
-		s.now().Unix(), actorID, a.Name, action, target, a.IP, success, details)
+		s.now().Unix(), actorID, truncate(a.Name, 100), action, truncate(target, 320), a.IP, success, truncate(details, 1000))
 	return err
 }
 

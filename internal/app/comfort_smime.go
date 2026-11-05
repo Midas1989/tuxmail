@@ -201,14 +201,22 @@ func (k smimeKeys) SMIMECertificates(ctx context.Context, emails []string) (map[
 		if err != nil {
 			return nil, err
 		}
+		// Certificates the user imported or trusts always win over ones that
+		// were merely collected from incoming mail; within a class the one
+		// valid the longest is used (audit NC-01).
 		var best *x509.Certificate
+		bestRank := -1
 		for _, c := range cs {
 			x, err := x509.ParseCertificate(c.DER)
 			if err != nil || !smime.CanEncryptTo(x, now) {
 				continue
 			}
-			if best == nil || x.NotAfter.After(best.NotAfter) {
-				best = x
+			rank := 0
+			if c.Own || c.Trusted || c.Source == "imported" {
+				rank = 1
+			}
+			if best == nil || rank > bestRank || (rank == bestRank && x.NotAfter.After(best.NotAfter)) {
+				best, bestRank = x, rank
 			}
 		}
 		if best != nil {
@@ -328,7 +336,10 @@ func (r smimeReader) ReadSMIME(ctx context.Context, raw []byte) (*parse.SMIMERes
 	out := &parse.SMIMEResult{Content: res.Content, SMIMEInfo: parse.SMIMEInfo{Present: true, Signed: res.Signed, Encrypted: res.Encrypted,
 		Decrypted: res.Decrypted, Signature: string(res.Signature), SignerEmail: res.SignerEmail, SignerName: res.SignerName,
 		Issuer: res.SignerIssuer, Fingerprint: res.SignerFingerprint, Error: res.Error}}
-	if r.collect && res.Signer != nil && res.Signature != smime.SigInvalid {
+	// Only certificates of signatures that chain to a trusted root and match
+	// the sender are remembered for encryption (audit NC-01). Self-signed,
+	// mismatching or expired signer certificates must never end up here.
+	if r.collect && res.Signer != nil && res.Signature == smime.SigTrusted {
 		sc := storeCert(res.Signer)
 		sc.Source = "collected"
 		if _, err := a.st.PutSMIMECert(ctx, sc); err != nil {

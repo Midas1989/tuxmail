@@ -32,6 +32,10 @@ const (
 // ErrNoEvent is returned when a message contains no VEVENT/VTODO.
 var ErrNoEvent = errors.New("itip: no event in message")
 
+// ErrUnknownSender is returned by ApplyReplyFrom when the sender address is
+// empty, i.e. the reply cannot be attributed to an attendee.
+var ErrUnknownSender = errors.New("itip: reply sender unknown")
+
 // ErrNotAttendee is returned when the replying user is not an attendee.
 var ErrNotAttendee = errors.New("itip: not an attendee of this event")
 
@@ -301,15 +305,26 @@ type ReplyResult struct {
 // calendar (organizer copy). Replies with a lower SEQUENCE than the stored
 // item are ignored (RFC 5546 2.1.5).
 func ApplyReply(stored, reply *ical.Component) ([]ReplyResult, error) {
-	return ApplyReplyFrom(stored, reply, "")
+	return applyReply(stored, reply, "", true)
 }
 
 // ApplyReplyFrom is ApplyReply for a REPLY received from sender: only the
 // ATTENDEE matching the sender address is applied, so that nobody can
 // change (or add) other attendees' answers with a forged REPLY. An empty
-// sender applies all attendees (trusted sources).
+// sender cannot be attributed to anybody and applies nothing (audit NB-01:
+// a mail without a parseable From header must not be a trusted source).
+// Callers that really trust the origin of the reply use ApplyReply.
 func ApplyReplyFrom(stored, reply *ical.Component, sender string) ([]ReplyResult, error) {
 	sender = strings.ToLower(strings.TrimSpace(sender))
+	if sender == "" {
+		return nil, ErrUnknownSender
+	}
+	return applyReply(stored, reply, sender, false)
+}
+
+// applyReply applies the ATTENDEE answers of reply. With trusted set every
+// attendee line is applied; otherwise only the one matching sender.
+func applyReply(stored, reply *ical.Component, sender string, trusted bool) ([]ReplyResult, error) {
 	items := Items(reply)
 	if len(items) == 0 {
 		return nil, ErrNoEvent
@@ -328,7 +343,7 @@ func ApplyReplyFrom(stored, reply *ical.Component, sender string) ([]ReplyResult
 		for _, ap := range it.PropsNamed("ATTENDEE") {
 			email := ical.MailAddress(ap.Value)
 			ps := strings.ToUpper(ap.Param("PARTSTAT"))
-			if ps == "" || (sender != "" && !strings.EqualFold(email, sender)) {
+			if ps == "" || (!trusted && !strings.EqualFold(email, sender)) {
 				continue
 			}
 			sp := findAttendee(target, email)

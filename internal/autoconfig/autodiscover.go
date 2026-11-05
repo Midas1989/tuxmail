@@ -91,6 +91,40 @@ func redirectTarget(resp *http.Response) string {
 	return ""
 }
 
+// microsoftADHosts are the host suffixes of Microsoft's own Autodiscover
+// endpoints; they may receive credentials of any domain hosted there.
+var microsoftADHosts = []string{"outlook.com", "office365.com", "office.com", "microsoftonline.com"}
+
+func emailDomain(email string) string {
+	if i := strings.LastIndexByte(email, '@'); i >= 0 {
+		return strings.ToLower(strings.TrimSpace(email[i+1:]))
+	}
+	return ""
+}
+
+// adCredentialHost reports whether the Basic credentials of an address in
+// dom may be sent to rawURL: HTTPS only, and only to the mail domain itself
+// (or a host below it) or to Microsoft's Autodiscover hosts. Targets named by
+// an unauthenticated plain-HTTP redirect, an SRV record or a redirect address
+// are controlled by whoever can spoof that answer, so they never get the
+// password (audit NF-02; [MS-OXDSCLI] 3.1.5 asks for user confirmation).
+func adCredentialHost(rawURL, dom string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme != "https" || dom == "" {
+		return false
+	}
+	h := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	if h == dom || strings.HasSuffix(h, "."+dom) {
+		return true
+	}
+	for _, s := range microsoftADHosts {
+		if h == s || strings.HasSuffix(h, "."+s) {
+			return true
+		}
+	}
+	return false
+}
+
 // postPOX sends the mobilesync POX request to rawURL.
 func (d *Discoverer) postPOX(ctx context.Context, rawURL, email, password string) (adResult, error) {
 	ctx, cancel := context.WithTimeout(ctx, d.timeout())
@@ -105,7 +139,7 @@ func (d *Discoverer) postPOX(ctx context.Context, rawURL, email, password string
 		return adResult{}, err
 	}
 	req.Header.Set("Content-Type", "text/xml; charset=utf-8")
-	if password != "" && strings.HasPrefix(rawURL, "https://") {
+	if password != "" && adCredentialHost(rawURL, emailDomain(email)) {
 		req.SetBasicAuth(email, password)
 	}
 	resp, err := d.adClient().Do(req)
@@ -214,6 +248,11 @@ func (d *Discoverer) Autodiscover(ctx context.Context, email, password string) (
 			return nil, err
 		}
 		if res.redirectEmail != "" && !strings.EqualFold(res.redirectEmail, email) {
+			if emailDomain(res.redirectEmail) != dom {
+				// The server named an address in another domain: ask it
+				// without credentials (audit NF-02).
+				password = ""
+			}
 			email = res.redirectEmail
 			continue
 		}

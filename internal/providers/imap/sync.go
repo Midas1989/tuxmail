@@ -4,6 +4,7 @@ package imap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -80,9 +81,11 @@ func (p *Provider) syncLocked(ctx context.Context, c *imapclient.Client, folder 
 		if err != nil {
 			return nil, fmt.Errorf("imap: search %q: %w", folder, err)
 		}
-		for _, u := range data.AllUIDs() {
-			cur = append(cur, uint32(u))
+		uids, err := searchUIDs(data, sel.NumMessages)
+		if err != nil {
+			return nil, fmt.Errorf("imap: search %q: %w", folder, err)
 		}
+		cur = append(cur, uids...)
 		sort.Slice(cur, func(i, j int) bool { return cur[i] < cur[j] })
 	}
 
@@ -258,4 +261,47 @@ func batches(l []uint32, n int) [][]uint32 {
 		l = l[k:]
 	}
 	return out
+}
+
+// searchUIDs returns the UIDs of a UID SEARCH result. A hostile or buggy
+// server may answer with a dynamic set ("1:*") or with a range that is far
+// larger than the folder; go-imap's AllUIDs panics on the former and the
+// latter would allocate gigabytes. Both are reported as protocol errors.
+func searchUIDs(data *imap.SearchData, folderSize uint32) ([]uint32, error) {
+	if data == nil || data.All == nil {
+		return nil, nil
+	}
+	set, ok := data.All.(imap.UIDSet)
+	if !ok {
+		return nil, fmt.Errorf("unexpected search result type %T", data.All)
+	}
+	// A folder cannot contain more messages than it announced (plus slack for
+	// messages that arrive between SELECT and SEARCH).
+	limit := uint64(folderSize) + 100000
+	var total uint64
+	for _, r := range set {
+		if r.Start == 0 && r.Stop == 0 {
+			return nil, errors.New("invalid UID range in search result")
+		}
+		if r.Stop == 0 || r.Start == 0 {
+			return nil, errors.New("dynamic UID set in search result")
+		}
+		lo, hi := r.Start, r.Stop
+		if lo > hi {
+			lo, hi = hi, lo
+		}
+		total += uint64(hi-lo) + 1
+		if total > limit {
+			return nil, fmt.Errorf("search result of %d UIDs exceeds the folder size %d", total, folderSize)
+		}
+	}
+	nums, ok := set.Nums()
+	if !ok {
+		return nil, errors.New("dynamic UID set in search result")
+	}
+	out := make([]uint32, 0, len(nums))
+	for _, u := range nums {
+		out = append(out, uint32(u))
+	}
+	return out, nil
 }

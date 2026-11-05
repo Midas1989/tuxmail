@@ -22,6 +22,7 @@ const (
 	throttleWindow      = 15 * time.Minute
 	throttleFreeFails   = 5
 	throttleUserFails   = 50
+	maxLoginLen         = 320 // longest e-mail address (254) plus slack; usernames are <= 64
 	throttleBaseLock    = time.Minute
 	throttleMaxLock     = time.Hour
 	mfaChallengeTTL     = 5 * time.Minute
@@ -164,6 +165,14 @@ func (s *Service) dummyVerify(password string) {
 // Login checks username and password (and optionally the second factor).
 func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, error) {
 	ctx = WithActor(ctx, Actor{Name: truncate(req.Login, 100), IP: req.Client.IP})
+	if len(req.Login) > maxLoginLen {
+		// No valid username or e-mail address is this long. Never persist it
+		// (throttle keys, audit log): an unauthenticated client could
+		// otherwise fill the database with 1 MiB login names.
+		s.dummyVerify(req.Password)
+		s.Audit(ctx, "login", truncate(req.Login, 100), false, "invalid login name")
+		return nil, ErrInvalidCredentials
+	}
 	key := keysFor(req.Login, req.Client.IP)
 	if err := s.checkKeys(ctx, key); err != nil {
 		s.Audit(ctx, "login", req.Login, false, "throttled")

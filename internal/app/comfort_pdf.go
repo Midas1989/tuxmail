@@ -166,7 +166,10 @@ func (a *App) chromium(s ComfortSettings) (string, error) {
 	if chromiumBroken.Load() {
 		return "", pdf.ErrNoChromium
 	}
-	if s.PDF.ChromiumPath != "" {
+	// In server mode the browser is chosen by the administrator only
+	// (TUXMAIL_CHROMIUM_PATH or auto-detection). A per-user setting would let
+	// any user make the server execute a program of their choice (audit ND-01).
+	if s.PDF.ChromiumPath != "" && a.opts.Mode != ModeServer {
 		if _, err := os.Stat(s.PDF.ChromiumPath); err == nil {
 			return s.PDF.ChromiumPath, nil
 		}

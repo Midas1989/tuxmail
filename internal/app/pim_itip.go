@@ -194,6 +194,11 @@ func (a *App) applyIncoming(ctx context.Context, inv store.Invitation, cal *ical
 	me := a.myAddresses(ctx)
 	switch inv.Method {
 	case itip.MethodReply:
+		if strings.TrimSpace(inv.Sender) == "" {
+			// No usable From address: the answer cannot be attributed to an
+			// attendee, so nobody's reply status may change (audit NB-01).
+			return a.st.SetInvitationStatus(ctx, inv.ID, invObsolete, 0)
+		}
 		for _, p := range objs {
 			// Only our own events (we are the organizer) take replies, and
 			// only the sender's own answer (audit B: forged REPLY).
@@ -276,7 +281,7 @@ func fromOrganizer(objs []*parsedObject, sender string) []*parsedObject {
 func organizerMismatch(method, sender string, organizer *ical.Attendee, attendees []ical.Attendee) bool {
 	sender = strings.ToLower(strings.TrimSpace(sender))
 	if sender == "" {
-		return false
+		return true // unknown sender: never present the ICS content as trustworthy
 	}
 	switch method {
 	case itip.MethodReply, itip.MethodCounter:

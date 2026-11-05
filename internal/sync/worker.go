@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sort"
 	"strings"
 	stdsync "sync"
@@ -271,7 +272,7 @@ func (w *Worker) run(ctx context.Context) {
 	w.m.publishStatus(w.Status())
 	bo := Backoff{Min: w.m.cfg.MinBackoff, Max: w.m.cfg.MaxBackoff}
 	for ctx.Err() == nil {
-		err := w.cycle(ctx)
+		err := w.safeCycle(ctx)
 		if ctx.Err() != nil {
 			return
 		}
@@ -294,6 +295,22 @@ func (w *Worker) run(ctx context.Context) {
 		})
 		w.wait(ctx)
 	}
+}
+
+// safeCycle runs one sync cycle and turns a panic inside a protocol client
+// (for example on a malformed response of a hostile server) into an error.
+// Without it a single bad server response would terminate the whole process,
+// which in server mode is shared by all users. The provider connection is
+// discarded so that the next cycle starts from a clean state.
+func (w *Worker) safeCycle(ctx context.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			w.log.Error("sync: panic in provider", "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+			w.closeProvider()
+			err = fmt.Errorf("sync: internal error while talking to the server: %v", r)
+		}
+	}()
+	return w.cycle(ctx)
 }
 
 // sleep waits d (or until a retry is requested); false if ctx ended.
