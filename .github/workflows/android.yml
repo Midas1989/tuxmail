@@ -75,7 +75,7 @@ jobs:
       - name: Frontend - install, check, test, build
         working-directory: frontend
         run: |
-          npm ci
+          ../build/ci-retry.sh -- npm ci
           npm run check
           npm test
           npm run build
@@ -83,7 +83,7 @@ jobs:
       - name: Capacitor sync
         working-directory: mobile
         run: |
-          npm ci
+          ../build/ci-retry.sh -- npm ci
           npx cap sync android
 
       - name: Build fossDebug (no Google dependencies)
@@ -171,13 +171,13 @@ jobs:
       - name: Frontend build
         working-directory: frontend
         run: |
-          npm ci
+          ../build/ci-retry.sh -- npm ci
           npm run build
 
       - name: Capacitor sync
         working-directory: mobile
         run: |
-          npm ci
+          ../build/ci-retry.sh -- npm ci
           npx cap sync android
 
       - name: Decode signing key

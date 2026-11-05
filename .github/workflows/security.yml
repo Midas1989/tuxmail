@@ -36,7 +36,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+      - run: build/ci-retry.sh -- go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
       # Source mode: fails only on vulnerabilities whose vulnerable symbols are reachable.
       - name: govulncheck (server, CLI, plugins)
         run: govulncheck -show verbose ./...
@@ -58,8 +58,9 @@ jobs:
           go-version-file: go.mod
       - name: Install tools
         run: |
-          go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
-          go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
+          build/ci-retry.sh -- go install github.com/securego/gosec/v2/cmd/gosec@v2.30.0
+          build/ci-retry.sh -- go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
+          build/ci-retry.sh -- go mod download
       # Report only: findings are triaged in docs/security/ and routed to the owners.
       - name: gosec (SARIF)
         # The Telegram plugin pulls in gotd/td (a very large generated
@@ -167,12 +168,15 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      # Pinned release binary (SHA-256 checked, with retries). Update both
+      # values together: compare the hash with osv-scanner_SHA256SUMS of the release.
       - name: Install osv-scanner
         env:
           OSV_VERSION: v2.7.0
+          OSV_SHA256: 160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b # osv-scanner_linux_amd64
         run: |
-          curl -fsSL -o "$RUNNER_TEMP/osv-scanner" \
-            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
+          build/ci-fetch.sh "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64" \
+            "$OSV_SHA256" "$RUNNER_TEMP/osv-scanner"
           chmod +x "$RUNNER_TEMP/osv-scanner"
       # Reviewed exceptions (reason and expiry date): osv-scanner.toml.
       - name: Scan lockfiles
@@ -187,12 +191,21 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0 # full history
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-      - run: go install github.com/zricethezav/gitleaks/v8@v8.30.1
+      # A pinned release binary with a checked SHA-256 and download retries
+      # (`go install` at job time failed on a proxy error on 2026-11-04 and the
+      # push went unscanned). Update both values together: compare the hash with
+      # gitleaks_<version>_checksums.txt of the release.
+      - name: Install gitleaks
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb # gitleaks_8.30.1_linux_x64.tar.gz
+        run: |
+          build/ci-fetch.sh "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            "$GITLEAKS_SHA256" "$RUNNER_TEMP/gitleaks.tar.gz"
+          mkdir "$RUNNER_TEMP/gitleaks"
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/gitleaks" gitleaks
       # Allowlist for test fixtures and documented public values: .gitleaks.toml
-      - run: gitleaks detect --no-banner --redact --config .gitleaks.toml --log-opts=--all
+      - run: '"$RUNNER_TEMP/gitleaks/gitleaks" detect --no-banner --redact --config .gitleaks.toml --log-opts=--all'
 
   trivy:
     name: Trivy (filesystem + Docker image)
@@ -276,7 +289,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - run: go install github.com/google/go-licenses/v2@v2.0.1
+      - run: build/ci-retry.sh -- go install github.com/google/go-licenses/v2@v2.0.1
       - name: License report
         run: go-licenses report ./... 2>/dev/null | sort > go-licenses.csv
       - name: Check AGPL-3.0-compatible licenses
@@ -307,9 +320,16 @@ jobs:
       - id: list
         name: List func Fuzz* in *_test.go
         run: |
-          targets="$(grep -rn --include='*_test.go' -E '^func Fuzz[A-Za-z0-9_]+\(f \*testing\.F\)' . \
-            | sed -E 's#^\./(.*)/[^/]+_test\.go:[0-9]+:func (Fuzz[A-Za-z0-9_]+).*#{"pkg":"./\1","target":"\2"}#' \
-            | sort | paste -sd, - | sed -e 's/^/[/' -e 's/$/]/')"
+          lines="$(grep -rn --include='*_test.go' -E '^func Fuzz[A-Za-z0-9_]+\(f \*testing\.F\)' . \
+            | sed -E 's#^\./(.*)/[^/]+_test\.go:[0-9]+:func (Fuzz[A-Za-z0-9_]+).*#./\1 \2#' | sort -u)"
+          # Directory names come from the repository (pull requests can add them):
+          # only plain path characters may reach the matrix (re-audit ND-10).
+          if [ -n "$lines" ] && printf '%s\n' "$lines" | grep -qvE '^\./[A-Za-z0-9_./-]+ Fuzz[A-Za-z0-9_]+$'; then
+            echo "::error::unexpected characters in the path of a fuzz target"
+            exit 1
+          fi
+          targets="$(printf '%s\n' "$lines" | awk 'NF { printf "{\"pkg\":\"%s\",\"target\":\"%s\"}\n", $1, $2 }' \
+            | paste -sd, - | sed -e 's/^/[/' -e 's/$/]/')"
           echo "$targets"
           echo "targets=$targets" >> "$GITHUB_OUTPUT"
 
@@ -326,8 +346,14 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - run: build/ci-retry.sh -- go mod download
+      # matrix values are passed through the environment, never interpolated
+      # into the script text (re-audit ND-10).
       - name: go test -fuzz (60 s)
-        run: go test -run='^$' -fuzz='^${{ matrix.target }}$' -fuzztime=60s "${{ matrix.pkg }}"
+        env:
+          FUZZ_TARGET: ${{ matrix.target }}
+          FUZZ_PKG: ${{ matrix.pkg }}
+        run: go test -run='^$' -fuzz="^${FUZZ_TARGET}\$" -fuzztime=60s "${FUZZ_PKG}"
       - name: Keep crashing inputs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -348,6 +374,7 @@ jobs:
       - uses: actions/setup-python@e797f83bcb11b83ae66e0230d6156d7c80228e7c # v6.0.0
         with:
           python-version: "3.12"
+      - run: build/ci-retry.sh -- go mod download
       - name: Build tuxmail (API only, placeholder web UI)
         run: go build -o "$RUNNER_TEMP/tuxmail" ./cmd/tuxmail
       - name: Start server and create users

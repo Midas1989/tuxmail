@@ -25,7 +25,7 @@ jobs:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: npm ci
+      - run: ../build/ci-retry.sh -- npm ci
         working-directory: frontend
       - run: npm run check
         working-directory: frontend
@@ -47,6 +47,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - run: build/ci-retry.sh -- go mod download
       - run: go vet ./...
       - name: go vet (Windows; setup program and desktop build)
         run: |
@@ -108,15 +109,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends shellcheck yamllint desktop-file-utils appstream
-          go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
+          build/ci-retry.sh -- go install github.com/rhysd/actionlint/cmd/actionlint@v1.7.11
       - name: actionlint
         run: actionlint
       - name: yamllint
         run: yamllint -c .yamllint.yml .github build/linux/nfpm.yaml build/docker deploy/docker
       - name: shellcheck
         run: shellcheck -x build/*.sh build/linux/*.sh build/linux/AppRun build/windows/*.sh web/build.sh
+      # Pinned release binary (SHA-256 checked) instead of a tag-addressed image.
       - name: hadolint
-        run: docker run --rm -i docker.io/hadolint/hadolint:v2.12.0 hadolint --failure-threshold warning - < build/docker/Dockerfile
+        env:
+          HADOLINT_VERSION: v2.12.0
+          HADOLINT_SHA256: 56de6d5e5ec427e17b74fa48d51271c7fc0d61244bf5c90e828aab8362d55010 # hadolint-Linux-x86_64
+        run: |
+          build/ci-fetch.sh "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-Linux-x86_64" \
+            "$HADOLINT_SHA256" "$RUNNER_TEMP/hadolint"
+          chmod +x "$RUNNER_TEMP/hadolint"
+          "$RUNNER_TEMP/hadolint" --failure-threshold warning - < build/docker/Dockerfile
       - name: Desktop file and AppStream metadata
         run: |
           desktop-file-validate build/linux/org.tuxmail.TuxMail.desktop
