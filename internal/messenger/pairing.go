@@ -6,12 +6,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
+	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/messenger/wire"
+	"github.com/Midas1989/Mailclient/internal/netguard"
 	"github.com/Midas1989/Mailclient/internal/store"
 )
 
@@ -82,6 +86,15 @@ func (s *Service) StartPairing(ctx context.Context, in PairingInput) (Pairing, e
 	if !slices.Contains(spec.Pairing, in.Method) {
 		return Pairing{}, fmt.Errorf("messenger: %s does not support pairing by %s", in.Plugin, in.Method)
 	}
+	if in.Method != wire.PairBridge {
+		hs := in.Homeserver
+		if strings.TrimSpace(hs) == "" && in.Plugin == "matrix" {
+			hs = s.pluginConfig(in.Plugin)["default_homeserver"]
+		}
+		if err := s.checkHomeserver(ctx, hs); err != nil {
+			return Pairing{}, err
+		}
+	}
 	p := &Pairing{ID: "pair_" + randomID(8), Plugin: in.Plugin, Method: in.Method, Network: in.Network, State: PairWaiting,
 		UpdatedAt: s.now(), displayName: strings.TrimSpace(in.DisplayName)}
 	req := wire.PairRequest{PairingID: p.ID, Method: in.Method, Phone: in.Phone, Homeserver: in.Homeserver, Username: in.Username,
@@ -141,6 +154,11 @@ func (s *Service) SubmitPairingInput(ctx context.Context, id, field, value strin
 	}
 	if p.Done() {
 		return fmt.Errorf("messenger: pairing already %s", p.State)
+	}
+	if field == "homeserver" { // the plugin asks for it when none was given
+		if err := s.checkHomeserver(ctx, value); err != nil {
+			return err
+		}
 	}
 	return s.host.Call(ctx, p.Plugin, wire.MethodPairingInput, wire.PairInput{PairingID: id, Field: field, Value: value}, nil)
 }
@@ -265,4 +283,72 @@ func (s *Service) createAccount(ctx context.Context, p Pairing, acc wire.Account
 		}
 	}
 	return id, nil
+}
+
+// checkHomeserver validates a user-chosen Matrix homeserver URL before it is
+// handed to the plugin where users do not own the machine (server mode, see
+// Options.RestrictHostSettings; audit ND-02): only https, and the host must
+// pass the outbound policy (netguard: no loopback, private, link-local or
+// metadata addresses unless the administrator allowed them). Plain http is
+// only accepted for an IP literal the administrator listed in
+// security.allowed_networks (a homeserver on the same host). The plugin
+// process enforces the same policy on every connection it makes (hello
+// handshake), so this check is the early, user-friendly half.
+func (s *Service) checkHomeserver(ctx context.Context, raw string) error {
+	if !s.opts.RestrictHostSettings {
+		return nil
+	}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil // the plugin asks for it (field "homeserver", checked again)
+	}
+	if !strings.Contains(raw, "://") {
+		raw = "https://" + raw
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Hostname() == "" || u.User != nil {
+		return wire.Errorf(wire.CodeInvalidParams, "invalid homeserver URL")
+	}
+	port := uint16(443)
+	if ps := u.Port(); ps != "" {
+		n, err := strconv.ParseUint(ps, 10, 16)
+		if err != nil || n == 0 {
+			return wire.Errorf(wire.CodeInvalidParams, "invalid homeserver port")
+		}
+		port = uint16(n)
+	} else if u.Scheme == "http" {
+		port = 80
+	}
+	switch u.Scheme {
+	case "https":
+	case "http":
+		if !explicitlyAllowed(netguard.Current(), u.Hostname(), port) {
+			return wire.Errorf(wire.CodeInvalidParams, "the homeserver must use https (plain http only for an address listed in security.allowed_networks)")
+		}
+	default:
+		return wire.Errorf(wire.CodeInvalidParams, "the homeserver must use https")
+	}
+	if err := netguard.CheckHost(ctx, u.Hostname(), port); err != nil {
+		return wire.Errorf(wire.CodeInvalidParams, "homeserver not reachable from this server: %v", err)
+	}
+	return nil
+}
+
+// explicitlyAllowed reports whether host is an IP literal covered by a rule
+// of the policy's allowlist.
+func explicitlyAllowed(p *netguard.Policy, host string, port uint16) bool {
+	if p == nil {
+		return false
+	}
+	a, err := netip.ParseAddr(strings.Trim(host, "[]"))
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	for _, r := range p.Allowed {
+		if r.Prefix.Contains(a) && (r.Port == 0 || r.Port == port) {
+			return true
+		}
+	}
+	return false
 }

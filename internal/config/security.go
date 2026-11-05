@@ -11,6 +11,14 @@ import "github.com/Midas1989/Mailclient/internal/netguard"
 // user-configured destination (mail, calendar, cloud and messenger
 // servers, ICS subscriptions, webhooks, AI providers, Web Push endpoints,
 // autoconfig, WKD/VKS).
+//
+// Messenger plugins are separate processes: the server hands this policy to
+// them in the hello handshake (wire.HelloParams.NetPolicy) and the plugin
+// SDK installs it for the plugin's http.DefaultTransport, which covers the
+// user-chosen Matrix homeserver; the server additionally requires https and
+// checks the homeserver host before pairing. Not covered by the policy are
+// connections that plugins make with their own dialers to fixed vendor
+// endpoints (WhatsApp, Telegram) and the signal-cli process.
 type Security struct {
 	// AllowPrivateNetworks permits private networks (RFC 1918, fc00::/7,
 	// 100.64.0.0/10) and loopback, e.g. for a mail server in the same LAN.
