@@ -56,7 +56,21 @@ func refsUIDSet(refs []domain.RemoteRef, idx []int) imap.UIDSet {
 
 // FetchRaw returns the complete RFC 5322 message. The message is buffered in
 // memory so the shared connection is released immediately.
+//
+// The literal is read with a size limit (Config.MaxMessageSize) while it
+// arrives; an oversized message aborts the connection and yields
+// ErrMessageTooLarge instead of being buffered.
 func (p *Provider) FetchRaw(ctx context.Context, r domain.RemoteRef) (io.ReadCloser, error) {
+	return p.FetchRawLimit(ctx, r, p.cfg.MaxMessageSize)
+}
+
+// FetchRawLimit is FetchRaw with an explicit size limit in bytes (the
+// smaller of limit and Config.MaxMessageSize applies; limit <= 0 means the
+// configured maximum).
+func (p *Provider) FetchRawLimit(ctx context.Context, r domain.RemoteRef, limit int64) (io.ReadCloser, error) {
+	if limit <= 0 || limit > p.cfg.MaxMessageSize {
+		limit = p.cfg.MaxMessageSize
+	}
 	uid, err := parseUID(r)
 	if err != nil {
 		return nil, err
@@ -73,9 +87,14 @@ func (p *Provider) FetchRaw(ctx context.Context, r domain.RemoteRef) (io.ReadClo
 		for msg := cmd.Next(); msg != nil; msg = cmd.Next() {
 			for item := msg.Next(); item != nil; item = msg.Next() {
 				if bs, ok := item.(imapclient.FetchItemDataBodySection); ok && bs.Literal != nil {
-					b, err := io.ReadAll(bs.Literal)
+					b, ok, err := readLimited(bs.Literal, limit)
 					if err != nil {
 						return err
+					}
+					if !ok {
+						// Do not drain the rest of the literal.
+						hangUp(c, func() { _ = cmd.Close() })
+						return fmt.Errorf("%w (limit %d bytes)", ErrMessageTooLarge, limit)
 					}
 					body, found = b, true
 				}
@@ -282,7 +301,7 @@ func mapCopyUID(src, dst imap.UIDSet) map[imap.UID]imap.UID {
 
 func (p *Provider) messageIDs(c *imapclient.Client, set imap.UIDSet) map[imap.UID]string {
 	sec := &imap.FetchItemBodySection{Specifier: imap.PartSpecifierHeader, HeaderFields: []string{"Message-ID"}, Peek: true}
-	msgs, err := c.Fetch(set, &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}).Collect()
+	msgs, err := collectFetch(c, c.Fetch(set, &imap.FetchOptions{UID: true, BodySection: []*imap.FetchItemBodySection{sec}}), 64<<10, maxFetchTotal, 0)
 	if err != nil {
 		return nil
 	}

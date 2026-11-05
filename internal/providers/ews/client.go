@@ -23,12 +23,14 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/Azure/go-ntlmssp"
 
 	"github.com/Midas1989/Mailclient/internal/providers/rest"
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
 )
 
 // Auth methods.
@@ -37,6 +39,13 @@ const (
 	AuthBasic  = "basic"
 	AuthBearer = "oauth"
 )
+
+// DefaultMaxResponse bounds one EWS response (MIME content is base64 inside
+// the XML); it was 200 MiB before the 2026-11 audit (NF-10).
+const DefaultMaxResponse = 128 << 20
+
+// ErrResponseTooLarge is returned when a response exceeds Config.MaxResponse.
+var ErrResponseTooLarge = errors.New("ews: response too large")
 
 // Config configures a Client.
 type Config struct {
@@ -52,6 +61,8 @@ type Config struct {
 	// Version is the RequestServerVersion (default Exchange2013_SP1).
 	Version    string
 	HTTPClient *http.Client
+	// MaxResponse bounds one response body (default DefaultMaxResponse).
+	MaxResponse int64
 	// PollInterval of Watch (default 60 s).
 	PollInterval time.Duration
 	Logger       *slog.Logger
@@ -91,6 +102,13 @@ func NewClient(cfg Config) (*Client, error) {
 	if hc == nil {
 		hc = &http.Client{Timeout: 2 * time.Minute}
 	}
+	if cfg.MaxResponse <= 0 {
+		cfg.MaxResponse = DefaultMaxResponse
+	}
+	// Redirects stay on the configured host (or its registrable domain over
+	// https) and never leave https: the credentials go along (audit NF-06).
+	origin, _ := url.Parse(cfg.URL)
+	hc = safehttp.ClientWithRedirectPolicy(hc, origin)
 	if cfg.Auth == AuthNTLM {
 		cp := *hc
 		base := cp.Transport
@@ -182,10 +200,13 @@ func (c *Client) call(ctx context.Context, body string, out any) error {
 		if err != nil {
 			return err
 		}
-		data, err := io.ReadAll(io.LimitReader(resp.Body, 200<<20))
+		data, err := io.ReadAll(io.LimitReader(resp.Body, c.cfg.MaxResponse+1))
 		resp.Body.Close()
 		if err != nil {
 			return err
+		}
+		if int64(len(data)) > c.cfg.MaxResponse {
+			return fmt.Errorf("%w (limit %d bytes)", ErrResponseTooLarge, c.cfg.MaxResponse)
 		}
 		if resp.StatusCode == http.StatusUnauthorized {
 			if inv, ok := c.cfg.Tokens.(rest.Invalidator); ok && attempt == 0 {

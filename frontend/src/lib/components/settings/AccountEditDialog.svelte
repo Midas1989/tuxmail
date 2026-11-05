@@ -24,6 +24,7 @@
   import AccountIdentities from './AccountIdentities.svelte';
   import OAuthSignIn from './OAuthSignIn.svelte';
   import { defaultPort } from './AccountWizard.svelte';
+  import { isPlainHttpUrl } from '../../insecure';
 
   interface Props {
     accountId: number;
@@ -73,7 +74,12 @@
   const hasOutgoing = $derived(!!account && (account.kind === 'imap' || account.kind === 'pop3'));
   const oauth = $derived(!!settings?.oauthProvider);
   const oauthProvider = $derived<OAuthProviderId>(settings?.oauthProvider === 'google' ? 'google' : 'microsoft');
-  const insecure = $derived(incoming.tls === 'none' || (hasOutgoing && outgoing?.tls === 'none'));
+  const insecure = $derived(
+    incoming.tls === 'none' ||
+      (hasOutgoing && outgoing?.tls === 'none') ||
+      (account?.kind === 'eas' && isPlainHttpUrl(easUrl)) ||
+      (account?.kind === 'jmap' && isPlainHttpUrl(jmapUrl)),
+  );
   const folders = $derived(app.folders[accountId] ?? []);
 
   const tabs = $derived<{ id: Tab; label: string }[]>([
@@ -145,6 +151,7 @@
     if (hasOutgoing && outgoing) u.outgoing = { ...outgoing, port: Number(outgoing.port) };
     if (k === 'eas') u.easUrl = easUrl;
     if (k === 'jmap') u.jmapUrl = jmapUrl;
+    if (insecure && allowInsecure) u.allowInsecure = true;
     if (k === 'pop3') u.pop3 = { ...pop3, deleteAfterDays: Math.max(0, Number(pop3.deleteAfterDays) || 0) };
     if (k === 'caldav' || k === 'carddav') return u;
     u.bodyPolicy = bodyPolicy;

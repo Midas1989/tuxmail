@@ -16,6 +16,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/core/threading"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/events"
+	imapprov "github.com/Midas1989/Mailclient/internal/providers/imap"
 	"github.com/Midas1989/Mailclient/internal/store"
 	"github.com/Midas1989/Mailclient/internal/store/blob"
 	"github.com/Midas1989/Mailclient/internal/sync/content"
@@ -371,11 +372,28 @@ func fingerprint(h domain.MessageHeaderInfo, ct *content.Content) string {
 	return threading.Fingerprint(in)
 }
 
+// limitedFetcher is implemented by providers whose FetchRaw can enforce a
+// size limit while the message is being received.
+type limitedFetcher interface {
+	FetchRawLimit(ctx context.Context, ref domain.RemoteRef, limit int64) (io.ReadCloser, error)
+}
+
 func (w *Worker) fetchRaw(ctx context.Context, ref domain.RemoteRef) ([]byte, error) {
 	var raw []byte
 	err := w.withProvider(ctx, func(p domain.MailProvider) error {
-		rc, err := p.FetchRaw(ctx, ref)
+		// Providers that can bound the download while it arrives (IMAP)
+		// must not buffer more than the sync limit (audit NF-04).
+		var rc io.ReadCloser
+		var err error
+		if lf, ok := p.(limitedFetcher); ok {
+			rc, err = lf.FetchRawLimit(ctx, ref, w.m.cfg.MaxBodySize)
+		} else {
+			rc, err = p.FetchRaw(ctx, ref)
+		}
 		if err != nil {
+			if errors.Is(err, imapprov.ErrMessageTooLarge) {
+				return Permanent(fmt.Errorf("sync: message larger than %d bytes: %w", w.m.cfg.MaxBodySize, err))
+			}
 			return err
 		}
 		defer rc.Close()

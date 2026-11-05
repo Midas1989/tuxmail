@@ -46,7 +46,7 @@ func TestDiscoveryPrefersWorkingCandidate(t *testing.T) {
 	}))
 	defer ispdb.Close()
 
-	d := &autoconfig.Discoverer{HTTPClient: ispdb.Client(), ISPDBURL: ispdb.URL + "/v1.1/", AllowHTTP: true, AlwaysHeuristics: true, Timeout: 3 * time.Second}
+	d := &autoconfig.Discoverer{HTTPClient: ispdb.Client(), ISPDBURL: ispdb.URL + "/v1.1/", AlwaysHeuristics: true, Timeout: 3 * time.Second}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	res := discoverRanked(ctx, d, devserver.AnnaAddr, devserver.DefaultPassword)

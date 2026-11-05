@@ -261,12 +261,15 @@ type FreeBusy struct {
 
 // DavAccountInput connects a CalDAV/CardDAV server.
 type DavAccountInput struct {
-	DisplayName string `json:"displayName"`
-	URL         string `json:"url"`
-	CardDAVURL  string `json:"carddavUrl,omitempty"` // default: URL
-	Username    string `json:"username"`
-	Password    string `json:"password"`
-	Email       string `json:"email,omitempty"`
+	// AllowInsecure confirms an unencrypted http:// server (see
+	// NewAccountInput.AllowInsecure).
+	AllowInsecure bool   `json:"allowInsecure,omitempty"`
+	DisplayName   string `json:"displayName"`
+	URL           string `json:"url"`
+	CardDAVURL    string `json:"carddavUrl,omitempty"` // default: URL
+	Username      string `json:"username"`
+	Password      string `json:"password"`
+	Email         string `json:"email,omitempty"`
 }
 
 // PimAddressBook is an address book.

@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
 )
 
 // Source identifies where a candidate came from.
@@ -95,7 +96,10 @@ type Discoverer struct {
 	// ISPDBURL is the ISPDB base URL; the domain is appended.
 	ISPDBURL string
 	// AllowHTTP also tries plain-HTTP autoconfig URLs (as Thunderbird does);
-	// such candidates are marked Insecure.
+	// such candidates are marked Insecure. It is off by default: anyone on
+	// the network path can forge a plain-HTTP document (audit NF-05). Plain
+	// HTTP to loopback hosts (dev server, TUXMAIL_ISPDB_URL=http://127.0.0.1)
+	// is always accepted.
 	AllowHTTP bool
 	// ProbeHeuristics verifies heuristic host names with ProbeConnect and
 	// drops unreachable ones.
@@ -128,7 +132,6 @@ func New() *Discoverer {
 		HTTPClient: &http.Client{Timeout: 15 * time.Second},
 		Resolver:   net.DefaultResolver,
 		ISPDBURL:   DefaultISPDBURL,
-		AllowHTTP:  true,
 		Timeout:    10 * time.Second,
 		Known:      KnownProviders(),
 	}
@@ -193,17 +196,19 @@ func (d *Discoverer) Discover(ctx context.Context, email string) ([]Candidate, e
 			add(rank, f())
 		}()
 	}
+	// The address is only sent in the query of https requests; plain-HTTP
+	// requests (AllowHTTP) carry the domain in the host name only.
 	q := url.Values{"emailaddress": {email}}.Encode()
 	if d.HTTPClient != nil {
 		run(0, func() []Candidate {
 			return d.fetchFirst(ctx, email, SourceAutoconfig,
 				"https://autoconfig."+dom+"/mail/config-v1.1.xml?"+q,
-				"http://autoconfig."+dom+"/mail/config-v1.1.xml?"+q)
+				"http://autoconfig."+dom+"/mail/config-v1.1.xml")
 		})
 		run(1, func() []Candidate {
 			return d.fetchFirst(ctx, email, SourceWellKnown,
 				"https://"+dom+"/.well-known/autoconfig/mail/config-v1.1.xml?"+q,
-				"http://"+dom+"/.well-known/autoconfig/mail/config-v1.1.xml?"+q)
+				"http://"+dom+"/.well-known/autoconfig/mail/config-v1.1.xml")
 		})
 		if d.ISPDBURL != "" {
 			run(2, func() []Candidate {
@@ -292,15 +297,24 @@ func dedupe(cands []Candidate) []Candidate {
 	return out
 }
 
+// httpAllowed reports whether a plain-HTTP URL may be fetched: when AllowHTTP
+// is set or the host is a loopback address.
+func (d *Discoverer) httpAllowed(u *url.URL) bool {
+	return d.AllowHTTP || safehttp.IsLoopbackURL(u)
+}
+
 // fetchFirst fetches the URLs in order and returns the candidates of the
 // first document that parses.
 func (d *Discoverer) fetchFirst(ctx context.Context, email string, src Source, urls ...string) []Candidate {
 	for _, u := range urls {
-		insecure := strings.HasPrefix(u, "http://")
-		if insecure && !d.AllowHTTP {
+		pu, err := url.Parse(u)
+		if err != nil || (pu.Scheme != "https" && pu.Scheme != "http") {
 			continue
 		}
-		cfg, err := d.FetchConfig(ctx, u, email)
+		if pu.Scheme == "http" && !d.httpAllowed(pu) {
+			continue
+		}
+		cfg, insecure, err := d.fetchConfig(ctx, u, email)
 		if err != nil {
 			continue
 		}
@@ -319,21 +333,52 @@ func (d *Discoverer) fetchFirst(ctx context.Context, email string, src Source, u
 
 // FetchConfig downloads and parses one Mozilla autoconfig document.
 func (d *Discoverer) FetchConfig(ctx context.Context, rawURL, email string) (*ClientConfig, error) {
+	cfg, _, err := d.fetchConfig(ctx, rawURL, email)
+	return cfg, err
+}
+
+// fetchConfig is FetchConfig that also reports whether the document was
+// delivered over plain HTTP (after redirects). A redirect from https to http
+// is refused unless plain HTTP is allowed for the target.
+func (d *Discoverer) fetchConfig(ctx context.Context, rawURL, email string) (cfg *ClientConfig, insecure bool, err error) {
 	ctx, cancel := context.WithTimeout(ctx, d.timeout())
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	req.Header.Set("Accept", "application/xml, text/xml")
-	resp, err := d.HTTPClient.Do(req)
+	hc := *d.HTTPClient
+	prev := hc.CheckRedirect
+	hc.CheckRedirect = func(r *http.Request, via []*http.Request) error {
+		if r.URL.Scheme == "http" && !d.httpAllowed(r.URL) {
+			return fmt.Errorf("autoconfig: refusing redirect to plain HTTP %s", r.URL.Redacted())
+		}
+		if prev != nil {
+			return prev(r, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("autoconfig: stopped after 10 redirects")
+		}
+		return nil
+	}
+	resp, err := hc.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("autoconfig: GET %s: %s", rawURL, resp.Status)
+		return nil, false, fmt.Errorf("autoconfig: GET %s: %s", req.URL.Redacted(), resp.Status)
 	}
-	return ParseClientConfig(resp.Body, email)
+	final := req.URL
+	if resp.Request != nil && resp.Request.URL != nil {
+		final = resp.Request.URL
+	}
+	insecure = final.Scheme == "http"
+	if insecure && !d.httpAllowed(final) {
+		return nil, false, fmt.Errorf("autoconfig: %s was delivered over plain HTTP", final.Redacted())
+	}
+	cfg, err = ParseClientConfig(resp.Body, email)
+	return cfg, insecure, err
 }

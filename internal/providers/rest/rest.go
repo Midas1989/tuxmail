@@ -13,10 +13,25 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
 )
+
+// DefaultMaxResponse bounds the JSON a Do call decodes (per endpoint it can be
+// raised with Request.MaxBytes). Audit NF-10.
+const DefaultMaxResponse = 32 << 20
+
+// ErrResponseTooLarge is returned when a response exceeds its size limit.
+var ErrResponseTooLarge = errors.New("rest: response too large")
+
+// ErrForeignURL is returned for absolute URLs (nextLink/deltaLink, ...) that
+// do not point to the host of the configured API: the bearer token must not
+// follow server-supplied links to other hosts.
+var ErrForeignURL = errors.New("rest: refusing URL outside the API host")
 
 // TokenSource returns a valid OAuth2 access token.
 type TokenSource interface {
@@ -48,6 +63,8 @@ type Client struct {
 	DecodeError func(status int, body []byte) error
 	// Sleep is used for back-off (tests).
 	Sleep func(ctx context.Context, d time.Duration) error
+	// MaxResponse bounds decoded JSON responses (default DefaultMaxResponse).
+	MaxResponse int64
 }
 
 // StatusError is a non-2xx response.
@@ -87,6 +104,9 @@ type Request struct {
 	Body        []byte
 	ContentType string
 	Header      http.Header
+	// MaxBytes overrides Client.MaxResponse for Do (e.g. raw message
+	// downloads wrapped in JSON).
+	MaxBytes int64
 }
 
 func sleepCtx(ctx context.Context, d time.Duration) error {
@@ -107,6 +127,10 @@ func (c *Client) Raw(ctx context.Context, rq Request) (*http.Response, error) {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
+	base, _ := url.Parse(c.BaseURL)
+	// Redirects must neither leave the API host nor downgrade to http, the
+	// bearer token would go along.
+	hc = safehttp.ClientWithRedirectPolicy(hc, base)
 	sleep := c.Sleep
 	if sleep == nil {
 		sleep = sleepCtx
@@ -131,6 +155,11 @@ func (c *Client) Raw(ctx context.Context, rq Request) (*http.Response, error) {
 	u := rq.Path
 	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 		u = strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(u, "/")
+	} else if pu, err := url.Parse(u); err != nil || base == nil || !safehttp.SameHost(pu, base) ||
+		!strings.EqualFold(pu.Scheme, base.Scheme) {
+		// Server-supplied absolute links (@odata.nextLink, deltaLink, ...)
+		// are only followed on the API host itself.
+		return nil, fmt.Errorf("%w: %s", ErrForeignURL, redactURL(u))
 	}
 	refreshed := false
 	for attempt := 0; ; attempt++ {
@@ -223,9 +252,19 @@ func (c *Client) Do(ctx context.Context, rq Request, out any) error {
 		_, _ = io.Copy(io.Discard, resp.Body)
 		return nil
 	}
-	data, err := io.ReadAll(resp.Body)
+	limit := rq.MaxBytes
+	if limit <= 0 {
+		limit = c.MaxResponse
+	}
+	if limit <= 0 {
+		limit = DefaultMaxResponse
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return err
+	}
+	if int64(len(data)) > limit {
+		return fmt.Errorf("%w (limit %d bytes): %s %s", ErrResponseTooLarge, limit, rq.Method, redactURL(rq.Path))
 	}
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil
@@ -234,6 +273,14 @@ func (c *Client) Do(ctx context.Context, rq Request, out any) error {
 		return fmt.Errorf("decode %s %s: %w", rq.Method, rq.Path, err)
 	}
 	return nil
+}
+
+func redactURL(s string) string {
+	if u, err := url.Parse(s); err == nil {
+		u.RawQuery, u.Fragment = "", ""
+		return u.String()
+	}
+	return "(invalid URL)"
 }
 
 // Get is Do with GET.

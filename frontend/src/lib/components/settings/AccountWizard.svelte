@@ -29,6 +29,7 @@
   import CloudConnectForm, { CLOUD_PROVIDERS } from '../cloud/CloudConnectForm.svelte';
   import ProviderIcon from '../cloud/ProviderIcon.svelte';
   import type { CloudAccountProvider } from '../../types';
+  import { isPlainHttpUrl } from '../../insecure';
   import OAuthSignIn from './OAuthSignIn.svelte';
 
   interface Props {
@@ -84,7 +85,12 @@
   }
 
   const needsOutgoing = $derived(protocol === 'imap' || protocol === 'pop3');
-  const insecure = $derived(incoming.tls === 'none' || (needsOutgoing && outgoing.tls === 'none'));
+  const insecure = $derived(
+    incoming.tls === 'none' ||
+      (needsOutgoing && outgoing.tls === 'none') ||
+      (protocol === 'eas' && isPlainHttpUrl(easUrl)) ||
+      (protocol === 'jmap' && isPlainHttpUrl(jmapUrl)),
+  );
   const emailOk = $derived(/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email));
 
   const steps: { id: Step[]; label: string }[] = $derived([
@@ -147,6 +153,7 @@
         outgoing: needsOutgoing ? outgoing : undefined,
         easUrl: protocol === 'eas' && easUrl ? easUrl : undefined,
         jmapUrl: protocol === 'jmap' && jmapUrl ? jmapUrl : undefined,
+        allowInsecure: insecure && allowInsecure ? true : undefined,
         pop3: protocol === 'pop3' ? { ...pop3, deleteAfterDays: Math.max(0, Number(pop3.deleteAfterDays) || 0) } : undefined,
       });
       step = 'done';

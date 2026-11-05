@@ -128,6 +128,9 @@ func (a *App) CreateAccount(ctx context.Context, in NewAccountInput) (Account, e
 		return Account{}, err
 	}
 	applyMailProtoInput(&acc, in) // mailproto.go
+	if err := checkInsecureEndpoints(&acc, in.AllowInsecure); err != nil {
+		return Account{}, err
+	}
 	accs, err := a.st.ListAccounts(ctx)
 	if err != nil {
 		return Account{}, err

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/providers/caldav"
 	"github.com/Midas1989/Mailclient/internal/providers/carddav"
 	"github.com/Midas1989/Mailclient/internal/providers/dav"
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
 	"github.com/Midas1989/Mailclient/internal/store"
 )
 
@@ -125,6 +127,13 @@ func (a *App) AddDavAccount(ctx context.Context, in DavAccountInput) (Account, e
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return Account{}, invalid("a http(s) server URL is required")
 	}
+	// Plain http:// (credentials in clear) needs the explicit confirmation
+	// of the wizard; loopback servers are exempt (audit NF-08).
+	insecure := safehttp.IsInsecure(u.String()) || safehttp.IsInsecure(strings.TrimSpace(in.CardDAVURL))
+	if insecure && !in.AllowInsecure {
+		return Account{}, Errorf(http.StatusBadRequest, CodeInsecureEndpoint,
+			"%s is an unencrypted http:// server: credentials would be sent in clear text; use https:// or confirm with allowInsecure", SanitizeErrorText(u.Redacted()))
+	}
 	if in.DisplayName == "" {
 		in.DisplayName = u.Host
 	}
@@ -146,11 +155,14 @@ func (a *App) AddDavAccount(ctx context.Context, in DavAccountInput) (Account, e
 	if in.Email != "" {
 		acc.Extra["address"] = strings.ToLower(in.Email)
 	}
+	if insecure {
+		acc.Extra[safehttp.ExtraAllowInsecure] = "true"
+	}
 	// Check the credentials before saving anything.
 	c := &dav.Client{HTTP: a.pimHTTP(), Username: in.Username, Password: in.Password}
 	if _, err := caldav.Discover(ctx, c, u.String()); err != nil {
 		if _, err2 := carddav.Discover(ctx, c, card); err2 != nil {
-			return Account{}, Errorf(400, CodeInvalidInput, "server not reachable or login failed: %v", err)
+			return Account{}, Errorf(400, CodeInvalidInput, "server not reachable or login failed: %s", connectionMessage(err))
 		}
 		delete(acc.Extra, extraCalDAV)
 	}
@@ -220,7 +232,7 @@ func (a *App) syncCalDAVAccount(ctx context.Context, acc Account) error {
 		}
 		if err := a.syncCalendar(ctx, c, id, col, cm.Meta.CTag); err != nil {
 			errs = append(errs, err)
-			_ = a.st.SetCalendarSyncState(ctx, id, "", a.now(), err.Error())
+			_ = a.st.SetCalendarSyncState(ctx, id, "", a.now(), connectionMessage(err))
 		}
 	}
 	for _, cal := range existing {
@@ -241,7 +253,7 @@ func (a *App) syncCalendar(ctx context.Context, c *dav.Client, calID int64, col 
 	}
 	for _, ch := range pending {
 		if err := a.pushCalChange(ctx, c, calID, col.URL, ch); err != nil {
-			_ = a.st.FailPIMChange(ctx, ch.ID, err.Error())
+			_ = a.st.FailPIMChange(ctx, ch.ID, connectionMessage(err))
 			a.log.Info("app: pushing calendar change failed", "calendar", calID, "uid", ch.UID, "err", err)
 		}
 	}
@@ -417,7 +429,7 @@ func (a *App) syncCardDAVAccount(ctx context.Context, acc Account) error {
 		}
 		if err := a.syncAddressbook(ctx, c, id, col, oldCTag); err != nil {
 			errs = append(errs, err)
-			_ = a.st.SetAddressbookSyncState(ctx, id, "", a.now(), err.Error())
+			_ = a.st.SetAddressbookSyncState(ctx, id, "", a.now(), connectionMessage(err))
 		}
 	}
 	for _, b := range existing {
@@ -438,7 +450,7 @@ func (a *App) syncAddressbook(ctx context.Context, c *dav.Client, bookID int64, 
 	}
 	for _, ch := range pending {
 		if err := a.pushCardChange(ctx, c, bookID, col.URL, ch); err != nil {
-			_ = a.st.FailPIMChange(ctx, ch.ID, err.Error())
+			_ = a.st.FailPIMChange(ctx, ch.ID, connectionMessage(err))
 		}
 	}
 	contacts, err := a.st.ListContacts(ctx, bookID)
@@ -583,14 +595,14 @@ func (a *App) refreshSubscription(ctx context.Context, calID int64, force bool) 
 	}
 	data, etag, notModified, err := caldav.FetchICS(ctx, a.pimHTTP(), cm.Meta.URL, cm.Meta.CTag)
 	if err != nil {
-		_ = a.st.SetCalendarSyncState(ctx, calID, "", a.now(), err.Error())
+		_ = a.st.SetCalendarSyncState(ctx, calID, "", a.now(), connectionMessage(err))
 		return fmt.Errorf("subscription %d: %w", calID, err)
 	}
 	if notModified {
 		return a.st.SetCalendarSyncState(ctx, calID, "", a.now(), "")
 	}
 	if err := a.importICS(ctx, calID, data, true); err != nil {
-		_ = a.st.SetCalendarSyncState(ctx, calID, "", a.now(), err.Error())
+		_ = a.st.SetCalendarSyncState(ctx, calID, "", a.now(), connectionMessage(err))
 		return err
 	}
 	if cm.Name == cm.Meta.URL {

@@ -31,6 +31,7 @@ func JMAPConfig(ctx context.Context, acc domain.Account, creds Credentials, opts
 	}
 	cfg := jmapprov.Config{SessionURL: u, HTTPClient: &http.Client{Transport: tr, Timeout: 2 * time.Minute}, Logger: opts.Logger,
 		PollInterval: opts.PollInterval, MinBackoff: opts.WatchMinBackoff, MaxBackoff: opts.WatchMaxBackoff}
+	jmapprov.ApplyAccountOptions(&cfg, acc) // confirmed http / extra hosts
 	user := ""
 	auth := domain.AuthPassword
 	if acc.Incoming != nil {

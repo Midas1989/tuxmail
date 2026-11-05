@@ -376,6 +376,11 @@ type NewAccountInput struct {
 	// JMAPURL the session URL of kind "jmap" accounts (mailproto.go).
 	POP3    *POP3Options `json:"pop3,omitempty"`
 	JMAPURL string       `json:"jmapUrl,omitempty"`
+	// AllowInsecure is the user's explicit confirmation (the wizard's
+	// "insecure" checkbox) to use an unencrypted http:// endpoint of an
+	// ActiveSync or JMAP account; without it such accounts are refused
+	// (insecure_endpoint). Loopback hosts are exempt.
+	AllowInsecure bool `json:"allowInsecure,omitempty"`
 }
 
 // ==== Push / notifications =====================================================

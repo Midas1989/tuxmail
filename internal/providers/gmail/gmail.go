@@ -38,6 +38,10 @@ import (
 // DefaultBaseURL is the Gmail API root.
 const DefaultBaseURL = "https://gmail.googleapis.com"
 
+// maxRawResponse bounds a format=raw message (base64 in JSON: 1.37x the
+// message size, Gmail messages are at most about 50 MB).
+const maxRawResponse = 128 << 20
+
 // Config configures a Provider.
 type Config struct {
 	BaseURL    string
@@ -674,7 +678,8 @@ func (p *Provider) history(ctx context.Context, folder, lid, start string) (doma
 // FetchRaw implements domain.MailProvider (format=raw).
 func (p *Provider) FetchRaw(ctx context.Context, ref domain.RemoteRef) (io.ReadCloser, error) {
 	var m message
-	if err := p.rest.Get(ctx, api+"/messages/"+url.PathEscape(ref.ID)+"?format=raw", &m); err != nil {
+	if err := p.rest.Do(ctx, rest.Request{Method: http.MethodGet, Path: api + "/messages/" + url.PathEscape(ref.ID) + "?format=raw",
+		MaxBytes: maxRawResponse}, &m); err != nil {
 		return nil, err
 	}
 	raw, err := base64.URLEncoding.DecodeString(padB64(m.Raw))

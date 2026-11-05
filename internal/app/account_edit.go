@@ -23,6 +23,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/providers/carddav"
 	"github.com/Midas1989/Mailclient/internal/providers/eas"
 	pop3prov "github.com/Midas1989/Mailclient/internal/providers/pop3"
+	"github.com/Midas1989/Mailclient/internal/providers/safehttp"
 	"github.com/Midas1989/Mailclient/internal/send"
 	"github.com/Midas1989/Mailclient/internal/sieve"
 	"github.com/Midas1989/Mailclient/internal/store"
@@ -100,6 +101,10 @@ type AccountUpdate struct {
 	IdleFolders []int64       `json:"idleFolders,omitempty"`
 	Index       *IndexOptions `json:"index,omitempty"`
 	Sieve       *SieveConfig  `json:"sieve,omitempty"`
+	// AllowInsecure confirms an unencrypted http:// ActiveSync or JMAP
+	// endpoint (NewAccountInput.AllowInsecure); needed whenever the endpoint
+	// of such an account is changed to a non-loopback http:// URL.
+	AllowInsecure bool `json:"allowInsecure,omitempty"`
 	// Verify logs in with the new server settings (and the stored
 	// credentials) before saving; a failed test returns
 	// connection_failed and saves nothing.
@@ -355,6 +360,53 @@ func validHTTPURL(s string) bool {
 	return err == nil && u.Host != "" && (u.Scheme == "https" || u.Scheme == "http")
 }
 
+// insecureEndpoints lists the plain-http endpoints (non-loopback) of an
+// ActiveSync or JMAP account: the explicit URLs and a server configuration
+// without TLS (which selects http:// for these kinds).
+func insecureEndpoints(acc *domain.Account) []string {
+	var out []string
+	add := func(u string) {
+		if safehttp.IsInsecure(u) {
+			out = append(out, u)
+		}
+	}
+	switch acc.Kind {
+	case domain.KindEAS:
+		add(acc.Extra[eas.ExtraURL])
+	case domain.KindJMAP:
+		add(acc.Extra["jmapUrl"])
+	default:
+		return nil
+	}
+	if acc.Incoming != nil && acc.Incoming.TLS == domain.TLSNone && acc.Incoming.Host != "" &&
+		(acc.Kind == domain.KindEAS && acc.Extra[eas.ExtraURL] == "" || acc.Kind == domain.KindJMAP && acc.Extra["jmapUrl"] == "") &&
+		!safehttp.IsLoopbackHost(acc.Incoming.Host) {
+		out = append(out, "http://"+net.JoinHostPort(acc.Incoming.Host, strconv.Itoa(acc.Incoming.Port)))
+	}
+	return out
+}
+
+// checkInsecureEndpoints refuses ActiveSync and JMAP accounts with plain
+// http:// endpoints (credentials in clear) unless the request carried the
+// explicit confirmation (the wizard's insecure checkbox) and records the
+// confirmation in Extra[allowInsecure]. Loopback hosts are exempt (audit NF-08).
+func checkInsecureEndpoints(acc *domain.Account, allow bool) error {
+	bad := insecureEndpoints(acc)
+	if acc.Extra == nil {
+		acc.Extra = map[string]string{}
+	}
+	if len(bad) == 0 {
+		delete(acc.Extra, safehttp.ExtraAllowInsecure)
+		return nil
+	}
+	if !allow {
+		return Errorf(http.StatusBadRequest, CodeInsecureEndpoint,
+			"%s is an unencrypted http:// endpoint: credentials would be sent in clear text; use https:// or confirm with allowInsecure", SanitizeErrorText(bad[0]))
+	}
+	acc.Extra[safehttp.ExtraAllowInsecure] = "true"
+	return nil
+}
+
 // applyAccountUpdate applies in to a copy of acc and validates the result.
 // It reports whether the connection settings changed (sync restart and
 // credential test needed).
@@ -450,6 +502,11 @@ func applyAccountUpdate(acc domain.Account, in AccountUpdate) (domain.Account, b
 	}
 	if acc.Kind == domain.KindEAS && (out.Incoming == nil || out.Incoming.Host == "") && out.Extra[eas.ExtraURL] == "" {
 		return acc, false, invalid("ActiveSync accounts need a server URL or host")
+	}
+	if conn && (acc.Kind == domain.KindEAS || acc.Kind == domain.KindJMAP) {
+		if err := checkInsecureEndpoints(&out, in.AllowInsecure); err != nil {
+			return acc, false, err
+		}
 	}
 	if in.POP3 != nil {
 		if acc.Kind != domain.KindPOP3 {
@@ -739,7 +796,7 @@ func (a *App) testAccount(ctx context.Context, acc domain.Account, password stri
 		cancel()
 		st := ConnectionTestStep{Kind: k, Target: target, OK: err == nil, Millis: time.Since(start).Milliseconds()}
 		if err != nil {
-			st.Code, st.Error = classifyConnErr(err), err.Error()
+			st.Code, st.Error = classifyConnErr(err), connectionMessage(err)
 			res.OK = false
 		}
 		res.Steps = append(res.Steps, st)

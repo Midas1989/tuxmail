@@ -84,6 +84,13 @@ Dev-Servers („Einstellungen über Autoconfig gefunden“). Weil der Dev-Server
 unverschlüsselt arbeitet, muss die Warnung „Unverschlüsselte Verbindung“ im
 Assistenten bestätigt werden.
 
+Autoconfig-Dokumente über unverschlüsseltes HTTP werden sonst **nicht** mehr
+abgefragt (`autoconfig.Discoverer.AllowHTTP` ist standardmäßig aus; jeder im
+Netz könnte sonst Server unterschieben). Ausnahme sind Loopback-Adressen
+(`127.0.0.1`, `::1`, `localhost`) wie der Dev-Server oben. Ein Redirect von
+https auf http wird abgelehnt, und die E-Mail-Adresse steht nur in
+https-Anfragen im Query-String.
+
 ## 3. Echte Server: Dovecot + Postfix
 
 Für realistische Tests (TLS, STARTTLS, Dovecot-Keywords, LMTP-Zustellung)

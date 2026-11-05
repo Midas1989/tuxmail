@@ -170,7 +170,7 @@ func (p *Provider) ListFolders(ctx context.Context) ([]domain.Folder, error) {
 		if !ext && opts.ReturnStatus == nil {
 			opts = nil
 		}
-		list, err := c.List("", "*", opts).Collect()
+		list, err := collectList(c, c.List("", "*", opts))
 		if err != nil {
 			return fmt.Errorf("imap: list: %w", err)
 		}
@@ -216,7 +216,7 @@ func (p *Provider) delimiterLocked(c *imapclient.Client) (rune, error) {
 	if p.delim != 0 {
 		return p.delim, nil
 	}
-	list, err := c.List("", "", nil).Collect()
+	list, err := collectList(c, c.List("", "", nil))
 	if err != nil {
 		return 0, fmt.Errorf("imap: list delimiter: %w", err)
 	}
@@ -230,7 +230,7 @@ func (p *Provider) delimiterLocked(c *imapclient.Client) (rune, error) {
 
 func (p *Provider) folderInfo(c *imapclient.Client, name string) domain.Folder {
 	f := domain.Folder{RemoteID: name, Name: name, Subscribed: true}
-	list, err := c.List("", name, nil).Collect()
+	list, err := collectList(c, c.List("", name, nil))
 	var attrs []imap.MailboxAttr
 	if err == nil && len(list) > 0 {
 		attrs = list[0].Attrs

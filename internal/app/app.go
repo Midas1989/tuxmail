@@ -176,6 +176,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if opts.Mode == "" {
 		opts.Mode = ModeDesktop
 	}
+	setErrorMode(opts.Mode) // errors.go: unmapped error texts (audit NF-12)
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = &http.Client{Timeout: 60 * time.Second}
 	}
