@@ -66,7 +66,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       release: ${{ steps.v.outputs.release }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Determine version (VERSION file) and check the tag
@@ -86,17 +86,17 @@ jobs:
     name: Frontend build
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - name: npm ci && npm run build -> web/dist
         run: sh web/build.sh
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: frontend-dist
           path: web/dist
@@ -115,14 +115,14 @@ jobs:
     env:
       TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: frontend-dist
           path: web/dist
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Build and pack
@@ -146,7 +146,7 @@ jobs:
             || go run ./build/signalcli smoke -dir "$RUNNER_TEMP/plugins/signal-cli"
       - name: Package sizes
         run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
@@ -167,14 +167,14 @@ jobs:
       TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
       HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: frontend-dist
           path: web/dist
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Install build dependencies
@@ -242,25 +242,25 @@ jobs:
         run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
 
       # One download per package format (instead of one archive with all of them).
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-desktop-${{ matrix.arch }}-deb
           path: dist/*.deb
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-desktop-${{ matrix.arch }}-rpm
           path: dist/*.rpm
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-desktop-${{ matrix.arch }}-appimage
           path: dist/*.AppImage
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: linux-desktop-${{ matrix.arch }}-portable
           path: dist/*-portable.tar.gz
@@ -284,14 +284,14 @@ jobs:
       # SignPath (Authenticode) stays disabled until the token and variables exist.
       SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: frontend-dist
           path: web/dist
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
       - name: Install go-winres
@@ -335,7 +335,7 @@ jobs:
       - name: Upload unsigned TuxMail.exe and plugins for signing
         id: unsigned-exe
         if: env.SIGNPATH_ENABLED == 'true'
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unsigned-exe-${{ matrix.arch }}
           path: |
@@ -344,7 +344,7 @@ jobs:
           retention-days: 1
       - name: Sign TuxMail.exe and plugins (SignPath)
         if: env.SIGNPATH_ENABLED == 'true'
-        uses: signpath/github-action-submit-signing-request@v2.2
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2.2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -421,14 +421,14 @@ jobs:
       - name: Upload unsigned setup programs for signing
         id: unsigned-setup
         if: env.SIGNPATH_ENABLED == 'true'
-        uses: actions/upload-artifact@v7.0.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unsigned-setup-${{ matrix.arch }}
           path: dist/TuxMail-*-setup*.exe
           retention-days: 1
       - name: Sign setup programs (SignPath)
         if: env.SIGNPATH_ENABLED == 'true'
-        uses: signpath/github-action-submit-signing-request@v2.2
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2.2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
@@ -443,13 +443,13 @@ jobs:
         run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
 
       # Setup and portable ZIP as separate downloads.
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-desktop-${{ matrix.arch }}-setup
           path: dist/TuxMail-*-setup.exe
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-desktop-${{ matrix.arch }}-portable
           path: dist/TuxMail-*-portable.zip
@@ -465,24 +465,24 @@ jobs:
       contents: read
       packages: write
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: frontend-dist
           path: web/dist
       - name: Free disk space
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
-      - uses: docker/setup-qemu-action@v4.4.0
-      - uses: docker/setup-buildx-action@v4.4.1
-      - uses: docker/login-action@v4.7.0
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: meta
-        uses: docker/metadata-action@v6.2.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ${{ env.IMAGE }}
           flavor: latest=false
@@ -494,7 +494,7 @@ jobs:
             org.opencontainers.image.title=TuxMail
             org.opencontainers.image.licenses=AGPL-3.0-or-later
             org.opencontainers.image.version=${{ needs.version.outputs.version }}
-      - uses: docker/build-push-action@v7.4.0
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
           file: build/docker/Dockerfile
@@ -518,10 +518,10 @@ jobs:
     env:
       TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/download-artifact@v8.0.2
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: '{server,linux-desktop,windows-desktop}-*'
           path: dist
@@ -529,7 +529,7 @@ jobs:
 
       - name: SBOM (SPDX, Go modules and npm packages)
         continue-on-error: true
-        uses: anchore/sbom-action@v0.24.3
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: spdx-json
@@ -555,7 +555,7 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v7.0.2
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: checksums
           path: |
@@ -571,7 +571,7 @@ jobs:
 
       - name: GitHub release
         if: needs.version.outputs.release == 'true'
-        uses: softprops/action-gh-release@v3.0.3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
         with:
           name: TuxMail ${{ needs.version.outputs.version }}
           files: dist/*
