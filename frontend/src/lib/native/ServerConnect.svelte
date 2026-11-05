@@ -18,6 +18,7 @@
   import penguinUrl from '$branding/tuxmail-penguin.png';
   import { t, type MessageKey } from '../i18n/index.svelte';
   import type { ProfileStore, ServerProfile } from './profiles';
+  import { serverDisplay } from './navigation';
   import {
     ServerError,
     directLogin,
@@ -38,12 +39,15 @@
     prefill?: string;
     /** Show the "session ended" notice for this server. */
     expired?: boolean;
+    /** The address came from a tuxmail://connect link (already confirmed by the user in a dialog). */
     fromLink?: boolean;
+    /** Shown as a Cancel button when this screen is an overlay on top of a running session. */
+    oncancel?: () => void;
     openUrl: (url: string) => Promise<void>;
     closeBrowser?: () => Promise<void>;
     ondone: (profile: ServerProfile) => void;
   }
-  let { store, profiles, deviceName, prefill = '', expired = false, fromLink = false, openUrl, closeBrowser, ondone }: Props = $props();
+  let { store, profiles, deviceName, prefill = '', expired = false, fromLink = false, oncancel, openUrl, closeBrowser, ondone }: Props = $props();
 
   type Step = 'url' | 'choose' | 'device' | 'password';
   // Initial values only: later prop changes do not reset the form.
@@ -181,7 +185,7 @@
     {#if expired && step === 'url'}
       <p class="notice" role="status">{t('native.connect.expired', { server: initial.prefill })}</p>
     {:else if fromLink && step === 'url'}
-      <p class="notice" role="status">{t('native.connect.linkPrefilled')}</p>
+      <p class="notice" role="status">{t('native.connect.linkWarning', { server: serverDisplay(initial.prefill.startsWith('http') ? initial.prefill : 'https://' + initial.prefill) })}</p>
     {/if}
 
     {#if step === 'url'}
@@ -226,6 +230,9 @@
             {/each}
           </ul>
         </section>
+      {/if}
+      {#if oncancel}
+        <button class="btn btn-ghost wide" type="button" onclick={oncancel}>{t('common.action.cancel')}</button>
       {/if}
     {:else if step === 'choose' && info}
       <div class="form">
@@ -279,6 +286,7 @@
   .connect {
     position: fixed;
     inset: 0;
+    z-index: 9000; /* above a running app (connect-link overlay), below the app lock (10000) */
     overflow-y: auto;
     background: var(--tm-bg);
     padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));

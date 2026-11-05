@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { hueFor, initials } from '../../conversation';
+  import { safeAvatarUrl } from '../../avatar';
+  import { readActiveMirror } from '../../native/session';
   import UsersRound from '@lucide/svelte/icons/users-round';
 
   interface Props {
@@ -12,6 +14,8 @@
   }
   let { name, seed, size = 36, group = false, url }: Props = $props();
   const hue = $derived(hueFor(seed ?? name));
+  // API data may carry third-party URLs: only data:image (no SVG), blob: and own /api/ URLs are rendered (NG-09).
+  const src = $derived(safeAvatarUrl(url, readActiveMirror()?.serverUrl));
 </script>
 
 <span
@@ -22,8 +26,8 @@
   style:--h={hue}
   aria-hidden="true"
 >
-  {#if url}
-    <img src={url} alt="" />
+  {#if src}
+    <img {src} alt="" referrerpolicy="no-referrer" />
   {:else if group}
     <UsersRound size={Math.round(size * 0.5)} />
   {:else}

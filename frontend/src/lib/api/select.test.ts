@@ -22,8 +22,25 @@ describe('selectTransportKind', () => {
     expect(selectTransportKind({ go: undefined, search: '' })).toBe('mock');
   });
 
-  it('?api=mock forces the mock even inside Wails', () => {
-    expect(selectTransportKind({ go: {}, search: '?api=mock' })).toBe('mock');
+  it('?api=mock forces the mock in development builds only', () => {
+    expect(selectTransportKind({ search: '?api=mock', dev: true })).toBe('mock');
+  });
+
+  it('?api=mock is ignored in production builds (NG-02)', () => {
+    expect(selectTransportKind({ search: '?api=mock', dev: false, meta: 'http' })).toBe('http');
+    expect(selectTransportKind({ search: '?api=mock', dev: false, native: true })).toBe('http');
+    expect(selectTransportKind({ search: '?api=mock', dev: false, go: {} })).toBe('wails');
+  });
+
+  it('?api=mock is ignored when the server meta tag, Wails or a native shell is present, even in dev (NG-02)', () => {
+    expect(selectTransportKind({ search: '?api=mock', dev: true, meta: 'http' })).toBe('http');
+    expect(selectTransportKind({ search: '?api=mock', dev: true, go: {} })).toBe('wails');
+    expect(selectTransportKind({ search: '?api=mock', dev: true, native: true })).toBe('http');
+  });
+
+  it('defaults to import.meta.env.DEV', () => {
+    expect(selectTransportKind({ search: '?api=mock', meta: 'http' })).toBe('http');
+    expect(import.meta.env.DEV).toBe(true); // vitest runs with the dev flag
   });
 
   it('createApi returns the matching implementation', () => {

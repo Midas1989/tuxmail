@@ -210,6 +210,8 @@ export interface Api {
   importProvisioning(input: ProvisioningImport): Promise<void>;
 
   // Portable mode (KONZEPT 15.2): secrets live in a master-password vault
+  /** End the server session (POST /api/auth/logout; cookie or device token). No-op where no server session exists (desktop, demo). */
+  logout(): Promise<void>;
   vaultStatus(): Promise<VaultStatus>;
   /** Unlock (or on first use create) the vault; error code "invalid_password". */
   unlockVault(password: string): Promise<void>;

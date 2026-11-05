@@ -70,7 +70,7 @@ scripts/build.sh fossRelease playRelease bundlePlayRelease
 npx cap open android             # in Android Studio öffnen
 ```
 
-`scripts/build.sh` baut zuerst das Frontend (`npm run build` in `frontend/`),
+`scripts/build.sh` baut zuerst das Frontend (`npm run build:capacitor` in `frontend/` – eigene Content-Security-Policy für die App, s. docs/ENTWICKLUNG.md),
 kopiert es mit `npx cap sync android` nach `android/app/src/main/assets/public`
 und ruft dann Gradle auf. `SKIP_WEB=1` überspringt den Frontend-Build.
 Die APKs liegen unter `android/app/build/outputs/apk/<flavor>/<buildType>/`.
@@ -149,7 +149,7 @@ Ohne diese Angaben entsteht ein unsigniertes Release-APK.
       gradleprops:
         - tuxmail.gms=false
       prebuild:
-        - cd ../../../frontend && npm ci && npm run build
+        - cd ../../../frontend && npm ci && npm run build:capacitor
         - cd ../mobile && npm ci && npx cap sync android
   ```
 - **Reproduzierbare Builds**: exakte npm-Versionen und `package-lock.json`,

@@ -18,14 +18,19 @@ import { app, prefs, team } from '../state';
 import { t } from '../i18n/index.svelte';
 import { App, Browser, Preferences, SplashScreen, SystemBars, SystemBarsStyle, TuxMail, type PushRegistration, type SharePayload } from './plugins';
 import { ProfileStore, type KeyValueStore, type ServerProfile } from './profiles';
-import { readActiveMirror, setSessionToken, setUnauthorizedHandler, writeActiveMirror } from './session';
+import { ACTIVE_MIRROR_KEY, readActiveMirror, setSessionToken, setUnauthorizedHandler, writeActiveMirror } from './session';
 import { decideBack, dispatchBackEvent, parseConnectLink, parseDeepLink, type BackAction, type DeepLinkTarget } from './navigation';
 import { dispatchShare, dropFiles, shareRecipients, shareSubject, shareTextToHtml, sharedFilesToFiles, waitForElement } from './share';
 import { fetchVapidKey, registrationKey, subscribeAtServer, type PushSession } from './push';
 import { loadLockSettings, saveLockSettings, shouldLock, type LockSettings } from './applock';
 import type { NativeController, PushStatus } from './status';
 import { startNativeEffects } from './effects.svelte';
+import { applyNativeServerCsp } from '../csp';
+import { createDeferredSet, createLockGate } from './lockgate';
+import { clearTuxmailStorage } from '../session';
+import { cancelConnect, confirmConnect, requestConnect, type ConnectPromptState } from './connectprompt';
 import ServerConnect from './ServerConnect.svelte';
+import ConnectLinkDialog from './ConnectLinkDialog.svelte';
 import AppLock from './AppLock.svelte';
 import NativeSettings from './NativeSettings.svelte';
 import nativeCss from './native.css?inline';
@@ -51,6 +56,18 @@ let active: ServerProfile | null = null;
 let activeToken = '';
 let backgroundSince: number | null = null;
 let locked = false;
+
+// NG-03: nothing arriving from outside (deep links, notification taps, share intents) may act on the app
+// while the lock overlay is shown; it is queued and applied after the unlock.
+type Inbound = { kind: 'link'; url: string } | { kind: 'share'; payload: SharePayload };
+let linkHandler: (url: string) => void = () => {};
+let shareHandler: (p: SharePayload) => void = () => {};
+const inbound = createLockGate<Inbound>((item) => (item.kind === 'link' ? linkHandler(item.url) : shareHandler(item.payload)));
+// Opening a conversation dismisses its notifications; behind the lock this waits for the unlock.
+const pendingCancels = createDeferredSet<number>(
+  (id) => void TuxMail.cancelConversationNotifications({ conversationId: String(id) }).catch(() => {}),
+  () => locked,
+);
 let pushStatus: PushStatus = { state: 'idle' };
 
 function injectStyles(): void {
@@ -81,6 +98,7 @@ async function authenticate(): Promise<boolean> {
 function showLock(): Promise<void> {
   if (locked) return Promise.resolve();
   locked = true;
+  inbound.lock();
   hideSplash();
   return new Promise((resolve) => {
     const host = document.createElement('div');
@@ -93,6 +111,8 @@ function showLock(): Promise<void> {
           void unmount(cmp);
           host.remove();
           locked = false;
+          inbound.unlock();
+          pendingCancels.flush();
           resolve();
         },
       },
@@ -123,6 +143,8 @@ async function watchLock(settings: () => Promise<LockSettings>): Promise<void> {
  */
 export async function bootNative(target: HTMLElement, mountApp: () => void): Promise<void> {
   injectStyles();
+  // The Android build needs the Capacitor CSP (connect to the user's https server); the web/Wails default would block every request.
+  if (document.querySelector('meta[name="tuxmail-csp-target"]')?.getAttribute('content') !== 'capacitor') console.error('TuxMail: this web build was not made with "npm run build:capacitor"; requests to the server will be blocked by the Content-Security-Policy.');
   const lock = await loadLockSettings(prefsStore).catch(() => null);
   void watchLock(() => loadLockSettings(prefsStore));
   if (lock && shouldLock(lock, null, Date.now())) await showLock();
@@ -147,43 +169,110 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
     setSessionToken(token);
     setUnauthorizedHandler(onUnauthorized);
     await TuxMail.setActiveSession({ serverUrl: active.serverUrl, token, profileId: active.id }).catch(() => {});
+    // NG-08: from here on only the active server may be contacted / load images (a second meta CSP can only narrow).
+    applyNativeServerCsp(document, active.serverUrl);
     mountApp();
     return;
   }
 
   if (mirror) writeActiveMirror(null);
   const launch = await App.getLaunchUrl().catch(() => undefined);
-  const link = launch?.url ? parseConnectLink(launch.url) : null;
-  showConnect(target, list, link?.server ?? active?.serverUrl ?? '', !!active?.needsLogin, !!link);
+  const render = showConnect(target, list, active?.serverUrl ?? '', !!active?.needsLogin);
+  // A connect link never pre-fills silently: the user confirms the full host first (NG-01).
+  if (launch?.url) promptConnect(launch.url, (server) => render(server, true));
 }
 
-function showConnect(target: HTMLElement, list: ServerProfile[], prefill: string, expired: boolean, fromLink: boolean): void {
+// ---------------------------------------------------------------------------
+// tuxmail://connect confirmation (NG-01)
+// ---------------------------------------------------------------------------
+
+let closePrompt: (() => void) | null = null;
+
+/**
+ * Ask the user whether to add the server of a tuxmail://connect link. The
+ * current session (UI, profile, token) is left untouched; `proceed` runs only
+ * after an explicit confirmation. Links that are not https (or loopback) are refused.
+ */
+export function promptConnect(url: string, proceed: (serverUrl: string) => void): void {
+  let state: ConnectPromptState = requestConnect(url, active?.serverUrl ?? null);
+  if (state.phase !== 'confirm') return;
+  closePrompt?.();
+  const { host, current } = state;
+  const el = document.createElement('div');
+  document.body.appendChild(el);
+  const cmp = mount(ConnectLinkDialog, {
+    target: el,
+    props: {
+      host,
+      current,
+      onconfirm: () => {
+        state = confirmConnect(state);
+        close();
+        if (state.phase === 'connect') proceed(state.server);
+      },
+      oncancel: () => {
+        state = cancelConnect();
+        close();
+      },
+    },
+  });
+  function close() {
+    void unmount(cmp);
+    el.remove();
+    if (closePrompt === close) closePrompt = null;
+  }
+  closePrompt = close;
+}
+
+/** Login screen for the confirmed server as an overlay; the running session stays active until the new login succeeded. */
+async function showConnectOverlay(server: string): Promise<void> {
+  const list = await profiles.list().catch(() => [] as ServerProfile[]);
+  const host = document.createElement('div');
+  host.setAttribute('role', 'dialog');
+  host.setAttribute('aria-modal', 'true');
+  document.body.appendChild(host);
+  let cmp: ReturnType<typeof mount> | null = null;
+  const close = () => {
+    if (cmp) void unmount(cmp);
+    cmp = null;
+    host.remove();
+  };
+  host.addEventListener('keydown', (e) => e.key === 'Escape' && close());
+  cmp = mount(ServerConnect, { target: host, props: { ...connectProps(list, server, false, true), oncancel: close } });
+}
+
+function connectProps(list: ServerProfile[], prefill: string, expired: boolean, fromLink: boolean) {
+  return {
+    store: profiles,
+    profiles: list,
+    deviceName: deviceName(),
+    prefill,
+    expired,
+    fromLink,
+    openUrl: (url: string) => Browser.open({ url, toolbarColor: '#1c2b45' }),
+    closeBrowser: () => Browser.close(),
+    // upsert() has activated the new profile after a successful login: now (and only now) switch.
+    ondone: (profile: ServerProfile) => {
+      // Switching to another server/account: the previous user's local conveniences go (the mirror of the new profile stays).
+      if (active && profile.id !== active.id) clearTuxmailStorage(undefined, [ACTIVE_MIRROR_KEY]);
+      location.reload();
+    },
+  };
+}
+
+function showConnect(target: HTMLElement, list: ServerProfile[], prefill: string, expired: boolean): (server: string, isLink: boolean) => void {
   target.replaceChildren();
   let cmp: ReturnType<typeof mount> | null = null;
   const render = (server: string, isLink: boolean) => {
     if (cmp) void unmount(cmp);
-    cmp = mount(ServerConnect, {
-      target,
-      props: {
-        store: profiles,
-        profiles: list,
-        deviceName: deviceName(),
-        prefill: server,
-        expired: expired && !isLink,
-        fromLink: isLink,
-        openUrl: (url: string) => Browser.open({ url, toolbarColor: '#1c2b45' }),
-        closeBrowser: () => Browser.close(),
-        ondone: () => location.reload(),
-      },
-    });
+    cmp = mount(ServerConnect, { target, props: connectProps(list, server, expired && !isLink, isLink) });
   };
-  render(prefill, fromLink);
-  void App.addListener('appUrlOpen', ({ url }) => {
-    const link = parseConnectLink(url);
-    if (link) render(link.server, true);
-  });
+  render(prefill, false);
+  linkHandler = (url) => promptConnect(url, (server) => render(server, true));
+  void App.addListener('appUrlOpen', ({ url }) => inbound.submit({ kind: 'link', url }));
   void App.addListener('backButton', () => void App.minimizeApp());
   hideSplash();
+  return render;
 }
 
 let unauthorizedOnce = false;
@@ -195,6 +284,7 @@ function onUnauthorized(): void {
     await profiles.markNeedsLogin(id).catch(() => {});
     await TuxMail.clearActiveSession().catch(() => {});
     writeActiveMirror(null);
+    clearTuxmailStorage(); // per-user conveniences must not outlive the session (NG-07)
     location.reload();
   })();
 }
@@ -207,7 +297,7 @@ export async function startNative(): Promise<void> {
   if (!active) return;
   startNativeEffects({
     setBarStyle: (dark) => void SystemBars.setStyle({ style: dark ? SystemBarsStyle.Dark : SystemBarsStyle.Light }).catch(() => {}),
-    cancelConversation: (id) => void TuxMail.cancelConversationNotifications({ conversationId: String(id) }).catch(() => {}),
+    cancelConversation: (id) => pendingCancels.request(id),
   });
   void installBackButton();
   void installDeepLinks();
@@ -277,7 +367,7 @@ async function installBackButton(): Promise<void> {
   });
 }
 
-async function openTarget(target: DeepLinkTarget): Promise<void> {
+export async function openTarget(target: DeepLinkTarget): Promise<void> {
   if (target.hash.startsWith('#/native-settings')) {
     location.hash = target.hash;
     return;
@@ -286,19 +376,23 @@ async function openTarget(target: DeepLinkTarget): Promise<void> {
   if (location.hash !== target.hash.split('?')[0]) location.hash = target.hash.split('?')[0];
   if (q.get('view') === 'chat' && prefs.viewMode !== 'chat') await app.setViewMode('chat');
   // Team mailbox notifications carry #/mail?team=<id>&conversation=<id> (conversation ids of the team store).
+  // The id comes from outside the app: enter only mailboxes the user is a member of (NG-10); for any other
+  // id nothing is entered and the (team-store) conversation id is not applied to the personal mailbox.
   const teamId = Number(q.get('team'));
-  if (teamId && team.activeId !== teamId) await team.enter(teamId);
-  else if (!teamId && team.activeId != null) await team.leave();
+  if (teamId) {
+    if (!(await team.enterIfMember(teamId))) return;
+  } else if (team.activeId != null) await team.leave();
   if (target.conversationId != null) await app.selectConversation(target.conversationId);
   if (target.messageId != null) await app.selectMessage(target.messageId);
   if (target.compose) app.openCompose();
 }
 
 async function installDeepLinks(): Promise<void> {
-  const handle = (url: string) => {
+  linkHandler = (url: string) => {
     if (parseConnectLink(url)) {
-      // Adding another server from a link while signed in: switch to the connect screen.
-      void profiles.deactivate().then(() => location.reload());
+      // Adding another server from a link while signed in: confirm first, keep the current session
+      // until the new login has succeeded (NG-01).
+      promptConnect(url, (server) => void showConnectOverlay(server));
       return;
     }
     const target = parseDeepLink(url);
@@ -310,9 +404,9 @@ async function installDeepLinks(): Promise<void> {
       wait();
     }
   };
-  await App.addListener('appUrlOpen', ({ url }) => handle(url));
+  await App.addListener('appUrlOpen', ({ url }) => inbound.submit({ kind: 'link', url }));
   const launch = await App.getLaunchUrl().catch(() => undefined);
-  if (launch?.url) handle(launch.url);
+  if (launch?.url) inbound.submit({ kind: 'link', url: launch.url });
 }
 
 async function deliverShare(p: SharePayload): Promise<void> {
@@ -329,16 +423,15 @@ async function deliverShare(p: SharePayload): Promise<void> {
 }
 
 async function installShareTarget(): Promise<void> {
-  await TuxMail.addListener('shareReceived', (p) => {
-    const run = () => void deliverShare(p);
-    if (app.ready) run();
-    else setTimeout(run, 800);
-  });
+  shareHandler = (p) => {
+    const wait = () => (app.ready || app.loadError ? void deliverShare(p) : setTimeout(wait, 100));
+    wait();
+  };
+  await TuxMail.addListener('shareReceived', (p) => inbound.submit({ kind: 'share', payload: p }));
   const pending = await TuxMail.getPendingShare().catch(() => null);
   if (pending && (pending.text || pending.files?.length || pending.to?.length)) {
     const p: SharePayload = { text: pending.text, subject: pending.subject, to: pending.to, files: pending.files ?? [] };
-    const wait = () => (app.ready || app.loadError ? void deliverShare(p) : setTimeout(wait, 100));
-    wait();
+    inbound.submit({ kind: 'share', payload: p });
   }
 }
 
@@ -425,7 +518,7 @@ async function autoRegisterPush(): Promise<void> {
 // #/native-settings overlay
 // ---------------------------------------------------------------------------
 
-function controller(): NativeController {
+export function controller(): NativeController {
   return {
     serverLabel: active?.label ?? '',
     userLabel: active?.displayName || active?.username || '',
@@ -447,12 +540,14 @@ function controller(): NativeController {
       await fetch(`${active.serverUrl}/api/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${activeToken}` }, credentials: 'omit' }).catch(() => {});
       await profiles.remove(active.id);
       await TuxMail.clearActiveSession().catch(() => {});
+      clearTuxmailStorage(); // NG-07
       location.replace(location.pathname + '#/mail');
       location.reload();
     },
     switchServer: async () => {
       await profiles.deactivate();
       await TuxMail.clearActiveSession().catch(() => {});
+      clearTuxmailStorage(); // NG-07
       location.replace(location.pathname + '#/mail');
       location.reload();
     },

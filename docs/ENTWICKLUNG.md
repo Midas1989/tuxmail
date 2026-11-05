@@ -141,6 +141,23 @@ live über den WebSocket `/api/events`.
 Für die Frontend-Entwicklung mit Hot-Reload: `cd frontend && npm run dev` (Mock-API)
 oder die gebaute Oberfläche über `tuxmail serve`.
 
+### Content-Security-Policy je Schale
+
+`frontend/index.html` trägt eine CSP als `<meta>`; der Text lebt in `frontend/src/lib/csp.ts`, `vite.config.ts` schreibt
+ihn je Build-Ziel in die Ausgabe. Nicht benötigte Quellen fehlen absichtlich.
+
+| Schale | Wer setzt die CSP | Wirksame Richtlinie (Auszug) |
+|---|---|---|
+| Web (`tuxmail serve`) | HTTP-Header des Servers **und** Meta | beide strikt, das Meta ist nie lockerer als der Header: `connect-src 'self'`, `img-src 'self' data: blob:` |
+| Wails-Desktop | nur Meta (gleicher Build wie Web: `npm run build`) | `connect-src 'self'`, `img-src 'self' data: blob:` – kein `https:`, kein `ws:` |
+| Android (Capacitor) | nur Meta (`npm run build:capacitor` = `vite build --mode capacitor`) | `connect-src 'self' https: wss:` (Server vom Nutzer gewählt, kein Klartext-`ws:`), `img-src … https:` (Bildproxy des Servers); zur Laufzeit zusätzlich auf den Origin des aktiven Servers verengt (zweites Meta kann nur einschränken) |
+| `npm run dev` | Meta | wie Web, plus `ws:`/`wss:` für Hot-Reload |
+
+Der APK-Build **muss** `build:capacitor` verwenden (`mobile/scripts/build.sh`, `android.yml`, F-Droid-Rezept); mit dem
+Web-Build blockiert die CSP alle Anfragen an den Server (die App meldet das beim Start in der Konsole).
+Entfernte Quellen: Es gibt im Frontend keine `EventSource`/Fremd-`fetch`-Aufrufe; entfernte Mailbilder laufen nur über
+`/api/proxy/image` des eigenen Servers, Avatare nur als `data:`/`blob:`/`/api/`-URL (`lib/avatar.ts`).
+
 ## 5. Desktop-Modus
 
 ```sh

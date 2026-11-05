@@ -385,7 +385,6 @@ export class HttpTransport implements Api {
       throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
     }
     if (!res.ok) {
-      if (res.status === 401 && bearer) this.onUnauthorized?.();
       let msg = res.statusText;
       let code = 'http_' + res.status;
       try {
@@ -402,6 +401,9 @@ export class HttpTransport implements Api {
       } catch {
         /* body not JSON */
       }
+      // Session gone: a rejected device token (any 401), or the server's "unauthenticated" on a cookie session.
+      // Other 401s (invalid_credentials of a password prompt, ...) do not end the session.
+      if (res.status === 401 && (bearer || code === 'unauthenticated')) this.onUnauthorized?.();
       throw new ApiError(msg, res.status, code);
     }
     if (res.status === 204) return undefined as T;
@@ -568,6 +570,23 @@ export class HttpTransport implements Api {
   }
   /** Loads the provisioning profile with a fresh device token (web variant; the desktop keeps tokens in the core). */
   private async profileResult(serverUrl: string, token: string): Promise<DeviceTokenResult> {
+    // The remote device token is used for this single request and lives only in this call frame (never stored).
+    // It is revoked on the remote server afterwards - on success and on every failure path (NG-04).
+    try {
+      return await this.profileResultWithToken(serverUrl, token);
+    } finally {
+      await this.revokeRemoteToken(serverUrl, token);
+    }
+  }
+  /** POST {serverUrl}/api/auth/logout with the bearer; best effort (the token also expires server-side). */
+  private async revokeRemoteToken(serverUrl: string, token: string): Promise<void> {
+    try {
+      await this.remoteCall(this.remote(serverUrl, '/api/auth/logout'), {}, token);
+    } catch {
+      /* unreachable server: nothing more to do from here */
+    }
+  }
+  private async profileResultWithToken(serverUrl: string, token: string): Promise<DeviceTokenResult> {
     const { status, data } = await this.remoteCall(this.remote(serverUrl, '/api/provisioning/profile'), undefined, token);
     if (status !== 200) return { status: 'denied', error: String(data.message ?? data.error ?? status) };
     const user = (data.user ?? {}) as Record<string, string>;
@@ -620,6 +639,9 @@ export class HttpTransport implements Api {
     });
     if (status === 200 && typeof data.access_token === 'string') return this.profileResult(serverUrl, data.access_token);
     return { status: 'denied', error: String(data.error_description || data.message || data.error || status) };
+  }
+  logout(): Promise<void> {
+    return this.request('POST', '/api/auth/logout');
   }
   vaultStatus(): Promise<VaultStatus> {
     return this.request('GET', '/api/vault/status');

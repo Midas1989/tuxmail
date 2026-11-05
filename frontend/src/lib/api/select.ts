@@ -3,7 +3,8 @@ import type { Api, TransportKind } from './api';
 import { HttpTransport } from './http';
 import { MockTransport } from './mock';
 import { WailsTransport, type WailsWindow } from './wails';
-import { hasNativeSession, nativeHttpOptions } from '../native/session';
+import { hasNativeSession } from '../native/session';
+import { platformHttpOptions } from '../session';
 import { isNativeShell } from '../platform';
 
 export interface TransportEnv {
@@ -15,6 +16,8 @@ export interface TransportEnv {
   native?: boolean;
   /** `<meta name="tuxmail-api">` injected by `tuxmail serve` ("http"). */
   meta?: string;
+  /** Development build (default: `import.meta.env.DEV`). `?api=mock` is honoured only here. */
+  dev?: boolean;
 }
 
 /**
@@ -22,11 +25,16 @@ export interface TransportEnv {
  *  1. Wails if `window.go` exists (desktop shell),
  *  2. HTTP if `?api=http` (web client against `tuxmail serve`),
  *  3. otherwise the in-memory mock (demo / development).
- * `?api=mock` forces the mock even inside Wails (useful for UI work).
+ * `?api=mock` forces the mock (useful for UI work) but ONLY in development
+ * builds and never when the server injected the tuxmail-api meta tag, inside
+ * Wails or in a native shell: otherwise a crafted link would show fabricated
+ * mailboxes under the real, trusted origin (NG-02).
  */
 export function selectTransportKind(env: TransportEnv): TransportKind {
   const api = new URLSearchParams(env.search ?? '').get('api');
-  if (api === 'mock') return 'mock';
+  const dev = env.dev ?? import.meta.env.DEV;
+  const hostedByTuxMail = !!env.meta || !!env.go || !!env.native;
+  if (api === 'mock' && dev && !hostedByTuxMail) return 'mock';
   if (env.go && typeof env.go === 'object') return 'wails';
   if (env.native) return 'http';
   if (api === 'http' || env.meta === 'http') return 'http';
@@ -38,7 +46,7 @@ export function createApi(kind: TransportKind, win?: WailsWindow): Api {
     case 'wails':
       return new WailsTransport(win);
     case 'http':
-      return new HttpTransport(isNativeShell() ? nativeHttpOptions() : {});
+      return new HttpTransport(platformHttpOptions());
     case 'mock':
       return new MockTransport();
   }
@@ -47,6 +55,6 @@ export function createApi(kind: TransportKind, win?: WailsWindow): Api {
 export function createApiFromWindow(): Api {
   const w = (typeof window !== 'undefined' ? window : {}) as WailsWindow & { location?: Location };
   const meta = typeof document !== 'undefined' ? document.querySelector<HTMLMetaElement>('meta[name="tuxmail-api"]')?.content : undefined;
-  const kind = selectTransportKind({ go: w.go, search: w.location?.search, native: isNativeShell() && hasNativeSession(), meta });
+  const kind = selectTransportKind({ go: w.go, search: w.location?.search, native: isNativeShell() && hasNativeSession(), meta, dev: import.meta.env.DEV && !isNativeShell() });
   return createApi(kind, w);
 }

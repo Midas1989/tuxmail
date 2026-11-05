@@ -70,11 +70,11 @@ export function dataURISize(uri: string): number {
   return Math.floor((b64.length * 3) / 4) - (b64.endsWith('==') ? 2 : b64.endsWith('=') ? 1 : 0);
 }
 
-function cleanStyle(style: string): string {
+function cleanStyle(style: string, dropHiding = false): string {
   return style
     .split(';')
     .map((d) => d.trim())
-    .filter((d) => d && d.includes(':') && !CSS_BLOCKED.test(d))
+    .filter((d) => d && d.includes(':') && !CSS_BLOCKED.test(d) && !(dropHiding && CSS_HIDING.test(d)))
     .join('; ');
 }
 
@@ -84,6 +84,54 @@ function cleanStyle(style: string): string {
  * Data: images above the size limit are reported in `oversized`.
  */
 export function cleanSignatureHtml(html: string): { html: string; oversized: number; remote: number } {
+  return cleanHtml(html, {});
+}
+
+interface CleanOptions {
+  /** Drop images with remote (https) sources instead of keeping them (composer paste: no tracking pixels). */
+  dropRemoteImages?: boolean;
+  /** Drop CSS declarations that hide content (display:none, font-size:0, ...). */
+  dropHiding?: boolean;
+  /** Drop `class` attributes: inside the live app DOM they could pick up the app's own CSS (overlays, UI spoofing). */
+  dropClass?: boolean;
+}
+
+/** Declarations that hide pasted text from the user but not from the recipient. */
+const CSS_HIDING = /display\s*:\s*none|visibility\s*:\s*hidden|opacity\s*:\s*0(?![.\d])|font-size\s*:\s*0(?![.\d])|max-(height|width)\s*:\s*0(?![.\d])|color\s*:\s*transparent|mso-hide/i;
+
+/**
+ * Cleans clipboard/dropped HTML for the mail composer (NG-05): the signature
+ * allow-list (no scripts, handlers, forms, svg, resource-loading CSS), plus no
+ * remote images (tracking pixels) and no content hidden via CSS. Basic
+ * formatting (b/i/u, lists, quotes, links, tables, colours) is kept.
+ */
+export function cleanComposerHtml(html: string): { html: string; oversized: number; remote: number } {
+  return cleanHtml(html, { dropRemoteImages: true, dropHiding: true, dropClass: true });
+}
+
+export type PastePlan = { kind: 'html'; html: string } | { kind: 'text'; text: string } | null;
+
+/**
+ * What to insert for a paste/drop: allow-list cleaned HTML if the clipboard
+ * has any, else the plain text. Never the raw HTML. Returns null if empty.
+ */
+export function planPaste(getData: (type: string) => string): PastePlan {
+  const raw = getData('text/html');
+  if (raw) {
+    const cleaned = cleanComposerHtml(raw).html;
+    // Only structure left (no text, no image): fall back to the plain text flavour.
+    if (/<img\b/i.test(cleaned) || cleaned.replace(/<[^>]*>/g, '').trim()) return { kind: 'html', html: cleaned };
+  }
+  const text = getData('text/plain');
+  return text ? { kind: 'text', text } : null;
+}
+
+/** Signature block as inserted into the live composer: server HTML is re-cleaned client-side (NG-06, defence in depth). */
+export function composerSignatureHtml(signatureHtml: string): string {
+  return `-- <br>${cleanHtml(signatureHtml, { dropClass: true }).html}`;
+}
+
+function cleanHtml(html: string, opts: CleanOptions): { html: string; oversized: number; remote: number } {
   const doc = new DOMParser().parseFromString(`<!DOCTYPE html><html><body>${html}</body></html>`, 'text/html');
   let oversized = 0;
   let remote = 0;
@@ -108,11 +156,12 @@ export function cleanSignatureHtml(html: string): { html: string; oversized: num
       const allowed = TAG_ATTRS[tag] ?? [];
       for (const a of [...el.attributes]) {
         const name = a.name.toLowerCase();
-        if (!GLOBAL_ATTRS.has(name) && !allowed.includes(name)) el.removeAttribute(a.name);
+        const globalOk = GLOBAL_ATTRS.has(name) && !(opts.dropClass && name === 'class');
+        if (!globalOk && !allowed.includes(name)) el.removeAttribute(a.name);
       }
       const style = el.getAttribute('style');
       if (style != null) {
-        const c = cleanStyle(style);
+        const c = cleanStyle(style, opts.dropHiding);
         if (c) el.setAttribute('style', c);
         else el.removeAttribute('style');
       }
@@ -131,7 +180,13 @@ export function cleanSignatureHtml(html: string): { html: string; oversized: num
           el.remove();
           continue;
         }
-        if (/^https:/i.test(src)) remote++;
+        if (/^https:/i.test(src)) {
+          remote++;
+          if (opts.dropRemoteImages) {
+            el.remove();
+            continue;
+          }
+        }
       }
     }
   };
