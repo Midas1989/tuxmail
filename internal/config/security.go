@@ -5,7 +5,8 @@ package config
 import "github.com/Midas1989/Mailclient/internal/netguard"
 
 // Security configures the outbound connection policy of the server mode
-// (SSRF protection, internal/netguard). By default users can only make the
+// (SSRF protection, internal/netguard) and two server hardening switches
+// (ExposeVersion, HSTSIncludeSubdomains). By default users can only make the
 // server connect to public addresses: loopback, private networks,
 // link-local addresses and cloud metadata endpoints are refused for every
 // user-configured destination (mail, calendar, cloud and messenger
@@ -21,6 +22,20 @@ type Security struct {
 	// optionally with a port, e.g. "192.168.10.5", "10.20.0.0/16:993",
 	// "127.0.0.1:8008" (local Matrix homeserver), "[fd00::/8]:443".
 	AllowedNetworks []string `yaml:"allowed_networks"`
+
+	// ExposeVersion lets the unauthenticated endpoints /healthz and
+	// /api/auth/config report the exact program version (default off: it
+	// eases targeted attacks with known vulnerabilities). Both always carry
+	// the product marker "product":"tuxmail" so clients (the app's "connect
+	// to server" flow) still recognise the server. Authenticated users
+	// (diagnostics, provisioning profile) always see the version.
+	ExposeVersion bool `yaml:"expose_version"`
+	// HSTSIncludeSubdomains adds includeSubDomains to the
+	// Strict-Transport-Security header sent for HTTPS deployments (default
+	// off). Enable it only when EVERY subdomain of the host name is served
+	// over HTTPS: browsers then refuse plain HTTP for all of them for a year.
+	// "preload" is never sent: it cannot be undone quickly.
+	HSTSIncludeSubdomains bool `yaml:"hsts_include_subdomains"`
 }
 
 // NetPolicy returns the outbound connection policy for netguard.SetPolicy.

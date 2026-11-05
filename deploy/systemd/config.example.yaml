@@ -63,3 +63,7 @@ security:
   allowed_networks: []
   #  - "192.168.10.5:993"
   #  - "127.0.0.1:8008"   # local Matrix homeserver
+  # true = /healthz and /api/auth/config report the exact program version to
+  # anonymous clients (default: false, they only report "product": "tuxmail").
+  # Logged-in users and `tuxmail version` always show it.
+  expose_version: false

@@ -17,13 +17,17 @@ func (s *Server) clientInfoFor(r *http.Request, deviceName string) auth.ClientIn
 }
 
 func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{
-		"version":           s.version,
+	out := map[string]any{
+		"product":           productMarker,
 		"registration":      s.cfg.Auth.Registration,
 		"oidcEnabled":       s.cfg.Auth.OIDC.Enabled,
 		"passwordMinLength": s.cfg.Auth.PasswordMinLength,
 		"maxUploadMB":       s.cfg.Limits.MaxUploadMB,
-	})
+	}
+	if s.cfg.Security.ExposeVersion { // NA-07: anonymous clients get no version by default
+		out["version"] = s.version
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleCSRF returns the CSRF token for SPA clients (also set as cookie).

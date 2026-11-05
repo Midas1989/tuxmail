@@ -337,6 +337,8 @@ diese Dateien deshalb vorher an.
 
 **Health-Check:** Nach jedem (Neu-)Start fragt Ansible `GET /healthz` direkt am Listener ab
 (bis zu 30 × 2 s). Schlägt das fehl, bricht der Lauf ab (siehe Fehlerbehebung).
+Geprüft wird nur der Status 200; `/healthz` nennt die Version anonymen Clients nur mit
+`tuxmail_security_expose_version: true` (sonst `{"status":"ok","product":"tuxmail"}`).
 
 **Erster Administrator:** Beim ersten Lauf wird `tuxmail user add … --admin --password-stdin
 --if-not-exists` ausgeführt. Das Passwort kommt aus `tuxmail_admin_password` (Vault) oder wird

@@ -3,8 +3,9 @@
 //
 // Talking to a TuxMail server before a session exists (KONZEPT 15.8):
 // server validation and the two login variants of internal/server/api_device.go
-//   GET  /healthz                -> {status:"ok", version}
-//   GET  /api/auth/config        -> {version, registration, oidcEnabled, ...}
+//   GET  /healthz                -> {status:"ok", product:"tuxmail", version?}
+//   GET  /api/auth/config        -> {product:"tuxmail", version?, registration, oidcEnabled, ...}
+//   (the version is only sent when the operator set security.expose_version)
 //   POST /api/device/authorize   {client_name} -> RFC 8628 grant (snake_case)
 //   POST /api/device/token       {device_code} -> token | 400 {error: authorization_pending|slow_down|...}
 //   POST /api/device/login       {username, password, totp_code, device_name} -> token | 401 {error: mfa_required}
@@ -16,6 +17,7 @@ export type Fetch = typeof fetch;
 
 export interface ServerInfo {
   serverUrl: string;
+  /** Empty when the server does not disclose its version to anonymous clients. */
   version: string;
   oidcEnabled: boolean;
   registration?: string;
@@ -111,10 +113,13 @@ export async function validateServer(input: string, f: Fetch = fetch, signal?: A
   if (!health.body || typeof health.body.status !== 'string') throw new ServerError('not_tuxmail', 'no TuxMail health endpoint', health.status);
   if (health.body.status !== 'ok') throw new ServerError('unhealthy', String(health.body.error ?? 'unhealthy'), health.status);
   const cfg = await getJson(f, serverUrl + '/api/auth/config', signal);
-  if (cfg.status !== 200 || !cfg.body || typeof cfg.body.version !== 'string') throw new ServerError('not_tuxmail', 'no TuxMail auth config', cfg.status);
+  // Servers recognise themselves by "product" (older ones by a version string).
+  if (cfg.status !== 200 || !cfg.body || !(cfg.body.product === 'tuxmail' || typeof cfg.body.version === 'string')) {
+    throw new ServerError('not_tuxmail', 'no TuxMail auth config', cfg.status);
+  }
   return {
     serverUrl,
-    version: cfg.body.version,
+    version: typeof cfg.body.version === 'string' ? cfg.body.version : '',
     oidcEnabled: cfg.body.oidcEnabled === true,
     registration: typeof cfg.body.registration === 'string' ? cfg.body.registration : undefined,
     maxUploadMB: typeof cfg.body.maxUploadMB === 'number' ? cfg.body.maxUploadMB : undefined,

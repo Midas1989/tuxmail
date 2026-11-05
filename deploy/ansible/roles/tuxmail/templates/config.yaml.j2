@@ -67,6 +67,8 @@ security:
 {% else %}
     []
 {% endfor %}
+  # Exakte Version in /healthz und /api/auth/config für anonyme Clients (Standard: aus).
+  expose_version: {{ tuxmail_security_expose_version | bool | to_json }}
 {% if tuxmail_fcm_enabled | bool %}
 
 # Native Push für die Android-App (Play-Store-Variante) über Firebase Cloud Messaging.

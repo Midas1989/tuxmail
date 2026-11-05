@@ -151,7 +151,8 @@ func (b *browser) login(user string) {
 func TestHealthAndHeaders(t *testing.T) {
 	e := newEnv(t, Options{Version: "1.2.3"})
 	resp, m := e.browser().do("GET", "/healthz", nil)
-	if resp.StatusCode != 200 || m["status"] != "ok" || m["version"] != "1.2.3" {
+	// The version is not disclosed to anonymous clients by default (NA-07).
+	if resp.StatusCode != 200 || m["status"] != "ok" || m["product"] != "tuxmail" || m["version"] != nil {
 		t.Fatal(resp.Status, m)
 	}
 	for _, h := range []string{"X-Content-Type-Options", "X-Frame-Options", "Content-Security-Policy", "Referrer-Policy"} {

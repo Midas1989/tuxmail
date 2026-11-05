@@ -44,3 +44,5 @@ limits:
 security:
   allow_private_networks: false
   allowed_networks: []
+  # true = /healthz and /api/auth/config report the exact version to anonymous clients.
+  expose_version: false

@@ -338,10 +338,19 @@ func (s *Server) routes() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if err := s.auth.DB().PingContext(r.Context()); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "error", "error": "database unavailable"})
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "error", "product": productMarker, "error": "database unavailable"})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok", "version": s.version})
+	// "product" lets clients recognise a TuxMail server; the exact version is
+	// only disclosed on request (security.expose_version, NA-07).
+	out := map[string]string{"status": "ok", "product": productMarker}
+	if s.cfg.Security.ExposeVersion {
+		out["version"] = s.version
+	}
+	writeJSON(w, http.StatusOK, out)
 }
+
+// productMarker identifies the server to clients without revealing the version.
+const productMarker = "tuxmail"
 
 func isAPI(p string) bool { return strings.HasPrefix(p, "/api/") }

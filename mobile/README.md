@@ -30,7 +30,8 @@ Systemleisten, App-Sperre und die App-Einstellungen unter `#/native-settings`.
 ## Funktionen
 
 - **Erster Start „Server verbinden“**: Adresse wird über `GET /healthz` und
-  `GET /api/auth/config` geprüft. Anmeldung per **Gerätebestätigung** (RFC 8628:
+  `GET /api/auth/config` geprüft (Erkennung am Feld `product: "tuxmail"`; die
+  Versionsangabe liefert der Server nur mit `security.expose_version`). Anmeldung per **Gerätebestätigung** (RFC 8628:
   Custom Tab mit `verification_uri_complete`, Abfrage von `/api/device/token`)
   oder direkt mit Benutzername, Passwort und TOTP (`/api/device/login`).
 - **Geräte-Token** im Android-Keystore (AES-256-GCM, eigener kleiner Kotlin-Code
