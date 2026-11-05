@@ -3,7 +3,8 @@ import type { Api, TransportKind } from './api';
 import { HttpTransport } from './http';
 import { MockTransport } from './mock';
 import { WailsTransport, type WailsWindow } from './wails';
-import { hasNativeSession, nativeHttpOptions } from '../native/session';
+import { hasNativeSession } from '../native/session';
+import { platformHttpOptions } from '../session';
 import { isNativeShell } from '../platform';
 
 export interface TransportEnv {
@@ -45,7 +46,7 @@ export function createApi(kind: TransportKind, win?: WailsWindow): Api {
     case 'wails':
       return new WailsTransport(win);
     case 'http':
-      return new HttpTransport(isNativeShell() ? nativeHttpOptions() : {});
+      return new HttpTransport(platformHttpOptions());
     case 'mock':
       return new MockTransport();
   }

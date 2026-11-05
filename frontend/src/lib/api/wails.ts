@@ -269,6 +269,9 @@ export class WailsTransport implements Api {
   importProvisioning(input: ProvisioningImport): Promise<void> {
     return this.call('ImportProvisioning', input);
   }
+  logout(): Promise<void> {
+    return Promise.resolve(); // the desktop shell talks to its own core: there is no server session to end
+  }
   vaultStatus(): Promise<VaultStatus> {
     return this.call('VaultStatus');
   }

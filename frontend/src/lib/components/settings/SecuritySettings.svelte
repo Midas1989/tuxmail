@@ -9,7 +9,10 @@
   import LockOpen from '@lucide/svelte/icons/lock-open';
   import Smartphone from '@lucide/svelte/icons/smartphone';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
+  import LogOut from '@lucide/svelte/icons/log-out';
   import { app } from '../../state';
+  import { isNativeShell } from '../../platform';
+  import { signOutWeb } from '../../session';
   import { t, type MessageKey } from '../../i18n/index.svelte';
   import type { SettingsCategoryId } from '../../settings/catalog';
 
@@ -23,6 +26,18 @@
     { label: 'settings.pages.privacy.notifications', category: 'notifications', section: 'notifications' },
     { label: 'settings.pages.privacy.ai', category: 'ai', section: 'assistant' },
   ];
+
+  // Web client served by `tuxmail serve` (cookie session): the only place to end the session from the SPA (NG-07).
+  // The native app has its own sign-out (#/native-settings); the desktop shell has no server session.
+  const canSignOut = app.api.kind === 'http' && !isNativeShell();
+
+  async function signOut() {
+    try {
+      await signOutWeb({ api: app.api });
+    } catch (err) {
+      app.toast(t('settings.pages.session.failed', { error: err instanceof Error ? err.message : String(err) }), undefined, 'error');
+    }
+  }
 
   function openNative() {
     location.hash = '#/native-settings';
@@ -61,6 +76,13 @@
       {/each}
     </ul>
   </section>
+  {#if canSignOut}
+    <section class="card" id="set-session" aria-labelledby="set-session-h">
+      <h2 id="set-session-h">{t('settings.pages.session.title')}</h2>
+      <p class="intro">{t('settings.pages.session.intro')}</p>
+      <button class="btn" onclick={() => void signOut()}><LogOut size={14} /> {t('settings.pages.session.signOut')}</button>
+    </section>
+  {/if}
 {/if}
 
 <style>

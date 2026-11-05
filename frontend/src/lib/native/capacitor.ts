@@ -18,7 +18,7 @@ import { app, prefs, team } from '../state';
 import { t } from '../i18n/index.svelte';
 import { App, Browser, Preferences, SplashScreen, SystemBars, SystemBarsStyle, TuxMail, type PushRegistration, type SharePayload } from './plugins';
 import { ProfileStore, type KeyValueStore, type ServerProfile } from './profiles';
-import { readActiveMirror, setSessionToken, setUnauthorizedHandler, writeActiveMirror } from './session';
+import { ACTIVE_MIRROR_KEY, readActiveMirror, setSessionToken, setUnauthorizedHandler, writeActiveMirror } from './session';
 import { decideBack, dispatchBackEvent, parseConnectLink, parseDeepLink, type BackAction, type DeepLinkTarget } from './navigation';
 import { dispatchShare, dropFiles, shareRecipients, shareSubject, shareTextToHtml, sharedFilesToFiles, waitForElement } from './share';
 import { fetchVapidKey, registrationKey, subscribeAtServer, type PushSession } from './push';
@@ -26,6 +26,7 @@ import { loadLockSettings, saveLockSettings, shouldLock, type LockSettings } fro
 import type { NativeController, PushStatus } from './status';
 import { startNativeEffects } from './effects.svelte';
 import { createDeferredSet, createLockGate } from './lockgate';
+import { clearTuxmailStorage } from '../session';
 import { cancelConnect, confirmConnect, requestConnect, type ConnectPromptState } from './connectprompt';
 import ServerConnect from './ServerConnect.svelte';
 import ConnectLinkDialog from './ConnectLinkDialog.svelte';
@@ -246,7 +247,11 @@ function connectProps(list: ServerProfile[], prefill: string, expired: boolean, 
     openUrl: (url: string) => Browser.open({ url, toolbarColor: '#1c2b45' }),
     closeBrowser: () => Browser.close(),
     // upsert() has activated the new profile after a successful login: now (and only now) switch.
-    ondone: () => location.reload(),
+    ondone: (profile: ServerProfile) => {
+      // Switching to another server/account: the previous user's local conveniences go (the mirror of the new profile stays).
+      if (active && profile.id !== active.id) clearTuxmailStorage(undefined, [ACTIVE_MIRROR_KEY]);
+      location.reload();
+    },
   };
 }
 
@@ -274,6 +279,7 @@ function onUnauthorized(): void {
     await profiles.markNeedsLogin(id).catch(() => {});
     await TuxMail.clearActiveSession().catch(() => {});
     writeActiveMirror(null);
+    clearTuxmailStorage(); // per-user conveniences must not outlive the session (NG-07)
     location.reload();
   })();
 }
@@ -507,7 +513,7 @@ async function autoRegisterPush(): Promise<void> {
 // #/native-settings overlay
 // ---------------------------------------------------------------------------
 
-function controller(): NativeController {
+export function controller(): NativeController {
   return {
     serverLabel: active?.label ?? '',
     userLabel: active?.displayName || active?.username || '',
@@ -529,12 +535,14 @@ function controller(): NativeController {
       await fetch(`${active.serverUrl}/api/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${activeToken}` }, credentials: 'omit' }).catch(() => {});
       await profiles.remove(active.id);
       await TuxMail.clearActiveSession().catch(() => {});
+      clearTuxmailStorage(); // NG-07
       location.replace(location.pathname + '#/mail');
       location.reload();
     },
     switchServer: async () => {
       await profiles.deactivate();
       await TuxMail.clearActiveSession().catch(() => {});
+      clearTuxmailStorage(); // NG-07
       location.replace(location.pathname + '#/mail');
       location.reload();
     },

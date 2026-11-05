@@ -385,7 +385,6 @@ export class HttpTransport implements Api {
       throw new ApiError(err instanceof Error ? err.message : 'network error', 0, 'network');
     }
     if (!res.ok) {
-      if (res.status === 401 && bearer) this.onUnauthorized?.();
       let msg = res.statusText;
       let code = 'http_' + res.status;
       try {
@@ -402,6 +401,9 @@ export class HttpTransport implements Api {
       } catch {
         /* body not JSON */
       }
+      // Session gone: a rejected device token (any 401), or the server's "unauthenticated" on a cookie session.
+      // Other 401s (invalid_credentials of a password prompt, ...) do not end the session.
+      if (res.status === 401 && (bearer || code === 'unauthenticated')) this.onUnauthorized?.();
       throw new ApiError(msg, res.status, code);
     }
     if (res.status === 204) return undefined as T;
@@ -637,6 +639,9 @@ export class HttpTransport implements Api {
     });
     if (status === 200 && typeof data.access_token === 'string') return this.profileResult(serverUrl, data.access_token);
     return { status: 'denied', error: String(data.error_description || data.message || data.error || status) };
+  }
+  logout(): Promise<void> {
+    return this.request('POST', '/api/auth/logout');
   }
   vaultStatus(): Promise<VaultStatus> {
     return this.request('GET', '/api/vault/status');

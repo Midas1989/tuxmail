@@ -1387,6 +1387,10 @@ export class MockTransport implements Api {
     };
   }
 
+  logout(): Promise<void> {
+    return this.reply(undefined);
+  }
+
   vaultStatus(): Promise<VaultStatus> {
     return this.reply({ kind: 'keyring', portable: false, locked: false, initialized: true });
   }

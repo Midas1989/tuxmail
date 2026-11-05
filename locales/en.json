@@ -1576,6 +1576,12 @@
         "notifications": "Content shown in notifications",
         "ai": "What the AI assistant may see",
         "open": "Open"
+      },
+      "session": {
+        "title": "Session",
+        "intro": "Ends your session on the server and removes the data this app keeps in this browser (preferences, recent choices). Use this on shared computers.",
+        "signOut": "Sign out",
+        "failed": "Sign-out failed: {error}. Your session may still be active on the server; local data was removed."
       }
     }
   },

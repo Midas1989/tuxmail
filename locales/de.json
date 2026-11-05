@@ -1575,6 +1575,12 @@
         "notifications": "Inhalte in Benachrichtigungen",
         "ai": "Was der KI-Assistent sehen darf",
         "open": "Öffnen"
+      },
+      "session": {
+        "title": "Sitzung",
+        "intro": "Beendet Ihre Sitzung auf dem Server und entfernt die Daten, die diese App in diesem Browser speichert (Einstellungen, zuletzt gewählte Optionen). Nutzen Sie dies an gemeinsam genutzten Rechnern.",
+        "signOut": "Abmelden",
+        "failed": "Abmelden fehlgeschlagen: {error}. Ihre Sitzung ist auf dem Server möglicherweise noch aktiv; lokale Daten wurden entfernt."
       }
     }
   },

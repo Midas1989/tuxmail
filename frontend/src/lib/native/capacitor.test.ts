@@ -191,6 +191,52 @@ describe('deep links behind the app lock (NG-03)', () => {
   });
 });
 
+describe('native sign-out, server switch and 401 clear tuxmail.* storage (NG-07)', () => {
+  const kv = (m: Map<string, string>) => ({ get: async (k: string) => m.get(k) ?? null, set: async (k: string, v: string) => void m.set(k, v), remove: async (k: string) => void m.delete(k) });
+  beforeEach(() => {
+    prefs.clear();
+    secure.clear();
+    mounted.length = 0;
+    localStorage.clear();
+    vi.clearAllMocks();
+    for (const k of Object.keys(listeners)) delete listeners[k];
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(null, { status: 204 })));
+  });
+  async function signedIn() {
+    const { ProfileStore } = await import('./profiles');
+    await new ProfileStore(kv(prefs), kv(secure)).upsert({ serverUrl: 'https://mail.example.org', username: 'anna' }, 'device-token');
+    const cap = await import('./capacitor');
+    await cap.bootNative(document.createElement('div'), vi.fn());
+    localStorage.setItem('tuxmail.pwdelivery.v1', '{"anna@example.org":"link"}');
+    localStorage.setItem('tuxmail.prefs.v2', '{}');
+    return cap;
+  }
+
+  it('signOut removes the local data', async () => {
+    const cap = await signedIn();
+    await cap.controller().signOut();
+    expect(localStorage.getItem('tuxmail.pwdelivery.v1')).toBeNull();
+    expect(localStorage.getItem('tuxmail.prefs.v2')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it('switchServer removes the local data', async () => {
+    const cap = await signedIn();
+    await cap.controller().switchServer();
+    expect(Object.keys(localStorage).filter((k) => k.startsWith('tuxmail.'))).toEqual([]);
+    vi.unstubAllGlobals();
+  });
+
+  it('a rejected token (401) removes the local data', async () => {
+    await signedIn();
+    const { nativeHttpOptions } = await import('./session');
+    nativeHttpOptions().onUnauthorized?.();
+    await vi.waitFor(() => expect(localStorage.getItem('tuxmail.pwdelivery.v1')).toBeNull());
+    expect(localStorage.getItem('tuxmail.prefs.v2')).toBeNull();
+    vi.unstubAllGlobals();
+  });
+});
+
 describe('team deep link (NG-10)', () => {
   it('does not enter a team mailbox the user is not a member of, nor select its conversation', async () => {
     const { openTarget } = await import('./capacitor');
