@@ -6,6 +6,7 @@ package host
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"golang.org/x/sys/windows"
@@ -23,8 +24,12 @@ import (
 // %LOCALAPPDATA%\Programs or the protected all-users folder) pass. A
 // portable copy in a folder that every user can write to (a shared drive,
 // C:\Tools with default ACLs) or on a file system without ACLs (FAT/exFAT
-// USB sticks) does not load plugins: move it to a private folder.
+// USB sticks) does not load plugins: move it to a private folder, or accept the
+// risk of a shared medium explicitly with TUXMAIL_ALLOW_UNSAFE_PLUGIN_DIR=1.
 func checkTrusted(path string) error {
+	if os.Getenv("TUXMAIL_ALLOW_UNSAFE_PLUGIN_DIR") == "1" {
+		return nil
+	}
 	self := ""
 	if u, err := windows.GetCurrentProcessToken().GetTokenUser(); err == nil {
 		self = u.User.Sid.String()
