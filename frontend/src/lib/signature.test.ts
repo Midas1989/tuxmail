@@ -5,6 +5,9 @@ import {
   MAX_SIGNATURE_IMAGE,
   SignatureImageError,
   applyLink,
+  cleanComposerHtml,
+  composerSignatureHtml,
+  planPaste,
   cleanSignatureHtml,
   htmlToPlain,
   insertImage,
@@ -136,5 +139,78 @@ describe('htmlToPlain', () => {
 
   it('uses alt text for images and ignores scripts', () => {
     expect(htmlToPlain(`<img src="${png}" alt="ACME Logo"><br>Anna<script>x</script>`)).toBe('ACME Logo\nAnna');
+  });
+});
+
+describe('cleanComposerHtml: clipboard HTML in the composer (NG-05)', () => {
+  const hostile = [
+    '<img src="https://tracker.example/pixel.gif?u=1" width="1" height="1">',
+    '<img src=x onerror="alert(1)">',
+    '<img src="javascript:alert(1)">',
+    '<img src="data:image/svg+xml,<svg onload=alert(1)>">',
+    '<script>alert(1)</script>',
+    '<iframe src="https://evil.example"></iframe>',
+    '<svg onload="alert(1)"><circle/></svg>',
+    '<link rel="stylesheet" href="https://evil.example/x.css">',
+    '<style>@import url(https://evil.example/x.css)</style>',
+    '<form action="https://evil.example"><input name=pw></form>',
+    '<object data="https://evil.example"></object>',
+    '<p style="background:url(https://evil.example/t.gif)" onclick="alert(1)">x</p>',
+    '<a href="javascript:alert(1)" onmouseover="alert(1)">y</a>',
+    '<div style="position:fixed;top:0;left:0;width:100%;height:100%">overlay</div>',
+    '<div class="fixed inset-0 z-50 modal-backdrop">overlay</div>',
+  ].join('');
+
+  it('removes remote images, handlers, active content and resource-loading styles', () => {
+    const { html, remote } = cleanComposerHtml(hostile);
+    expect(remote).toBe(1);
+    for (const bad of ['<img', 'tracker.example', 'onerror', 'onclick', 'onmouseover', 'javascript:', '<script', '<iframe', '<svg', '<link', '<style', '<form', '<input', '<object', 'url(', 'position', 'class=', 'evil.example']) {
+      expect(html, bad).not.toContain(bad);
+    }
+    expect(html).toContain('overlay'); // text content survives, only the dangerous markup goes
+  });
+
+  it('keeps basic formatting, links, lists, tables and small inline images', () => {
+    const src = `<p><b>fett</b> <i>kursiv</i> <u>unter</u> <a href="https://acme.example">Link</a></p><ul><li>eins</li></ul><blockquote>zitat</blockquote><table><tbody><tr><td style="color: #336699">x</td></tr></tbody></table><img src="${png}" alt="logo">`;
+    expect(cleanComposerHtml(src).html).toBe(src);
+  });
+
+  it('drops content hidden by CSS (invisible text that would still be mailed)', () => {
+    const { html } = cleanComposerHtml('<p style="display:none;color:red">secret</p><span style="font-size:0">h</span><span style="opacity:0">o</span><span style="font-size:0.9em">ok</span>');
+    expect(html).not.toMatch(/display|font-size:\s*0[^.]|opacity/);
+    expect(html).toContain('font-size:0.9em');
+  });
+});
+
+describe('planPaste', () => {
+  const data = (m: Record<string, string>) => (t: string) => m[t] ?? '';
+
+  it('inserts cleaned HTML, never the raw clipboard HTML', () => {
+    const plan = planPaste(data({ 'text/html': '<b onclick="x()">hi</b><img src="https://t.example/p.gif">', 'text/plain': 'hi' }));
+    expect(plan).toEqual({ kind: 'html', html: '<b>hi</b>' });
+  });
+
+  it('falls back to plain text when nothing but markup is left', () => {
+    expect(planPaste(data({ 'text/html': '<img src="https://t.example/p.gif">', 'text/plain': 'caption' }))).toEqual({ kind: 'text', text: 'caption' });
+    expect(planPaste(data({ 'text/html': '<script>alert(1)</script>' }))).toBeNull();
+  });
+
+  it('uses plain text when there is no HTML', () => {
+    expect(planPaste(data({ 'text/plain': 'a <b>b</b>' }))).toEqual({ kind: 'text', text: 'a <b>b</b>' });
+    expect(planPaste(data({}))).toBeNull();
+  });
+});
+
+describe('composerSignatureHtml: server signature in the live composer (NG-06)', () => {
+  it('re-cleans server-delivered signature HTML', () => {
+    const html = composerSignatureHtml('<p>Anna</p><img src=x onerror="alert(1)"><script>alert(1)</script><a href="javascript:alert(1)">x</a><div class="fixed inset-0" onclick="y()">o</div>');
+    expect(html.startsWith('-- <br>')).toBe(true);
+    for (const bad of ['onerror', '<script', 'javascript:', 'onclick', 'class=', '<img']) expect(html, bad).not.toContain(bad);
+    expect(html).toContain('<p>Anna</p>');
+  });
+
+  it('keeps a normal signature (links, formatting, inline logo)', () => {
+    const sig = `<p><b>Anna Berger</b><br><a href="https://acme.example">ACME</a></p><img src="${png}" alt="logo">`;
+    expect(composerSignatureHtml(sig)).toBe(`-- <br>${sig}`);
   });
 });

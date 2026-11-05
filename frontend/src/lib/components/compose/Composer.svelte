@@ -58,7 +58,7 @@
   import type { ComposerInit } from '../../state';
   import { messengerChannel, type Address, type OutgoingAttachment, type PasswordDelivery, type PasswordDeliveryMode, type SendFinding } from '../../types';
   import { formatSize, t } from '../../i18n/index.svelte';
-  import { htmlToPlain, normalizeLink } from '../../signature';
+  import { composerSignatureHtml, htmlToPlain, normalizeLink, planPaste, type PastePlan } from '../../signature';
   import Modal from '../common/Modal.svelte';
   import RecipientInput, { isValidEmail } from './RecipientInput.svelte';
   import SendChecks from './SendChecks.svelte';
@@ -104,7 +104,8 @@
 
   function signatureHtml(idId: number): string {
     const sig = app.signatureFor(idId, isReply);
-    return sig ? `-- <br>${sig.html}` : '';
+    // Server HTML goes through the client-side allow-list before it enters the live app DOM (NG-06).
+    return sig ? composerSignatureHtml(sig.html) : '';
   }
 
   /** The signature block as inserted (to detect edits in the mail). */
@@ -186,6 +187,49 @@
         file: f,
       });
     }
+  }
+
+  // Clipboard / dropped content never enters the editor (and the outgoing mail) as raw HTML (NG-05).
+  function insertPlan(plan: PastePlan) {
+    if (!plan) return;
+    editor?.focus();
+    if (plan.kind === 'html') document.execCommand('insertHTML', false, plan.html);
+    else document.execCommand('insertText', false, plan.text);
+  }
+
+  function onpaste(e: ClipboardEvent) {
+    const dt = e.clipboardData;
+    if (!dt) return;
+    const images = [...dt.files].filter((f) => f.type.startsWith('image/'));
+    if ([...dt.types].includes('text/html')) {
+      e.preventDefault();
+      const plan = planPaste((type) => dt.getData(type));
+      if (plan) insertPlan(plan);
+      else if (images.length) addFiles(images); // image-only HTML (e.g. "copy image"): attach the file instead of hot-linking
+      return;
+    }
+    if (images.length) {
+      e.preventDefault();
+      addFiles(images);
+    }
+    // plain text only: the browser's native paste inserts text, nothing else
+  }
+
+  function onEditorDrop(e: DragEvent) {
+    const dt = e.dataTransfer;
+    if (!dt || dt.files.length) return; // files: attachment handler of the composer
+    const types = [...dt.types];
+    if (!types.includes('text/html') && !types.includes('text/plain')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragOver = false;
+    const range = document.caretRangeFromPoint?.(e.clientX, e.clientY);
+    if (range && editor?.contains(range.commonAncestorContainer)) {
+      const sel = getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+    }
+    insertPlan(planPaste((type) => dt.getData(type)));
   }
 
   /** Delivery suggested for large files: the first configured link provider. */
@@ -402,6 +446,8 @@
       class="editor"
       bind:this={editor}
       contenteditable="true"
+      {onpaste}
+      ondrop={onEditorDrop}
       role="textbox"
       tabindex="0"
       aria-multiline="true"
