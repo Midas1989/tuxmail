@@ -20,8 +20,17 @@
 # (TUXMAIL_SIGNAL_CLI=bundle); branch builds package without it when the pins
 # are incomplete (the app then offers the on-demand install).
 #
+# Docker :edge is published from main only (never from claude/** branches);
+# branch builds other than main build the image without pushing it.
+# The publish job cross-checks every file against the SHA-256 list its build job
+# wrote (build/partsums.sh) before checksums.txt is written and signed, and a
+# tag build fails when the SBOM cannot be created.
+#
 # Optional secrets (steps are skipped when missing):
 #   GPG_PRIVATE_KEY, GPG_PASSPHRASE        signed .deb/.rpm + checksums.txt.asc
+#                                          (without them the release has no signature;
+#                                          Ansible then refuses it unless the operator
+#                                          sets tuxmail_allow_unsigned_release)
 #   SIGNPATH_API_TOKEN (+ variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
 #   SIGNPATH_SIGNING_POLICY_SLUG)          Authenticode signing of the Windows files
 # The Android APKs are built and attached by android.yml.
@@ -53,8 +62,9 @@ env:
   # repository variables under Settings -> Secrets and variables -> Variables).
   TUXMAIL_BUILD_MS_CLIENT_ID: ${{ vars.TUXMAIL_MS_CLIENT_ID }}
   TUXMAIL_BUILD_GOOGLE_CLIENT_ID: ${{ vars.TUXMAIL_GOOGLE_CLIENT_ID }}
-  # Google treats desktop-app client secrets as non-confidential; still kept as a secret.
-  TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
+  # The Google client secret (non-confidential for desktop apps, but kept as a
+  # secret) is only passed to the desktop build steps below; server archives and
+  # the Docker image never get it (re-audit ND-16, build/lib.sh).
   # signal-cli bundling (build/lib.sh stage_signal_cli): required for releases.
   TUXMAIL_SIGNAL_CLI: ${{ startsWith(github.ref, 'refs/tags/') && 'bundle' || 'auto' }}
 
@@ -125,6 +135,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - run: build/ci-retry.sh -- go mod download
       - name: Build and pack
         run: build/package-server.sh "${{ matrix.goos }}" "${{ matrix.goarch }}"
       - name: Smoke test
@@ -146,6 +157,15 @@ jobs:
             || go run ./build/signalcli smoke -dir "$RUNNER_TEMP/plugins/signal-cli"
       - name: Package sizes
         run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
+      # SHA-256 of what this job uploads, verified again by the publish job.
+      - name: Checksums of this job's files
+        run: mkdir -p partsums-out && build/partsums.sh write "partsums-out/partsums-server-${{ matrix.goos }}-${{ matrix.goarch }}.txt" dist/*
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: partsums-server-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: partsums-out/partsums-server-${{ matrix.goos }}-${{ matrix.goarch }}.txt
+          if-no-files-found: error
+          retention-days: 14
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: server-${{ matrix.goos }}-${{ matrix.goarch }}
@@ -177,15 +197,18 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - run: build/ci-retry.sh -- go mod download
       - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential pkg-config libwebkit2gtk-4.1-dev libgtk-3-dev \
             dpkg-dev file desktop-file-utils appstream librsvg2-common xvfb
-          go install "github.com/goreleaser/nfpm/v2/cmd/nfpm@${NFPM_VERSION}"
+          build/ci-retry.sh -- go install "github.com/goreleaser/nfpm/v2/cmd/nfpm@${NFPM_VERSION}"
 
       - name: Build desktop binary and stage files
+        env:
+          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
         run: build/linux/build.sh
 
       - name: Prepare package signing key
@@ -241,6 +264,18 @@ jobs:
       - name: Package sizes
         run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # SHA-256 of what this job uploads, verified again by the publish job.
+      - name: Checksums of this job's files
+        run: |
+          mkdir -p partsums-out && build/partsums.sh write "partsums-out/partsums-linux-desktop-${{ matrix.arch }}.txt" \
+            dist/*.deb dist/*.rpm dist/*.AppImage dist/*-portable.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: partsums-linux-desktop-${{ matrix.arch }}
+          path: partsums-out/partsums-linux-desktop-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 14
+
       # One download per package format (instead of one archive with all of them).
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -294,10 +329,13 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
+      - run: build/ci-retry.sh -- go mod download
       - name: Install go-winres
-        run: go install "github.com/tc-hib/go-winres@${GO_WINRES_VERSION}"
+        run: build/ci-retry.sh -- go install "github.com/tc-hib/go-winres@${GO_WINRES_VERSION}"
 
       - name: Build TuxMail.exe and the messenger plugins
+        env:
+          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
         run: build/windows/build.sh "${{ matrix.arch }}"
 
       - name: Smoke test
@@ -366,9 +404,36 @@ jobs:
       - name: Portable zip
         run: build/windows/package-portable.sh "${{ matrix.arch }}"
 
+      # Microsoft's WebView2 bootstrapper is bundled into the setup (offline
+      # installs) only after Windows itself verified its Authenticode signature
+      # (publisher Microsoft Corporation); package-setup.sh then pins its
+      # SHA-256 and the setup checks signature and pin again before it runs it
+      # (re-audit ND-04). A failed download only skips bundling (the setup
+      # downloads and verifies it when needed); an invalid signature fails the build.
+      - name: WebView2 bootstrapper (download, verify Authenticode)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'wv2'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $f = Join-Path $dir 'MicrosoftEdgeWebview2Setup.exe'
+          try {
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $f `
+              -MaximumRedirection 5 -MaximumRetryCount 3 -RetryIntervalSec 5
+          } catch {
+            Write-Warning "WebView2 bootstrapper download failed, not bundled: $_"
+            exit 0
+          }
+          $sig = Get-AuthenticodeSignature -FilePath $f
+          if ($sig.Status -ne 'Valid') { throw "WebView2 bootstrapper: signature status $($sig.Status)" }
+          $who = $sig.SignerCertificate.GetNameInfo('SimpleName', $false)
+          if ($who -ne 'Microsoft Corporation') { throw "WebView2 bootstrapper is signed by '$who'" }
+          $hash = (Get-FileHash -Algorithm SHA256 -Path $f).Hash.ToLower()
+          Write-Host "WebView2 bootstrapper: valid signature of $who, sha256 $hash"
+          "WEBVIEW2_BOOTSTRAPPER=$($f -replace '\\', '/')" >> $env:GITHUB_ENV
+          "WEBVIEW2_BOOTSTRAPPER_SHA256=$hash" >> $env:GITHUB_ENV
+
       - name: Setup program (TuxMail-<version>-windows-<arch>-setup.exe)
-        env:
-          WEBVIEW2_BOOTSTRAPPER: download
         run: build/windows/package-setup.sh "${{ matrix.arch }}"
 
       # Real Windows run of the setup: silent per-user install, update,
@@ -442,6 +507,18 @@ jobs:
       - name: Package sizes
         run: du -h dist/* | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # SHA-256 of what this job uploads, verified again by the publish job.
+      - name: Checksums of this job's files
+        run: |
+          mkdir -p partsums-out && build/partsums.sh write "partsums-out/partsums-windows-desktop-${{ matrix.arch }}.txt" \
+            dist/TuxMail-*-setup.exe dist/TuxMail-*-portable.zip
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: partsums-windows-desktop-${{ matrix.arch }}
+          path: partsums-out/partsums-windows-desktop-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 14
+
       # Setup and portable ZIP as separate downloads.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -477,6 +554,7 @@ jobs:
       - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        if: github.ref == 'refs/heads/main' || github.ref_type == 'tag'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -487,7 +565,7 @@ jobs:
           images: ${{ env.IMAGE }}
           flavor: latest=false
           tags: |
-            type=raw,value=edge,enable=${{ github.ref_type == 'branch' }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' }}
             type=semver,pattern={{version}}
             type=raw,value=latest,enable=${{ github.ref_type == 'tag' }}
           labels: |
@@ -503,7 +581,8 @@ jobs:
             FRONTEND=prebuilt
             VERSION=${{ needs.version.outputs.version }}
             SIGNAL_CLI=${{ env.TUXMAIL_SIGNAL_CLI }}
-          push: true
+          # Only main (:edge) and tags publish; other branches just build the image.
+          push: ${{ github.ref == 'refs/heads/main' || github.ref_type == 'tag' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -527,8 +606,19 @@ jobs:
           path: dist
           merge-multiple: true
 
+      # Cross-check against the lists of the build jobs before anything is signed.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: partsums-*
+          path: partsums
+          merge-multiple: true
+      - name: Verify the files against the checksums of the build jobs
+        run: build/partsums.sh verify dist partsums
+
+      # Mandatory for releases (tags); a branch build only warns, so that a
+      # transient download problem of the SBOM tool does not hide the packages.
       - name: SBOM (SPDX, Go modules and npm packages)
-        continue-on-error: true
+        continue-on-error: ${{ needs.version.outputs.release != 'true' }}
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
@@ -536,6 +626,10 @@ jobs:
           output-file: dist/tuxmail_${{ needs.version.outputs.version }}_sbom.spdx.json
           upload-artifact: false
           upload-release-assets: false
+
+      - name: The SBOM must exist on a release
+        if: needs.version.outputs.release == 'true'
+        run: test -s "dist/tuxmail_${TUXMAIL_VERSION}_sbom.spdx.json"
 
       - name: checksums.txt
         run: build/checksums.sh dist

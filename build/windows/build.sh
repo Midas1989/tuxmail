@@ -18,6 +18,8 @@ set -eu
 # shellcheck source=../lib.sh
 . "$(dirname "$0")/../lib.sh"
 
+# Desktop builds are the only ones that link the Google OAuth client secret (build/lib.sh).
+TUXMAIL_LINK_CLIENT_SECRET=1
 goarch=${1:-amd64}
 case "$goarch" in amd64 | arm64) ;; *) die "unsupported architecture $goarch" ;; esac
 command -v go-winres > /dev/null 2>&1 || die "go-winres not found (go install github.com/tc-hib/go-winres@v0.3.3)"

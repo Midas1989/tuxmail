@@ -43,3 +43,22 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+
+  # Base images of the server image (tag and digest, build/docker/Dockerfile).
+  - package-ecosystem: docker
+    directory: /build/docker
+    schedule:
+      interval: weekly
+    groups:
+      docker-base-images:
+        patterns: ["*"]
+
+  # Android Gradle plugin, Kotlin, AndroidX, Firebase BOM, UnifiedPush ...
+  # (mobile/android; the Gradle wrapper is validated in android.yml).
+  - package-ecosystem: gradle
+    directory: /mobile/android
+    schedule:
+      interval: weekly
+    groups:
+      android-minor-patch:
+        update-types: [minor, patch]

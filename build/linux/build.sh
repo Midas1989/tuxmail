@@ -20,6 +20,8 @@ set -eu
 # shellcheck source=../lib.sh
 . "$(dirname "$0")/../lib.sh"
 
+# Desktop builds are the only ones that link the Google OAuth client secret (build/lib.sh).
+TUXMAIL_LINK_CLIENT_SECRET=1
 arch=$(go env GOARCH)
 out=$ROOT/build/out/linux-$arch
 stage=$out/root

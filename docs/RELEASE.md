@@ -85,7 +85,8 @@ Artefakt `frontend-dist`, von allen Jobs nach `web/dist` geladen) → parallel *
 
 **Ohne Tag** (Push auf `main` oder `claude/**`, manueller Start) läuft derselbe Ablauf ohne Release: alle Dateien
 liegen als Workflow-Artefakte am Lauf (`server-*`, `linux-desktop-<arch>-{deb,rpm,appimage,portable}`, `windows-desktop-<arch>-{setup,portable}`, `checksums`, 14 Tage),
-das Docker-Image wird als `:edge` veröffentlicht.
+das Docker-Image wird nur bei Pushes auf `main` als `:edge` veröffentlicht (Branches `claude/**` bauen das Image
+ohne Push; Tags veröffentlichen `:<version>` und `:latest`).
 
 ### Desktop- und Server-Binary
 
@@ -112,7 +113,12 @@ das Docker-Image wird als `:edge` veröffentlicht.
   dass sie diese relativ zu `$APPDIR/usr` startet (`build/linux/AppRun`). Gebaut auf Ubuntu 24.04 → benötigt
   glibc ≥ 2.39 auf dem Zielsystem (Ubuntu 24.04+, Debian 13+, Fedora 40+). Portabler Modus: Datei `portable`
   oder Ordner `data/` neben der `.AppImage`-Datei bzw. `--portable` → Daten in `data/` neben der AppImage.
-  Die Werkzeuge stammen aus den „continuous“-Builds von linuxdeploy/appimagetool (SHA-256 steht im Build-Log).
+  Die Werkzeuge sind versionierte Releases mit festem SHA-256 in `build/linux/package-appimage.sh` (linuxdeploy
+  `1-alpha-20250213-2`, appimagetool `1.9.0`, linuxdeploy-plugin-gtk als Commit); ein Download ohne Pin wird
+  abgelehnt. Anderes Werkzeug: `LINUXDEPLOY_VERSION`/`APPIMAGETOOL_VERSION`/`LINUXDEPLOY_PLUGIN_GTK_REF` **und** die
+  passende `*_SHA256` setzen. Pins bewusst anheben: neues Release laden, Hash mit der Upstream-Quelle vergleichen,
+  Version und Hash gemeinsam ändern. (Dieser Umstieg von „continuous“ auf feste Versionen ist beim Schreiben nicht
+  gebaut worden: der erste Lauf von `linux-desktop` muss grün sein.)
 - App-ID `org.tuxmail.TuxMail` (Desktop-Datei, Icon, AppStream `…metainfo.xml`), Dateien in `build/linux/`.
 
 ### Windows-Details
@@ -142,6 +148,13 @@ das Docker-Image wird als `:edge` veröffentlicht.
     über `*.tuxmail-new` + Umbenennen; nicht mehr enthaltene Dateien (z. B. ein entferntes Plugin) werden gelöscht.
   - **WebView2:** fehlt die Runtime, installiert das Setup den Evergreen-Bootstrapper (mitgeliefert mit
     `WEBVIEW2_BOOTSTRAPPER=download|<Datei>`, sonst Download), sonst Hinweis mit Link auf die Download-Seite.
+    Der Bootstrapper wird vor dem Start (oft mit Administratorrechten) mit `WinVerifyTrust` geprüft: gültige
+    Authenticode-Signatur, Signierer „Microsoft Corporation“; eine mitgelieferte Datei muss zusätzlich ihrem im
+    Setup abgelegten SHA-256 entsprechen, der Download folgt nur https-Weiterleitungen auf Microsoft-Hosts.
+    Beim Bauen wird nur eine geprüfte Datei eingebettet (`verify_wv2` in `build/windows/package-setup.sh`:
+    `WEBVIEW2_BOOTSTRAPPER_SHA256`, oder `osslsigncode` + `WEBVIEW2_CA_FILE`, oder ausdrücklich
+    `WEBVIEW2_ALLOW_UNVERIFIED=1`); `release.yml` lädt die Datei auf dem Windows-Runner, prüft sie mit
+    `Get-AuthenticodeSignature` und übergibt Datei und SHA-256.
   - **Still (Administratoren):** `TuxMail-…-setup.exe /S [--scope=user|machine|portable] [--dir=C:\Pfad | /D=C:\Pfad]
     [--desktop-shortcut] [--no-start-menu] [--default-mail] [--autostart] [--options=startmenu,desktop,mail,autostart]
     [--no-close-apps] [--log=Datei]`; `/ALLUSERS` und `/CURRENTUSER` wie beim früheren NSIS-Installer. Deinstallation:
@@ -188,7 +201,7 @@ Alle Signaturschritte sind vorbereitet und werden übersprungen, solange die Sec
 |---|---|---|
 | **Windows Authenticode** über [SignPath](https://signpath.org) (für Open-Source-Projekte kostenlos über die SignPath Foundation) | Secret `SIGNPATH_API_TOKEN`; Variablen `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG`; im SignPath-Projekt eine Artifact-Configuration `exe`, die alle PE-Dateien (`**/*.exe`) im ZIP signiert | `TuxMail.exe` und `plugins\*.exe` (vor dem Packen von ZIP und Setup, das die signierten Dateien einbettet) sowie `…-setup.exe` werden signiert → keine SmartScreen-Warnung „Unbekannter Herausgeber“. Ohne Signatur erklären die README-Dateien, wie man die Warnung übergeht. |
 | **Android** (bereits in `android.yml`) | `KEYSTORE_BASE64`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`, optional `GOOGLE_SERVICES_JSON` | signierte APK/AAB im Release |
-| **GPG** für Linux-Pakete (optional) | `GPG_PRIVATE_KEY` (ASCII-armored, `gpg --armor --export-secret-keys KEYID`), `GPG_PASSPHRASE` | eingebettete Signaturen in `.deb` (`_gpgorigin`) und `.rpm`, dazu `checksums.txt.asc` und `tuxmail-release-key.asc` im Release |
+| **GPG** für Linux-Pakete (optional, aber **Voraussetzung für das Ansible-Deployment**) | `GPG_PRIVATE_KEY` (ASCII-armored, `gpg --armor --export-secret-keys KEYID`), `GPG_PASSPHRASE` | eingebettete Signaturen in `.deb` (`_gpgorigin`) und `.rpm`, dazu `checksums.txt.asc` und `tuxmail-release-key.asc` im Release. Die Ansible-Rolle `tuxmail` prüft `checksums.txt.asc` gegen den Fingerabdruck `tuxmail_release_gpg_fingerprint` und bricht ohne Signatur ab (außer `tuxmail_allow_unsigned_release: true`, siehe `deploy/README.md`). Den Fingerabdruck nach dem Anlegen des Schlüssels notieren: `gpg --show-keys --with-colons tuxmail-release-key.asc`. |
 | Docker | – (`GITHUB_TOKEN` mit `packages: write`) | Push nach `ghcr.io/midas1989/tuxmail`; nach dem ersten Push das Paket unter *Packages* auf „public“ stellen |
 
 Prüfen der Downloads:
@@ -201,8 +214,11 @@ rpm --import tuxmail-release-key.asc && rpm -K tuxmail-*.rpm
 
 ## 6. Abhängigkeiten aktuell halten
 
-`.github/dependabot.yml` öffnet wöchentlich Pull Requests für Go-Module, npm (`frontend/`, `mobile/`) und
-GitHub Actions. Alle Actions sind auf volle Versions-Tags gepinnt. Werkzeugversionen in `release.yml`
+`.github/dependabot.yml` öffnet wöchentlich Pull Requests für Go-Module, npm (`frontend/`, `mobile/`),
+GitHub Actions, die Basis-Images des Dockerfiles (`/build/docker`, Tag und Digest) und Gradle (`/mobile/android`).
+Alle Actions sind auf den vollen Commit-SHA gepinnt (der Versions-Tag steht als Kommentar dahinter; Dependabot
+aktualisiert beides). Zusätzlich im Repository unter *Settings → Actions → General* „Require actions to be pinned
+to a full-length commit SHA“ einschalten. Werkzeugversionen in `release.yml`
 (`NFPM_VERSION`, `GO_WINRES_VERSION`) und `ci.yml` (actionlint) werden von Hand angehoben; nfpm ab v2.44
 braucht Go ≥ 1.25.
 
@@ -213,6 +229,16 @@ braucht Go ≥ 1.25.
   (Dateisystem + gebautes Docker-Image, SBOM), Lizenzbericht, Fuzzing (60 s je Fuzz-Ziel) und der
   dynamische Pentest-Harness (`security/pentest/`). Vor einem Release-Tag muss der letzte Lauf auf `main`
   grün sein (Lizenzbericht und Pentest sind informativ). Übersicht: [docs/security/README.md](security/README.md).
+- **Lieferkette der CI-Werkzeuge:** osv-scanner, gitleaks und hadolint sind Release-Binaries mit festem SHA-256
+  (`build/ci-fetch.sh`, Download mit Wiederholungen; die Pins stehen in `security.yml`/`ci.yml` und werden von Hand
+  zusammen mit der Version angehoben). `go install`/`go mod download`/`npm ci` laufen über `build/ci-retry.sh`.
+  Der Fuzz-Job reicht Matrixwerte nur über Umgebungsvariablen an die Shell und lehnt Pfade mit Sonderzeichen ab.
+- **Release-Prüfsummen:** jeder Build-Job schreibt die SHA-256 seiner Dateien (`build/partsums.sh`), der
+  Publish-Job vergleicht sie vor `checksums.txt` und bricht bei Abweichung oder unbekannten Dateien ab. Das SBOM
+  ist bei Tags Pflicht (Branch-Builds warnen nur).
+- **Google-OAuth-Client-Secret:** wird nur in die Desktop-Builds eingelinkt (`TUXMAIL_LINK_CLIENT_SECRET=1` in
+  `build/linux/build.sh`/`build/windows/build.sh`), nie in Server-Archive oder das Docker-Image; Betreiber eines
+  Servers registrieren eine eigene Google-App (`docs/MICROSOFT-GOOGLE.md`).
 - **Go-Toolchain:** `setup-go` liest `go.mod`. Die Release-Binaries enthalten die Standardbibliothek dieser
   Version – Patch-Releases von Go (Sicherheitsfixes) also zeitnah übernehmen (`toolchain`-Zeile in `go.mod`).
 - **Code Scanning:** Bei privatem Repository braucht der SARIF-Upload GitHub Advanced Security. Ohne GHAS

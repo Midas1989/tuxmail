@@ -24,6 +24,8 @@ linux/amd64 | linux/arm64 | windows/amd64 | windows/arm64) ;;
 *) die "unsupported target $goos/$goarch" ;;
 esac
 
+# The server archive never carries the Google OAuth client secret (build/lib.sh).
+TUXMAIL_LINK_CLIENT_SECRET=
 check_frontend
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
