@@ -374,9 +374,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	// "product" lets clients recognise a TuxMail server; the exact version is
 	// only disclosed on request (security.expose_version, NA-07).
-	// "backup" is ok, warn or fail and informational: status (and with it the
-	// rollout, which waits for this endpoint) does not depend on it.
-	out := map[string]string{"status": "ok", "product": productMarker, "backup": s.backupHealth()}
+	out := map[string]string{"status": "ok", "product": productMarker}
 	if s.cfg.Security.ExposeVersion {
 		out["version"] = s.version
 	}

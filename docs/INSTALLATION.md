@@ -340,11 +340,14 @@ Messenger-Bridges sind optional und standardmäßig aus.
   gibt, den Fingerabdruck eintragen und die Ausnahme entfernen. Wer ein **selbst gebautes** Archiv installiert
   (`-e tuxmail_binary_src=/pfad/tuxmail_<v>_linux_amd64.tar.gz`), braucht beides nicht, denn dann wird nichts
   heruntergeladen.
-- **Sicherungen.** Das Backup enthält den Hauptschlüssel des Servers und wird daher verschlüsselt. Den Schlüssel
-  erzeugst du nach dem Rollout in der Oberfläche (Einstellungen → Administration → Sicherung). Der private Schlüssel
-  wird genau einmal angezeigt, lege ihn im Tresor ab; am Server bleibt nur der öffentliche. Ein `age-keygen` ist nicht
-  nötig. Ohne Schlüssel läuft keine Sicherung, das Playbook warnt und läuft weiter. Klartext gibt es nur ausdrücklich
-  mit `tuxmail_backup_allow_plaintext: true`. Ein vorhandenes `tuxmail_backup_age_recipients` wird einmalig übernommen.
+- **Sicherungen.** TuxMail ist ein Mailclient: Die tägliche Sicherung enthält nur die Einstellungen (Benutzer, Konten
+  mit ihren Passwörtern, Regeln, Signaturen, Schlüssel), keine Mails, Chats, Kalender oder Kontakte. Sie enthält den
+  Hauptschlüssel des Servers und wird daher verschlüsselt. Den Schlüssel erzeugst du nach dem Rollout in der
+  Oberfläche (Einstellungen → Administration → Sicherung). Der private Schlüssel wird genau einmal angezeigt, lege ihn
+  im Tresor ab; am Server bleibt nur der öffentliche. Ein `age-keygen` ist nicht nötig. Ohne Schlüssel läuft keine
+  Sicherung, das Playbook warnt und läuft weiter. Klartext gibt es nur ausdrücklich mit
+  `tuxmail_backup_allow_plaintext: true`. Ein vorhandenes `tuxmail_backup_age_recipients` wird einmalig übernommen.
+  Wer lokale Ordner, importierte Mails oder Chat-Verläufe braucht, sichert sie selbst (Benutzer-Sicherung `.txmb`).
 
 **Varianten**, die du mit denselben Befehlen und anderen Schaltern erreichst:
 
@@ -383,7 +386,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail
 echo 'SicheresPasswort' | sudo runuser -u tuxmail -- /opt/tuxmail/current/tuxmail user add \
   --config /etc/tuxmail/config.yaml --username admin --email admin@example.org --admin --password-stdin
 
-# 5. # Tägliche Sicherung (Skript und Timer; braucht die Pakete age, zstd und tar)
+# 5. Tägliche Sicherung (Skript und Timer; braucht die Pakete age, zstd und tar)
 sudo apt install age zstd                    # RHEL-Familie: EPEL aktivieren, dann dnf install age zstd
 sudo install -d -o tuxmail -g tuxmail -m 0750 /var/lib/tuxmail/backup
 sudo install -d -o root -g root -m 0700 /var/backups/tuxmail
@@ -393,8 +396,9 @@ sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail-backup.timer
 ```
 
 Dann in der Oberfläche den **Backup-Schlüssel erzeugen**: Einstellungen → Administration → Sicherung. Bis du „Im Tresor
-gesichert“ bestätigt hast, endet das Skript mit Fehler und sichert nichts. Danach stoppt es den Dienst jede Nacht kurz,
-siehe [deploy/README.md, Abschnitt 7](../deploy/README.md#7-daten-und-sicherungen--wichtig).
+gesichert“ bestätigt hast, endet das Skript mit Fehler und sichert nichts. Danach sichert es jede Nacht die
+Einstellungen, der Dienst läuft dabei weiter. Was enthalten ist und wie du zurückspielst, steht in
+[deploy/README.md, Abschnitt 7](../deploy/README.md#7-daten-und-sicherungen--wichtig).
 
 Danach brauchst du TLS: entweder einen Reverse Proxy (Beispiel `deploy/nginx/tuxmail.conf`) oder die Einstellung
 `tls.mode: file` (Abschnitt 6d). Den Dienst prüfst du mit `systemctl status tuxmail` und

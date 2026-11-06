@@ -103,7 +103,6 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_backup_timer_enabled: true
 # tuxmail_backup_timer_oncalendar: "*-*-* 03:15:00"
 # tuxmail_backup_keep_scheduled: 14
-# tuxmail_backup_stop_service: true
 
 # --- nginx ---
 # tuxmail_nginx_vhost_name: tuxmail

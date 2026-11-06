@@ -36,6 +36,7 @@
       ansible.builtin.command:
         argv:
           - /usr/local/sbin/tuxmail-backup
+          - --full
           - pre-upgrade
           - "{{ tuxmail_backup_keep_upgrade | string }}"
           - "{{ tuxmail_previous_version }}-to-{{ tuxmail_version }}"

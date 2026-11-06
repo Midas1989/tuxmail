@@ -9,7 +9,10 @@ package server
 import (
 	"archive/tar"
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -18,6 +21,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +30,9 @@ import (
 	"github.com/klauspost/compress/zstd"
 
 	"github.com/Midas1989/Mailclient/internal/auth"
+	"github.com/Midas1989/Mailclient/internal/config"
+	"github.com/Midas1989/Mailclient/internal/store"
+	"github.com/Midas1989/Mailclient/internal/store/blob"
 )
 
 const (
@@ -322,7 +330,7 @@ func TestBackupKeyPendingUntilConfirmed(t *testing.T) {
 	if rc, out := job.run(t); rc != 3 || len(job.archives(t)) != 0 {
 		t.Fatal(rc, out)
 	}
-	if health(t, e) != "fail" {
+	if health(t, admin) != "fail" {
 		t.Fatal("no active key must be fail")
 	}
 
@@ -391,22 +399,53 @@ func TestBackupKeyPendingUntilConfirmed(t *testing.T) {
 	}
 }
 
-func health(t *testing.T, e *env) string {
+func health(t *testing.T, admin *browser) string {
 	t.Helper()
-	resp, m := e.browser().do("GET", "/healthz", nil)
-	if resp.StatusCode != 200 || m["status"] != "ok" {
+	resp, m := admin.do("GET", "/api/admin/backup", nil)
+	if resp.StatusCode != 200 {
 		t.Fatal(resp.Status, m)
 	}
-	v, _ := m["backup"].(string)
+	v, _ := m["health"].(string)
 	return v
 }
 
-// /healthz reports the backup state in its own field and stays 200/ok for the rollout.
-func TestHealthzReportsBackupState(t *testing.T) {
+// The backup state is for administrators: the public /healthz says nothing about
+// it, in any state, and an ordinary user does not get it either.
+func TestBackupHealthIsNotPublic(t *testing.T) {
 	e, admin := backupAdmin(t, Options{})
-	if got := health(t, e); got != "fail" {
-		t.Fatal("no key:", got)
+	e.user("anna", auth.RoleUser)
+	check := func() {
+		t.Helper()
+		req, _ := http.NewRequest("GET", e.ts.URL+"/healthz", nil)
+		resp, err := e.browser().c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		if resp.StatusCode != 200 || bytes.Contains(bytes.ToLower(raw), []byte("backup")) {
+			t.Fatalf("%s %s", resp.Status, raw)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(raw, &m); err != nil || m["status"] != "ok" {
+			t.Fatal(string(raw), err)
+		}
 	}
+	check()
+	if got := health(t, admin); got != "fail" {
+		t.Fatal(got)
+	}
+	generateKey(t, admin, false)
+	check()
+	user := e.browser()
+	user.login("anna")
+	if resp, _ := user.do("GET", "/api/admin/backup", nil); resp.StatusCode != http.StatusForbidden {
+		t.Fatal(resp.Status)
+	}
+}
+
+func TestBackupHealthStates(t *testing.T) {
+	e, admin := backupAdmin(t, Options{})
 	status := func(result string, encrypted bool, at time.Time) {
 		t.Helper()
 		js, _ := json.Marshal(backupRun{FinishedAt: at, Label: "scheduled", Result: result, Encrypted: encrypted})
@@ -418,7 +457,7 @@ func TestHealthzReportsBackupState(t *testing.T) {
 		}
 	}
 	status("no_key", false, time.Now())
-	if got := health(t, e); got != "fail" {
+	if got := health(t, admin); got != "fail" {
 		t.Fatal("refused run:", got)
 	}
 	generateKey(t, admin, false)
@@ -435,12 +474,12 @@ func TestHealthzReportsBackupState(t *testing.T) {
 		{"failed", false, time.Hour, "fail"},
 	} {
 		status(c.result, c.encrypted, time.Now().Add(-c.age))
-		if got := health(t, e); got != c.want {
+		if got := health(t, admin); got != c.want {
 			t.Errorf("%+v: %s", c, got)
 		}
 	}
 	os.WriteFile(e.srv.backupRecipientsPath(), []byte("kaputt\n"), 0o640)
-	if got := health(t, e); got != "fail" {
+	if got := health(t, admin); got != "fail" {
 		t.Fatal("damaged key:", got)
 	}
 }
@@ -454,7 +493,12 @@ type backupScript struct {
 
 func (b backupScript) run(t *testing.T, env ...string) (int, string) {
 	t.Helper()
-	cmd := exec.Command("bash", b.path, "scheduled", "2")
+	return b.runArgs(t, env, "scheduled", "2")
+}
+
+func (b backupScript) runArgs(t *testing.T, env []string, args ...string) (int, string) {
+	t.Helper()
+	cmd := exec.Command("bash", append([]string{b.path}, args...)...)
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
@@ -475,7 +519,9 @@ func (b backupScript) archives(t *testing.T) []string {
 	}
 	var names []string
 	for _, f := range list {
-		names = append(names, f.Name())
+		if !strings.HasPrefix(f.Name(), ".") { // the lock file of the job
+			names = append(names, f.Name())
+		}
 	}
 	return names
 }
@@ -489,9 +535,21 @@ func needTools(t *testing.T, tools ...string) {
 	}
 }
 
+// buildTuxmail builds the real command, which the job calls for the settings copy.
+func buildTuxmail(t *testing.T) string {
+	t.Helper()
+	needTools(t, "go")
+	bin := filepath.Join(t.TempDir(), "tuxmail")
+	if out, err := exec.Command("go", "build", "-o", bin, "../../cmd/tuxmail").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
+	}
+	return bin
+}
+
 // systemdScript is deploy/systemd/tuxmail-backup.sh with other directories.
 func systemdScript(t *testing.T, dataDir string) backupScript {
 	t.Helper()
+	bin := buildTuxmail(t)
 	raw, err := os.ReadFile("../../deploy/systemd/tuxmail-backup.sh")
 	if err != nil {
 		t.Fatal(err)
@@ -500,9 +558,10 @@ func systemdScript(t *testing.T, dataDir string) backupScript {
 	backupDir := filepath.Join(dir, "archives")
 	s := string(raw)
 	for old, repl := range map[string]string{
-		"DATA_DIR=/var/lib/tuxmail\n":       "DATA_DIR=" + dataDir + "\n",
-		"BACKUP_DIR=/var/backups/tuxmail\n": "BACKUP_DIR=" + backupDir + "\n",
-		"KEY_DIR=/var/lib/tuxmail/backup\n": "KEY_DIR=" + filepath.Join(dataDir, backupKeyDirName) + "\n",
+		"DATA_DIR=/var/lib/tuxmail\n":                "DATA_DIR=" + dataDir + "\n",
+		"BACKUP_DIR=/var/backups/tuxmail\n":          "BACKUP_DIR=" + backupDir + "\n",
+		"KEY_DIR=/var/lib/tuxmail/backup\n":          "KEY_DIR=" + filepath.Join(dataDir, backupKeyDirName) + "\n",
+		"TUXMAIL_BIN=/opt/tuxmail/current/tuxmail\n": "TUXMAIL_BIN=" + bin + "\n",
 	} {
 		if !strings.Contains(s, old) {
 			t.Fatalf("script no longer has %q", old)
@@ -533,7 +592,7 @@ func templateScript(t *testing.T, dataDir string) backupScript {
 	vars, _ := json.Marshal(map[string]any{
 		"tuxmail_data_dir": dataDir, "tuxmail_backup_dir": backupDir, "tuxmail_service_name": "tuxmail",
 		"tuxmail_backup_compression": "zstd", "tuxmail_backup_key_dir": filepath.Join(dataDir, backupKeyDirName),
-		"tuxmail_user": "tuxmail", "tuxmail_backup_allow_plaintext": false,
+		"tuxmail_user": "tuxmail", "tuxmail_backup_allow_plaintext": false, "tuxmail_binary": buildTuxmail(t),
 	})
 	cmd := exec.Command("ansible", "localhost", "-c", "local", "-m", "ansible.builtin.template", "-a", "src="+src+" dest="+path, "-e", string(vars))
 	cmd.Env = append(os.Environ(), "ANSIBLE_LOCAL_TEMP="+dir, "ANSIBLE_REMOTE_TEMP="+dir, "ANSIBLE_HOME="+dir)
@@ -561,8 +620,8 @@ func TestBackupKeyRoundTripWithJob(t *testing.T) {
 	needTools(t, "age", "zstd", "tar")
 	eachScript(t, func(t *testing.T, script func(string) backupScript) {
 		e, admin := backupAdmin(t, Options{})
-		marker := []byte("inhalt-der-sicherung")
-		if err := os.WriteFile(filepath.Join(e.cfg.DataDir, "marker.txt"), marker, 0o600); err != nil {
+		marker, err := os.ReadFile(filepath.Join(e.cfg.DataDir, "master.key"))
+		if err != nil {
 			t.Fatal(err)
 		}
 		private, _ := generateKey(t, admin, false)
@@ -603,13 +662,13 @@ func TestBackupKeyRoundTripWithJob(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if strings.HasSuffix(h.Name, "/marker.txt") {
+			if strings.HasSuffix(h.Name, "/master.key") {
 				got, _ := io.ReadAll(tr)
 				found = bytes.Equal(got, marker)
 			}
 		}
 		if !found {
-			t.Fatal("marker not in the decrypted archive")
+			t.Fatal("master.key not in the decrypted archive")
 		}
 		// A different key opens nothing, and the UI shows a successful, encrypted run.
 		other, _ := age.GenerateX25519Identity()
@@ -768,5 +827,363 @@ func TestBackupRoleTakesOverExistingRecipients(t *testing.T) {
 	rollout(k1.Recipient().String())
 	if onDisk, _ := os.ReadFile(e.srv.backupRecipientsPath()); string(onDisk) != public+"\n" {
 		t.Fatalf("rollout overwrote the key: %q", onDisk)
+	}
+}
+
+// --- what the daily archive holds ------------------------------------------------
+
+const (
+	markerMail       = "MARKER-MAILTEXT-7f3a"
+	markerSubject    = "MARKER-BETREFF-7f3a"
+	markerAttachment = "MARKER-ANHANG-7f3a"
+	markerChat       = "MARKER-CHAT-7f3a"
+	markerEvent      = "MARKER-KALENDER-7f3a"
+	markerContact    = "MARKER-KONTAKT-7f3a"
+	markerPlugin     = "MARKER-SITZUNG-7f3a"
+	markerComment    = "MARKER-TEAMKOMMENTAR-7f3a"
+	markerAccount    = "MARKER-KONTO-7f3a"
+	markerRule       = "MARKER-REGEL-7f3a"
+	markerCert       = "MARKER-SMIME-7f3a"
+	markerSignature  = "MARKER-SIGNATUR-7f3a"
+	secretPayload    = "-----BEGIN PGP PRIVATE KEY BLOCK----- geheim"
+	markerSigImage   = "MARKER-SIGNATURBILD-7f3a"
+)
+
+// seedUserData fills a user's data directory with settings and with everything
+// that must stay out of the archive, in every place it can reach the disk.
+func seedUserData(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	st, err := store.Open(ctx, filepath.Join(dir, "tuxmail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	bs, err := blob.New(filepath.Join(dir, "blobs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	attachment, err := bs.Put(strings.NewReader(markerAttachment + " Inhalt der Datei"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sigImage, err := bs.Put(strings.NewReader(markerSigImage))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", filepath.Join(dir, "tuxmail.db")+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	for _, q := range []string{
+		// Settings.
+		`INSERT INTO accounts(id, kind, display_name, config_json, enabled) VALUES (1, 'imap', '` + markerAccount + `', '{}', 0)`,
+		`INSERT INTO folders(id, account_id, remote_id, name, role, sync_state, unread, total) VALUES (1, 1, 'INBOX', 'Inbox', 'inbox', 'uidvalidity=1;uid=99', 3, 9)`,
+		`INSERT INTO workflows(id, name, enabled, yaml, created_at, updated_at) VALUES ('r1', '` + markerRule + `', 1, 'name: x', 1, 1)`,
+		`INSERT INTO tags(id, name, path, path_norm, created_at, updated_at) VALUES (77, 'wichtig', 'wichtig', 'wichtig', 1, 1)`,
+		`INSERT INTO signatures(id, name, html, plain) VALUES (1, '` + markerSignature + `', '', '')`,
+		`INSERT INTO signature_images(signature_id, content_id, blob_hash, mime_type) VALUES (1, 'c1', '` + sigImage + `', 'image/png')`,
+		`INSERT INTO smime_certs(fingerprint, email, subject, der, created_at) VALUES ('fp', 'a@example.de', '` + markerCert + `', x'00', 1)`,
+		`INSERT INTO app_settings(key, value_json, updated_at) VALUES ('search.history', '["` + markerMail + `"]', 1), ('prefs', '{"a":1}', 1)`,
+		`INSERT INTO calendars(id, name, sync_token) VALUES (1, 'Privat', 'tok')`,
+		`INSERT INTO addressbooks(id, name) VALUES (1, 'Adressen')`,
+		// Data.
+		`INSERT INTO conversations(id, kind, title) VALUES (1, 'mail', '` + markerSubject + `')`,
+		`INSERT INTO messages(id, account_id, fingerprint, subject, snippet, conversation_id, blob_hash, created_at) VALUES (1, 1, 'fp1', '` + markerSubject + `', '` + markerMail + `', 1, '` + attachment + `', 1)`,
+		`INSERT INTO message_addresses(message_id, role, email) VALUES (1, 'from', 'marker-adresse-7f3a@example.de')`,
+		`INSERT INTO attachments(message_id, filename, blob_hash) VALUES (1, '` + markerAttachment + `.pdf', '` + attachment + `')`,
+		`INSERT INTO fts_docs(kind, message_id, subject, body) VALUES ('mail', 1, '` + markerSubject + `', '` + markerMail + ` ` + markerAttachment + `')`,
+		`INSERT INTO item_tags(item_kind, item_id, tag_id, created_at) VALUES ('message', 1, 77, 1)`,
+		`INSERT INTO chats(id, account_id, remote_id, kind, title) VALUES (1, 1, 'c1', 'dm', '` + markerChat + `')`,
+		`INSERT INTO chat_messages(id, chat_id, remote_id, body) VALUES (1, 1, 'm1', '` + markerChat + `')`,
+		`INSERT INTO fts_docs(kind, chat_message_id, subject, body) VALUES ('chat', 1, '', '` + markerChat + `')`,
+		`INSERT INTO cal_objects(calendar_id, uid, kind, ical, summary) VALUES (1, 'u1', 'event', 'SUMMARY:` + markerEvent + `', '` + markerEvent + `')`,
+		`INSERT INTO persons(id, display_name) VALUES (1, '` + markerContact + `')`,
+		`INSERT INTO contacts(addressbook_id, uid, vcard, display_name, person_id) VALUES (1, 'u1', 'FN:` + markerContact + `', '` + markerContact + `', 1)`,
+		`INSERT INTO category_tokens(category, token, n) VALUES ('work', '` + strings.ToLower(markerMail) + `', 1)`,
+		`INSERT INTO scheduled_messages(id, channel, send_at, text, message_json, created_at) VALUES ('s1', 'mail', 1, '` + markerMail + `', '{}', 1)`,
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	for path, content := range map[string]string{
+		"plugins/whatsapp/a/session.db": markerPlugin,
+		"io/jobs/export.json":           markerMail,
+		"archive/mail.eml":              markerMail,
+	} {
+		full := filepath.Join(dir, path)
+		if err := os.MkdirAll(filepath.Dir(full), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+// decryptArchive returns the decompressed tar of an encrypted archive.
+func decryptArchive(t *testing.T, path, privateKey string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := age.ParseX25519Identity(privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := age.Decrypt(bytes.NewReader(raw), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zstd.NewReader(plain)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	out, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// Acceptance: the job runs while the service runs and writes, the archive holds
+// the settings and no data, and restoring it gives a working server.
+func TestSettingsArchiveHoldsNoDataAndRestores(t *testing.T) {
+	needTools(t, "age", "zstd", "tar")
+	e, admin := backupAdmin(t, Options{})
+	u := e.user("mailnutzer", auth.RoleUser)
+	dir := e.svc.UserDir(u.ID)
+	seedUserData(t, dir)
+	// Secrets (mail passwords, private key material) live in the user's vault.
+	secretStore, err := e.svc.UserSecrets(context.Background(), u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secretStore.Set("account:1", []byte(secretPayload)); err != nil {
+		t.Fatal(err)
+	}
+	master, err := os.ReadFile(filepath.Join(e.cfg.DataDir, "master.key"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverDB, err := sql.Open("sqlite", e.cfg.ServerDB()+"?_pragma=busy_timeout(10000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serverDB.Close()
+	if _, err := serverDB.Exec(`INSERT INTO team_mailboxes(id, name, created_at, updated_at) VALUES (5, 'Team', 1, 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := serverDB.Exec(`INSERT INTO team_comments(mailbox_id, conversation_id, body, created_at) VALUES (5, 1, ?, 1)`, markerComment); err != nil {
+		t.Fatal(err)
+	}
+	seedUserData(t, filepath.Join(e.cfg.DataDir, "teams", "5"))
+	private, _ := generateKey(t, admin, false)
+
+	// The service keeps running and being written to.
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	var requests, writes atomic.Int64
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		for i := 0; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if resp, m := admin.do("POST", "/api/admin/groups", map[string]string{"name": fmt.Sprintf("last-%d", i)}); resp.StatusCode != http.StatusCreated {
+				t.Errorf("service write during the job: %s %v", resp.Status, m)
+				return
+			}
+			requests.Add(1)
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		db, err := sql.Open("sqlite", filepath.Join(dir, "tuxmail.db")+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(10000)&_pragma=foreign_keys(1)")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer db.Close()
+		for i := 2; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := db.Exec(`INSERT INTO messages(id, account_id, fingerprint, subject, created_at) VALUES (?, 1, ?, ?, 1)`, i, fmt.Sprintf("fp%d", i), markerSubject); err != nil {
+				t.Errorf("mail write during the job: %v", err)
+				return
+			}
+			writes.Add(1)
+		}
+	}()
+
+	job := systemdScript(t, e.cfg.DataDir)
+	rc, out := job.run(t)
+	close(stop)
+	wg.Wait()
+	if rc != 0 {
+		t.Fatal(rc, out)
+	}
+	if requests.Load() == 0 || writes.Load() == 0 {
+		t.Fatalf("no load: %d requests, %d writes", requests.Load(), writes.Load())
+	}
+	names := job.archives(t)
+	if len(names) != 1 {
+		t.Fatal(names)
+	}
+
+	// No plaintext rest.
+	leftovers, _ := filepath.Glob(filepath.Join(e.cfg.DataDir, backupKeyDirName, ".staging.*"))
+	if len(leftovers) != 0 {
+		t.Fatalf("staging left behind: %v", leftovers)
+	}
+	partial, _ := filepath.Glob(filepath.Join(job.backupDir, ".*.partial"))
+	if len(partial) != 0 {
+		t.Fatal(partial)
+	}
+
+	// Byte search through everything the archive holds.
+	tarball := decryptArchive(t, filepath.Join(job.backupDir, names[0]), private)
+	for _, absent := range []string{markerMail, markerSubject, markerAttachment, markerChat, markerEvent, markerContact, markerPlugin, markerComment, "marker-adresse-7f3a", "uidvalidity=1"} {
+		if bytes.Contains(tarball, []byte(absent)) || bytes.Contains(bytes.ToLower(tarball), []byte(strings.ToLower(absent))) {
+			t.Errorf("%s is in the archive", absent)
+		}
+	}
+	for _, present := range []string{markerAccount, markerRule, markerCert, markerSignature, markerSigImage, "mailnutzer"} {
+		if !bytes.Contains(tarball, []byte(present)) {
+			t.Errorf("%s is missing from the archive", present)
+		}
+	}
+	if !bytes.Contains(tarball, master) {
+		t.Error("master.key is missing from the archive")
+	}
+
+	// Restore: unpack as a data directory, start the service, migrations run.
+	restoreDir := t.TempDir()
+	tarPath := filepath.Join(t.TempDir(), "a.tar")
+	if err := os.WriteFile(tarPath, tarball, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if out, err := exec.Command("tar", "-xpf", tarPath, "-C", restoreDir).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, out)
+	}
+	restored := filepath.Join(restoreDir, filepath.Base(e.cfg.DataDir))
+	r := newEnv(t, Options{}, func(c *config.Config) { c.DataDir = restored })
+	nb := r.browser()
+	nb.login("mailnutzer")
+	if _, m := nb.do("GET", "/api/auth/me", nil); m["user"].(map[string]any)["username"] != "mailnutzer" {
+		t.Fatal(m)
+	}
+	rootAdmin := r.browser()
+	rootAdmin.login("root")
+	if _, m := rootAdmin.do("GET", "/api/admin/backup", nil); len(m["keys"].([]any)) != 1 {
+		t.Fatal("backup key was not restored", m)
+	}
+	// The restored master.key opens the restored vault.
+	restoredSecrets, err := r.svc.UserSecrets(context.Background(), u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, err := restoredSecrets.Get("account:1"); err != nil || string(got) != secretPayload {
+		t.Fatalf("vault after restore: %q %v", got, err)
+	}
+	// The running service opens the store of the user, with its migrations.
+	if resp, raw := func() (*http.Response, string) {
+		resp, m := nb.do("GET", "/api/accounts", nil)
+		js, _ := json.Marshal(m)
+		return resp, string(js)
+	}(); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, raw)
+	}
+	r.srv.apps.drop(u.ID)
+	ctx := context.Background()
+	for _, storeDir := range []string{r.svc.UserDir(u.ID), filepath.Join(restored, "teams", "5")} {
+		st, err := store.Open(ctx, filepath.Join(storeDir, "tuxmail.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		accounts, err := st.ListAccounts(ctx)
+		st.Close()
+		if err != nil || len(accounts) != 1 || accounts[0].DisplayName != markerAccount {
+			t.Fatalf("account: %v %v", accounts, err)
+		}
+		db, err := sql.Open("sqlite", filepath.Join(storeDir, "tuxmail.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var rule, syncState sql.NullString
+		var messages, indexed, fkErrors int
+		var sigBlob string
+		for q, dst := range map[string]any{
+			`SELECT name FROM workflows WHERE id = 'r1'`:                     &rule,
+			`SELECT sync_state FROM folders WHERE id = 1`:                    &syncState,
+			`SELECT COUNT(*) FROM messages`:                                  &messages,
+			`SELECT COUNT(*) FROM fts_items WHERE fts_items MATCH 'marker*'`: &indexed,
+			`SELECT COUNT(*) FROM pragma_foreign_key_check`:                  &fkErrors,
+			`SELECT blob_hash FROM signature_images`:                         &sigBlob,
+		} {
+			if err := db.QueryRow(q).Scan(dst); err != nil {
+				t.Fatalf("%s: %v", q, err)
+			}
+		}
+		if rule.String != markerRule || syncState.Valid || messages != 0 || indexed != 0 || fkErrors != 0 {
+			t.Fatalf("rule %q, sync state %v, %d messages, %d indexed, %d fk errors", rule.String, syncState, messages, indexed, fkErrors)
+		}
+		// The index still works for mail that comes in again.
+		if _, err := db.Exec(`INSERT INTO messages(id, account_id, fingerprint, created_at) VALUES (1, 1, 'neu', 1)`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(`INSERT INTO fts_docs(kind, message_id, subject) VALUES ('mail', 1, 'neuermailtext')`); err != nil {
+			t.Fatal(err)
+		}
+		if err := db.QueryRow(`SELECT COUNT(*) FROM fts_items WHERE fts_items MATCH 'neuermailtext'`).Scan(&indexed); err != nil || indexed != 1 {
+			t.Fatalf("index after restore: %d %v", indexed, err)
+		}
+		db.Close()
+		bs, err := blob.New(filepath.Join(storeDir, "blobs"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		rc, err := bs.Open(sigBlob)
+		if err != nil {
+			t.Fatal("signature image:", err)
+		}
+		rc.Close()
+	}
+
+	// Without a key: exit 3, no file, service untouched (the job never stops it here).
+	os.Remove(e.srv.backupRecipientsPath())
+	before := len(job.archives(t))
+	if rc, out := job.run(t); rc != 3 || len(job.archives(t)) != before {
+		t.Fatal(rc, out)
+	}
+}
+
+// --full stays what the way back of a version change needs: the whole directory.
+func TestBackupFullKeepsEverything(t *testing.T) {
+	needTools(t, "age", "zstd", "tar")
+	e, admin := backupAdmin(t, Options{})
+	u := e.user("mailnutzer", auth.RoleUser)
+	seedUserData(t, e.svc.UserDir(u.ID))
+	private, _ := generateKey(t, admin, false)
+	job := systemdScript(t, e.cfg.DataDir)
+	if rc, out := job.runArgs(t, nil, "--full", "pre-upgrade", "2", "1.0-to-1.1"); rc != 0 {
+		t.Fatal(rc, out)
+	}
+	tarball := decryptArchive(t, filepath.Join(job.backupDir, job.archives(t)[0]), private)
+	if !bytes.Contains(tarball, []byte(markerAttachment)) || !bytes.Contains(tarball, []byte(markerPlugin)) {
+		t.Fatal("the full backup lost data")
 	}
 }

@@ -9,6 +9,7 @@
 //	tuxmail check-config --config /etc/tuxmail/config.yaml
 //	tuxmail user add|list|disable|enable|reset-password|reset-2fa|set-role|delete --config ...
 //	tuxmail import|export|backup|restore [--data-dir DIR | --user NAME] ...  (see io.go)
+//	tuxmail backup-settings --data-dir DIR --out DIR
 package main
 
 import (
@@ -82,6 +83,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		err = c.backupCmd(ctx, args[1:])
 	case "restore":
 		err = c.restoreCmd(ctx, args[1:])
+	case "backup-settings":
+		err = c.backupSettingsCmd(ctx, args[1:])
 	case "help", "-h", "--help":
 		c.usage()
 	default:
@@ -134,6 +137,7 @@ func (c *cli) usage() {
   tuxmail backup  --out FILE|DIR | --webdav URL [--mode config|local|full|custom] [--accounts ..] [--areas ..]
                   [--secrets] [--base PREV.txmb] [--passphrase-file F | --passphrase-stdin]
   tuxmail backup  --server --out FILE      (admin: whole data_dir incl. master.key)
+  tuxmail backup-settings --data-dir DIR --out DIR   (admin: settings only, unencrypted tree for the daily job)
   tuxmail restore --in FILE [--inspect | --verify] [--mode replace|merge] [--accounts ..] [--config-only]
                   [--secrets] [--base B.txmb] | --server --in FILE --target-dir DIR
   import/export/backup/restore work on --data-dir DIR (desktop) or --user NAME (server, with --config);

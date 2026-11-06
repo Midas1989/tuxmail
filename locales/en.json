@@ -3543,7 +3543,7 @@
       "backup_key_not_pending": "This key is no longer waiting for confirmation. It does not count: create a new one."
     },
     "backup": {
-      "what": "Backups contain all data of this server and are encrypted. The server only keeps the public key. You need the private key to restore a backup, so keep it in a vault, away from this server.",
+      "what": "Backups contain the settings of this server and are encrypted. The server only keeps the public key. You need the private key to restore a backup, so keep it in a vault, away from this server.",
       "noKey": "There is no backup key yet, so no backups are running. Create one now.",
       "invalid": "The stored key file is damaged, so no backups are running. Create a new key.",
       "fingerprint": "Fingerprint of the public key",
@@ -3568,7 +3568,9 @@
       "secretLabel": "Private key",
       "secretIntro": "Save this key in your vault now, then confirm below. Without it no backup can be restored, and the server does not keep it. The key only counts after your confirmation.",
       "secretAck": "Saved in the vault",
-      "pending": "A new key was created but not confirmed, so it does not count. Backups keep using the key shown here, if there is one. Create a new key to finish."
+      "pending": "A new key was created but not confirmed, so it does not count. Backups keep using the key shown here, if there is one. Create a new key to finish.",
+      "included": "Included: users, accounts with their passwords, folder settings, rules, tags, signatures, encryption keys and preferences.",
+      "excluded": "Not included: mail, attachments, chats, calendar entries and contacts. After a restore, accounts fetch mail again from the mail server. Lost for good: POP3 mail deleted on the server, local folders, imported mail, chat histories, local calendars and contacts. For those, each user makes their own backup."
     }
   },
   "comfort": {

@@ -179,9 +179,10 @@ func (s *Server) readBackupPending() (publicKey string, sessionID int64) {
 	return publicKey, sessionID
 }
 
-// backupHealth is the coarse state for /healthz, which anyone can read: the
-// details stay behind the admin login. "ok" needs a proven, recent, encrypted
-// run; a key alone is only "warn". It never changes the status of /healthz.
+// backupHealth sums up the state for administrators and their monitoring (GET
+// /api/admin/backup, also with an admin's device token). It stays out of the
+// public /healthz: "no backups here" must not be readable by everyone. "ok"
+// needs a proven, recent, encrypted run; a key alone is only "warn".
 func (s *Server) backupHealth() string {
 	keys, invalid, err := s.readBackupRecipients()
 	if err != nil || invalid {
@@ -221,6 +222,7 @@ func (s *Server) handleAdminBackupStatus(w http.ResponseWriter, r *http.Request,
 		"keys":    keys,
 		"invalid": invalid,
 		"pending": pending,
+		"health":  s.backupHealth(),
 		"lastRun": s.readBackupRun(),
 		// Which proofs the confirmation asks for (see backupKeyStepUp).
 		"reauth": map[string]bool{"password": a.User.HasPassword, "code": a.User.TOTPEnabled},

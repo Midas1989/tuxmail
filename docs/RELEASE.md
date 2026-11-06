@@ -39,12 +39,13 @@ Der Tag startet `release.yml` und `android.yml`. Nach etwa 20–30 Minuten liegt
 
 **In die Release Notes des nächsten Server-Releases übernehmen** (danach hier entfernen):
 
-> Die tägliche Sicherung ist jetzt standardmäßig an und wird auch in Bestandsinstallationen aktiv. Sobald ein
-> Backup-Schlüssel vorliegt, steht der Dienst täglich zwischen 03:15 und 03:30 Uhr Serverzeit für die Dauer der
-> Sicherung, gemessen ohne Last etwa 5 bis 15 Sekunden je GB unter `/var/lib/tuxmail`, ohne Obergrenze. Ohne Schlüssel
-> läuft kein Stopp. Ein übernommenes `tuxmail_backup_age_recipients` zählt als Schlüssel: dann gilt das schon ab der
-> ersten Nacht. Abschalten: `tuxmail_backup_timer_enabled: false`, ohne Stopp, aber auch ohne garantiert konsistente
-> SQLite-Dateien: `tuxmail_backup_stop_service: false`. Details: deploy/README.md, Abschnitt 7.
+> Die tägliche Sicherung ist jetzt standardmäßig an und wird auch in Bestandsinstallationen aktiv, sobald ein
+> Backup-Schlüssel vorliegt (ein vorhandenes `tuxmail_backup_age_recipients` wird übernommen). Sie enthält nur noch die
+> Einstellungen, keine Mails, Chats, Kalender oder Kontakte, und der Dienst läuft dabei weiter. Bisherige tägliche
+> Vollarchive laufen über die Aufbewahrung aus: Wer sie als Rückweg für lokale Daten braucht, nimmt die
+> Benutzer-Sicherung (`.txmb`). Die Sicherung vor einem Versionswechsel bleibt eine Vollsicherung mit Dienststopp.
+> Die Variable `tuxmail_backup_stop_service` entfällt. Abschalten: `tuxmail_backup_timer_enabled: false`.
+> Details: deploy/README.md, Abschnitt 7.
 
 Schlägt ein Job fehl: Ursache beheben, Tag löschen (`git push --delete origin v0.2.0 && git tag -d v0.2.0`),
 ggf. das angelegte Release löschen und neu taggen. Ein Tag, der nicht zu `VERSION` passt, bricht sofort ab.

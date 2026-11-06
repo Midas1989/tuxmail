@@ -3542,7 +3542,7 @@
       "backup_key_not_pending": "Dieser Schlüssel wartet nicht mehr auf die Bestätigung und gilt nicht. Erzeuge einen neuen."
     },
     "backup": {
-      "what": "Sicherungen enthalten alle Daten dieses Servers und werden verschlüsselt. Am Server bleibt nur der öffentliche Schlüssel. Zum Zurückspielen brauchst du den privaten Schlüssel, bewahre ihn also im Tresor auf, getrennt von diesem Server.",
+      "what": "Sicherungen enthalten die Einstellungen dieses Servers und werden verschlüsselt. Am Server bleibt nur der öffentliche Schlüssel. Zum Zurückspielen brauchst du den privaten Schlüssel, bewahre ihn also im Tresor auf, getrennt von diesem Server.",
       "noKey": "Es gibt noch keinen Backup-Schlüssel. Deshalb laufen keine Sicherungen. Erzeuge jetzt einen.",
       "invalid": "Die gespeicherte Schlüsseldatei ist beschädigt. Deshalb laufen keine Sicherungen. Erzeuge einen neuen Schlüssel.",
       "fingerprint": "Fingerabdruck des öffentlichen Schlüssels",
@@ -3567,7 +3567,9 @@
       "secretLabel": "Privater Schlüssel",
       "secretIntro": "Sichere diesen Schlüssel jetzt in deinem Tresor und bestätige unten. Ohne ihn lässt sich keine Sicherung zurückspielen, und der Server behält ihn nicht. Der Schlüssel gilt erst nach deiner Bestätigung.",
       "secretAck": "Im Tresor gesichert",
-      "pending": "Ein neuer Schlüssel wurde erzeugt, aber nicht bestätigt, und gilt deshalb nicht. Sicherungen nutzen weiter den hier gezeigten Schlüssel, falls es einen gibt. Erzeuge zum Abschluss einen neuen."
+      "pending": "Ein neuer Schlüssel wurde erzeugt, aber nicht bestätigt, und gilt deshalb nicht. Sicherungen nutzen weiter den hier gezeigten Schlüssel, falls es einen gibt. Erzeuge zum Abschluss einen neuen.",
+      "included": "Enthalten: Benutzer, Konten mit ihren Passwörtern, Ordnereinstellungen, Regeln, Tags, Signaturen, Verschlüsselungsschlüssel und Einstellungen.",
+      "excluded": "Nicht enthalten: Mails, Anhänge, Chats, Kalendereinträge und Kontakte. Nach dem Zurückspielen holen die Konten ihre Mails neu vom Mailserver. Endgültig weg sind: POP3-Mails, die auf dem Server gelöscht wurden, lokale Ordner, importierte Mails, Chat-Verläufe, lokale Kalender und Kontakte. Dafür macht jeder Benutzer seine eigene Sicherung."
     }
   },
   "comfort": {

@@ -152,15 +152,13 @@ tuxmail_backup_age_recipients: []
 # Ohne Schlüssel verweigert das Backup-Skript den Lauf (Exit 3, Re-Audit ND-14); der Rollout läuft mit einer Warnung
 # weiter. Klartext-Archive (nur root lesbar, 0600 in 0700) ausdrücklich erlauben:
 tuxmail_backup_allow_plaintext: false
-# Vor einem Versionswechsel /var/lib/tuxmail sichern (Dienst wird dafür kurz gestoppt).
+# Vor einem Versionswechsel das ganze /var/lib/tuxmail sichern (Rückweg bei Migrationen, Dienst wird dafür gestoppt).
 tuxmail_backup_before_upgrade: true
 tuxmail_backup_keep_upgrade: 5
-# Tägliche Sicherung per systemd-Timer.
+# Tägliche Sicherung per systemd-Timer: nur Einstellungen, ohne Mails, der Dienst läuft weiter.
 tuxmail_backup_timer_enabled: true
 tuxmail_backup_timer_oncalendar: "*-*-* 03:15:00"
 tuxmail_backup_keep_scheduled: 14
-# Dienst während der geplanten Sicherung kurz stoppen (konsistente SQLite-Dateien).
-tuxmail_backup_stop_service: true
 
 # --- Erster Administrator -----------------------------------------------------------
 tuxmail_admin_create: true

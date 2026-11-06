@@ -111,6 +111,8 @@
 
 <div class="backup">
   <p class="what">{t('admin.backup.what')}</p>
+  <p class="what" data-testid="backup-included">{t('admin.backup.included')}</p>
+  <p class="what" data-testid="backup-excluded">{t('admin.backup.excluded')}</p>
 
   {#if loadError}
     <p class="alert" role="alert">{loadError}</p>

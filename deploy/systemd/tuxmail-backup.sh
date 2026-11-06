@@ -4,8 +4,11 @@
 #
 # Sichert /var/lib/tuxmail als komprimiertes tar-Archiv nach /var/backups/tuxmail.
 #
-#   tuxmail-backup [--stop] LABEL KEEP [TAG]
+#   tuxmail-backup [--full] [--stop] LABEL KEEP [TAG]
 #
+#   Standard: nur Einstellungen (tuxmail backup-settings), keine Mails, Chats, Kalender oder Kontakte;
+#   der Dienst läuft weiter. Alles, was das Archiv enthält, steht in internal/backup/settings.go.
+#   --full  ganzes Datenverzeichnis, für den Rückweg bei einem Versionswechsel (pre-upgrade)
 #   --stop  Dienst tuxmail während der Sicherung anhalten (konsistente SQLite-Dateien)
 #   LABEL   z. B. "scheduled", "pre-upgrade", "manual" (nur a-z, 0-9, -)
 #   KEEP    Anzahl der Archive dieses Labels, die behalten werden
@@ -30,13 +33,19 @@ KEY_DIR=/var/lib/tuxmail/backup
 KEY_FILE="$KEY_DIR/recipients.txt"
 STATUS_FILE="$KEY_DIR/status.json"
 SERVICE_USER=tuxmail
+TUXMAIL_BIN=/opt/tuxmail/current/tuxmail
 ALLOW_PLAINTEXT=0
 
 stop=0
-if [ "${1:-}" = "--stop" ]; then
-    stop=1
+full=0
+while :; do
+    case "${1:-}" in
+        --stop) stop=1 ;;
+        --full) full=1 ;;
+        *) break ;;
+    esac
     shift
-fi
+done
 label=${1:-manual}
 keep=${2:-7}
 tag=${3:-}
@@ -58,20 +67,26 @@ tag=$(printf '%s' "$tag" | tr -c 'A-Za-z0-9._-' '_')
 result=failed
 encrypted=false
 tmp=""
+stage=""
 restart=0
+as_service() {
+    if [ "$(id -u)" = 0 ]; then
+        runuser -u "$SERVICE_USER" -- "$@"
+    else
+        "$@"
+    fi
+}
 write_status() {
     [ -d "$KEY_DIR" ] || return 0
     local writer='t=$(mktemp "$1.XXXXXX") && cat >"$t" && chmod 0640 "$t" && mv -f "$t" "$1"'
     printf '{"finishedAt":"%s","label":"%s","result":"%s","encrypted":%s}\n' \
         "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$label" "$result" "$encrypted" |
-        if [ "$(id -u)" = 0 ]; then
-            runuser -u "$SERVICE_USER" -- sh -c "$writer" sh "$STATUS_FILE"
-        else
-            sh -c "$writer" sh "$STATUS_FILE"
-        fi
+        as_service sh -c "$writer" sh "$STATUS_FILE"
 }
 cleanup() {
     [ -z "$tmp" ] || rm -f "$tmp"
+    # Die Einstellungen liegen hier unverschlüsselt, sie bleiben nie liegen.
+    [ -z "$stage" ] || rm -rf "$stage"
     if [ "$restart" -eq 1 ]; then
         systemctl start "$SERVICE" || echo "WARNUNG: $SERVICE konnte nicht gestartet werden" >&2
     fi
@@ -139,12 +154,26 @@ if [ "$stop" -eq 1 ] && systemctl is-active --quiet "$SERVICE"; then
 fi
 
 mkdir -p "$BACKUP_DIR"
-# Enthält master.key, vapid.json, server.db und users/<id>/ – Archiv nur für root lesbar (umask 077).
+# Nur ein Lauf zugleich: Reste eines hart beendeten Laufs gehören niemandem mehr.
+exec 9>"$BACKUP_DIR/.lock"
+flock 9
+as_service mkdir -p "$KEY_DIR"
+rm -rf "$KEY_DIR"/.staging.*
+
+src_dir=$(dirname "$DATA_DIR")
+if [ "$full" -eq 0 ]; then
+    # Bereinigte, konsistente Kopie im privaten Verzeichnis (0700, gehört dem Dienstbenutzer).
+    stage=$(as_service mktemp -d "$KEY_DIR/.staging.XXXXXX")
+    as_service "$TUXMAIL_BIN" backup-settings --data-dir "$DATA_DIR" --out "$stage"
+    src_dir=$stage
+fi
+# Das Archiv ist nur für root lesbar (umask 077). --full enthält das ganze Datenverzeichnis.
 if [ "$encrypted" = true ]; then
     # shellcheck disable=SC2086
-    tar $COMPRESS_OPT -C "$(dirname "$DATA_DIR")" -cpf - "$(basename "$DATA_DIR")" | age "${AGE_ARGS[@]}" -o "$tmp"
+    tar $COMPRESS_OPT -C "$src_dir" -cpf - "$(basename "$DATA_DIR")" | age "${AGE_ARGS[@]}" -o "$tmp"
 else
-    tar $COMPRESS_OPT -C "$(dirname "$DATA_DIR")" -cpf "$tmp" "$(basename "$DATA_DIR")"
+    # shellcheck disable=SC2086
+    tar $COMPRESS_OPT -C "$src_dir" -cpf "$tmp" "$(basename "$DATA_DIR")"
 fi
 mv "$tmp" "$target"
 tmp=""
