@@ -6,7 +6,7 @@ Diese Anleitung beschreibt, wie TuxMail lokal gegen **echte Mailprotokolle**
 `tuxmail demo seed`, sondern mit einem richtigen Konto, das über den
 Kontoassistenten angelegt wird.
 
-Voraussetzungen: Go 1.26, Node 22, für die E2E-Tests
+Voraussetzungen: Go 1.26, Node 22.12 oder neuer, für die E2E-Tests
 Playwright mit Chromium (`npm i -g playwright && npx playwright install chromium`).
 
 ## 1. Frontend und Binary bauen

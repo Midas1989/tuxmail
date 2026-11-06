@@ -137,11 +137,12 @@ check_go() {
 	fi
 }
 check_node() {
-	have node && have npm || add_missing frontend "node/npm not found (Node 22)"
+	have node && have npm || add_missing frontend "node/npm not found (Node 22.12 or newer)"
 	if have node; then
-		local major
-		major=$(node -p 'process.versions.node.split(".")[0]')
-		[ "$major" -ge 22 ] 2>/dev/null || add_missing frontend "Node 22 or newer needed, found $(node -v)"
+		# Vite 8 / Rolldown need Node 22.12+ (or 20.19+): npm silently skips the native
+		# Rolldown package on an older Node and the build then fails with "Cannot find native binding".
+		node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=12)||(a===20&&b>=19)?0:1)' ||
+			add_missing frontend "Node 22.12 or newer needed (Vite 8), found $(node -v); on Ubuntu 26.04: sudo apt install nodejs npm"
 	fi
 }
 check_linux_desktop() {

@@ -206,8 +206,8 @@ build/build-all.sh android --android-tasks "fossRelease playRelease"
 
 | Gruppe | Ergebnis in `dist/` | Voraussetzungen auf dem Rechner |
 |---|---|---|
-| `frontend` | `web/dist` (Zwischenstand) | Go, Node 22 |
-| `server` | `tuxmail_<v>_linux_{amd64,arm64}.tar.gz`, `…_windows_{amd64,arm64}.zip` | Go, Node 22 (Cross-Build, kein C-Compiler) |
+| `frontend` | `web/dist` (Zwischenstand) | Go, Node 22.12 oder neuer |
+| `server` | `tuxmail_<v>_linux_{amd64,arm64}.tar.gz`, `…_windows_{amd64,arm64}.zip` | Go, Node 22.12+ (Cross-Build, kein C-Compiler) |
 | `linux-desktop` | `.deb`, `.rpm`, portables `tar.gz`, AppImage (nur für die **Host**-Architektur) | gcc, pkg-config, `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`; nfpm und die AppImage-Werkzeuge werden geprüft geladen |
 | `windows-desktop` | `…-windows-<arch>-portable.zip`, `…-setup.exe` (Cross-Build) | Go, go-winres (wird bei Bedarf installiert) |
 | `android` | `foss`-APK (Debug; mit `TUXMAIL_KEYSTORE_FILE` Release) | JDK 21, Android SDK (Platform 36, Build-Tools 36), Node 22 |

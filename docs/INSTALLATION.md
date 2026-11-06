@@ -61,7 +61,7 @@ ansible-playbook -i inventory/hosts.ini site.yml \
 
 **Solange es kein Server-Archiv im Release gibt**, baust du es auf dem Server und gibst es dem Playbook mit:
 ```bash
-cd /opt/tuxmail && TUXMAIL_SIGNAL_CLI=skip build/build-all.sh server --arch amd64     # braucht Go und Node 22
+cd /opt/tuxmail && TUXMAIL_SIGNAL_CLI=skip build/build-all.sh server --arch amd64     # braucht Go und Node 22.12+
 ansible-playbook -i inventory/hosts.ini site.yml -e tuxmail_domain=mail.example.de \
   -e tuxmail_tls_letsencrypt_email=admin@example.de \
   -e tuxmail_binary_src=/opt/tuxmail/dist/tuxmail_<Version>_linux_amd64.tar.gz -e tuxmail_version=<Version>
@@ -451,7 +451,7 @@ build/build-all.sh                # alles Mögliche nach dist/
 build/build-all.sh server         # nur die Server-Archive
 ```
 
-Voraussetzungen je Ziel (Go, Node 22, für den Linux-Desktop GTK/WebKitGTK-Entwicklungspakete, für Android JDK 21 und
+Voraussetzungen je Ziel (Go, Node 22.12+, für den Linux-Desktop GTK/WebKitGTK-Entwicklungspakete, für Android JDK 21 und
 das Android SDK) sowie Einzelskripte und Signierung stehen in **[RELEASE.md](RELEASE.md)**, Abschnitt 4.
 Eigene Server-Archive installierst du mit `tuxmail_binary_src` (Abschnitt 6a), eigene Pakete wie die
 heruntergeladenen.
