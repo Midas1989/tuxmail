@@ -129,7 +129,7 @@ func (c *cli) openAppOptions(ctx context.Context, r *resolved, withMessenger, co
 	if err != nil {
 		return nil, nil, err
 	}
-	opts := app.Options{Store: st, DataDir: r.dir, Mode: app.ModeDesktop, Version: version, Secrets: r.secrets, Logger: log, Locales: locales.FS}
+	opts := app.Options{Store: st, DataDir: r.dir, Mode: app.ModeServer, Version: version, Secrets: r.secrets, Logger: log, Locales: locales.FS}
 	if configured {
 		opts.Sync, opts.Send = &app.SyncOptions{}, &app.SendOptions{}
 	}
