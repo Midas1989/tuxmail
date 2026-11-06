@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -282,6 +283,59 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, up UserUpdate) (*Use
 		return nil, err
 	}
 	s.Audit(ctx, "user.update", u.Username, true, "")
+	return s.GetUser(ctx, id)
+}
+
+// MaxDisplayNameLength is the longest display name a user can give themselves, in characters.
+const MaxDisplayNameLength = 100
+
+// NormalizeDisplayName trims a self-chosen display name and rejects what must
+// not end up in lists, mail templates or the audit view: an empty name, an
+// overlong one, control characters, line separators and the invisible
+// direction overrides that make a name read differently than it is stored.
+// Joiners (U+200C, U+200D) stay allowed: some scripts and emoji need them.
+func NormalizeDisplayName(name string) (string, error) {
+	if !utf8.ValidString(name) {
+		return "", fmt.Errorf("%w: display name is not valid text", ErrInvalidInput)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("%w: display name must not be empty", ErrInvalidInput)
+	}
+	if utf8.RuneCountInString(name) > MaxDisplayNameLength {
+		return "", fmt.Errorf("%w: display name must be at most %d characters", ErrInvalidInput, MaxDisplayNameLength)
+	}
+	for _, r := range name {
+		if unicode.IsControl(r) || unicode.In(r, unicode.Zl, unicode.Zp, unicode.Bidi_Control) {
+			return "", fmt.Errorf("%w: display name contains characters that are not allowed", ErrInvalidInput)
+		}
+	}
+	return name, nil
+}
+
+// UpdateOwnProfile changes what a signed-in user may change about themselves:
+// only the display name. Deliberately not UpdateUser: that marks an address as
+// verified, which links accounts on OIDC login, so the e-mail address (also a
+// login name) stays with administrators and the identity provider. Accounts
+// linked to an identity provider keep its name, because every OIDC login
+// overwrites display_name anyway (provisionOIDCUser).
+func (s *Service) UpdateOwnProfile(ctx context.Context, id int64, displayName string) (*User, error) {
+	name, err := NormalizeDisplayName(displayName)
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.OIDC {
+		return nil, ErrManagedByIdP
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?`, name, s.now().Unix(), id); err != nil {
+		return nil, err
+	}
+	// Names the field, not the value: the audit log records that, not what.
+	s.Audit(ctx, "user.update", u.Username, true, "displayName")
 	return s.GetUser(ctx, id)
 }
 

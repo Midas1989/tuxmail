@@ -116,6 +116,28 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	})
 }
 
+// handleUpdateMe changes the caller's own profile. The request type has no
+// other field on purpose: role, disabled, email and the like are ignored, and
+// the target is always the authenticated user, never an id from the request.
+func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	var req struct {
+		DisplayName *string `json:"displayName"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.DisplayName == nil {
+		writeError(w, http.StatusBadRequest, "invalid_input", "displayName is required")
+		return
+	}
+	u, err := s.auth.UpdateOwnProfile(r.Context(), a.User.ID, *req.DisplayName)
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": u})
+}
+
 func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	var req struct {
 		CurrentPassword string `json:"currentPassword"`

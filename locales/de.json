@@ -1492,6 +1492,7 @@
       "noResults": "Keine Einstellung passt zu „{query}“.",
       "back": "Alle Einstellungen",
       "clearSearch": "Suche leeren",
+      "profile": "Mein Konto",
       "general": "Allgemein",
       "accounts": "Konten",
       "mail": "Mail",
@@ -1508,6 +1509,27 @@
       "about": "Info & Diagnose"
     },
     "pages": {
+      "profile": {
+        "title": "Mein Konto",
+        "desc": "Ihr Name und Ihre Anmeldung auf diesem Server.",
+        "sections": {
+          "profile": "Profil",
+          "signin": "Anmeldung & Sicherheit",
+          "session": "Sitzung"
+        },
+        "displayName": "Anzeigename",
+        "displayNameHint": "So erscheinen Sie auf diesem Server, zum Beispiel in Team-Postfächern. Höchstens {max} Zeichen.",
+        "username": "Benutzername",
+        "email": "E-Mail",
+        "noEmail": "Keine hinterlegt",
+        "loginHint": "Mit Benutzername und E-Mail melden Sie sich an. Ändern kann sie nur die Administration.",
+        "oidcHint": "Name, Benutzername und E-Mail verwaltet Ihr Anmeldedienst. Ändern Sie sie dort.",
+        "saved": "Profil gespeichert.",
+        "required": "Bitte geben Sie einen Namen ein.",
+        "invalid": "Der Name ist zu lang oder enthält unzulässige Zeichen. Erlaubt sind höchstens {max} Zeichen.",
+        "menu": "Konto",
+        "edit": "Profil bearbeiten"
+      },
       "general": {
         "title": "Allgemein",
         "desc": "Sprache, Formate, Darstellung und Verhalten von TuxMail.",

@@ -12,7 +12,7 @@
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
-import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
+import type { AuthConfigInfo, AuthMe, AuthProfileUpdate, AuthSession, AuthUser, PasswordChange, Reauth, TotpEnrollment } from './security';
 import type * as pim from '../types';
 // --- OAuth/Cloud accounts ---
 import type {
@@ -279,6 +279,9 @@ export class WailsTransport implements Api {
     return Promise.reject(new ApiError('account security is only available in server mode', 0, 'not_supported'));
   }
   getAuthMe(): Promise<AuthMe> {
+    return this.noAccount();
+  }
+  updateAuthMe(_update: AuthProfileUpdate): Promise<AuthUser> {
     return this.noAccount();
   }
   getAuthConfig(): Promise<AuthConfigInfo> {

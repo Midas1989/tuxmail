@@ -265,6 +265,7 @@ func (s *Server) routes() http.Handler {
 	// Authentication (logged in)
 	mux.HandleFunc("POST /api/auth/logout", s.user(s.handleLogout))
 	mux.HandleFunc("GET /api/auth/me", s.user(s.handleMe))
+	mux.HandleFunc("PATCH /api/auth/me", s.user(s.handleUpdateMe))
 	mux.HandleFunc("POST /api/auth/password", s.user(s.handleChangePassword))
 	mux.HandleFunc("GET /api/auth/sessions", s.user(s.handleListSessions))
 	mux.HandleFunc("DELETE /api/auth/sessions/{id}", s.user(s.handleRevokeSession))

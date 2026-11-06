@@ -8,6 +8,7 @@
   import Settings from '@lucide/svelte/icons/settings';
   import Search from '@lucide/svelte/icons/search';
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
+  import AccountMenu from './AccountMenu.svelte';
   import { app, prefs } from '../state';
   import { t, i18n } from '../i18n/index.svelte';
 
@@ -73,6 +74,7 @@
   <button class="item settings" aria-current={app.route === 'settings' ? 'page' : undefined} onclick={() => app.navigate('settings')} title={t('nav.settings')} aria-label={t('nav.settings')}>
     <Settings size={22} strokeWidth={1.8} aria-hidden="true" />
   </button>
+  <AccountMenu />
 </nav>
 
 <style>

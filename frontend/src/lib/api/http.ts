@@ -213,7 +213,7 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type { ConversationScope } from './api';
-import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
+import type { AuthConfigInfo, AuthMe, AuthProfileUpdate, AuthSession, AuthUser, PasswordChange, Reauth, TotpEnrollment } from './security';
 import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 import type * as pim from '../types';
 // --- OAuth/Cloud accounts ---
@@ -655,6 +655,9 @@ export class HttpTransport implements Api {
   // --- Account security (server mode, see security.ts) ---
   getAuthMe(): Promise<AuthMe> {
     return this.request('GET', '/api/auth/me');
+  }
+  async updateAuthMe(update: AuthProfileUpdate): Promise<AuthUser> {
+    return (await this.request<{ user: AuthUser }>('PATCH', '/api/auth/me', update)).user;
   }
   getAuthConfig(): Promise<AuthConfigInfo> {
     return this.request('GET', '/api/auth/config');

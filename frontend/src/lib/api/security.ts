@@ -9,6 +9,7 @@
 //
 // REST routes (internal/server/api_auth.go):
 //   GET    /api/auth/me                    -> AuthMe  (user, session, mfaSetupRequired, recoveryCodesLeft)
+//   PATCH  /api/auth/me                    AuthProfileUpdate -> {user} (invalid_input; managed_by_idp for OIDC accounts)
 //   GET    /api/auth/config                -> AuthConfigInfo (public; password policy)
 //   POST   /api/auth/totp/setup            -> TotpEnrollment (secret + otpauth:// URL; replaces a pending secret)
 //   POST   /api/auth/totp/confirm          {code} -> {recoveryCodes}
@@ -33,6 +34,11 @@ export interface AuthUser {
   hasPassword: boolean;
   totpEnabled: boolean;
   oidc: boolean;
+}
+
+/** What the signed-in user may change about themselves. Username and e-mail address are login names and stay with the administration or identity provider. */
+export interface AuthProfileUpdate {
+  displayName: string;
 }
 
 /** A server session (browser or device token) of the signed-in user. */

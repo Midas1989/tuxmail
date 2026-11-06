@@ -617,11 +617,13 @@ export interface Api {
 // and routes: security.ts). Server mode only: the desktop shell has no server
 // account (Wails: ApiError "not_supported"), the mock keeps the state in memory.
 
-import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
+import type { AuthConfigInfo, AuthMe, AuthProfileUpdate, AuthSession, AuthUser, PasswordChange, Reauth, TotpEnrollment } from './security';
 
 export interface Api {
   /** Signed-in user, current session and whether TOTP must be set up first (GET /api/auth/me). */
   getAuthMe(): Promise<AuthMe>;
+  /** Change the own profile; returns the updated user. Errors: invalid_input, managed_by_idp (OIDC account). */
+  updateAuthMe(update: AuthProfileUpdate): Promise<AuthUser>;
   /** Public server settings (password policy). */
   getAuthConfig(): Promise<AuthConfigInfo>;
   /** Start enrolment: new secret + otpauth URL (replaces a pending secret). Error "exists": TOTP already active. */

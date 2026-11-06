@@ -72,6 +72,12 @@ describe('HttpTransport account security routes', () => {
     expect(hook).toHaveBeenCalledTimes(1);
   });
 
+  it('PATCH /api/auth/me sends only the display name and returns the user', async () => {
+    const { api, sent } = http(() => json(200, { user: { id: 1, displayName: 'Neu' } }));
+    await expect(api.updateAuthMe({ displayName: 'Neu' })).resolves.toMatchObject({ displayName: 'Neu' });
+    expect(sent).toMatchObject([{ method: 'PATCH', url: '/api/auth/me', body: { displayName: 'Neu' } }]);
+  });
+
   it('429 carries Retry-After as ApiError.retryAfter', async () => {
     const { api } = http(() => json(429, { error: 'throttled', message: 'too many' }, { 'Retry-After': '240' }));
     const err = await api.totpDisable({ code: '000000' }).catch((e: unknown) => e);

@@ -8,7 +8,7 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { MockPim } from './mockPim';
 import { MockSecurity, type MockSecurityOptions } from './mockSecurity';
-import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
+import type { AuthConfigInfo, AuthMe, AuthProfileUpdate, AuthSession, AuthUser, PasswordChange, Reauth, TotpEnrollment } from './security';
 import type * as pim from '../types';
 import { ApiError, EventHub } from './api';
 import { chatItemId, mailItemId, normalizeSubject, splitMail, splitQuoted } from '../conversation';
@@ -1404,6 +1404,9 @@ export class MockTransport implements Api {
   }
   getAuthMe(): Promise<AuthMe> {
     return this.run(() => this.sec.me());
+  }
+  updateAuthMe(update: AuthProfileUpdate): Promise<AuthUser> {
+    return this.run(() => this.sec.updateProfile(update));
   }
   getAuthConfig(): Promise<AuthConfigInfo> {
     return this.run(() => this.sec.config());

@@ -71,6 +71,8 @@ func (s *Server) writeAuthError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_code", err.Error())
 	case errors.Is(err, auth.ErrInvalidInput):
 		writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
+	case errors.Is(err, auth.ErrManagedByIdP):
+		writeError(w, http.StatusConflict, "managed_by_idp", err.Error())
 	case errors.Is(err, auth.ErrRegistration):
 		writeError(w, http.StatusForbidden, "registration_disabled", err.Error())
 	case errors.Is(err, auth.ErrPasskeysDisabled):

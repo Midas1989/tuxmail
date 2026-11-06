@@ -55,6 +55,14 @@ describe('settings catalog', () => {
     for (const c of SETTINGS_CATEGORIES) expect(new Set(c.sections.map((s) => s.id)).size).toBe(c.sections.length);
   });
 
+  it('lists the own server account first, in the web client only', () => {
+    expect(visibleCategories({ ...WEB, web: true })[0].id).toBe('profile');
+    expect(visibleCategories({ ...WEB, desktop: true, native: true }).map((c) => c.id)).not.toContain('profile');
+    expect(searchSettings('anzeigename', { ...WEB, web: true }, [tDe])[0]).toMatchObject({ category: 'profile', section: 'profile' });
+    expect(searchSettings('anzeigename', WEB, [tDe])).toEqual([]);
+    expect(normalizeLocation({ category: 'profile', section: null }, WEB)).toEqual({ category: null, section: null });
+  });
+
   it('hides categories and sections that do not apply', () => {
     const web = visibleCategories(WEB);
     expect(web.map((c) => c.id)).not.toContain('team');
