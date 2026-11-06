@@ -123,7 +123,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 16px;
+    padding: calc(16px + var(--tm-safe-top)) calc(16px + var(--tm-safe-right)) calc(16px + var(--tm-safe-bottom)) calc(16px + var(--tm-safe-left));
     background: rgb(10 14 22 / 0.45);
     backdrop-filter: blur(2px);
   }
@@ -133,7 +133,7 @@
   }
   .dialog {
     width: 100%;
-    max-height: calc(100vh - 32px);
+    max-height: calc(100vh - 32px - var(--tm-safe-top) - var(--tm-safe-bottom));
     display: flex;
     flex-direction: column;
     background: var(--tm-surface);

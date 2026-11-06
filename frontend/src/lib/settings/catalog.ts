@@ -65,7 +65,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
       sec('signatures', ['settings.signatures.title', 'settings.signatures.add', 'settings.signatures.default', 'settings.signatures.reply']),
       sec('shared', ['cloud.shared.title', 'cloud.shared.add', 'cloud.identities.title', 'cloud.shared.sendMode']),
       sec('folders', ['settings.folders.title', 'settings.folders.behaviour', 'settings.folders.saveSent', 'settings.folders.trash', 'settings.folders.archive', 'settings.folders.identities']),
-      sec('server', ['onboarding.connect.cardTitle', 'onboarding.connect.title', 'onboarding.connect.modeThin', 'onboarding.connect.modeLocal']),
+      sec('server', ['onboarding.connect.cardTitle', 'onboarding.connect.title', 'onboarding.connect.modeThin', 'onboarding.connect.modeLocal'], { only: 'desktop' }),
       sec('sieve', ['settings.sieve.title', 'settings.sieve.scripts', 'settings.sieve.syncWorkflows', 'settings.sieve.advanced'], { group: 'advanced' }),
     ],
   },

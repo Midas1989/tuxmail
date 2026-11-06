@@ -687,6 +687,10 @@
   }
   .hint {
     flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     align-self: center;
     font-size: 12px;
     color: var(--tm-faint);

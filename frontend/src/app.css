@@ -6,6 +6,14 @@
    in @theme below (bg-surface, text-muted, border-line, ...), never raw hex.
    --------------------------------------------------------------------------- */
 :root {
+  /* System-bar insets (notch, status bar, gesture/3-button navigation). The Android app overrides
+     these from Capacitor's --safe-area-inset-* variables (lib/native/native.css). */
+  --tm-safe-top: env(safe-area-inset-top, 0px);
+  --tm-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tm-safe-left: env(safe-area-inset-left, 0px);
+  --tm-safe-right: env(safe-area-inset-right, 0px);
+  /* Height of the phone bottom bar without the bottom inset. */
+  --tm-bar-h: 56px;
   --tm-bg: #f3f6fa;
   --tm-surface: #ffffff;
   --tm-surface-2: #f1f3f6;
@@ -324,6 +332,46 @@
     overflow: hidden;
     clip: rect(0, 0, 0, 0);
     border: 0;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Phones: touch targets of at least 44 px and icons of at least 20 px in the shared controls.
+   Unlayered with an "html" prefix so it also wins over the scoped sizes of single components;
+   only min-* is set, nothing gets smaller. Desktop (>= 640 px) is untouched.
+   --------------------------------------------------------------------------- */
+@media (max-width: 639px) {
+  html .btn,
+  html .icon-btn,
+  html .input:not(textarea),
+  html .seg button,
+  html button.tab,
+  html [role='tab'] {
+    min-height: 44px;
+  }
+  html .icon-btn {
+    min-width: 44px;
+  }
+  html .seg button {
+    min-width: 44px;
+    justify-content: center;
+  }
+  html .icon-btn svg {
+    min-width: 20px;
+    min-height: 20px;
+  }
+  /* Small inline "clear / advanced" buttons keep their look; the touch area grows invisibly. */
+  html button.clear {
+    position: relative;
+  }
+  html button.clear::after {
+    content: '';
+    position: absolute;
+    inset: -11px;
+  }
+  html .btn svg {
+    min-width: 18px;
+    min-height: 18px;
   }
 }
 

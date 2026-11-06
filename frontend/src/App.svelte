@@ -156,7 +156,7 @@
   }
   @media (max-width: 639px) {
     .app {
-      padding-bottom: 60px;
+      padding-bottom: calc(var(--tm-bar-h) + var(--tm-safe-bottom));
     }
     /* Phones: an open chat is full screen, like messenger apps. */
     .app.chat-open {

@@ -51,7 +51,7 @@
     justify-content: center;
     gap: 16px;
     background: var(--tm-bg);
-    padding: env(safe-area-inset-top) 16px env(safe-area-inset-bottom);
+    padding: var(--tm-safe-top) 16px var(--tm-safe-bottom);
   }
   h1 {
     margin: 0;

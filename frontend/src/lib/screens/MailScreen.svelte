@@ -269,6 +269,10 @@
     left: 0;
     z-index: 41;
     display: flex;
+    /* Keep the content clear of the status bar and the navigation buttons (the panel colour runs behind them). */
+    padding: var(--tm-safe-top) 0 var(--tm-safe-bottom) var(--tm-safe-left);
+    box-sizing: border-box;
+    background: var(--tm-sidebar);
     box-shadow: var(--tm-shadow-lg);
   }
 
