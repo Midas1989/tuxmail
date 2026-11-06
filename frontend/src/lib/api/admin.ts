@@ -18,7 +18,8 @@
 //   GET/POST /api/admin/invites; DELETE /api/admin/invites/{id}   (create -> {invite, token, url}, token once)
 //   GET    /api/admin/audit?limit=&before=&action=&actor=&result=failed -> {entries}
 //   GET    /api/admin/backup                         -> {keys, invalid, lastRun, reauth}
-//   POST   /api/admin/backup/key/generate            -> {publicKey, fingerprint, privateKey}   (private key once)
+//   POST   /api/admin/backup/key/generate            -> {publicKey, fingerprint, privateKey}   (private key once, key pending)
+//   POST   /api/admin/backup/key/confirm             -> {publicKey, fingerprint}   ("saved in the vault": key counts now)
 //   POST   /api/admin/backup/key/import              -> {publicKey, fingerprint}
 //
 // The pure parts (types, error mapping, the in-memory MockAdminClient used by
@@ -173,6 +174,8 @@ export interface BackupStatus {
   keys: BackupKey[];
   /** The stored file has a line the job refuses; no backups run. */
   invalid: boolean;
+  /** Created but not confirmed: the job does not use it. */
+  pending: BackupKey | null;
   lastRun: BackupRun | null;
   /** Which proofs the confirmation asks for. */
   reauth: { password: boolean; code: boolean };
@@ -203,8 +206,10 @@ export interface AdminClient {
   deleteInvite(id: number): Promise<void>;
   auditLog(q?: AuditQuery): Promise<AdminAuditEntry[]>;
   backupStatus(): Promise<BackupStatus>;
-  /** Creates a key pair; the private key is in this answer only. `replace` confirms giving up an existing key. */
+  /** Creates a key pair; the private key is in this answer only. It counts after confirmBackupKey. */
   generateBackupKey(reauth: Reauth, replace: boolean): Promise<BackupKey & { privateKey: string }>;
+  /** "Saved in the vault": activates the pending key. `replace` confirms giving up an existing key. */
+  confirmBackupKey(fingerprint: string, replace: boolean): Promise<BackupKey>;
   importBackupKey(publicKey: string, reauth: Reauth, replace: boolean): Promise<BackupKey>;
 }
 
@@ -224,6 +229,7 @@ export const ADMIN_ERROR_CODES = [
   'backup_key_exists',
   'backup_key_private',
   'backup_key_invalid',
+  'backup_key_not_pending',
   'network',
 ] as const;
 export type AdminErrorCode = (typeof ADMIN_ERROR_CODES)[number];
@@ -394,6 +400,9 @@ export class HttpAdminClient implements AdminClient {
   }
   generateBackupKey(reauth: Reauth, replace: boolean) {
     return this.req<BackupKey & { privateKey: string }>('POST', '/api/admin/backup/key/generate', { ...reauth, replace });
+  }
+  confirmBackupKey(fingerprint: string, replace: boolean) {
+    return this.req<BackupKey>('POST', '/api/admin/backup/key/confirm', { fingerprint, replace });
   }
   importBackupKey(publicKey: string, reauth: Reauth, replace: boolean) {
     return this.req<BackupKey>('POST', '/api/admin/backup/key/import', { ...reauth, publicKey, replace });
@@ -659,20 +668,34 @@ export class MockAdminClient implements AdminClient {
     return this.wait(list.slice(0, q.limit && q.limit > 0 ? Math.min(q.limit, 1000) : 100));
   }
   private backupKey: BackupKey | null = null;
+  private pendingBackupKey: BackupKey | null = null;
   private storeBackupKey(publicKey: string, replace: boolean): BackupKey {
     if (this.backupKey && !replace) throw new ApiError('a backup key exists', 409, 'backup_key_exists');
-    this.backupKey = { publicKey, fingerprint: `SHA256:mock-${publicKey.slice(-12)}` };
+    this.backupKey = this.mockBackupKey(publicKey);
+    this.pendingBackupKey = null;
     return this.backupKey;
+  }
+  private mockBackupKey(publicKey: string): BackupKey {
+    return { publicKey, fingerprint: `SHA256:mock-${publicKey.slice(-12)}` };
   }
   async backupStatus(): Promise<BackupStatus> {
     this.requireAdmin();
-    return this.wait({ keys: this.backupKey ? [this.backupKey] : [], invalid: false, lastRun: null, reauth: { password: true, code: false } });
+    return this.wait({ keys: this.backupKey ? [this.backupKey] : [], invalid: false, pending: this.pendingBackupKey, lastRun: null, reauth: { password: true, code: false } });
   }
   async generateBackupKey(_reauth: Reauth, replace: boolean) {
     this.requireAdmin();
-    const key = this.storeBackupKey(`age1mock${randomPassword(40).toLowerCase().replace(/[^a-z0-9]/g, 'x')}`, replace);
+    if (this.backupKey && !replace) throw new ApiError('a backup key exists', 409, 'backup_key_exists');
+    const key = this.mockBackupKey(`age1mock${randomPassword(40).toLowerCase().replace(/[^a-z0-9]/g, 'x')}`);
+    this.pendingBackupKey = key;
     this.log('backup.key.generate', 'backup');
     return this.wait({ ...key, privateKey: `AGE-SECRET-KEY-1MOCK${randomPassword(40).toUpperCase().replace(/[^A-Z0-9]/g, 'X')}` });
+  }
+  async confirmBackupKey(fingerprint: string, replace: boolean) {
+    this.requireAdmin();
+    if (this.pendingBackupKey?.fingerprint !== fingerprint) throw new ApiError('not pending', 409, 'backup_key_not_pending');
+    const key = this.storeBackupKey(this.pendingBackupKey.publicKey, replace);
+    this.log('backup.key.confirm', 'backup');
+    return this.wait(key);
   }
   async importBackupKey(publicKey: string, _reauth: Reauth, replace: boolean) {
     this.requireAdmin();

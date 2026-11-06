@@ -562,6 +562,8 @@ erzeugt sie mit `umask 077` (Archive 0600, Verzeichnis 0700). Beim Zurückspiele
 
 - Der private Schlüssel wird genau einmal angezeigt. Lege ihn im Tresor ab: Ohne ihn lässt sich keine Sicherung
   zurückspielen. Am Server bleibt nur der öffentliche Schlüssel (`/var/lib/tuxmail/backup/recipients.txt`).
+- Er gilt erst, wenn du „Im Tresor gesichert“ bestätigt hast. Bis dahin wartet der öffentliche Teil in
+  `recipients.txt.pending`, und der Job nutzt weiter den alten Schlüssel; beim ersten Schlüssel sichert er noch nicht.
 - Statt dessen kannst du dort einen eigenen öffentlichen Schlüssel (`age1…`) eintragen, etwa aus `age-keygen`.
 - Ersetzen geht jederzeit und landet im Audit-Log. Ältere Sicherungen brauchen weiter den alten privaten Schlüssel.
 - **Bestand:** Steht `tuxmail_backup_age_recipients` im Inventory, übernimmt das Playbook die Werte einmalig in die
@@ -569,6 +571,29 @@ erzeugt sie mit `umask 077` (Archive 0600, Verzeichnis 0700). Beim Zurückspiele
 - Die Seite zeigt auch das Ergebnis des letzten Laufs. Die tägliche Sicherung ist standardmäßig an; ohne Schlüssel
   scheitert der Job mit Fehlerstatus, Klartext entsteht nie. Abschalten: `tuxmail_backup_timer_enabled: false`.
 - Installation ohne Ansible: `deploy/systemd/tuxmail-backup.sh` nutzt dieselbe Datei und braucht das Paket `age`.
+
+**Nächtlicher Stopp des Dienstes:** Der Timer ist standardmäßig an. Sobald ein Schlüssel da ist, hält `--stop` den
+Dienst für die ganze Sicherung an (konsistente SQLite-Dateien).
+
+- **Wann:** täglich zwischen 03:15 und 03:30 Uhr Serverzeit (`tuxmail_backup_timer_oncalendar`, plus bis zu 15 Minuten
+  Zufall). War der Server zu der Zeit aus, läuft die Sicherung beim nächsten Start nach.
+- **Wie lange:** abhängig von der Größe von `/var/lib/tuxmail`. Gemessen mit tar, zstd und age ohne Last: etwa 5 bis
+  15 Sekunden je GB, dazu das Anhalten und Starten. Auf einem ausgelasteten Server dauert es länger, weil der Lauf mit
+  `Nice=10` und `IOSchedulingClass=idle` läuft. Den echten Wert liefert `journalctl -u tuxmail-backup`.
+- **In der Zeit:** Oberfläche und API sind nicht erreichbar, Synchronisation und Push pausieren und holen danach auf.
+- **Abschalten:** `tuxmail_backup_timer_enabled: false` schaltet die tägliche Sicherung ganz ab. Mit
+  `tuxmail_backup_stop_service: false` läuft sie ohne Stopp.
+- **Grenzen:** Die Stoppdauer hat keine Obergrenze, sie wächst mit den Daten. Ohne Stopp ist das Archiv nicht
+  garantiert konsistent, weil SQLite-Dateien im Betrieb kopiert werden. Wird das Skript hart beendet (`SIGKILL`,
+  Stromausfall im Lauf), startet es den Dienst nicht wieder; dann hilft `systemctl start tuxmail`.
+- **Bestand:** Nach dem Update ist der Timer aktiv. Ohne Schlüssel endet der Lauf vor dem Stopp, der Dienst läuft
+  durch. Mit übernommenem `tuxmail_backup_age_recipients` steht er schon in der ersten Nacht.
+
+**Zustand für das Monitoring:** `GET /healthz` meldet neben `status` das Feld `backup`: `ok` (letzter Lauf erfolgreich,
+verschlüsselt, höchstens 48 Stunden alt), `warn` (noch kein Lauf, zu alt oder unverschlüsselt) oder `fail` (kein gültiger
+Schlüssel, letzter Lauf gescheitert). Das Feld ist öffentlich und bewusst grob; `status` und der HTTP-Code hängen nicht
+davon ab, der Rollout wartet also nicht darauf. Details zeigt die Oberfläche. In einer Installation ohne Backup-Job,
+etwa im Container, steht es dauerhaft auf `fail`.
 
 **Ohne Schlüssel keine Klartext-Sicherung (Re-Audit ND-14):** `tuxmail-backup` endet mit Exit 3 und ohne Datei, bevor
 der Dienst angehalten wird. Das Playbook bricht deshalb nicht ab: Es warnt, auch wenn dadurch die Sicherung vor einem
@@ -705,7 +730,18 @@ sudo install -o root -g tuxmail -m 0640 systemd/config.example.yaml /etc/tuxmail
 sudo install -m 0644 systemd/tuxmail.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail
 # nginx: nginx/tuxmail.conf nach sites-available/ bzw. conf.d/, Domain/Zertifikat anpassen, nginx -t
+
+# Tägliche Sicherung (Skript und Timer; braucht die Pakete age, zstd und tar)
+sudo apt install age zstd                    # RHEL-Familie: EPEL aktivieren, dann dnf install age zstd
+sudo install -d -o tuxmail -g tuxmail -m 0750 /var/lib/tuxmail/backup
+sudo install -d -o root -g root -m 0700 /var/backups/tuxmail
+sudo install -o root -g root -m 0750 systemd/tuxmail-backup.sh /usr/local/sbin/tuxmail-backup
+sudo install -m 0644 systemd/tuxmail-backup.service systemd/tuxmail-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail-backup.timer
 ```
+
+Danach den Backup-Schlüssel in der Oberfläche erzeugen (Einstellungen → Administration → Sicherung). Laufzeit und
+Abschalten stehen in Abschnitt 7.
 
 ## 12. Docker / Podman (Alternative)
 

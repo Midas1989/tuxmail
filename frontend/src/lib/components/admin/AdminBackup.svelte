@@ -3,7 +3,8 @@
   Settings -> Administration -> Backup: the age key of the server backups. Shows
   whether there is a key and how the last run went, and creates, replaces or
   imports a key after a fresh confirmation. The private key is held only in the
-  `secret` variable while its dialog is open; the server does not keep it.
+  `secret` variable while its dialog is open; the server does not keep it. A new
+  key counts only once "saved in the vault" reached the server.
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
@@ -26,7 +27,8 @@
   let pending = $state<{ kind: 'generate' } | { kind: 'import'; publicKey: string } | null>(null);
   let busy = $state(false);
   let error = $state<string | null>(null);
-  let secret = $state<string | null>(null);
+  let secret = $state<{ privateKey: string; fingerprint: string } | null>(null);
+  let secretError = $state<string | null>(null);
   let ownOpen = $state(false);
   let ownKey = $state('');
 
@@ -62,7 +64,9 @@
     error = null;
     try {
       if (pending.kind === 'generate') {
-        secret = (await client.generateBackupKey(reauth, replacing)).privateKey;
+        const created = await client.generateBackupKey(reauth, replacing);
+        secret = { privateKey: created.privateKey, fingerprint: created.fingerprint };
+        secretError = null;
       } else {
         await client.importBackupKey(pending.publicKey, reauth, replacing);
         notify(t('admin.toast.backupKeyImported'));
@@ -76,6 +80,27 @@
     } finally {
       busy = false;
     }
+  }
+
+  /** "Saved in the vault": the dialog stays open until the server has activated the key. */
+  async function confirmSecret() {
+    if (!secret || busy) return;
+    busy = true;
+    secretError = null;
+    try {
+      await client.confirmBackupKey(secret.fingerprint, replacing);
+      secret = null;
+      await load();
+    } catch (err) {
+      secretError = adminErrorMessage(err, t);
+    } finally {
+      busy = false;
+    }
+  }
+
+  function cancelSecret() {
+    secret = null;
+    void load();
   }
 
   function submitOwn(e: SubmitEvent) {
@@ -96,6 +121,10 @@
       <p class="alert" role="alert" data-testid="backup-invalid"><TriangleAlert size={16} aria-hidden="true" /> {t('admin.backup.invalid')}</p>
     {:else if !hasKey}
       <p class="alert" role="alert" data-testid="backup-nokey"><TriangleAlert size={16} aria-hidden="true" /> {t('admin.backup.noKey')}</p>
+    {/if}
+
+    {#if status.pending}
+      <p class="what pending" role="status" data-testid="backup-pending">{t('admin.backup.pending')}</p>
     {/if}
 
     {#each status.keys as key (key.publicKey)}
@@ -146,7 +175,7 @@
 {/if}
 
 {#if secret}
-  <SecretDialog title={t('admin.backup.secretTitle')} label={t('admin.backup.secretLabel')} intro={t('admin.backup.secretIntro')} value={secret} ack={t('admin.backup.secretAck')} onclose={() => (secret = null)} />
+  <SecretDialog title={t('admin.backup.secretTitle')} label={t('admin.backup.secretLabel')} intro={t('admin.backup.secretIntro')} value={secret.privateKey} ack={t('admin.backup.secretAck')} error={secretError} {busy} oncancel={cancelSecret} onclose={() => void confirmSecret()} />
 {/if}
 
 <style>
@@ -158,6 +187,9 @@
   .what {
     margin: 0;
     font-size: 14px;
+  }
+  .pending {
+    font-weight: 500;
   }
   .alert {
     display: flex;

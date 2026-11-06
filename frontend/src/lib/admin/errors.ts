@@ -24,6 +24,7 @@ const KEYS = {
   backup_key_exists: 'admin.errors.backup_key_exists',
   backup_key_private: 'admin.errors.backup_key_private',
   backup_key_invalid: 'admin.errors.backup_key_invalid',
+  backup_key_not_pending: 'admin.errors.backup_key_not_pending',
   network: 'admin.errors.network',
 } as const satisfies Record<AdminErrorCode, MessageKey>;
 

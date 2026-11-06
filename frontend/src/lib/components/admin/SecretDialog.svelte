@@ -23,9 +23,15 @@
     value: string;
     /** If set, "Done" stays disabled until this statement is ticked ("Saved in the vault"). */
     ack?: string;
+    /** Shown under the field, e.g. when the confirmation failed; the dialog stays open. */
+    error?: string | null;
+    /** Disables the buttons while the confirmation is on its way. */
+    busy?: boolean;
+    /** If set, the dialog offers to give up: nothing was saved, nothing changes. */
+    oncancel?: () => void;
     onclose: () => void;
   }
-  let { title, label, intro, value, ack, onclose }: Props = $props();
+  let { title, label, intro, value, ack, error = null, busy = false, oncancel, onclose }: Props = $props();
 
   let copied = $state(false);
   let failed = $state(false);
@@ -41,6 +47,7 @@
 
   /** Esc / backdrop: only once the secret was copied; otherwise point at the copy button. */
   function guardedClose() {
+    if (busy) return;
     if (ack ? acked : copied) onclose();
     else warn = true;
   }
@@ -60,10 +67,11 @@
     <label class="ack"><input type="checkbox" bind:checked={acked} data-testid="secret-ack" /> {ack}</label>
   {/if}
   <div class="status" role="status">
-    {#if failed}{t('admin.secret.copyFailed')}{:else if warn && ack}{t('admin.secret.ackFirst')}{:else if warn && !copied}{t('admin.secret.copyFirst')}{/if}
+    {#if error}{error}{:else if failed}{t('admin.secret.copyFailed')}{:else if warn && ack}{t('admin.secret.ackFirst')}{:else if warn && !copied}{t('admin.secret.copyFirst')}{/if}
   </div>
   {#snippet footer()}
-    <button class="btn btn-primary" onclick={onclose} disabled={!!ack && !acked} data-testid="secret-done">{t('admin.secret.done')}</button>
+    {#if oncancel}<button class="btn btn-ghost" onclick={oncancel} disabled={busy} data-testid="secret-cancel">{t('common.action.cancel')}</button>{/if}
+    <button class="btn btn-primary" onclick={onclose} disabled={busy || (!!ack && !acked)} data-testid="secret-done">{t('admin.secret.done')}</button>
   {/snippet}
 </Modal>
 

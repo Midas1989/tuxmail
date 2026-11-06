@@ -3539,7 +3539,8 @@
       "invalid_credentials": "The password or code is wrong.",
       "backup_key_exists": "A backup key already exists. Refresh the page and replace it deliberately.",
       "backup_key_private": "This is a private key. Do not paste it here: enter the public key (age1…).",
-      "backup_key_invalid": "This is not a valid public age key (age1…)."
+      "backup_key_invalid": "This is not a valid public age key (age1…).",
+      "backup_key_not_pending": "This key is no longer waiting for confirmation. It does not count: create a new one."
     },
     "backup": {
       "what": "Backups contain all data of this server and are encrypted. The server only keeps the public key. You need the private key to restore a backup, so keep it in a vault, away from this server.",
@@ -3565,8 +3566,9 @@
       "replaceWarning": "Older backups stay encrypted with the old key. Keep the old private key as long as you keep those backups.",
       "secretTitle": "Your private backup key",
       "secretLabel": "Private key",
-      "secretIntro": "Save this key in your vault now. Without it no backup can be restored, and the server does not keep it.",
-      "secretAck": "Saved in the vault"
+      "secretIntro": "Save this key in your vault now, then confirm below. Without it no backup can be restored, and the server does not keep it. The key only counts after your confirmation.",
+      "secretAck": "Saved in the vault",
+      "pending": "A new key was created but not confirmed, so it does not count. Backups keep using the key shown here, if there is one. Create a new key to finish."
     }
   },
   "comfort": {

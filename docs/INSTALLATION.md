@@ -382,7 +382,19 @@ sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail
 # 4. Ersten Administrator anlegen (Passwort wird über stdin übergeben)
 echo 'SicheresPasswort' | sudo runuser -u tuxmail -- /opt/tuxmail/current/tuxmail user add \
   --config /etc/tuxmail/config.yaml --username admin --email admin@example.org --admin --password-stdin
+
+# 5. # Tägliche Sicherung (Skript und Timer; braucht die Pakete age, zstd und tar)
+sudo apt install age zstd                    # RHEL-Familie: EPEL aktivieren, dann dnf install age zstd
+sudo install -d -o tuxmail -g tuxmail -m 0750 /var/lib/tuxmail/backup
+sudo install -d -o root -g root -m 0700 /var/backups/tuxmail
+sudo install -o root -g root -m 0750 deploy/systemd/tuxmail-backup.sh /usr/local/sbin/tuxmail-backup
+sudo install -m 0644 deploy/systemd/tuxmail-backup.service deploy/systemd/tuxmail-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail-backup.timer
 ```
+
+Dann in der Oberfläche den **Backup-Schlüssel erzeugen**: Einstellungen → Administration → Sicherung. Bis du „Im Tresor
+gesichert“ bestätigt hast, endet das Skript mit Fehler und sichert nichts. Danach stoppt es den Dienst jede Nacht kurz,
+siehe [deploy/README.md, Abschnitt 7](../deploy/README.md#7-daten-und-sicherungen--wichtig).
 
 Danach brauchst du TLS: entweder einen Reverse Proxy (Beispiel `deploy/nginx/tuxmail.conf`) oder die Einstellung
 `tls.mode: file` (Abschnitt 6d). Den Dienst prüfst du mit `systemctl status tuxmail` und

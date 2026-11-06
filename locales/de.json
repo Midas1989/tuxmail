@@ -3538,7 +3538,8 @@
       "invalid_credentials": "Passwort oder Code stimmt nicht.",
       "backup_key_exists": "Es gibt schon einen Backup-Schlüssel. Lade die Seite neu und ersetze ihn bewusst.",
       "backup_key_private": "Das ist ein privater Schlüssel. Füge ihn hier nicht ein, sondern den öffentlichen (age1…).",
-      "backup_key_invalid": "Das ist kein gültiger öffentlicher age-Schlüssel (age1…)."
+      "backup_key_invalid": "Das ist kein gültiger öffentlicher age-Schlüssel (age1…).",
+      "backup_key_not_pending": "Dieser Schlüssel wartet nicht mehr auf die Bestätigung und gilt nicht. Erzeuge einen neuen."
     },
     "backup": {
       "what": "Sicherungen enthalten alle Daten dieses Servers und werden verschlüsselt. Am Server bleibt nur der öffentliche Schlüssel. Zum Zurückspielen brauchst du den privaten Schlüssel, bewahre ihn also im Tresor auf, getrennt von diesem Server.",
@@ -3564,8 +3565,9 @@
       "replaceWarning": "Ältere Sicherungen bleiben mit dem alten Schlüssel verschlüsselt. Behalte den alten privaten Schlüssel, solange du diese Sicherungen aufbewahrst.",
       "secretTitle": "Dein privater Backup-Schlüssel",
       "secretLabel": "Privater Schlüssel",
-      "secretIntro": "Sichere diesen Schlüssel jetzt in deinem Tresor. Ohne ihn lässt sich keine Sicherung zurückspielen, und der Server behält ihn nicht.",
-      "secretAck": "Im Tresor gesichert"
+      "secretIntro": "Sichere diesen Schlüssel jetzt in deinem Tresor und bestätige unten. Ohne ihn lässt sich keine Sicherung zurückspielen, und der Server behält ihn nicht. Der Schlüssel gilt erst nach deiner Bestätigung.",
+      "secretAck": "Im Tresor gesichert",
+      "pending": "Ein neuer Schlüssel wurde erzeugt, aber nicht bestätigt, und gilt deshalb nicht. Sicherungen nutzen weiter den hier gezeigten Schlüssel, falls es einen gibt. Erzeuge zum Abschluss einen neuen."
     }
   },
   "comfort": {

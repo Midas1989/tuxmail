@@ -9,6 +9,7 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { flushSync, mount, tick, unmount } from 'svelte';
 import { MockAdminClient, type AdminClient, type AdminMe } from '../../api/admin';
+import { ApiError } from '../../api/api';
 import type { AdminPanelProps } from '../../admin/panel';
 import AdminUsers from './AdminUsers.svelte';
 import AdminInvites from './AdminInvites.svelte';
@@ -443,8 +444,15 @@ describe('AdminBackup', () => {
     ack.click();
     flushSync();
     expect(done.disabled).toBe(false);
+    // Until the server has it, the key does not count and the dialog stays.
+    expect((await client.backupStatus()).keys).toHaveLength(0);
+    const confirm = vi.spyOn(client, 'confirmBackupKey').mockRejectedValueOnce(new ApiError('down', 0, 'network'));
     done.click();
     await settle();
+    expect(document.querySelector('[data-testid=secret-value]')).toBeTruthy();
+    done.click();
+    await settle();
+    expect(confirm).toHaveBeenCalledTimes(2);
 
     expect(document.querySelector('[data-testid=secret-value]')).toBeNull();
     expect(document.body.innerHTML).not.toContain('AGE-SECRET-KEY-');
@@ -452,9 +460,27 @@ describe('AdminBackup', () => {
     expect(el.querySelector('[data-testid=backup-key]')).toBeTruthy();
   });
 
+  it('keeps the old key when the dialog is given up and says a key is waiting', async () => {
+    const client = new MockAdminClient({ latencyMs: 0 });
+    const created = await client.generateBackupKey({ password: REAUTH_PW }, false);
+    await client.confirmBackupKey(created.fingerprint, false);
+    const el = show(AdminBackup, panel(client));
+    await settle();
+    el.querySelector<HTMLButtonElement>('[data-testid=backup-generate]')!.click();
+    await settle();
+    await confirmWithPassword(el);
+    document.querySelector<HTMLButtonElement>('[data-testid=secret-cancel]')!.click();
+    await settle();
+    expect(document.querySelector('[data-testid=secret-value]')).toBeNull();
+    const st = await client.backupStatus();
+    expect(st.keys[0].fingerprint).toBe(created.fingerprint);
+    expect(el.querySelector('[data-testid=backup-pending]')).toBeTruthy();
+  });
+
   it('warns before replacing and refuses a private key in the import field', async () => {
     const client = new MockAdminClient({ latencyMs: 0 });
-    await client.generateBackupKey({ password: REAUTH_PW }, false);
+    const key = await client.generateBackupKey({ password: REAUTH_PW }, false);
+    await client.confirmBackupKey(key.fingerprint, false);
     const el = show(AdminBackup, panel(client));
     await settle();
 

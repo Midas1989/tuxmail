@@ -29,6 +29,7 @@ import (
 
 const (
 	backupGenerate = "/api/admin/backup/key/generate"
+	backupConfirm  = "/api/admin/backup/key/confirm"
 	backupImport   = "/api/admin/backup/key/import"
 )
 
@@ -57,11 +58,16 @@ func backupAdmin(t *testing.T, opts Options) (*env, *browser) {
 	return e, admin
 }
 
+// generateKey creates a key and confirms it, as the dialog does.
 func generateKey(t *testing.T, admin *browser, replace bool) (privateKey, publicKey string) {
 	t.Helper()
 	resp, m := admin.do("POST", backupGenerate, map[string]any{"password": pw, "replace": replace})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatal(resp.Status, m)
+	}
+	resp, c := admin.do("POST", backupConfirm, map[string]any{"fingerprint": m["fingerprint"], "replace": replace})
+	if resp.StatusCode != http.StatusOK {
+		t.Fatal(resp.Status, c)
 	}
 	return m["privateKey"].(string), m["publicKey"].(string)
 }
@@ -149,7 +155,11 @@ func TestBackupKeyPrivateKeyShownOnceAndNeverStored(t *testing.T) {
 		t.Fatal(m)
 	}
 
-	// The public key is what is left, for the job to read, not writable by others.
+	// The public key is what is left, for the job to read after the
+	// confirmation, not writable by others.
+	if resp, c := admin.do("POST", backupConfirm, map[string]any{"fingerprint": m["fingerprint"]}); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, c)
+	}
 	fi, err := os.Stat(e.srv.backupRecipientsPath())
 	if err != nil {
 		t.Fatal(err)
@@ -191,11 +201,13 @@ func TestBackupKeyPrivateKeyShownOnceAndNeverStored(t *testing.T) {
 		t.Error("private key in the log")
 	}
 	entries := backupAudit(t, admin)
-	if len(entries) != 1 || entries[0]["action"] != "backup.key.generate" || entries[0]["actor"] != "root" {
+	if len(entries) != 2 || entries[0]["action"] != "backup.key.confirm" || entries[1]["action"] != "backup.key.generate" || entries[0]["actor"] != "root" {
 		t.Fatal(entries)
 	}
-	if d, _ := entries[0]["details"].(string); !strings.Contains(d, m["fingerprint"]) || strings.Contains(d, m["publicKey"]) || strings.Contains(d, "SECRET") {
-		t.Fatalf("audit details: %q", d)
+	for _, entry := range entries {
+		if d, _ := entry["details"].(string); !strings.Contains(d, m["fingerprint"]) || strings.Contains(d, m["publicKey"]) || strings.Contains(d, "SECRET") {
+			t.Fatalf("audit details: %q", d)
+		}
 	}
 }
 
@@ -278,6 +290,158 @@ func TestBackupKeyReplaceNeedsConfirmationAndAudits(t *testing.T) {
 	}
 	if resp, _ := admin.do("POST", backupGenerate, map[string]any{"password": pw}); resp.StatusCode != http.StatusConflict {
 		t.Fatal(resp.Status)
+	}
+}
+
+// Until "saved in the vault" arrives at the server nothing changes for the job.
+func TestBackupKeyPendingUntilConfirmed(t *testing.T) {
+	needTools(t, "age", "zstd", "tar")
+	e, admin := backupAdmin(t, Options{})
+	job := systemdScript(t, e.cfg.DataDir)
+	generate := func(replace bool) map[string]any {
+		t.Helper()
+		resp, m := admin.do("POST", backupGenerate, map[string]any{"password": pw, "replace": replace})
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatal(resp.Status, m)
+		}
+		return m
+	}
+	confirm := func(fingerprint any, replace bool) (*http.Response, map[string]any) {
+		t.Helper()
+		return admin.do("POST", backupConfirm, map[string]any{"fingerprint": fingerprint, "replace": replace})
+	}
+
+	// First key, answer lost or tab closed: no active key, the job stays red.
+	first := generate(false)
+	if _, err := os.Stat(e.srv.backupRecipientsPath()); err == nil {
+		t.Fatal("key active without confirmation")
+	}
+	if _, st := admin.do("GET", "/api/admin/backup", nil); len(st["keys"].([]any)) != 0 || st["pending"].(map[string]any)["fingerprint"] != first["fingerprint"] || st["privateKey"] != nil {
+		t.Fatal(st)
+	}
+	if rc, out := job.run(t); rc != 3 || len(job.archives(t)) != 0 {
+		t.Fatal(rc, out)
+	}
+	if health(t, e) != "fail" {
+		t.Fatal("no active key must be fail")
+	}
+
+	// Double click: only the pending key changes, the first one is no longer valid.
+	second := generate(false)
+	if resp, m := confirm(first["fingerprint"], false); resp.StatusCode != http.StatusConflict || m["error"] != "backup_key_not_pending" {
+		t.Fatal(resp.Status, m)
+	}
+	// Another session of the same administrator never saw the private key, nor does a guess help.
+	other := e.browser()
+	other.login("root")
+	if resp, m := other.do("POST", backupConfirm, map[string]any{"fingerprint": second["fingerprint"]}); resp.StatusCode != http.StatusConflict {
+		t.Fatal(resp.Status, m)
+	}
+	if resp, _ := confirm("SHA256:unsinn", false); resp.StatusCode != http.StatusConflict {
+		t.Fatal(resp.Status)
+	}
+	if _, err := os.Stat(e.srv.backupRecipientsPath()); err == nil {
+		t.Fatal("key active after a refused confirmation")
+	}
+	if resp, m := confirm(second["fingerprint"], false); resp.StatusCode != 200 || m["publicKey"] != second["publicKey"] {
+		t.Fatal(resp.Status, m)
+	}
+	// Lost answer: repeating is fine and audited once.
+	if resp, m := confirm(second["fingerprint"], false); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+	if _, err := os.Stat(e.srv.backupPendingPath()); err == nil {
+		t.Fatal("pending file left behind")
+	}
+	if n := len(backupAudit(t, admin)); n != 3 { // two generate, one confirm
+		t.Fatal(n)
+	}
+
+	// Replacing, not confirmed: the old key stays in force and old archives stay.
+	secondID, err := age.ParseX25519Identity(second["privateKey"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	third := generate(true)
+	if resp, m := confirm(third["fingerprint"], false); resp.StatusCode != http.StatusConflict || m["error"] != "backup_key_exists" {
+		t.Fatal(resp.Status, m)
+	}
+	if rc, out := job.run(t); rc != 0 {
+		t.Fatal(rc, out)
+	}
+	raw, _ := os.ReadFile(filepath.Join(job.backupDir, job.archives(t)[0]))
+	if _, err := age.Decrypt(bytes.NewReader(raw), secondID); err != nil {
+		t.Fatal("job did not keep using the old key:", err)
+	}
+	if resp, m := confirm(third["fingerprint"], true); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+	if d, _ := backupAudit(t, admin)[0]["details"].(string); !strings.Contains(d, "replaced="+second["fingerprint"].(string)) {
+		t.Fatal(d)
+	}
+
+	// An imported key replaces a pending one, which cannot be activated afterwards.
+	fourth := generate(true)
+	id, _ := age.GenerateX25519Identity()
+	if resp, m := admin.do("POST", backupImport, map[string]any{"password": pw, "publicKey": id.Recipient().String(), "replace": true}); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+	if resp, _ := confirm(fourth["fingerprint"], true); resp.StatusCode != http.StatusConflict {
+		t.Fatal(resp.Status)
+	}
+}
+
+func health(t *testing.T, e *env) string {
+	t.Helper()
+	resp, m := e.browser().do("GET", "/healthz", nil)
+	if resp.StatusCode != 200 || m["status"] != "ok" {
+		t.Fatal(resp.Status, m)
+	}
+	v, _ := m["backup"].(string)
+	return v
+}
+
+// /healthz reports the backup state in its own field and stays 200/ok for the rollout.
+func TestHealthzReportsBackupState(t *testing.T) {
+	e, admin := backupAdmin(t, Options{})
+	if got := health(t, e); got != "fail" {
+		t.Fatal("no key:", got)
+	}
+	status := func(result string, encrypted bool, at time.Time) {
+		t.Helper()
+		js, _ := json.Marshal(backupRun{FinishedAt: at, Label: "scheduled", Result: result, Encrypted: encrypted})
+		if err := os.MkdirAll(filepath.Dir(e.srv.backupRecipientsPath()), 0o750); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(filepath.Dir(e.srv.backupRecipientsPath()), backupStatusName), js, 0o640); err != nil {
+			t.Fatal(err)
+		}
+	}
+	status("no_key", false, time.Now())
+	if got := health(t, e); got != "fail" {
+		t.Fatal("refused run:", got)
+	}
+	generateKey(t, admin, false)
+	for _, c := range []struct {
+		result    string
+		encrypted bool
+		age       time.Duration
+		want      string
+	}{
+		{"no_key", false, 0, "warn"}, // key created, first run still to come
+		{"ok", true, time.Hour, "ok"},
+		{"ok", true, 72 * time.Hour, "warn"},
+		{"ok", false, time.Hour, "warn"},
+		{"failed", false, time.Hour, "fail"},
+	} {
+		status(c.result, c.encrypted, time.Now().Add(-c.age))
+		if got := health(t, e); got != c.want {
+			t.Errorf("%+v: %s", c, got)
+		}
+	}
+	os.WriteFile(e.srv.backupRecipientsPath(), []byte("kaputt\n"), 0o640)
+	if got := health(t, e); got != "fail" {
+		t.Fatal("damaged key:", got)
 	}
 }
 

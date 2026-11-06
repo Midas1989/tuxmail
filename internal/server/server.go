@@ -307,6 +307,7 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/admin/audit", s.admin(s.handleAdminAudit))
 	mux.HandleFunc("GET /api/admin/backup", s.admin(s.handleAdminBackupStatus))
 	mux.HandleFunc("POST /api/admin/backup/key/generate", s.admin(s.handleAdminBackupGenerate))
+	mux.HandleFunc("POST /api/admin/backup/key/confirm", s.admin(s.handleAdminBackupConfirm))
 	mux.HandleFunc("POST /api/admin/backup/key/import", s.admin(s.handleAdminBackupImport))
 	mux.HandleFunc("GET /api/admin/provisioning/templates", s.admin(s.handleAdminListTemplates))
 	mux.HandleFunc("POST /api/admin/provisioning/templates", s.admin(s.handleAdminCreateTemplate))
@@ -373,7 +374,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 	// "product" lets clients recognise a TuxMail server; the exact version is
 	// only disclosed on request (security.expose_version, NA-07).
-	out := map[string]string{"status": "ok", "product": productMarker}
+	// "backup" is ok, warn or fail and informational: status (and with it the
+	// rollout, which waits for this endpoint) does not depend on it.
+	out := map[string]string{"status": "ok", "product": productMarker, "backup": s.backupHealth()}
 	if s.cfg.Security.ExposeVersion {
 		out["version"] = s.version
 	}
