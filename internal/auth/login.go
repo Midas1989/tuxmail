@@ -382,15 +382,21 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 }
 
 // MFASetupRequired reports whether the session must enrol TOTP before using
-// privileged functions (auth.totp_required_for_admins). Only sessions created
-// by the OIDC callback of an OIDC-linked account are exempt (their second
-// factor is the identity provider's); a password login of the very same
-// account is not (NA-02). A nil session is never exempt.
+// privileged functions (auth.totp_required_for_admins). Exempt are only the
+// sessions that carry a second factor of their own: those created by the OIDC
+// callback of an OIDC-linked account (the identity provider's) and passkey
+// sessions (a passkey login always verified the user, PIN or biometric, on top
+// of possessing the device). A password login of the very same account is not
+// exempt (NA-02), whatever passkeys or OIDC link the account has. A nil
+// session is never exempt.
 func (s *Service) MFASetupRequired(u *User, sess *Session) bool {
 	if !s.cfg.Auth.TOTPRequiredForAdmins || !u.IsAdmin() || u.TOTPEnabled {
 		return false
 	}
-	return !(u.OIDC && sess != nil && sess.LoginMethod == MethodOIDC)
+	if sess == nil {
+		return true
+	}
+	return !(sess.LoginMethod == MethodPasskey || (u.OIDC && sess.LoginMethod == MethodOIDC))
 }
 
 // verifySecondFactor checks a TOTP code (with replay protection) or consumes
@@ -492,16 +498,20 @@ func (s *Service) ConfirmTOTP(ctx context.Context, userID int64, code string) ([
 }
 
 // ResetTOTP disables TOTP and deletes recovery codes (user or admin action).
+// Passkeys are not touched; the administrator's reset removes them as well
+// (ResetSecondFactors).
 func (s *Service) ResetTOTP(ctx context.Context, userID int64) error {
-	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		if err := execOne(ctx, tx, `UPDATE users SET totp_secret_enc = NULL, totp_enabled = 0, totp_last_step = 0,
-			updated_at = ? WHERE id = ?`, s.now().Unix(), userID); err != nil {
-			return err
-		}
-		_, err := tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, userID)
-		return err
-	})
+	err := s.withTx(ctx, func(tx *sql.Tx) error { return s.resetTOTPTx(ctx, tx, userID) })
 	s.auditUser(ctx, "totp.reset", userID, err, "")
+	return err
+}
+
+func (s *Service) resetTOTPTx(ctx context.Context, tx *sql.Tx, userID int64) error {
+	if err := execOne(ctx, tx, `UPDATE users SET totp_secret_enc = NULL, totp_enabled = 0, totp_last_step = 0,
+		updated_at = ? WHERE id = ?`, s.now().Unix(), userID); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, userID)
 	return err
 }
 

@@ -20,6 +20,7 @@ const (
 	MethodPassword   = "password"    // local password (plus second factor if enabled)
 	MethodOIDC       = "oidc"        // identity provider callback
 	MethodDeviceCode = "device_code" // device authorization grant (approved elsewhere)
+	MethodPasskey    = "passkey"     // WebAuthn passkey with user verification (passkeys.go)
 )
 
 // DeviceTokenLifetime is the validity of device tokens issued to clients.
@@ -211,6 +212,7 @@ func (s *Service) Cleanup(ctx context.Context) error {
 		`DELETE FROM sessions WHERE expires_at <= ?1`,
 		`DELETE FROM mfa_challenges WHERE expires_at <= ?1`,
 		`DELETE FROM oidc_states WHERE expires_at <= ?1`,
+		`DELETE FROM passkey_challenges WHERE expires_at <= ?1`,
 		`DELETE FROM device_authorizations WHERE expires_at <= ?1 - 3600`,
 		`DELETE FROM login_throttle WHERE locked_until <= ?1 AND first_failure <= ?1 - 86400`,
 		`DELETE FROM login_known_networks WHERE last_seen <= ?1 - 7776000`, // knownNetworkTTL (90 days)

@@ -27,6 +27,7 @@ type User struct {
 	Disabled    bool      `json:"disabled"`
 	HasPassword bool      `json:"hasPassword"`
 	TOTPEnabled bool      `json:"totpEnabled"`
+	Passkeys    int       `json:"passkeys"` // number of registered passkeys
 	OIDC        bool      `json:"oidc"`
 	CreatedAt   time.Time `json:"createdAt"`
 	LastLoginAt time.Time `json:"lastLoginAt,omitzero"`
@@ -118,14 +119,14 @@ func allSame(s string) bool {
 }
 
 const userCols = `id, username, email, display_name, role, disabled, password_hash, totp_enabled, totp_last_step,
-	oidc_subject IS NOT NULL, created_at, last_login_at`
+	oidc_subject IS NOT NULL, created_at, last_login_at, (SELECT COUNT(*) FROM passkeys WHERE passkeys.user_id = users.id)`
 
 func scanUser(sc interface{ Scan(...any) error }) (*User, error) {
 	var u User
 	var created int64
 	var last sql.NullInt64
 	if err := sc.Scan(&u.ID, &u.Username, &u.Email, &u.DisplayName, &u.Role, &u.Disabled, &u.passwordHash,
-		&u.TOTPEnabled, &u.totpLastStep, &u.OIDC, &created, &last); err != nil {
+		&u.TOTPEnabled, &u.totpLastStep, &u.OIDC, &created, &last, &u.Passkeys); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}

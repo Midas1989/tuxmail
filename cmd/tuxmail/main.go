@@ -124,7 +124,7 @@ func (c *cli) usage() {
   tuxmail user disable        USERNAME
   tuxmail user enable         USERNAME
   tuxmail user reset-password USERNAME [--password-stdin]
-  tuxmail user reset-2fa      USERNAME
+  tuxmail user reset-2fa      USERNAME               (removes TOTP, recovery codes and passkeys)
   tuxmail user set-role       USERNAME ROLE          (admin | user | readonly)
   tuxmail user delete         USERNAME --yes [--keep-data]
   tuxmail import  --format eml|mbox|maildir|pst|thunderbird|ics|vcf|csv|ldif --source PATH

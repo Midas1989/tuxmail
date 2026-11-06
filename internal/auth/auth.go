@@ -35,6 +35,7 @@ import (
 
 	"github.com/Midas1989/Mailclient/internal/config"
 	"github.com/Midas1989/Mailclient/internal/secrets"
+	"github.com/go-webauthn/webauthn/webauthn"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver
 )
 
@@ -89,6 +90,10 @@ type Service struct {
 
 	oidcMu sync.Mutex
 	oidc   *oidcClient
+
+	waOnce sync.Once // passkeys.go
+	wa     *webauthn.WebAuthn
+	waErr  error
 }
 
 // Open creates data_dir if needed, opens (or creates) server.db, applies
