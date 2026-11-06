@@ -38,6 +38,13 @@ auth:
   # disabled | invite
   registration: {{ tuxmail_auth_registration | to_json }}
   totp_required_for_admins: {{ tuxmail_auth_totp_required_for_admins | bool | to_json }}
+  # Passkeys (WebAuthn). "auto": nicht gesetzt = an bei https-Hostnamen/localhost in public_url, sonst aus.
+  # Ein Wechsel des Hostnamens von public_url macht alle registrierten Passkeys unbrauchbar.
+  passkeys:
+{% if tuxmail_auth_passkeys_enabled | string | lower in ['true', 'false', 'yes', 'no'] %}
+    enabled: {{ tuxmail_auth_passkeys_enabled | bool | to_json }}
+{% endif %}
+    rp_name: {{ tuxmail_auth_passkeys_rp_name | to_json }}
   oidc:
     enabled: {{ tuxmail_oidc_enabled | bool | to_json }}
     issuer: {{ tuxmail_oidc_issuer | to_json }}

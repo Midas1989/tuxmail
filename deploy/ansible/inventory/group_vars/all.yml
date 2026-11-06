@@ -69,6 +69,8 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_auth_password_min_length: 12
 # tuxmail_auth_registration: disabled       # disabled | invite
 # tuxmail_auth_totp_required_for_admins: true
+# tuxmail_auth_passkeys_enabled: auto      # auto | true | false; Passkeys (WebAuthn) brauchen https-public_url (oder http://localhost)
+# tuxmail_auth_passkeys_rp_name: TuxMail   # Dienstname in der Authenticator-Anzeige; Hostname-Wechsel macht alle Passkeys ungültig
 
 # --- OIDC (z. B. Nextcloud, OpenCloud, Authentik, Keycloak) ---
 # tuxmail_oidc_enabled: false
