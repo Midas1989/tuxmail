@@ -377,7 +377,7 @@ ansible-playbook site.yml --check --diff     # Probelauf (Befehle werden dabei �
 | `tuxmail.service` | gehärtet: `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `NoNewPrivileges`, leeres `CapabilityBoundingSet`, `RestrictAddressFamilies`, `SystemCallFilter=@system-service`, `MemoryDenyWriteExecute`, `ReadWritePaths` nur Daten/Logs, `LimitNOFILE=65536`, `Restart=on-failure`, `ExecStartPre=… check-config` |
 | `/etc/tuxmail/pdf.env` | optional (`tuxmail_pdf_renderer`), per `EnvironmentFile=-` eingelesen |
 | `/etc/tuxmail/fcm-service-account.json` | optional (`tuxmail_fcm_service_account_src`), `root:tuxmail 0640` |
-| `tuxmail-backup.timer` | optional (`tuxmail_backup_timer_enabled`), täglich |
+| `tuxmail-backup.timer` | täglich, abschaltbar (`tuxmail_backup_timer_enabled`) |
 | nginx | WebSocket `/api/events` (Upgrade, 1 h Timeout, ohne Puffer), alle übrigen Pfade (SPA, `/device`, API, Long-Polling) an TuxMail, `client_max_body_size` = `tuxmail_max_upload_mb`, HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy`, CSP (`frame-ancestors`…), HTTP→HTTPS, ACME-Webroot |
 | SELinux (RHEL) | Boolean `httpd_can_network_connect` (nginx → `127.0.0.1:8080`) |
 
@@ -455,7 +455,7 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_admin_password` | `""` | **Vault!** – leer = generieren |
 | `tuxmail_backup_before_upgrade` | `true` | Sicherung bei Versionswechsel |
 | `tuxmail_backup_keep_upgrade` | `5` | aufbewahrte Upgrade-Sicherungen |
-| `tuxmail_backup_timer_enabled` | `false` | tägliche Sicherung |
+| `tuxmail_backup_timer_enabled` | `true` | tägliche Sicherung |
 | `tuxmail_backup_keep_scheduled` | `14` | aufbewahrte tägliche Sicherungen |
 | `tuxmail_backup_compression` | `zstd` | `zstd` (tar.zst) \| `gzip` (tar.gz) |
 | `tuxmail_backup_age_recipients` | `[]` | nur Bestand: öffentliche age-Schlüssel, einmalig in die Ablage übernommen; neu nicht nötig |
@@ -566,8 +566,8 @@ erzeugt sie mit `umask 077` (Archive 0600, Verzeichnis 0700). Beim Zurückspiele
 - Ersetzen geht jederzeit und landet im Audit-Log. Ältere Sicherungen brauchen weiter den alten privaten Schlüssel.
 - **Bestand:** Steht `tuxmail_backup_age_recipients` im Inventory, übernimmt das Playbook die Werte einmalig in die
   Datei. Danach gilt allein die Oberfläche, die Variable kann entfallen.
-- Die Seite zeigt auch das Ergebnis des letzten Laufs. Tägliche Sicherungen laufen nur mit
-  `tuxmail_backup_timer_enabled: true`.
+- Die Seite zeigt auch das Ergebnis des letzten Laufs. Die tägliche Sicherung ist standardmäßig an; ohne Schlüssel
+  scheitert der Job mit Fehlerstatus, Klartext entsteht nie. Abschalten: `tuxmail_backup_timer_enabled: false`.
 - Installation ohne Ansible: `deploy/systemd/tuxmail-backup.sh` nutzt dieselbe Datei und braucht das Paket `age`.
 
 **Ohne Schlüssel keine Klartext-Sicherung (Re-Audit ND-14):** `tuxmail-backup` endet mit Exit 3 und ohne Datei, bevor

@@ -100,7 +100,7 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_backup_allow_plaintext: false      # ohne Schlüssel verweigert das Backup-Skript den Lauf, außer true
 # tuxmail_backup_before_upgrade: true
 # tuxmail_backup_keep_upgrade: 5
-# tuxmail_backup_timer_enabled: false
+# tuxmail_backup_timer_enabled: true
 # tuxmail_backup_timer_oncalendar: "*-*-* 03:15:00"
 # tuxmail_backup_keep_scheduled: 14
 # tuxmail_backup_stop_service: true

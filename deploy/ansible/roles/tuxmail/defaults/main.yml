@@ -156,7 +156,7 @@ tuxmail_backup_allow_plaintext: false
 tuxmail_backup_before_upgrade: true
 tuxmail_backup_keep_upgrade: 5
 # Tägliche Sicherung per systemd-Timer.
-tuxmail_backup_timer_enabled: false
+tuxmail_backup_timer_enabled: true
 tuxmail_backup_timer_oncalendar: "*-*-* 03:15:00"
 tuxmail_backup_keep_scheduled: 14
 # Dienst während der geplanten Sicherung kurz stoppen (konsistente SQLite-Dateien).
