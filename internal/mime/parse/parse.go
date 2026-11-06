@@ -134,6 +134,8 @@ type PGPInfo struct {
 	// PartiallyProtected is true for inline PGP with text outside the
 	// protected block; that text was dropped.
 	PartiallyProtected bool `json:"partiallyProtected,omitempty"`
+	// LockedKeys could decrypt the message, but need their passphrase.
+	LockedKeys []string `json:"lockedKeys,omitempty"`
 	// Error describes a decryption failure or signature problem.
 	Error string `json:"error,omitempty"`
 }

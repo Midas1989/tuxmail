@@ -85,6 +85,7 @@ func (c *renderCache) clear() {
 // renderCached renders a stored mail (downloading its body on demand);
 // errNoBody when the body is not available.
 func (a *App) renderCached(ctx context.Context, m store.Message) (RenderedMessage, error) {
+	a.pgpSweep() // nothing decrypted outlives its passphrase
 	key := ""
 	if m.BlobHash != "" {
 		key = m.BlobHash + "#" + strconv.FormatInt(m.ID, 10)

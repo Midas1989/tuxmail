@@ -23,9 +23,8 @@ import (
 
 // OpenPGP key management on internal/crypto/pgp. Keys work like S/MIME
 // certificates (comfort_smime.go): public material in the user's database,
-// private keys only in the secret store (reference "pgp:<fingerprint>"). A
-// passphrase of an imported key is used once to unlock it and is then
-// forgotten; the secret store is what protects the key at rest.
+// private keys only in the secret store (reference "pgp:<fingerprint>"). On top
+// of that a key can carry its own passphrase, see comfort_pgp_lock.go.
 //
 // Decrypted content is never stored. The search index and snippets are built
 // by ParseExtractor without a key ring, the blob store holds the original
@@ -67,12 +66,19 @@ type PGPKeyInfo struct {
 	CanSign     bool      `json:"canSign"`
 	Source      string    `json:"source"` // own | manual | wkd | keyserver
 	Trust       string    `json:"trust"`  // unknown | tofu | verified | revoked | expired
+	// Protected: the private key has its own passphrase. Locked: and that is
+	// not known right now, so the key cannot sign or decrypt.
+	Protected     bool   `json:"protected"`
+	Locked        bool   `json:"locked"`
+	UnlockedUntil string `json:"unlockedUntil,omitempty"`
 }
 
 // PGPGenerateInput creates an own key (Curve25519).
 type PGPGenerateInput struct {
 	Name  string `json:"name"`
 	Email string `json:"email"`
+	// Passphrase is optional, but recommended.
+	Passphrase string `json:"passphrase,omitempty"`
 }
 
 // PGPImportInput imports armored or binary key data.
@@ -84,6 +90,8 @@ type PGPImportInput struct {
 // PGPExportInput protects an exported private key.
 type PGPExportInput struct {
 	Passphrase string `json:"passphrase"`
+	// Current is the key's own passphrase, if it has one.
+	Current string `json:"current,omitempty"`
 }
 
 // PGPLookupInput asks a key directory, only ever on an explicit user request.
@@ -124,6 +132,9 @@ type PGPStatus struct {
 	Missing        []string             `json:"missing,omitempty"`
 	Recipients     []PGPRecipientStatus `json:"recipients,omitempty"`
 	Recommendation string               `json:"recommendation,omitempty"`
+	// OwnLocked: the sender's key needs its passphrase before it can sign.
+	OwnLocked bool  `json:"ownLocked,omitempty"`
+	OwnKeyID  int64 `json:"ownKeyId,omitempty"`
 }
 
 // PGPMessageStatus is the OpenPGP state of a mail in the reading pane. It is
@@ -145,6 +156,15 @@ type PGPMessageStatus struct {
 	// PartiallyProtected: inline PGP with text outside the protected block,
 	// which was dropped.
 	PartiallyProtected bool `json:"partiallyProtected,omitempty"`
+	// LockedKeys could decrypt the mail, but need their passphrase.
+	LockedKeys []PGPLockedKey `json:"lockedKeys,omitempty"`
+}
+
+// PGPLockedKey names a key to ask the passphrase for.
+type PGPLockedKey struct {
+	ID          int64  `json:"id"`
+	Email       string `json:"email"`
+	Fingerprint string `json:"fingerprint"`
 }
 
 // pgpState holds the key ring and the stores of one App.
@@ -156,12 +176,13 @@ type pgpState struct {
 	planner *pgp.Planner
 	// lookup returns the key directory client; only called on a user request.
 	lookup func(source string) pgp.KeyLookup
+	// unlocks holds the passphrases in memory (comfort_pgp_lock.go).
+	unlocks pgpUnlocks
 }
 
 func newPGPState(a *App) *pgpState {
 	s := &pgpState{keys: &pgpKeyStore{a: a}, trust: pgpTrustStore{st: a.st}, peers: pgpPeerStore{st: a.st}}
-	// Keys are unlocked through the secret store, there is nothing to ask for.
-	s.ring = pgp.NewKeyRing(s.keys, nil)
+	s.ring = pgp.NewKeyRing(s.keys, a.pgpPassphrase)
 	s.planner = &pgp.Planner{Ring: s.ring, Peers: s.peers, Trust: s.trust}
 	s.lookup = pgpDirectory
 	return s
@@ -424,6 +445,12 @@ func (a *App) pgpInfo(ctx context.Context, k *pgp.Key, row store.PGPKey) PGPKeyI
 	if exp := k.Expires(); !exp.IsZero() {
 		out.Expires = exp.Format(time.RFC3339)
 	}
+	if k.IsLocked() {
+		out.Protected, out.Locked = true, true
+		if until, ok := a.pgpUnlockedUntil(k.Fingerprint()); ok {
+			out.Locked, out.UnlockedUntil = false, until.Format(time.RFC3339)
+		}
+	}
 	return out
 }
 
@@ -487,22 +514,30 @@ func (a *App) putPGPKey(ctx context.Context, k *pgp.Key, source pgp.KeySource) (
 	return a.pgpInfo(ctx, stored, row), nil
 }
 
-// GeneratePGPKey creates an own Curve25519 key. It carries no passphrase of
-// its own: like S/MIME keys it is protected by the secret store.
+// GeneratePGPKey creates an own Curve25519 key, with its own passphrase if one
+// is given; the secret store protects it either way.
 func (a *App) GeneratePGPKey(ctx context.Context, in PGPGenerateInput) (PGPKeyInfo, error) {
 	email := pgp.NormalizeEmail(in.Email)
 	if !strings.Contains(email, "@") {
 		return PGPKeyInfo{}, invalid("an e-mail address is required")
 	}
-	k, err := pgp.GenerateKey(pgp.GenerateOptions{UserIDs: []pgp.UserIDSpec{{Name: strings.TrimSpace(in.Name), Email: email}}, Algorithm: pgp.AlgoCurve25519, Now: a.now()})
+	if in.Passphrase != "" {
+		if err := pgpCheckNewPassphrase(in.Passphrase); err != nil {
+			return PGPKeyInfo{}, err
+		}
+	}
+	k, err := pgp.GenerateKey(pgp.GenerateOptions{UserIDs: []pgp.UserIDSpec{{Name: strings.TrimSpace(in.Name), Email: email}}, Algorithm: pgp.AlgoCurve25519,
+		Passphrase: []byte(in.Passphrase), Now: a.now()})
 	if err != nil {
 		return PGPKeyInfo{}, invalid("the name or address cannot be used for a key")
 	}
 	return a.putPGPKey(ctx, k, pgp.SourceOwn)
 }
 
-// ImportPGPKeys imports public and private keys, armored or binary. Locked
-// private keys are unlocked with the passphrase, which is not kept.
+// ImportPGPKeys imports public and private keys, armored or binary. A protected
+// private key stays protected: a passphrase is only checked (and remembered like
+// after unlocking), the key can also be imported without it. An unprotected
+// private key gets the passphrase as its new protection.
 func (a *App) ImportPGPKeys(ctx context.Context, in PGPImportInput) ([]PGPKeyInfo, error) {
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(in.Data))
 	if err != nil {
@@ -513,19 +548,26 @@ func (a *App) ImportPGPKeys(ctx context.Context, in PGPImportInput) ([]PGPKeyInf
 		return nil, &Error{Code: "pgp_import", Status: http.StatusBadRequest, Message: "the file contains no readable OpenPGP key"}
 	}
 	// Check all before storing any.
+	var remember []string
 	for i, k := range keys {
-		if !k.IsSecret() || !k.IsLocked() {
-			continue
+		switch {
+		case !k.IsSecret() || in.Passphrase == "":
+		case k.IsLocked():
+			if _, err := k.Unlock([]byte(in.Passphrase)); err != nil {
+				// Never wrap err: nothing about the attempt belongs in a log.
+				return nil, &Error{Code: "pgp_wrong_passphrase", Status: http.StatusBadRequest, Message: "the passphrase does not unlock the private key"}
+			}
+			remember = append(remember, k.Fingerprint())
+		default:
+			if err := pgpCheckNewPassphrase(in.Passphrase); err != nil {
+				return nil, err
+			}
+			locked, err := k.ChangePassphrase(nil, []byte(in.Passphrase))
+			if err != nil {
+				return nil, errors.New("app: protecting the imported key failed")
+			}
+			keys[i] = locked
 		}
-		if in.Passphrase == "" {
-			return nil, &Error{Code: "pgp_passphrase_required", Status: http.StatusBadRequest, Message: "the private key is protected by a passphrase"}
-		}
-		u, err := k.Unlock([]byte(in.Passphrase))
-		if err != nil {
-			// Never wrap err: nothing about the attempt belongs in a log.
-			return nil, &Error{Code: "pgp_wrong_passphrase", Status: http.StatusBadRequest, Message: "the passphrase does not unlock the private key"}
-		}
-		keys[i] = u
 	}
 	out := make([]PGPKeyInfo, 0, len(keys))
 	for _, k := range keys {
@@ -533,11 +575,23 @@ func (a *App) ImportPGPKeys(ctx context.Context, in PGPImportInput) ([]PGPKeyInf
 		if k.IsSecret() {
 			source = pgp.SourceOwn
 		}
-		info, err := a.putPGPKey(ctx, k, source)
+		if _, err := a.putPGPKey(ctx, k, source); err != nil {
+			return out, err
+		}
+	}
+	for _, fpr := range remember {
+		a.pgpRemember(fpr, in.Passphrase)
+	}
+	for _, k := range keys {
+		row, err := a.st.GetPGPKeyByFingerprint(ctx, k.Fingerprint())
 		if err != nil {
 			return out, err
 		}
-		out = append(out, info)
+		stored, err := a.pgpRing().Get(ctx, k.Fingerprint())
+		if err != nil {
+			return out, err
+		}
+		out = append(out, a.pgpInfo(ctx, stored, row))
 	}
 	return out, nil
 }
@@ -554,8 +608,8 @@ func (a *App) ExportPGPPublicKey(ctx context.Context, id int64) (string, error) 
 // ExportPGPSecretKey returns the armored private key, always protected by the
 // given passphrase.
 func (a *App) ExportPGPSecretKey(ctx context.Context, id int64, in PGPExportInput) (string, error) {
-	if len([]rune(in.Passphrase)) < minPGPExportPassphrase {
-		return "", &Error{Code: "pgp_passphrase_short", Status: http.StatusBadRequest, Message: "the passphrase must have at least 12 characters"}
+	if err := pgpCheckNewPassphrase(in.Passphrase); err != nil {
+		return "", err
 	}
 	k, _, err := a.pgpKeyByID(ctx, id)
 	if err != nil {
@@ -564,7 +618,12 @@ func (a *App) ExportPGPSecretKey(ctx context.Context, id int64, in PGPExportInpu
 	if !k.IsSecret() {
 		return "", &Error{Code: "pgp_no_private_key", Status: http.StatusConflict, Message: "this key has no private part"}
 	}
-	locked, err := k.ChangePassphrase(nil, []byte(in.Passphrase))
+	if k.IsLocked() {
+		if _, err := a.pgpCheckPassphrase(k, in.Current); err != nil {
+			return "", err
+		}
+	}
+	locked, err := k.ChangePassphrase([]byte(in.Current), []byte(in.Passphrase))
 	if err != nil {
 		return "", errors.New("app: protecting the exported key failed")
 	}
@@ -655,6 +714,13 @@ func (a *App) PGPStatusFor(ctx context.Context, from string, recipients []string
 		for _, k := range keys {
 			if k.IsSecret() && k.CanSign(now) {
 				st.CanSign = true
+				if row, err := a.st.GetPGPKeyByFingerprint(ctx, k.Fingerprint()); err == nil {
+					st.OwnKeyID = row.ID
+				}
+				if k.IsLocked() {
+					_, ok := a.pgpUnlockedUntil(k.Fingerprint())
+					st.OwnLocked = !ok
+				}
 				break
 			}
 		}
@@ -840,6 +906,11 @@ func (a *App) messagePGPStatus(ctx context.Context, m store.Message) *PGPMessage
 	}
 	if info.Signature == pgp.SigValid || info.Signature == pgp.SigExpiredKey || info.Signature == pgp.SigRevokedKey {
 		a.pgpJudgeSigner(ctx, pm, out)
+	}
+	for _, fpr := range info.LockedKeys {
+		if row, err := a.st.GetPGPKeyByFingerprint(ctx, fpr); err == nil {
+			out.LockedKeys = append(out.LockedKeys, PGPLockedKey{ID: row.ID, Email: row.Email, Fingerprint: fpr})
+		}
 	}
 	if info.Decrypted && len(pm.AutocryptGossip) > 0 && len(pm.Header.From) == 1 {
 		var rcpts []string

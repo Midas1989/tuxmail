@@ -149,6 +149,22 @@ func comfortRoutes() []Route {
 				send(w)(map[string]string{"armored": armored}, err)
 			}
 		})},
+		{"POST /api/comfort/pgp/keys/{id}/unlock", withID(func(w w, r r, a A, id int64) {
+			var in app.PGPUnlockInput
+			if readJSON(w, r, &in) {
+				send(w)(a.UnlockPGPKey(r.Context(), id, in))
+			}
+		})},
+		{"POST /api/comfort/pgp/keys/{id}/passphrase", withID(func(w w, r r, a A, id int64) {
+			var in app.PGPPassphraseInput
+			if readJSON(w, r, &in) {
+				send(w)(a.ChangePGPPassphrase(r.Context(), id, in))
+			}
+		})},
+		{"POST /api/comfort/pgp/lock", func(w w, r r, a A) {
+			a.LockPGPKeys()
+			done(w, nil)
+		}},
 		{"PUT /api/comfort/pgp/keys/{id}/trust", withID(func(w w, r r, a A, id int64) {
 			var in struct{ Verified bool }
 			if readJSON(w, r, &in) {

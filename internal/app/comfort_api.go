@@ -149,3 +149,13 @@ func (x *Api) ComfortVerifyPGPPeer(in PGPPeerInput) (PGPKeyInfo, error) {
 func (x *Api) ComfortDeletePGPPeer(address string) error {
 	return werr(x.app.DeletePGPPeer(x.ctx, address))
 }
+func (x *Api) ComfortUnlockPGPKey(id int64, in PGPUnlockInput) (PGPKeyInfo, error) {
+	return r1(x.app.UnlockPGPKey(x.ctx, id, in))
+}
+func (x *Api) ComfortChangePGPPassphrase(id int64, in PGPPassphraseInput) (PGPKeyInfo, error) {
+	return r1(x.app.ChangePGPPassphrase(x.ctx, id, in))
+}
+func (x *Api) ComfortLockPGPKeys() error {
+	x.app.LockPGPKeys()
+	return nil
+}

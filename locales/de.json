@@ -3726,7 +3726,8 @@
       "pgpMissing": "Kein Schlüssel für: {recipients}. Die Mail wird so nicht versendet.",
       "pgpLookup": "Schlüssel online suchen",
       "pgpLookupConfirm": "Für {recipients} einen Schlüssel online suchen? Der Mailanbieter der Adressen und gegebenenfalls keys.openpgp.org erfahren davon.",
-      "pgpLookupNone": "Nicht gefunden: {recipients}"
+      "pgpLookupNone": "Nicht gefunden: {recipients}",
+      "pgpLocked": "Ihr Schlüssel ist gesperrt. Ohne Passphrase wird die Mail nicht versendet."
     },
     "merge": {
       "open": "Serienmail",
@@ -3802,7 +3803,7 @@
     },
     "pgp": {
       "title": "OpenPGP-Schlüssel",
-      "intro": "Mit einem eigenen Schlüssel signieren und entschlüsseln Sie Mails. Private Schlüssel liegen verschlüsselt im Tresor von TuxMail, eine beim Import eingegebene Passphrase wird nicht gespeichert.",
+      "intro": "Mit einem eigenen Schlüssel signieren und entschlüsseln Sie Mails. Private Schlüssel liegen verschlüsselt im Tresor von TuxMail.",
       "import": "Importieren",
       "importNow": "Schlüssel importieren",
       "generate": "Schlüssel erzeugen",
@@ -3854,12 +3855,12 @@
       },
       "err": {
         "pgp_import": "Die Datei enthält keinen lesbaren OpenPGP-Schlüssel.",
-        "pgp_passphrase_required": "Dieser private Schlüssel braucht seine Passphrase.",
         "pgp_wrong_passphrase": "Die Passphrase passt nicht zu diesem Schlüssel.",
         "pgp_passphrase_short": "Die Passphrase muss mindestens 12 Zeichen haben.",
         "pgp_key_not_found": "Für diese Adresse wurde kein Schlüssel gefunden.",
         "pgp_lookup_failed": "Das Schlüsselverzeichnis war nicht erreichbar.",
-        "pgp_key_changed": "Der Schlüssel hat sich inzwischen geändert. Bitte erneut prüfen."
+        "pgp_key_changed": "Der Schlüssel hat sich inzwischen geändert. Bitte erneut prüfen.",
+        "pgp_unlock_throttled": "Zu viele falsche Passphrasen. Bitte einige Minuten warten."
       },
       "status": {
         "decrypted": "Entschlüsselt (OpenPGP).",
@@ -3874,8 +3875,26 @@
           "expired_key": "Signiert mit abgelaufenem Schlüssel.",
           "revoked_key": "Signiert mit widerrufenem Schlüssel.",
           "mismatch": "Gültige Signatur, der Schlüssel gehört aber nicht zur Absenderadresse."
-        }
-      }
+        },
+        "locked": "Mit OpenPGP verschlüsselt. Der Schlüssel {email} ist gesperrt: Passphrase nötig."
+      },
+      "unlock": "Entsperren",
+      "unlockTitle": "Schlüssel entsperren",
+      "unlockIntro": "Passphrase für den Schlüssel {email}. Sie bleibt 15 Minuten im Arbeitsspeicher des Dienstes, danach oder bei „Sperren“ und beim Abmelden wird sie vergessen.",
+      "lockAll": "Sperren",
+      "lockedAll": "Alle Schlüssel gesperrt.",
+      "changePassphrase": "Passphrase",
+      "currentPassphrase": "Aktuelle Passphrase",
+      "newPassphraseOptional": "Passphrase (empfohlen, mindestens 12 Zeichen)",
+      "newPassphraseEmpty": "Neue Passphrase (leer: entfernen)",
+      "savePassphrase": "Speichern",
+      "importPassphrase": "Passphrase (bei geschütztem Schlüssel prüfen, sonst neu setzen)",
+      "passphraseHint": "Eine eigene Passphrase schützt den Schlüssel zusätzlich zum Tresor. Sie kann nicht wiederhergestellt werden; ohne sie sind Schlüssel und damit verschlüsselte Mails nicht mehr nutzbar. Ohne Passphrase kann jeder lesen, der Ihr Konto oder den Server und dessen Hauptschlüssel hat.",
+      "passphraseSet": "Passphrase gespeichert.",
+      "passphraseRemoved": "Passphrase entfernt.",
+      "stateLocked": "Gesperrt: Passphrase nötig zum Entschlüsseln und Signieren.",
+      "stateUnlocked": "Entsperrt bis {time}.",
+      "stateNoPassphrase": "Keine eigene Passphrase, nur durch den Tresor geschützt."
     }
   },
   "sync": {

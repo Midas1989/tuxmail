@@ -4,6 +4,7 @@ package send
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,7 +18,16 @@ import (
 type pgpPlan struct {
 	encrypt, sign bool
 	ownKey        *pgp.Key // unlocked own secret key (nil if none)
+	lockedKey     *pgp.Key // own key whose passphrase is not known right now
 	recipients    []*pgp.Key
+}
+
+// publicKey is the own key for the Autocrypt header: that needs no passphrase.
+func (p pgpPlan) publicKey() *pgp.Key {
+	if p.ownKey != nil {
+		return p.ownKey
+	}
+	return p.lockedKey
 }
 
 // PGPPrefs are the user's OpenPGP preferences.
@@ -111,6 +121,14 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 	}
 	d := &req.Draft
 	own, err := s.ownSecretKey(ctx, senderEmail(d), unlock)
+	if errors.Is(err, pgp.ErrKeyLocked) {
+		// Chosen signing or encryption does not silently go without the key.
+		if o.Sign == PGPOn || o.Encrypt == PGPOn {
+			return p, ErrPGPKeyLocked
+		}
+		p.lockedKey, _ = s.ownSecretKey(ctx, senderEmail(d), false)
+		own, err = nil, nil
+	}
 	if err != nil {
 		if o.Sign == PGPOn {
 			return p, fmt.Errorf("%w: %v", ErrNoSigningKey, err)
@@ -135,6 +153,9 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 		case PGPAuto:
 			// Without an own key the copy in Sent would be unreadable.
 			p.encrypt = own != nil && plan.CanEncrypt && plan.Recommendation == pgp.RecEncrypt
+			if p.lockedKey != nil && plan.CanEncrypt && plan.Recommendation == pgp.RecEncrypt {
+				return p, ErrPGPKeyLocked
+			}
 		}
 		if p.encrypt {
 			p.recipients = plan.Keys()
@@ -147,6 +168,9 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 		}
 		p.sign = true
 	case PGPAuto:
+		if p.lockedKey != nil && s.pgpPrefs().SignAlways {
+			return p, ErrPGPKeyLocked
+		}
 		p.sign = (p.encrypt || s.pgpPrefs().SignAlways) && own != nil
 	}
 	return p, nil

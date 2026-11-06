@@ -13,6 +13,7 @@
   import { app, comfort } from '../../state';
   import { i18n, t } from '../../i18n/index.svelte';
   import type { Address } from '../../types';
+  import PgpUnlockDialog from './PgpUnlockDialog.svelte';
   import type { MeetingProvider, Misspelling, OutgoingCrypto, PgpStatus, SmimeStatus } from '../../api/comfort';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
   import MergeWizard from './MergeWizard.svelte';
@@ -218,6 +219,7 @@
   }
 
   // A key directory only hears about a recipient after this click.
+  let unlockOpen = $state(false);
   let lookupBusy = $state(false);
   let lookupNone = $state<string[]>([]);
   async function lookupMissing() {
@@ -294,12 +296,19 @@
     <option value="pgp-encrypt" disabled={pgp ? !pgp.canSign : false}>{t('comfort.crypto.pgpEncrypt')}</option>
     <option value="none">{t('comfort.crypto.none')}</option>
   </select>
+  {#if choice.startsWith('pgp-') && pgp?.ownLocked && pgp.ownKeyId}
+    <span class="missing" role="alert">{t('comfort.crypto.pgpLocked')}</span>
+    <button type="button" class="btn btn-ghost mini" onclick={() => (unlockOpen = true)}>{t('comfort.pgp.unlock')}</button>
+  {/if}
   {#if choice === 'pgp-encrypt' && pgp?.missing?.length}
     <span class="missing" role="alert">{t('comfort.crypto.pgpMissing', { recipients: pgp.missing.join(', ') })}</span>
     <button type="button" class="btn btn-ghost mini" disabled={lookupBusy} onclick={lookupMissing}>{t('comfort.crypto.pgpLookup')}</button>
     {#if lookupNone.length}<span class="missing">{t('comfort.crypto.pgpLookupNone', { recipients: lookupNone.join(', ') })}</span>{/if}
   {/if}
 </span>
+{#if unlockOpen && pgp?.ownKeyId}
+  <PgpUnlockDialog id={pgp.ownKeyId} email={fromEmail} onclose={() => (unlockOpen = false)} ondone={() => { unlockOpen = false; void refreshPgp(fromEmail, recipients.map((r) => r.email)); }} />
+{/if}
 <button class="icon-btn" title={t('comfort.merge.open')} aria-label={t('comfort.merge.open')} onclick={() => (mergeOpen = true)}><Mails size={16} /></button>
 
 {#if menu}

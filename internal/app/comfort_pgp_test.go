@@ -184,16 +184,13 @@ func TestPGPRoundTrip(t *testing.T) {
 	}
 	in := app.PGPImportInput{Data: armoredBase64(t, second, true)}
 	var appErr *app.Error
-	if _, err := l.a.ImportPGPKeys(ctx, in); !errors.As(err, &appErr) || appErr.Code != "pgp_passphrase_required" {
-		t.Fatalf("no passphrase: %v", err)
-	}
 	in.Passphrase = "falsch"
 	if _, err := l.a.ImportPGPKeys(ctx, in); !errors.As(err, &appErr) || appErr.Code != "pgp_wrong_passphrase" {
 		t.Fatalf("wrong passphrase: %v", err)
 	}
 	in.Passphrase = pgpPassphrase
 	imported, err := l.a.ImportPGPKeys(ctx, in)
-	if err != nil || len(imported) != 1 || !imported[0].Own {
+	if err != nil || len(imported) != 1 || !imported[0].Own || !imported[0].Protected || imported[0].Locked {
 		t.Fatalf("import: %+v %v", imported, err)
 	}
 
@@ -319,6 +316,9 @@ func TestPGPRoundTrip(t *testing.T) {
 	storedSecret, err := base64.StdEncoding.DecodeString(string(enc))
 	if err != nil || len(storedSecret) == 0 {
 		t.Fatalf("stored private key: %v", err)
+	}
+	if k, err := pgp.ReadKey(storedSecret); err != nil || !k.IsLocked() {
+		t.Fatalf("the passphrase protection did not survive the import: %v", err)
 	}
 	vault.Lock()
 	if _, err := vault.Get("pgp:" + own.Fingerprint); err == nil {
@@ -503,5 +503,134 @@ func TestPGPAutocryptCollect(t *testing.T) {
 	addRawInsights("ac4", "From: fremd@example.org\r\nSubject: x\r\nMessage-ID: <x@y>\r\nContent-Type: text/plain\r\n\r\nx\r\n")
 	if _, err := f.st.GetPGPPeer(ctx, "fremd@example.org"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("sender without header stored: %v", err)
+	}
+}
+
+// A locked key: chosen signing or encryption does not leave without it, plain
+// mail still does (Autocrypt needs no passphrase), reading works after
+// unlocking and again after a restart, the passphrase never reaches the disk.
+func TestPGPLockedKeySendAndRestart(t *testing.T) {
+	const pass = "PASSPHRASEMARKER2-7f3a-lang"
+	ctx := context.Background()
+	l := newPGPLive(t)
+	l.wait(t, "Mittagessen morgen?")
+	own, err := l.a.GeneratePGPKey(ctx, app.PGPGenerateInput{Name: "Anna Berger", Email: devserver.AnnaAddr, Passphrase: pass})
+	if err != nil || !own.Locked {
+		t.Fatalf("generate: %+v %v", own, err)
+	}
+	st, err := l.a.PGPStatusFor(ctx, devserver.AnnaAddr, []string{devserver.AnnaAddr})
+	if err != nil || !st.OwnLocked || st.OwnKeyID != own.ID {
+		t.Fatalf("status: %+v %v", st, err)
+	}
+	ids := must[[]app.Identity](t)(l.a.ListIdentities(ctx))
+	mail := func(subject string, c *app.OutgoingCrypto) app.OutgoingMessage {
+		return app.OutgoingMessage{Channel: "email", IdentityID: ids[0].ID, To: []app.Address{{Email: devserver.AnnaAddr}}, Subject: subject, Text: pgpMarker, Crypto: c}
+	}
+	var appErr *app.Error
+	before := len(l.srv.Deliveries())
+	for name, c := range map[string]*app.OutgoingCrypto{
+		"sign":    {Method: "pgp", Sign: true},
+		"encrypt": {Method: "pgp", Encrypt: true},
+		"both":    {Method: "pgp", Sign: true, Encrypt: true},
+	} {
+		if _, err := l.a.Send(ctx, mail("Darf nicht raus", c)); !errors.As(err, &appErr) || appErr.Code != "pgp_key_locked" {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	// "Sign every mail" in the settings counts as chosen.
+	s, err := l.a.ComfortSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.PGP.SignByDefault = true
+	if _, err := l.a.SaveComfortSettings(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := l.a.Send(ctx, mail("Darf nicht raus", nil)); !errors.As(err, &appErr) || appErr.Code != "pgp_key_locked" {
+		t.Fatalf("sign by default: %v", err)
+	}
+	if n := len(l.srv.Deliveries()); n != before {
+		t.Fatalf("%d mails left without the key", n-before)
+	}
+	s.PGP.SignByDefault = false
+	if _, err := l.a.SaveComfortSettings(ctx, s); err != nil {
+		t.Fatal(err)
+	}
+
+	// Plain mail: no signature was asked for, the header needs no passphrase.
+	unprotected := mail("Ohne Schutz", &app.OutgoingCrypto{Method: "none"})
+	unprotected.Text = "Unkritischer Text"
+	if _, err := l.a.Send(ctx, unprotected); err != nil {
+		t.Fatal(err)
+	}
+	plain := must[string](t)(l.a.MessageSource(ctx, l.wait(t, "Ohne Schutz").ID))
+	if !strings.Contains(plain, "Autocrypt:") || strings.Contains(plain, "pgp-signature") {
+		t.Fatalf("plain mail:\n%s", plain)
+	}
+
+	if _, err := l.a.UnlockPGPKey(ctx, own.ID, app.PGPUnlockInput{Passphrase: pass}); err != nil {
+		t.Fatal(err)
+	}
+	if res, err := l.a.Send(ctx, mail(pgpSubject, &app.OutgoingCrypto{Method: "pgp", Sign: true, Encrypt: true})); err != nil || res.Blocked {
+		t.Fatalf("send: %+v %v", res, err)
+	}
+	m := l.wait(t, pgpSubject)
+	read := func() {
+		t.Helper()
+		d, err := l.a.GetMessage(ctx, m.ID)
+		if err != nil || !strings.Contains(d.Text, pgpMarkerWord) {
+			t.Fatalf("not readable: %q %v", d.Text, err)
+		}
+		ins, err := l.a.MessageInsights(ctx, m.ID)
+		if err != nil || ins.PGP == nil || !ins.PGP.Decrypted || ins.PGP.Signature != "valid" || len(ins.PGP.LockedKeys) != 0 {
+			t.Fatalf("status: %+v %v", ins.PGP, err)
+		}
+	}
+	closed := func() {
+		t.Helper()
+		d, err := l.a.GetMessage(ctx, m.ID)
+		if err != nil || strings.Contains(d.Text, pgpMarkerWord) {
+			t.Fatalf("readable while locked: %q %v", d.Text, err)
+		}
+		ins, err := l.a.MessageInsights(ctx, m.ID)
+		if err != nil || ins.PGP == nil || ins.PGP.Decrypted || len(ins.PGP.LockedKeys) != 1 || ins.PGP.LockedKeys[0].ID != own.ID {
+			t.Fatalf("status while locked: %+v %v", ins.PGP, err)
+		}
+	}
+	read()
+	l.a.LockPGPKeys()
+	closed()
+
+	// Restart: nothing was remembered.
+	l.close()
+	l.open(t)
+	closed()
+	if _, err := l.a.UnlockPGPKey(ctx, own.ID, app.PGPUnlockInput{Passphrase: "falsch"}); !errors.As(err, &appErr) || appErr.Code != "pgp_wrong_passphrase" {
+		t.Fatalf("wrong: %v", err)
+	}
+	if _, err := l.a.UnlockPGPKey(ctx, own.ID, app.PGPUnlockInput{Passphrase: pass}); err != nil {
+		t.Fatal(err)
+	}
+	read()
+	l.close()
+
+	files := 0
+	if err := filepath.WalkDir(l.dir, func(p string, e fs.DirEntry, err error) error {
+		if err != nil || e.IsDir() {
+			return err
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		files++
+		for _, needle := range []string{pass, pgpMarkerWord, "PGP PRIVATE KEY"} {
+			if bytes.Contains(data, []byte(needle)) {
+				t.Errorf("%q found in %s", needle, p)
+			}
+		}
+		return nil
+	}); err != nil || files < 3 {
+		t.Fatalf("byte search: %d files, %v", files, err)
 	}
 }

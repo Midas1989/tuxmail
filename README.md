@@ -20,7 +20,7 @@ eigener Webserver.** Freie Software unter der AGPLv3.
   auch Inline-PGP lesen; Autocrypt; Schlüsselsuche per WKD und keys.openpgp.org nur auf Klick) und S/MIME. Entschlüsselter
   Text landet weder im Suchindex noch auf der Platte: Verschlüsselte Mails sind nicht durchsuchbar, Regeln und KI sehen sie
   nicht. Der Betreff bleibt beim Versand sichtbar und liegt zusätzlich geschützt im verschlüsselten Teil. Private Schlüssel
-  liegen verschlüsselt im Tresor und sind Teil der täglichen Server-Sicherung; in einer Benutzer-Sicherung `.txmb` nur,
+  liegen verschlüsselt im Tresor, auf Wunsch zusätzlich mit eigener Passphrase, und sind Teil der täglichen Server-Sicherung; in einer Benutzer-Sicherung `.txmb` nur,
   wenn dort „Zugangsdaten und private Schlüssel“ gewählt ist.
 - **Ordnung und Automatik:** Tags, Projektordner, Suchordner, Regeln und Workflows, lernender Spam-Filter,
   Newsletter-Abmeldung, smarte Kategorien, „Warten auf Antwort“, Versand-Prüfungen.

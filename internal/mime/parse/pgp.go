@@ -67,6 +67,9 @@ func (p *parser) applyPGP(raw []byte) {
 	m.PGP.EncryptedTo = res.EncryptedTo
 	m.PGP.ProtectedHeaders = res.HasProtectedHeaders
 	m.PGP.PartiallyProtected = res.InlineHasUnprotectedText
+	if !m.PGP.Decrypted {
+		m.PGP.LockedKeys = res.LockedKeys
+	}
 	if res.SignatureError != nil && m.PGP.Error == "" {
 		m.PGP.Error = res.SignatureError.Error()
 	}

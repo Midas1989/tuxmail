@@ -3727,7 +3727,8 @@
       "pgpMissing": "No key for: {recipients}. The mail will not be sent like this.",
       "pgpLookup": "Search for keys online",
       "pgpLookupConfirm": "Search online for a key for {recipients}? The mail provider of the addresses and possibly keys.openpgp.org will know about it.",
-      "pgpLookupNone": "Not found: {recipients}"
+      "pgpLookupNone": "Not found: {recipients}",
+      "pgpLocked": "Your key is locked. Without the passphrase the mail will not be sent."
     },
     "merge": {
       "open": "Mail merge",
@@ -3803,7 +3804,7 @@
     },
     "pgp": {
       "title": "OpenPGP keys",
-      "intro": "An own key signs and decrypts mail. Private keys are stored encrypted in TuxMail's vault; a passphrase entered during import is not kept.",
+      "intro": "An own key signs and decrypts mail. Private keys are stored encrypted in TuxMail's vault.",
       "import": "Import",
       "importNow": "Import key",
       "generate": "Create key",
@@ -3855,12 +3856,12 @@
       },
       "err": {
         "pgp_import": "The file contains no readable OpenPGP key.",
-        "pgp_passphrase_required": "This private key needs its passphrase.",
         "pgp_wrong_passphrase": "The passphrase does not match this key.",
         "pgp_passphrase_short": "The passphrase must have at least 12 characters.",
         "pgp_key_not_found": "No key was found for this address.",
         "pgp_lookup_failed": "The key directory could not be reached.",
-        "pgp_key_changed": "The key has changed in the meantime. Please check again."
+        "pgp_key_changed": "The key has changed in the meantime. Please check again.",
+        "pgp_unlock_throttled": "Too many wrong passphrases. Please wait a few minutes."
       },
       "status": {
         "decrypted": "Decrypted (OpenPGP).",
@@ -3875,8 +3876,26 @@
           "expired_key": "Signed with an expired key.",
           "revoked_key": "Signed with a revoked key.",
           "mismatch": "Valid signature, but the key does not belong to the sender address."
-        }
-      }
+        },
+        "locked": "Encrypted with OpenPGP. The key {email} is locked: passphrase needed."
+      },
+      "unlock": "Unlock",
+      "unlockTitle": "Unlock key",
+      "unlockIntro": "Passphrase of the key {email}. It stays in the service's memory for 15 minutes and is forgotten after that, on \"Lock\" and on logout.",
+      "lockAll": "Lock",
+      "lockedAll": "All keys locked.",
+      "changePassphrase": "Passphrase",
+      "currentPassphrase": "Current passphrase",
+      "newPassphraseOptional": "Passphrase (recommended, at least 12 characters)",
+      "newPassphraseEmpty": "New passphrase (empty: remove)",
+      "savePassphrase": "Save",
+      "importPassphrase": "Passphrase (checks a protected key, otherwise sets a new one)",
+      "passphraseHint": "An own passphrase protects the key on top of the vault. It cannot be recovered; without it the key and mail encrypted to it can no longer be used. Without a passphrase, anyone with your account or with the server and its master key can read.",
+      "passphraseSet": "Passphrase saved.",
+      "passphraseRemoved": "Passphrase removed.",
+      "stateLocked": "Locked: passphrase needed to decrypt and sign.",
+      "stateUnlocked": "Unlocked until {time}.",
+      "stateNoPassphrase": "No own passphrase, protected by the vault only."
     }
   },
   "sync": {

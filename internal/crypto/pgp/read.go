@@ -99,6 +99,9 @@ type ReadResult struct {
 	// InnerHeader is the parsed header of Content (e.g. for
 	// Autocrypt-Gossip processing).
 	InnerHeader textproto.MIMEHeader
+	// LockedKeys are the fingerprints of keys that could decrypt the message,
+	// but whose passphrase the PassphraseFunc refused with ErrKeyLocked.
+	LockedKeys []string
 	// InlineHasUnprotectedText is true for inline PGP when text outside
 	// the armored block was dropped from Content.
 	InlineHasUnprotectedText bool
@@ -280,6 +283,12 @@ func (r *KeyRing) decryptMessage(ctx context.Context, op *opKeyRing, data []byte
 				Fingerprint: fpr, KeyID: e.PrimaryKey.KeyIdString(),
 				UserID: primaryUID(&Key{entity: e}), Attempt: attempts[fpr],
 			})
+			if errors.Is(err, ErrKeyLocked) {
+				// Another recipient key may be available.
+				attempts[fpr] = MaxPassphraseAttempts
+				res.LockedKeys = append(res.LockedKeys, fpr)
+				continue
+			}
 			if err != nil {
 				promptErr = err
 				return nil, err
@@ -290,6 +299,9 @@ func (r *KeyRing) decryptMessage(ctx context.Context, op *opKeyRing, data []byte
 			return nil, nil
 		}
 		promptErr = ErrWrongPassphrase
+		if len(res.LockedKeys) > 0 {
+			promptErr = ErrKeyLocked
+		}
 		return nil, promptErr
 	}
 	md, err := openpgp.ReadMessage(in, op, prompt, configAt(opts.Now))

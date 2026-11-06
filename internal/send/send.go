@@ -51,6 +51,7 @@ var (
 	ErrNotCancellable   = errors.New("send: message is no longer cancellable")
 	ErrPGPUnavailable   = errors.New("send: OpenPGP is not configured")
 	ErrNoSigningKey     = errors.New("send: no secret key for the sender identity")
+	ErrPGPKeyLocked     = errors.New("send: the OpenPGP key of the sender is locked, its passphrase is needed")
 	ErrCannotEncrypt    = errors.New("send: not all recipients have a usable OpenPGP key")
 	ErrNoCloudUploader  = errors.New("send: cloud links requested but no uploader configured")
 	ErrNoMessenger      = errors.New("send: password delivery by messenger requested but no messenger configured")
@@ -613,8 +614,8 @@ func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Resul
 	if err != nil {
 		return res, err
 	}
-	if plan.ownKey != nil && !req.PGP.NoAutocrypt && !s.pgpPrefs().NoAutocrypt {
-		if ac, err := pgp.NewAutocryptHeader(ident.Email, plan.ownKey, s.ownPrefer(), s.cfg.Now()); err == nil {
+	if plan.publicKey() != nil && !req.PGP.NoAutocrypt && !s.pgpPrefs().NoAutocrypt {
+		if ac, err := pgp.NewAutocryptHeader(ident.Email, plan.publicKey(), s.ownPrefer(), s.cfg.Now()); err == nil {
 			d.Autocrypt = ac
 		}
 	}

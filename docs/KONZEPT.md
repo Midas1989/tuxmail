@@ -738,10 +738,11 @@ Statt einer reinen Mail-Regel-Engine erhält TuxMail ein **allgemeines Workflow-
 **Stand der Umsetzung (2026-11):** Angebunden sind Schlüsselverwaltung (Einstellungen → Sicherheit → OpenPGP: Erzeugen
 Curve25519, Import und Export, Vertrauensstand, Löschen), Lesen mit Statusanzeige, Senden im Verfasser, Autocrypt-Header
 senden und sammeln (`internal/app/comfort_pgp.go`) sowie WKD und keys.openpgp.org auf Klick. Zur Bibliothek vorhanden, aber
-**noch nicht in der Oberfläche:** Passphrase ändern, Widerruf, Ablaufdatum, mehrere Benutzer-IDs, Autocrypt-Setup-Message,
+**noch nicht in der Oberfläche:** Widerruf, Ablaufdatum, mehrere Benutzer-IDs, Autocrypt-Setup-Message,
 angehängte Schlüssel mit einem Klick, RSA-4096 und v6-Schlüssel, Zuordnung je Identität (es zählt die Adresse im Schlüssel).
-**Bewusst anders als unten:** Privater Schlüssel ohne eigene Passphrase im Tresor wie bei S/MIME, eine Import-Passphrase
-wird nur einmal zum Entsperren genutzt. Entschlüsselter Text wird nicht indexiert, also keine Suche in verschlüsselten
+Eigene Passphrase optional (S2K des Schlüssels, zusätzlich zum Tresor), Abfrage im Dialog, 15 Minuten nur im Arbeitsspeicher,
+„Sperren“ und Abmelden leeren; Hintergrundwege warten nie, sie melden den gesperrten Schlüssel. **Bewusst anders als unten:**
+Entschlüsselter Text wird nicht indexiert, also keine Suche in verschlüsselten
 Mails; die Analyse (Spam, Kategorien, Rechnungen) und PDF-Archiv entschlüsseln OpenPGP nicht, die Druckansicht schon.
 Betreff wird beim Versand nicht verborgen, nur zusätzlich geschützt. **Noch nicht gebaut:** verschlüsselte Ablage von
 Entwürfen (sie liegen wie jeder Entwurf im Klartext im Entwurfsordner), Schloss-Symbol in Liste und Chat-Blase. Empfänger

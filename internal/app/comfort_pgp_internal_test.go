@@ -5,6 +5,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
@@ -12,7 +13,9 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/Midas1989/Mailclient/internal/backup"
 	"github.com/Midas1989/Mailclient/internal/crypto/pgp"
@@ -280,4 +283,333 @@ func TestPGPUserBackupRoundTrip(t *testing.T) {
 	if sec, err := ex2.Secrets(); err != nil || len(sec) != 0 {
 		t.Fatalf("private key without the option: %v %v", sec, err)
 	}
+}
+
+type pgpClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *pgpClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *pgpClock) advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
+}
+
+func pgpMail(t *testing.T, body string, to ...*pgp.Key) []byte {
+	t.Helper()
+	ent, err := pgp.EncryptMIME([]byte("Content-Type: text/plain\r\n\r\n"+body+"\r\n"), to, pgp.EncryptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return append([]byte("From: bob@example.org\r\nSubject: s\r\nMessage-ID: <a@b>\r\nMIME-Version: 1.0\r\n"), ent.Bytes()...)
+}
+
+func pgpCode(err error) string {
+	var e *Error
+	if errors.As(err, &e) {
+		return e.Code
+	}
+	return ""
+}
+
+func TestPGPPassphraseLifecycle(t *testing.T) {
+	const pass, pass2 = "erste-passphrase-lang", "zweite-passphrase-lang"
+	a := pgpTestApp(t)
+	clock := &pgpClock{t: time.Now()}
+	a.opts.Now = clock.now
+	ctx := context.Background()
+
+	if _, err := a.GeneratePGPKey(ctx, PGPGenerateInput{Email: "me@example.org", Passphrase: "kurz"}); pgpCode(err) != "pgp_passphrase_short" {
+		t.Fatalf("short: %v", err)
+	}
+	info, err := a.GeneratePGPKey(ctx, PGPGenerateInput{Email: "me@example.org", Passphrase: pass})
+	if err != nil || !info.Protected || !info.Locked || !info.Own || !info.CanSign {
+		t.Fatalf("generate: %+v %v", info, err)
+	}
+	k, err := a.pgpRing().Get(ctx, info.Fingerprint)
+	if err != nil || !k.IsLocked() {
+		t.Fatalf("not locked: %v", err)
+	}
+	raw := pgpMail(t, "GEHEIMWORT", k.Public())
+
+	// Locked: reading neither decrypts nor waits, and says which key is missing.
+	done := make(chan RenderedMessage, 1)
+	go func() {
+		r, err := a.render.Render(ctx, raw)
+		if err != nil {
+			t.Error(err)
+		}
+		done <- r
+	}()
+	select {
+	case r := <-done:
+		if strings.Contains(r.Text, "GEHEIMWORT") || !r.Encrypted {
+			t.Fatalf("locked render: %+v", r)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("reading with a locked key hangs")
+	}
+	if pm, err := parse.Parse(raw, parse.Options{KeyRing: a.pgpRing()}); err != nil || pm.PGP.Decrypted || !slices.Contains(pm.PGP.LockedKeys, info.Fingerprint) {
+		t.Fatalf("locked state: %+v %v", pm.PGP, err)
+	}
+	// Background analysis does not decrypt, locked or not.
+	an, err := a.analyze(ctx, store.Message{ID: 1}, raw)
+	if err != nil || strings.Contains(an.msg.Text, "GEHEIMWORT") {
+		t.Fatalf("analysis: %v", err)
+	}
+
+	// Guessing is limited; then even the right one has to wait.
+	for i := 0; i < pgpMaxFailures; i++ {
+		if _, err := a.UnlockPGPKey(ctx, info.ID, PGPUnlockInput{Passphrase: "falsch"}); pgpCode(err) != "pgp_wrong_passphrase" {
+			t.Fatalf("attempt %d: %v", i, err)
+		}
+	}
+	if _, err := a.UnlockPGPKey(ctx, info.ID, PGPUnlockInput{Passphrase: pass}); pgpCode(err) != "pgp_unlock_throttled" {
+		t.Fatalf("throttle: %v", err)
+	}
+	if _, err := a.ChangePGPPassphrase(ctx, info.ID, PGPPassphraseInput{Current: pass, New: pass2}); pgpCode(err) != "pgp_unlock_throttled" {
+		t.Fatalf("throttle on change: %v", err)
+	}
+	clock.advance(pgpFailureWindow)
+
+	got, err := a.UnlockPGPKey(ctx, info.ID, PGPUnlockInput{Passphrase: pass})
+	if err != nil || got.Locked || !got.Protected || got.UnlockedUntil == "" {
+		t.Fatalf("unlock: %+v %v", got, err)
+	}
+	if r, err := a.render.Render(ctx, raw); err != nil || !strings.Contains(r.Text, "GEHEIMWORT") {
+		t.Fatalf("unlocked render: %+v %v", r, err)
+	}
+
+	// The time limit also ends what was decrypted in the caches.
+	a.rendered.put("x", RenderedMessage{Text: "GEHEIMWORT"})
+	clock.advance(pgpUnlockTTL)
+	a.pgpSweep()
+	if _, ok := a.rendered.get("x"); ok {
+		t.Fatal("decrypted text survives the passphrase")
+	}
+	if r, _ := a.render.Render(ctx, raw); strings.Contains(r.Text, "GEHEIMWORT") {
+		t.Fatal("still unlocked after the time limit")
+	}
+	// So does "lock".
+	if _, err := a.UnlockPGPKey(ctx, info.ID, PGPUnlockInput{Passphrase: pass}); err != nil {
+		t.Fatal(err)
+	}
+	a.rendered.put("x", RenderedMessage{Text: "GEHEIMWORT"})
+	a.LockPGPKeys()
+	if _, ok := a.rendered.get("x"); ok {
+		t.Fatal("decrypted text survives locking")
+	}
+	if r, _ := a.render.Render(ctx, raw); strings.Contains(r.Text, "GEHEIMWORT") {
+		t.Fatal("still unlocked after locking")
+	}
+
+	// Export needs the current passphrase and stays protected.
+	if _, err := a.ExportPGPSecretKey(ctx, info.ID, PGPExportInput{Passphrase: pass2, Current: "falsch"}); pgpCode(err) != "pgp_wrong_passphrase" {
+		t.Fatalf("export: %v", err)
+	}
+	armored, err := a.ExportPGPSecretKey(ctx, info.ID, PGPExportInput{Passphrase: pass2, Current: pass})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, err := pgp.ReadKey([]byte(armored)); err != nil || !e.IsLocked() {
+		t.Fatalf("export not locked: %v", err)
+	}
+
+	// Change: old one checked, then only the new one works.
+	if _, err := a.ChangePGPPassphrase(ctx, info.ID, PGPPassphraseInput{Current: "falsch", New: pass2}); pgpCode(err) != "pgp_wrong_passphrase" {
+		t.Fatalf("change: %v", err)
+	}
+	if _, err := a.ChangePGPPassphrase(ctx, info.ID, PGPPassphraseInput{Current: pass, New: "kurz"}); pgpCode(err) != "pgp_passphrase_short" {
+		t.Fatalf("change short: %v", err)
+	}
+	if got, err := a.ChangePGPPassphrase(ctx, info.ID, PGPPassphraseInput{Current: pass, New: pass2}); err != nil || !got.Locked {
+		t.Fatalf("change: %+v %v", got, err)
+	}
+	if _, err := a.UnlockPGPKey(ctx, info.ID, PGPUnlockInput{Passphrase: pass}); pgpCode(err) != "pgp_wrong_passphrase" {
+		t.Fatalf("old passphrase: %v", err)
+	}
+	if _, err := a.UnlockPGPKey(ctx, info.ID, PGPUnlockInput{Passphrase: pass2}); err != nil {
+		t.Fatal(err)
+	}
+	// Remove: needs the current one as well, also while unlocked.
+	if _, err := a.ChangePGPPassphrase(ctx, info.ID, PGPPassphraseInput{Current: pass}); pgpCode(err) != "pgp_wrong_passphrase" {
+		t.Fatalf("remove: %v", err)
+	}
+	got, err = a.ChangePGPPassphrase(ctx, info.ID, PGPPassphraseInput{Current: pass2})
+	if err != nil || got.Protected || got.Locked {
+		t.Fatalf("remove: %+v %v", got, err)
+	}
+	if r, err := a.render.Render(ctx, raw); err != nil || !strings.Contains(r.Text, "GEHEIMWORT") {
+		t.Fatalf("after removing: %+v %v", r, err)
+	}
+	// Set on an unprotected key.
+	if got, err := a.ChangePGPPassphrase(ctx, info.ID, PGPPassphraseInput{New: pass}); err != nil || !got.Locked {
+		t.Fatalf("set: %+v %v", got, err)
+	}
+	if !func() bool { k, err := a.pgpRing().Get(ctx, info.Fingerprint); return err == nil && k.IsLocked() }() {
+		t.Fatal("not protected after setting")
+	}
+}
+
+// Import: protected keys stay protected, with or without the passphrase; an
+// unprotected key takes the passphrase as protection.
+func TestPGPImportKeepsProtection(t *testing.T) {
+	const pass = "import-passphrase-lang"
+	a := pgpTestApp(t)
+	ctx := context.Background()
+	b64 := func(k *pgp.Key) string {
+		s, err := k.ArmoredSecret()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return base64.StdEncoding.EncodeToString([]byte(s))
+	}
+	locked, err := pgp.GenerateKey(pgp.GenerateOptions{UserIDs: []pgp.UserIDSpec{{Email: "a@example.org"}}, Passphrase: []byte(pass)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys, err := a.ImportPGPKeys(ctx, PGPImportInput{Data: b64(locked)})
+	if err != nil || !keys[0].Protected || !keys[0].Locked {
+		t.Fatalf("without passphrase: %+v %v", keys, err)
+	}
+	if _, err := a.ImportPGPKeys(ctx, PGPImportInput{Data: b64(locked), Passphrase: "falsch"}); pgpCode(err) != "pgp_wrong_passphrase" {
+		t.Fatalf("wrong: %v", err)
+	}
+	keys, err = a.ImportPGPKeys(ctx, PGPImportInput{Data: b64(locked), Passphrase: pass})
+	if err != nil || !keys[0].Protected || keys[0].Locked {
+		t.Fatalf("with passphrase: %+v %v", keys, err)
+	}
+	if k, err := a.pgpRing().Get(ctx, locked.Fingerprint()); err != nil || !k.IsLocked() {
+		t.Fatalf("protection removed: %v", err)
+	}
+
+	open, err := pgp.GenerateKey(pgp.GenerateOptions{UserIDs: []pgp.UserIDSpec{{Email: "b@example.org"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ImportPGPKeys(ctx, PGPImportInput{Data: b64(open), Passphrase: "kurz"}); pgpCode(err) != "pgp_passphrase_short" {
+		t.Fatalf("short: %v", err)
+	}
+	keys, err = a.ImportPGPKeys(ctx, PGPImportInput{Data: b64(open), Passphrase: pass})
+	if err != nil || !keys[0].Protected || !keys[0].Locked {
+		t.Fatalf("protect on import: %+v %v", keys, err)
+	}
+}
+
+// One locked key must not stop a mail that another key can open.
+func TestPGPOtherKeyStillDecrypts(t *testing.T) {
+	const pass = "andere-passphrase-lang"
+	a := pgpTestApp(t)
+	ctx := context.Background()
+	one, err := a.GeneratePGPKey(ctx, PGPGenerateInput{Email: "one@example.org", Passphrase: pass})
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := a.GeneratePGPKey(ctx, PGPGenerateInput{Email: "two@example.org", Passphrase: pass})
+	if err != nil {
+		t.Fatal(err)
+	}
+	k1, _ := a.pgpRing().Get(ctx, one.Fingerprint)
+	k2, _ := a.pgpRing().Get(ctx, two.Fingerprint)
+	raw := pgpMail(t, "GEHEIMWORT", k1.Public(), k2.Public())
+	if _, err := a.UnlockPGPKey(ctx, two.ID, PGPUnlockInput{Passphrase: pass}); err != nil {
+		t.Fatal(err)
+	}
+	if pm, err := parse.Parse(raw, parse.Options{KeyRing: a.pgpRing()}); err != nil || !pm.PGP.Decrypted || len(pm.PGP.LockedKeys) != 0 {
+		t.Fatalf("%+v %v", pm.PGP, err)
+	}
+}
+
+// Backup and restore: the key stays protected and works with its passphrase.
+func TestPGPProtectedKeyBackup(t *testing.T) {
+	const pass = "sicherung-passphrase-lang"
+	a := pgpTestApp(t)
+	ctx := context.Background()
+	info, err := a.GeneratePGPKey(ctx, PGPGenerateInput{Email: "me@example.org", Passphrase: pass})
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, _ := a.pgpRing().Get(ctx, info.Fingerprint)
+	raw := pgpMail(t, "GEHEIMWORT", k.Public())
+	var buf bytes.Buffer
+	if _, err := backup.Create(ctx, &buf, backup.Options{Store: a.st, Blobs: a.blobs, Secrets: a.opts.Secrets, SecretRefs: a.secretRefs(),
+		Scope: backup.Scope{Mode: backup.ModeFull, Secrets: true}, Passphrase: "correct horse", TempDir: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(buf.Bytes(), []byte(pass)) {
+		t.Fatal("passphrase in the archive")
+	}
+	ex, err := backup.Extract(ctx, backup.Source{Name: "a", Open: func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(buf.Bytes())), nil }}, "correct horse", nil, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ex.Close()
+	sec, err := ex.Secrets()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inArchive, err := base64.StdEncoding.DecodeString(string(sec["pgp:"+info.Fingerprint]))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ak, err := pgp.ReadKey(inArchive); err != nil || !ak.IsLocked() {
+		t.Fatalf("archive holds the key unprotected: %v", err)
+	}
+	if bytes.Contains(inArchive, []byte(pass)) {
+		t.Fatal("passphrase next to the key")
+	}
+
+	check := func(name string, b *App) {
+		t.Helper()
+		keys, err := b.ListPGPKeys(ctx)
+		if err != nil || len(keys) != 1 || !keys[0].Protected || !keys[0].Locked {
+			t.Fatalf("%s: %+v %v", name, keys, err)
+		}
+		if r, _ := b.render.Render(ctx, raw); strings.Contains(r.Text, "GEHEIMWORT") {
+			t.Fatalf("%s: readable without the passphrase", name)
+		}
+		if _, err := b.UnlockPGPKey(ctx, keys[0].ID, PGPUnlockInput{Passphrase: "falsch"}); pgpCode(err) != "pgp_wrong_passphrase" {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if _, err := b.UnlockPGPKey(ctx, keys[0].ID, PGPUnlockInput{Passphrase: pass}); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if r, err := b.render.Render(ctx, raw); err != nil || !strings.Contains(r.Text, "GEHEIMWORT") {
+			t.Fatalf("%s: %+v %v", name, r, err)
+		}
+	}
+
+	dir := t.TempDir()
+	mem := newMemorySecrets()
+	if _, err := backup.Restore(ctx, ex, backup.RestoreOptions{Mode: backup.Replace, DataDir: dir, Secrets: true, SecretStore: mem}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := store.Open(ctx, filepath.Join(dir, "tuxmail.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	blobs, err := blob.New(filepath.Join(dir, "blobs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, err := New(ctx, Options{Store: st, Blobs: blobs, DataDir: dir, Secrets: mem, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	check("replace", restored)
+
+	other := pgpTestApp(t)
+	if _, err := backup.Restore(ctx, ex, backup.RestoreOptions{Mode: backup.Merge, Store: other.st, Blobs: other.blobs, Secrets: true, SecretStore: other.opts.Secrets}); err != nil {
+		t.Fatal(err)
+	}
+	check("merge", other)
 }

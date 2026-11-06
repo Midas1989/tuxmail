@@ -328,14 +328,25 @@ export function comfortMock(): ComfortApi {
       certs = certs.filter((c) => c.id !== id);
     },
     listPgpKeys: async () => structuredClone(pgpKeys),
-    generatePgpKey: async ({ name: n, email }) => {
-      const k: PgpKey = { id: pgpKeys.length + 1, fingerprint: 'A1B2C3D4E5F60718293A4B5C6D7E8F9012345678', email, userId: `${n} <${email}>`, algorithm: 'Ed25519', created: new Date().toISOString(), status: 'valid', own: true, canEncrypt: true, canSign: true, source: 'own', trust: 'verified' };
+    unlockPgpKey: async (id) => {
+      pgpKeys = pgpKeys.map((k) => (k.id === id ? { ...k, locked: false } : k));
+      return structuredClone(pgpKeys.find((k) => k.id === id)!);
+    },
+    changePgpPassphrase: async (id, _current, next) => {
+      pgpKeys = pgpKeys.map((k) => (k.id === id ? { ...k, protected: !!next, locked: !!next } : k));
+      return structuredClone(pgpKeys.find((k) => k.id === id)!);
+    },
+    lockPgpKeys: async () => {
+      pgpKeys = pgpKeys.map((k) => ({ ...k, locked: k.protected }));
+    },
+    generatePgpKey: async ({ name: n, email, passphrase }) => {
+      const k: PgpKey = { protected: !!passphrase, locked: !!passphrase, id: pgpKeys.length + 1, fingerprint: 'A1B2C3D4E5F60718293A4B5C6D7E8F9012345678', email, userId: `${n} <${email}>`, algorithm: 'Ed25519', created: new Date().toISOString(), status: 'valid', own: true, canEncrypt: true, canSign: true, source: 'own', trust: 'verified' };
       pgpKeys.push(k);
       return k;
     },
     importPgpKeys: async (file) => {
       const email = file.name.replace(/\.[^.]+$/, '') + '@example.org';
-      const k: PgpKey = { id: pgpKeys.length + 1, fingerprint: 'F0E1D2C3B4A5968778695A4B3C2D1E0F12345678', email, userId: email, algorithm: 'Ed25519', created: new Date().toISOString(), status: 'valid', own: false, canEncrypt: true, canSign: false, source: 'manual', trust: 'unknown' };
+      const k: PgpKey = { protected: false, locked: false, id: pgpKeys.length + 1, fingerprint: 'F0E1D2C3B4A5968778695A4B3C2D1E0F12345678', email, userId: email, algorithm: 'Ed25519', created: new Date().toISOString(), status: 'valid', own: false, canEncrypt: true, canSign: false, source: 'manual', trust: 'unknown' };
       pgpKeys.push(k);
       return [k];
     },

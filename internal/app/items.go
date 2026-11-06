@@ -95,6 +95,7 @@ func (c *bodyCache) put(k string, v bodyParts) {
 
 // bubble returns the bubble text of a mail.
 func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
+	a.pgpSweep() // nothing decrypted outlives its passphrase
 	if m.BlobHash == "" {
 		return bodyParts{visible: m.Snippet}
 	}

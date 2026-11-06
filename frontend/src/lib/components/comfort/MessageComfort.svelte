@@ -5,6 +5,7 @@
   automatically), e-invoice card with "pay by" task, smart category.
 -->
 <script lang="ts">
+  import PgpUnlockDialog from './PgpUnlockDialog.svelte';
   import ShieldAlert from '@lucide/svelte/icons/shield-alert';
   import ShieldCheck from '@lucide/svelte/icons/shield-check';
   import ShieldQuestion from '@lucide/svelte/icons/shield-question-mark';
@@ -108,7 +109,15 @@
   const formatDate = (iso: string) => fmt().date(iso);
   const sig = $derived(ins?.smime?.signature);
   const pgpSig = $derived(ins?.pgp?.signature);
-  const pgpBad = $derived(pgpSig === 'invalid' || pgpSig === 'mismatch' || pgpSig === 'revoked_key' || (ins?.pgp?.encrypted && !ins.pgp.decrypted));
+  const pgpLocked = $derived(ins?.pgp?.lockedKeys?.[0]);
+  const pgpBad = $derived(pgpSig === 'invalid' || pgpSig === 'mismatch' || pgpSig === 'revoked_key' || (ins?.pgp?.encrypted && !ins.pgp.decrypted && !pgpLocked));
+  let unlockOpen = $state(false);
+
+  async function afterUnlock() {
+    unlockOpen = false;
+    await reload();
+    await app.selectMessage(messageId);
+  }
 </script>
 
 {#if ins}
@@ -141,7 +150,7 @@
     <div class="banner pgp" class:ok={pgpSig === 'valid' && !pgpBad} class:bad={pgpBad} role="status">
       {#if pgpBad}<ShieldAlert size={16} aria-hidden="true" />{:else if pgpSig === 'valid'}<ShieldCheck size={16} aria-hidden="true" />{:else if ins.pgp.encrypted}<Lock size={16} aria-hidden="true" />{:else}<ShieldQuestion size={16} aria-hidden="true" />{/if}
       <span class="txt">
-        {#if ins.pgp.encrypted}{ins.pgp.decrypted ? t('comfort.pgp.status.decrypted') : t('comfort.pgp.status.cannotDecrypt')}{/if}
+        {#if ins.pgp.encrypted}{ins.pgp.decrypted ? t('comfort.pgp.status.decrypted') : pgpLocked ? t('comfort.pgp.status.locked', { email: pgpLocked.email }) : t('comfort.pgp.status.cannotDecrypt')}{/if}
         {#if ins.pgp.signed && pgpSig}
           {t(`comfort.pgp.status.sig.${pgpSig}`)}
           {#if pgpSig === 'valid' && ins.pgp.signerTrust}<span class="muted"> · {t(`comfort.pgp.trust.${ins.pgp.signerTrust}`)}</span>{/if}
@@ -150,7 +159,12 @@
         {#if ins.pgp.protectedSubject}<span class="muted"> · {t('comfort.pgp.status.subject', { subject: ins.pgp.protectedSubject })}</span>{/if}
         {#if ins.pgp.partiallyProtected}<span class="muted"> · {t('comfort.pgp.status.partial')}</span>{/if}
       </span>
+      {#if pgpLocked}<button class="btn" onclick={() => (unlockOpen = true)}>{t('comfort.pgp.unlock')}</button>{/if}
     </div>
+  {/if}
+
+  {#if unlockOpen && pgpLocked}
+    <PgpUnlockDialog id={pgpLocked.id} email={pgpLocked.email} onclose={() => (unlockOpen = false)} ondone={afterUnlock} />
   {/if}
 
   {#if ins.unsubscribe && (comfort.settings?.newsletter.showBar ?? true)}

@@ -6,6 +6,8 @@
   import ShieldCheck from '@lucide/svelte/icons/shield-check';
   import KeyRound from '@lucide/svelte/icons/key-round';
   import Download from '@lucide/svelte/icons/download';
+  import Lock from '@lucide/svelte/icons/lock';
+  import PgpUnlockDialog from './PgpUnlockDialog.svelte';
   import { app, comfort } from '../../state';
   import { fmt, t } from '../../i18n/index.svelte';
   import { ApiError } from '../../api/api';
@@ -24,6 +26,12 @@
   let genName = $state('');
   let exporting = $state<PgpKey | null>(null);
   let exportPass = $state('');
+  let exportCurrent = $state('');
+  let genPass = $state('');
+  let unlocking = $state<PgpKey | null>(null);
+  let changing = $state<PgpKey | null>(null);
+  let changeCurrent = $state('');
+  let changeNew = $state('');
   let lookupEmail = $state('');
 
   async function load() {
@@ -35,7 +43,7 @@
     void comfort.loadSettings().then((v) => v && (s = structuredClone($state.snapshot(v) as ComfortSettings)));
   });
 
-  const codes = ['pgp_import', 'pgp_passphrase_required', 'pgp_wrong_passphrase', 'pgp_passphrase_short', 'pgp_key_not_found', 'pgp_lookup_failed', 'pgp_key_changed'];
+  const codes = ['pgp_import', 'pgp_wrong_passphrase', 'pgp_unlock_throttled', 'pgp_passphrase_short', 'pgp_key_not_found', 'pgp_lookup_failed', 'pgp_key_changed'];
   function show(e: unknown) {
     if (e instanceof ApiError && codes.includes(e.code)) error = t(`comfort.pgp.err.${e.code}` as MessageKey);
     else error = e instanceof Error ? e.message : String(e);
@@ -49,9 +57,9 @@
     error = null;
     busy = true;
     try {
-      const k = await comfort.api.generatePgpKey({ name: genName, email: genEmail });
+      const k = await comfort.api.generatePgpKey({ name: genName, email: genEmail, passphrase: genPass || undefined });
       app.toast(t('comfort.pgp.generated', { email: k.email }));
-      genEmail = genName = '';
+      genEmail = genName = genPass = '';
       await load();
     } catch (e) {
       show(e);
@@ -69,8 +77,7 @@
       passphrase = '';
       await load();
     } catch (e) {
-      if (e instanceof ApiError && e.code === 'pgp_passphrase_required') pending = f;
-      else show(e);
+      show(e);
     }
   }
 
@@ -96,12 +103,33 @@
     if (!exporting) return;
     error = null;
     try {
-      download(`${exporting.email || exporting.fingerprint}.private.asc`, await comfort.api.exportPgpSecretKey(exporting.id, exportPass));
+      download(`${exporting.email || exporting.fingerprint}.private.asc`, await comfort.api.exportPgpSecretKey(exporting.id, exportPass, exportCurrent || undefined));
       exporting = null;
-      exportPass = '';
+      exportPass = exportCurrent = '';
     } catch (e) {
       show(e);
     }
+  }
+
+  async function changePassphrase() {
+    if (!changing) return;
+    error = null;
+    try {
+      await comfort.api.changePgpPassphrase(changing.id, changeCurrent, changeNew);
+      app.toast(t(changeNew ? 'comfort.pgp.passphraseSet' : 'comfort.pgp.passphraseRemoved'));
+      changing = null;
+      changeCurrent = changeNew = '';
+      await load();
+    } catch (e) {
+      changeCurrent = '';
+      show(e);
+    }
+  }
+
+  async function lockAll() {
+    await comfort.api.lockPgpKeys();
+    app.toast(t('comfort.pgp.lockedAll'));
+    await load();
   }
 
   async function trust(k: PgpKey) {
@@ -159,8 +187,11 @@
 <section class="card" id="set-pgp" aria-labelledby="set-pgp-h">
   <div class="head">
     <h2 id="set-pgp-h">{t('comfort.pgp.title')}</h2>
-    <button class="btn" onclick={() => fileInput?.click()}><Upload size={15} /> {t('comfort.pgp.import')}</button>
-    <input type="file" accept=".asc,.gpg,.pgp,.key" hidden bind:this={fileInput} onchange={(e) => { const f = (e.currentTarget as HTMLInputElement).files?.[0]; if (f) void doImport(f, ''); }} />
+    <span class="head-acts">
+      {#if keys.some((k) => k.protected && !k.locked)}<button class="btn btn-ghost" onclick={lockAll}><Lock size={15} /> {t('comfort.pgp.lockAll')}</button>{/if}
+      <button class="btn" onclick={() => fileInput?.click()}><Upload size={15} /> {t('comfort.pgp.import')}</button>
+    </span>
+    <input type="file" accept=".asc,.gpg,.pgp,.key" hidden bind:this={fileInput} onchange={(e) => { pending = (e.currentTarget as HTMLInputElement).files?.[0] ?? null; passphrase = ''; error = null; }} />
   </div>
   <p class="hint">{t('comfort.pgp.intro')}</p>
 
@@ -170,25 +201,42 @@
       {#each app.identities as i (i.id)}<option value={i.email}></option>{/each}
     </datalist>
     <input class="input" bind:value={genName} placeholder={t('comfort.pgp.name')} aria-label={t('comfort.pgp.name')} />
+    <input class="input" type="password" autocomplete="new-password" bind:value={genPass} placeholder={t('comfort.pgp.newPassphraseOptional')} aria-label={t('comfort.pgp.newPassphraseOptional')} />
     <button class="btn btn-primary" disabled={busy || !genEmail}>{t('comfort.pgp.generate')}</button>
   </form>
+  <p class="hint">{t('comfort.pgp.passphraseHint')}</p>
 
   {#if pending}
     <form class="row" onsubmit={(e) => { e.preventDefault(); if (pending) void doImport(pending, passphrase); }}>
       <KeyRound size={15} aria-hidden="true" />
       <span>{pending.name}</span>
-      <input class="input" type="password" autocomplete="off" bind:value={passphrase} placeholder={t('comfort.pgp.passphrase')} aria-label={t('comfort.pgp.passphrase')} />
+      <input class="input" type="password" autocomplete="off" bind:value={passphrase} placeholder={t('comfort.pgp.importPassphrase')} aria-label={t('comfort.pgp.importPassphrase')} />
       <button class="btn btn-primary">{t('comfort.pgp.importNow')}</button>
+      <button type="button" class="btn btn-ghost" onclick={() => { pending = null; passphrase = ''; }}>{t('common.action.cancel')}</button>
     </form>
   {/if}
   {#if exporting}
     <form class="row" onsubmit={(e) => { e.preventDefault(); void exportSecret(); }}>
       <KeyRound size={15} aria-hidden="true" />
       <span>{exporting.email}</span>
+      {#if exporting.protected}<input class="input" type="password" autocomplete="off" bind:value={exportCurrent} placeholder={t('comfort.pgp.currentPassphrase')} aria-label={t('comfort.pgp.currentPassphrase')} />{/if}
       <input class="input" type="password" autocomplete="new-password" minlength="12" bind:value={exportPass} placeholder={t('comfort.pgp.exportPassphrase')} aria-label={t('comfort.pgp.exportPassphrase')} />
       <button class="btn btn-primary">{t('comfort.pgp.exportSecret')}</button>
-      <button type="button" class="btn btn-ghost" onclick={() => { exporting = null; exportPass = ''; }}>{t('common.action.cancel')}</button>
+      <button type="button" class="btn btn-ghost" onclick={() => { exporting = null; exportPass = exportCurrent = ''; }}>{t('common.action.cancel')}</button>
     </form>
+  {/if}
+  {#if changing}
+    <form class="row" onsubmit={(e) => { e.preventDefault(); void changePassphrase(); }}>
+      <KeyRound size={15} aria-hidden="true" />
+      <span>{changing.email}</span>
+      {#if changing.protected}<input class="input" type="password" autocomplete="off" bind:value={changeCurrent} placeholder={t('comfort.pgp.currentPassphrase')} aria-label={t('comfort.pgp.currentPassphrase')} />{/if}
+      <input class="input" type="password" autocomplete="new-password" bind:value={changeNew} placeholder={t('comfort.pgp.newPassphraseEmpty')} aria-label={t('comfort.pgp.newPassphraseEmpty')} />
+      <button class="btn btn-primary" disabled={!changing.protected && !changeNew}>{t('comfort.pgp.savePassphrase')}</button>
+      <button type="button" class="btn btn-ghost" onclick={() => { changing = null; changeCurrent = changeNew = ''; }}>{t('common.action.cancel')}</button>
+    </form>
+  {/if}
+  {#if unlocking}
+    <PgpUnlockDialog id={unlocking.id} email={unlocking.email} onclose={() => (unlocking = null)} ondone={() => { unlocking = null; void load(); }} />
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
@@ -203,9 +251,12 @@
             {t(`comfort.pgp.trust.${k.trust}` as MessageKey)}
           </span>
         </div>
+        {#if k.own}<div class="sub">{k.protected ? (k.locked ? t('comfort.pgp.stateLocked') : t('comfort.pgp.stateUnlocked', { time: fmt().time(k.unlockedUntil ?? '') })) : t('comfort.pgp.stateNoPassphrase')}</div>{/if}
         <div class="sub mono">{fingerprint(k.fingerprint)}</div>
         <div class="sub">{k.algorithm} · {fmt().date(k.created)}{#if k.expires} · {t('comfort.smime.validUntil', { date: fmt().date(k.expires) })}{/if}</div>
         <div class="acts">
+          {#if k.own && k.locked}<button class="btn btn-ghost sm" onclick={() => (unlocking = k)}>{t('comfort.pgp.unlock')}</button>{/if}
+          {#if k.own}<button class="btn btn-ghost sm" onclick={() => { changing = k; changeCurrent = changeNew = ''; }}>{t('comfort.pgp.changePassphrase')}</button>{/if}
           {#if !k.own}<button class="btn btn-ghost sm" onclick={() => trust(k)}>{k.trust === 'verified' ? t('comfort.pgp.unverify') : t('comfort.pgp.verify')}</button>{/if}
           <button class="icon-btn" aria-label={t('comfort.pgp.exportPublic')} title={t('comfort.pgp.exportPublic')} onclick={() => exportPublic(k)}><Download size={15} /></button>
           {#if k.own}<button class="icon-btn" aria-label={t('comfort.pgp.exportSecret')} title={t('comfort.pgp.exportSecret')} onclick={() => (exporting = k)}><KeyRound size={15} /></button>{/if}
@@ -270,6 +321,10 @@
     justify-content: space-between;
     gap: 10px;
   }
+  .head-acts {
+    display: flex;
+    gap: 6px;
+  }
   h2 {
     margin: 0;
     font-size: 15px;
@@ -330,7 +385,7 @@
     overflow-wrap: anywhere;
   }
   .acts {
-    grid-row: 1 / span 3;
+    grid-row: 1 / span 4;
     grid-column: 2;
     display: flex;
     align-items: center;

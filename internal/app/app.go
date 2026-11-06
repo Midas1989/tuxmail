@@ -317,6 +317,7 @@ func (a *App) Start() {
 
 // Close stops the background work. The store is owned by the caller.
 func (a *App) Close() error {
+	a.LockPGPKeys()
 	if a.cancel != nil {
 		a.cancel()
 	}
