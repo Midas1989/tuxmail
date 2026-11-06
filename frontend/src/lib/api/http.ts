@@ -325,7 +325,7 @@ export interface HttpTransportOptions {
   rewritePath?: (path: string) => string;
 }
 
-function readCsrfToken(): string | undefined {
+export function readCsrfToken(): string | undefined {
   if (typeof document === 'undefined') return undefined;
   // The cookie is current (rotated on login); the meta tag injected by the server is the fallback.
   const m = document.cookie.match(/(?:^|;\s*)(?:__Host-)?tuxmail_csrf=([^;]+)/);

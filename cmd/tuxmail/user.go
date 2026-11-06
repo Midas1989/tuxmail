@@ -37,10 +37,10 @@ func (c *cli) user(ctx context.Context, args []string) error {
 		})
 	case "reset-2fa":
 		return c.userSimple(ctx, sub, args, func(ctx context.Context, s *auth.Service, u *auth.User) error {
-			if err := s.ResetTOTP(ctx, u.ID); err != nil {
+			if err := s.ResetSecondFactors(ctx, u.ID); err != nil { // TOTP, recovery codes and passkeys
 				return err
 			}
-			fmt.Fprintf(c.stdout, "two-factor authentication of %s reset\n", u.Username)
+			fmt.Fprintf(c.stdout, "two-factor authentication of %s reset (TOTP, recovery codes and passkeys removed)\n", u.Username)
 			return nil
 		})
 	case "reset-password":

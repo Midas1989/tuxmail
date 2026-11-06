@@ -74,6 +74,13 @@ tuxmail_auth_session_lifetime: "168h"
 tuxmail_auth_password_min_length: 12
 tuxmail_auth_registration: "disabled" # disabled | invite
 tuxmail_auth_totp_required_for_admins: true
+# Passkeys (WebAuthn): "auto" = an, wenn tuxmail_public_url ein https-Hostname (oder http://localhost) ist,
+# sonst aus; true/false erzwingt. Ein Passkey-Login zählt als zwei Faktoren (erfüllt
+# tuxmail_auth_totp_required_for_admins), ein Passwort-Login desselben Admins nicht. Ein Wechsel des
+# Hostnamens von tuxmail_public_url macht ALLE registrierten Passkeys unbrauchbar.
+tuxmail_auth_passkeys_enabled: "auto"
+# Name des Dienstes, den Authenticatoren neben dem Passkey anzeigen (höchstens 64 Zeichen).
+tuxmail_auth_passkeys_rp_name: "TuxMail"
 
 tuxmail_oidc_enabled: false
 tuxmail_oidc_issuer: "" # z. B. https://cloud.example.org oder https://auth.example.org/application/o/tuxmail/

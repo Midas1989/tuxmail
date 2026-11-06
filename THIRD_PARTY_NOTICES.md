@@ -35,6 +35,22 @@ All of them require Go ≤ 1.24 (`go 1.14`, `go 1.19`, `go 1.23`).
 `pdfcpu` was evaluated for the PDF/A enrichment but its current releases
 require Go 1.26; TuxMail uses an own minimal PDF writer instead.
 
+## Go modules added for passkeys (WebAuthn, `internal/auth/passkeys.go`)
+
+| Module | Version | License | Used for |
+|---|---|---|---|
+| `github.com/go-webauthn/webauthn` | v0.18.2 | BSD-3-Clause | WebAuthn / FIDO2 relying-party library (ceremony and signature verification) |
+| `github.com/go-webauthn/x` | v0.3.1 | BSD-3-Clause | secp256k1, ASN.1 and revocation helpers of the library |
+| `github.com/fxamacker/cbor/v2` | v2.9.4 | MIT | CBOR decoding of attestation objects and COSE keys |
+| `github.com/x448/float16` | v0.8.4 | MIT | dependency of the CBOR library |
+| `github.com/go-viper/mapstructure/v2` | v2.5.0 | MIT | attestation statement decoding |
+| `github.com/google/go-tpm` | v0.9.8 | Apache-2.0 | TPM attestation structures (compatible with AGPL-3.0, one way) |
+
+TuxMail accepts attestation "none" only and does not use the FIDO metadata
+service. `github.com/golang-jwt/jwt/v5`, `github.com/tinylib/msgp` and
+`github.com/philhofer/fwd` were already in the module graph; the library
+raises their minimum versions (v5.3.1, v1.6.4, v1.2.0).
+
 ## signal-cli and Java runtime (Signal messenger plugin)
 
 The Signal plugin (`internal/messenger/plugins/signal`) starts **signal-cli**

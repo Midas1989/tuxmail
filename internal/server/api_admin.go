@@ -216,7 +216,10 @@ func (s *Server) handleAdminReset2FA(w http.ResponseWriter, r *http.Request, a *
 	if !ok {
 		return
 	}
-	if err := s.auth.ResetTOTP(r.Context(), id); err != nil {
+	// Removes the second factors of every kind: TOTP with its recovery codes AND
+	// all passkeys (a passkey login would otherwise stay a way in for whoever
+	// holds the authenticator the administrator wanted to get rid of).
+	if err := s.auth.ResetSecondFactors(r.Context(), id); err != nil {
 		s.writeAuthError(w, err)
 		return
 	}

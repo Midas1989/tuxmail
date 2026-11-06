@@ -1358,6 +1358,67 @@
       "diagnosticsExport": "Export diagnostics",
       "diagnosticsDone": "Diagnostics exported."
     },
+    "passkeys": {
+      "title": "Passkeys",
+      "intro": "Sign in with your fingerprint, face or device PIN instead of a password. A passkey stays on your device or in your platform's passkey manager; the server only stores its public key.",
+      "twoFactorNote": "A passkey sign-in counts as two factors. It does not replace two-factor authentication for sign-ins with a password.",
+      "empty": "No passkeys yet.",
+      "created": "Added {date}",
+      "lastUsed": "Last used {date}",
+      "neverUsed": "Never used",
+      "synced": "Synced",
+      "deviceBound": "This device only",
+      "stale": "Not usable here",
+      "staleHint": "This passkey was created for another web address and cannot be used here. You can remove it.",
+      "unsupported": "This browser or connection does not support passkeys. Use a current browser over HTTPS.",
+      "disabledByServer": "Passkeys are not enabled on this server.",
+      "loading": "Loading passkeys…",
+      "add": {
+        "title": "Add a passkey",
+        "name": "Name",
+        "namePlaceholder": "e.g. Work laptop",
+        "defaultName": "Passkey",
+        "password": "Current password",
+        "code": "Two-factor code or recovery code",
+        "submit": "Add passkey",
+        "waiting": "Waiting for your device…",
+        "limit": "You can register up to {max} passkeys."
+      },
+      "rename": "Rename",
+      "renameLabel": "New name for the passkey {name}",
+      "save": "Save",
+      "remove": {
+        "action": "Remove",
+        "title": "Remove the passkey “{name}”?",
+        "text": "You will no longer be able to sign in with it. The copy on your device is not deleted automatically; remove it in your device or password manager settings as well.",
+        "password": "Current password",
+        "code": "Two-factor code or recovery code",
+        "confirm": "Remove passkey"
+      },
+      "done": {
+        "added": "Passkey “{name}” added.",
+        "renamed": "Passkey renamed.",
+        "removed": "Passkey removed."
+      },
+      "errors": {
+        "cancelled": "The request was cancelled or timed out. Try again.",
+        "unsupported": "This device cannot create a passkey here.",
+        "insecure": "Passkeys do not work on this web address. Open TuxMail over HTTPS using its normal address.",
+        "duplicate": "This device already has a passkey for your account.",
+        "reauth": "The password is wrong or missing.",
+        "badCode": "The two-factor code is wrong or missing.",
+        "reauthRequired": "Sign in again first, then retry within a few minutes.",
+        "rateLimited": "Too many attempts. Wait a few minutes and try again.",
+        "limit": "You have reached the maximum number of passkeys. Remove one first.",
+        "mfaSetup": "Set up two-factor authentication first.",
+        "disabled": "Passkeys are not enabled on this server.",
+        "expired": "The request expired. Start again.",
+        "invalid": "The passkey or its name was not accepted. Check the name and try again.",
+        "forbidden": "Passkeys can only be managed in the web client.",
+        "network": "The server cannot be reached.",
+        "failed": "Something went wrong. Try again."
+      }
+    },
     "identities": {
       "intro": "Sender addresses of this account. The default identity is used for new mails; replies use the address the mail was sent to.",
       "default": "Default",

@@ -13,6 +13,7 @@
   import { app, security } from '../../state';
   import { isNativeShell } from '../../platform';
   import { signOutWeb } from '../../session';
+  import PasskeyCard from './PasskeyCard.svelte';
   import { t, type MessageKey } from '../../i18n/index.svelte';
   import type { SettingsCategoryId } from '../../settings/catalog';
   import TwoFactorCard from './TwoFactorCard.svelte';
@@ -89,6 +90,7 @@
       <button class="btn" onclick={() => void signOut()}><LogOut size={14} /> {t('settings.pages.session.signOut')}</button>
     </section>
   {/if}
+  <PasskeyCard />
 {/if}
 
 <style>

@@ -416,7 +416,8 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_log_level` / `_format` / `_file` | `info` / `json` / `""` | Logging (`""` = journald) |
 | `tuxmail_trusted_proxies_extra` | `[]` | zusätzliche vertrauenswürdige Proxys |
 | `tuxmail_auth_registration` | `disabled` | `disabled` \| `invite` |
-| `tuxmail_auth_totp_required_for_admins` | `true` | TOTP-Pflicht für Admins. Ausgenommen sind nur Sitzungen, die per OIDC-Anmeldung entstanden sind (der IdP ist dort der zweite Faktor); wer sich als OIDC-verknüpfter Admin mit lokalem Passwort anmeldet, muss TOTP einrichten |
+| `tuxmail_auth_totp_required_for_admins` | `true` | TOTP-Pflicht für Admins. Ausgenommen sind nur Sitzungen, die einen eigenen zweiten Faktor mitbringen: per OIDC-Anmeldung entstandene (der IdP ist dort der zweite Faktor) und Passkey-Sitzungen (Nutzerverifizierung per PIN/Biometrie); wer sich als OIDC-verknüpfter oder Passkey-Admin mit lokalem Passwort anmeldet, muss TOTP einrichten |
+| `tuxmail_auth_passkeys_enabled` / `_rp_name` | `auto` / `TuxMail` | Passkeys (WebAuthn): `auto` = an bei https-`tuxmail_public_url` mit Hostnamen (oder `http://localhost`), sonst aus; `true`/`false` erzwingt. Ein Passkey-Login zählt als zwei Faktoren (erfüllt die TOTP-Pflicht der Admins), ein Passwort-Login nicht. **Ein Wechsel des Hostnamens von `tuxmail_public_url` macht alle registrierten Passkeys unbrauchbar** |
 | `tuxmail_security_expose_version` | `false` | `true`: `/healthz` und `/api/auth/config` nennen anonymen Clients die exakte Version (sonst nur `"product":"tuxmail"`) |
 | `tuxmail_security_hsts_include_subdomains` | `false` | `true`: `includeSubDomains` im HSTS-Header der Anwendung (nie `preload`) |
 | `tuxmail_auth_password_min_length` | `12` | Passwort-Mindestlänge |

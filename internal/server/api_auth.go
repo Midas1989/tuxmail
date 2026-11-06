@@ -22,6 +22,7 @@ func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		"registration":      s.cfg.Auth.Registration,
 		"oidcEnabled":       s.cfg.Auth.OIDC.Enabled,
 		"passwordMinLength": s.cfg.Auth.PasswordMinLength,
+		"passkeysEnabled":   s.auth.PasskeysEnabled(),
 		"maxUploadMB":       s.cfg.Limits.MaxUploadMB,
 	}
 	if s.cfg.Security.ExposeVersion { // NA-07: anonymous clients get no version by default
