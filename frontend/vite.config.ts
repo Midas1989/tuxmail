@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { defineConfig, type Plugin } from 'vitest/config';
+import { defaultClientConditions } from 'vite';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
 import tailwindcss from '@tailwindcss/vite';
 import { applyCsp, targetForMode } from './src/lib/csp.ts';
@@ -110,8 +111,8 @@ export default defineConfig({
   base: './',
   plugins: [tailwindcss(), svelte(), cspMeta(), serviceWorker(), branding()],
   resolve: {
-    // Component tests mount Svelte components in jsdom: they need the client build of svelte (mount()), not the server one.
-    conditions: process.env.VITEST ? ['browser'] : undefined,
+    // Component tests mount Svelte components in jsdom: they need the browser build of svelte, not the server build.
+    conditions: process.env.VITEST ? [...defaultClientConditions] : undefined,
     alias: {
       // Single source of truth for translations and branding at the repo root.
       $locales: join(root, '../locales'),

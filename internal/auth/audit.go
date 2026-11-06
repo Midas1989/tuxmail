@@ -4,6 +4,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -56,14 +57,48 @@ func (s *Service) Audit(ctx context.Context, action, target string, success bool
 
 // ListAudit returns the newest entries first; beforeID > 0 pages backwards.
 func (s *Service) ListAudit(ctx context.Context, limit int, beforeID int64) ([]AuditEntry, error) {
+	return s.QueryAudit(ctx, AuditFilter{Limit: limit, BeforeID: beforeID})
+}
+
+// AuditFilter narrows QueryAudit. Empty fields match everything.
+type AuditFilter struct {
+	Limit    int   // 1..1000, default 100
+	BeforeID int64 // > 0 pages backwards (entries with a smaller id)
+	// Action and Actor match as case-insensitive prefixes ("user." lists all
+	// user actions, "al" all actors starting with al).
+	Action string
+	Actor  string
+	// OnlyFailed lists unsuccessful actions only.
+	OnlyFailed bool
+}
+
+// likePrefix turns a literal prefix into a LIKE pattern (use with ESCAPE '\').
+func likePrefix(p string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(p) + "%"
+}
+
+// QueryAudit returns the newest entries first that match the filter.
+func (s *Service) QueryAudit(ctx context.Context, f AuditFilter) ([]AuditEntry, error) {
+	limit := f.Limit
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	q := `SELECT id, at, COALESCE(actor_id,0), actor, action, target, ip, success, details FROM audit_log`
+	q := `SELECT id, at, COALESCE(actor_id,0), actor, action, target, ip, success, details FROM audit_log WHERE 1=1`
 	args := []any{}
-	if beforeID > 0 {
-		q += ` WHERE id < ?`
-		args = append(args, beforeID)
+	if f.BeforeID > 0 {
+		q += ` AND id < ?`
+		args = append(args, f.BeforeID)
+	}
+	if a := strings.TrimSpace(f.Action); a != "" {
+		q += ` AND action LIKE ? ESCAPE '\'`
+		args = append(args, likePrefix(truncate(a, 100)))
+	}
+	if a := strings.TrimSpace(f.Actor); a != "" {
+		q += ` AND actor LIKE ? ESCAPE '\'`
+		args = append(args, likePrefix(truncate(a, 100)))
+	}
+	if f.OnlyFailed {
+		q += ` AND success = 0`
 	}
 	q += ` ORDER BY id DESC LIMIT ?`
 	args = append(args, limit)

@@ -10,10 +10,10 @@
 
 import type { MessageKey } from '../i18n/index.svelte';
 
-export type SettingsCategoryId = 'general' | 'accounts' | 'mail' | 'chats' | 'pim' | 'cloud' | 'automation' | 'notifications' | 'ai' | 'security' | 'data' | 'team' | 'about';
+export type SettingsCategoryId = 'general' | 'accounts' | 'mail' | 'chats' | 'pim' | 'cloud' | 'automation' | 'notifications' | 'ai' | 'security' | 'data' | 'team' | 'admin' | 'about';
 
 /** Where a category or section applies; anything else is hidden, not disabled. */
-export type SettingsAvailability = 'desktop' | 'native' | 'team' | 'vault';
+export type SettingsAvailability = 'desktop' | 'native' | 'team' | 'vault' | 'admin';
 
 export interface SettingsEnv {
   /** Wails desktop shell (window settings). */
@@ -24,9 +24,11 @@ export interface SettingsEnv {
   team: boolean;
   /** Portable desktop with a master-password vault. */
   vault: boolean;
+  /** Web client against `tuxmail serve`, signed in as administrator (role from /api/auth/me). */
+  admin?: boolean;
 }
 
-export const ALL_ENV: SettingsEnv = { desktop: true, native: true, team: true, vault: true };
+export const ALL_ENV: SettingsEnv = { desktop: true, native: true, team: true, vault: true, admin: true };
 
 export interface SettingsSection {
   id: string;
@@ -139,6 +141,11 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
     sections: [sec('mailboxes', ['team.admin.title', 'team.admin.create', 'team.admin.role', 'team.admin.member'])],
   },
   {
+    id: 'admin',
+    only: 'admin',
+    sections: [sec('manage', ['admin.users.title', 'admin.users.create', 'admin.users.unlock', 'admin.tabs.invites', 'admin.tabs.groups', 'admin.tabs.audit', 'admin.users.resetPassword', 'admin.users.reset2fa'])],
+  },
+  {
     id: 'about',
     sections: [
       sec('about', ['settings.about', 'settings.diag.version']),
@@ -148,7 +155,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   },
 ];
 
-const available = (only: SettingsAvailability | undefined, env: SettingsEnv) => !only || env[only];
+const available = (only: SettingsAvailability | undefined, env: SettingsEnv) => !only || !!env[only];
 
 export function visibleCategories(env: SettingsEnv): SettingsCategory[] {
   return SETTINGS_CATEGORIES.filter((c) => available(c.only, env)).map((c) => ({ ...c, sections: c.sections.filter((s) => available(s.only, env)) }));
