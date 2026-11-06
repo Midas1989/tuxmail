@@ -10,7 +10,7 @@ galaxy_info:
     - name: Debian
       versions: [bookworm, trixie]
     - name: Ubuntu
-      versions: [jammy, noble]
+      versions: [jammy, noble, resolute]
     - name: EL
       versions: ["9"]
 # Erwartet tuxmail_common und (für letsencrypt) tuxmail_nginx vorher (siehe site.yml).

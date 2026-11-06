@@ -127,7 +127,7 @@ tuxmail_tls_native: "{{ tuxmail_nginx_mode == 'none' and tuxmail_tls_mode == 'cu
 # Unterstützte Systeme (Vorprüfung).
 tuxmail_supported_systems:
   Debian: ["12", "13"]
-  Ubuntu: ["22", "24"]
+  Ubuntu: ["22", "24", "26"]
   RedHat: ["9"]
   Rocky: ["9"]
   AlmaLinux: ["9"]

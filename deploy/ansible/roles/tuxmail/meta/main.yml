@@ -10,7 +10,7 @@ galaxy_info:
     - name: Debian
       versions: [bookworm, trixie]
     - name: Ubuntu
-      versions: [jammy, noble]
+      versions: [jammy, noble, resolute]
     - name: EL
       versions: ["9"]
 # Erwartet, dass tuxmail_common vorher ausgeführt wurde (siehe site.yml).

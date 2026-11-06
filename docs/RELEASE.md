@@ -105,7 +105,7 @@ ohne Push; Tags veröffentlichen `:<version>` und `:latest`).
 
 ### Linux-Details
 
-- `.deb`: Abhängigkeiten `libc6 (>= 2.34)`, `libgtk-3-0`, `libwebkit2gtk-4.1-0` (Debian 12+, Ubuntu 22.04+);
+- `.deb`: Abhängigkeiten `libc6 (>= 2.34)`, `libgtk-3-0`, `libwebkit2gtk-4.1-0` (Debian 12+, Ubuntu 22.04+, geprüft gegen das Archiv von 26.04);
   `.rpm`: `libgtk-3.so.0()(64bit)`, `libwebkit2gtk-4.1.so.0()(64bit)` (Fedora, openSUSE). In einem
   Ubuntu-24.04-Container per `apt install ./tuxmail_…deb` getestet.
 - **AppImage:** linuxdeploy + linuxdeploy-plugin-gtk bündeln alle Bibliotheken; die WebKit-Hilfsprozesse

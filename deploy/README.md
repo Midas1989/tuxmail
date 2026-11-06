@@ -22,7 +22,7 @@ Linux-Server zu betreiben (siehe [KONZEPT.md, Kap. 4.5, 15.5, 15.6](../docs/KONZ
 
 **Zielsystem** (frisch oder bestehend):
 
-- Debian 12/13, Ubuntu 22.04/24.04 oder RHEL/Rocky/AlmaLinux 9, Architektur amd64 oder arm64
+- Debian 12/13, Ubuntu 22.04/24.04/**26.04** oder RHEL/Rocky/AlmaLinux 9, Architektur amd64 oder arm64
 - systemd, SSH-Zugang mit `sudo`-Rechten (oder root)
 - Für Let's Encrypt: DNS-Eintrag der Domain zeigt auf den Server, Port 80 und 443 aus dem Internet erreichbar
 - Ausgehender HTTPS-Zugriff auf die Release-URL (sonst `tuxmail_binary_src` verwenden)
@@ -34,7 +34,8 @@ Linux-Server zu betreiben (siehe [KONZEPT.md, Kap. 4.5, 15.5, 15.6](../docs/KONZ
 
 **Steuerrechner** (von dem aus Ansible läuft):
 
-- `ansible-core` ≥ 2.15 (getestet mit 2.21/2.22) und Python 3
+- `ansible-core` ≥ 2.15 (getestet mit 2.21/2.22) und Python 3. Für **Ubuntu 26.04** als Ziel (bringt Python 3.14 mit)
+  wird `ansible-core` ≥ 2.20 empfohlen
 - Collections: `ansible-galaxy collection install -r deploy/ansible/requirements.yml`
   (`ansible.posix`, `community.general`, `community.postgresql`; alle im pip-Paket `ansible` bereits
   enthalten – praktisch, wenn Ansible Galaxy nicht erreichbar ist: `pip install ansible`)
@@ -45,6 +46,24 @@ cp inventory/hosts.example.ini inventory/hosts.ini     # Server eintragen
 $EDITOR inventory/group_vars/all.yml                   # Domain, Version, Modi, E-Mail
 ansible-galaxy collection install -r requirements.yml
 ```
+
+### Hinweise zu Ubuntu 26.04 LTS („resolute“)
+
+Ubuntu 26.04 wird unterstützt. Gegen das Paketarchiv von 26.04 wurde geprüft, dass alle Pakete vorhanden sind, die
+das Playbook und das `.deb` brauchen: `nginx` 1.28, `certbot` und `python3-certbot-nginx` 4.0, `ufw`, `age`, `zstd`,
+`gpg`, `python3-debian`, `postgresql` 18, `python3-psycopg2`, `podman`, `liburing2` sowie für den Desktop
+`libwebkit2gtk-4.1-0` 2.52 und `libgtk-3-0t64` (liefert `libgtk-3-0`). Gleichzeitig gilt:
+
+- **Chromium (PDF-Export):** Ubuntu liefert es weiter nur als Snap. Wie unter 22.04/24.04 muss
+  `tuxmail_pdf_chromium_path` angegeben werden (siehe „PDF-Rendering“); Gotenberg als Container ist die Alternative.
+- **Matrix-Homeserver:** Das matrix.org-Repository bietet für neue Ubuntu-Versionen oft erst verspätet Pakete an. Das
+  Playbook prüft die Suite `resolute` vorab und bricht mit einem Hinweis ab, wenn sie fehlt. Empfohlen ist dann
+  Continuwuity (`tuxmail_matrix_server=continuwuity`, Standard).
+- **Python 3.14 auf dem Ziel:** Nutze auf dem Steuerrechner `ansible-core` ≥ 2.20.
+- Das Server-Archiv ist ein statisches Programm ohne Systembibliotheken und läuft unverändert.
+
+Das Playbook selbst wurde auf einer echten 26.04-Maschine noch nicht ausgeführt; die Systemprüfung, die Syntax und
+die Paketnamen sind getestet.
 
 ## 2. Installation ohne Docker (Standard)
 
@@ -472,6 +491,7 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_mautrix_<bridge>_version` / `_sha256` | `0.2610.0` / vorbelegt (amd64, arm64) | mautrix-Binaries |
 | `tuxmail_mautrix_config_overrides` | `{}` | eigene Werte je Bridge (rekursiv) |
 | `tuxmail_synapse_version` / `_extra_config` | `""` / `{}` | Synapse-Paketversion / zusätzliche Einstellungen |
+| `tuxmail_synapse_apt_suite` | `""` (Codename des Systems) | Suite im matrix.org-Repository. Das Playbook prüft vorab, ob sie existiert; bei neuen Ubuntu-/Debian-Versionen fehlt sie oft (dann Continuwuity verwenden) |
 | `tuxmail_synapse_container_version` / `tuxmail_bridges_synapse_container_gid` | `1.164.2` / `991` | nur Container-Modus: feste Synapse-Version statt `:latest`; GID des Containers für die Appservice-Registrierungen (0640) |
 
 **Geheimnisse mit Ansible Vault:**

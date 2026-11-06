@@ -87,9 +87,9 @@ Snapdragon-Notebooks, Ampere-Server). Bei `.rpm`-Dateien heißt es `x86_64` bzw.
 | System | Voraussetzung |
 |---|---|
 | Windows | Windows 10 22H2 oder Windows 11 (64 Bit). Microsoft Edge WebView2 ist normalerweise vorhanden; fehlt es, installiert das Setup es. |
-| Linux-Desktop | 64-Bit-Linux mit grafischer Oberfläche, GTK 3 und WebKitGTK 4.1 (Debian 12+, Ubuntu 22.04+, Fedora 39+, openSUSE Tumbleweed/Leap 15.6, RHEL/Rocky/Alma 9+). Für das AppImage genügt glibc ab 2.39 (Ubuntu 24.04+, Debian 13+, Fedora 40+). Zum sicheren Speichern der Passwörter: ein Schlüsselbund (GNOME Keyring, KWallet oder KeePassXC). |
+| Linux-Desktop | 64-Bit-Linux mit grafischer Oberfläche, GTK 3 und WebKitGTK 4.1 (Debian 12+, Ubuntu 22.04+ einschließlich 26.04, Fedora 39+, openSUSE Tumbleweed/Leap 15.6, RHEL/Rocky/Alma 9+). Für das AppImage genügt glibc ab 2.39 (Ubuntu 24.04+, Debian 13+, Fedora 40+). Zum sicheren Speichern der Passwörter: ein Schlüsselbund (GNOME Keyring, KWallet oder KeePassXC). |
 | Android | Android 7.0 oder neuer; ein TuxMail-Server (Abschnitt 6) |
-| Server | Debian 12/13, Ubuntu 22.04/24.04 oder RHEL/Rocky/AlmaLinux 9, amd64 oder arm64, systemd, SSH-Zugang mit `sudo`; für Let's Encrypt eine Domain, die auf den Server zeigt, und offene Ports 80/443 |
+| Server | Debian 12/13, Ubuntu 22.04/24.04/26.04 oder RHEL/Rocky/AlmaLinux 9, amd64 oder arm64, systemd, SSH-Zugang mit `sudo`; für Let's Encrypt eine Domain, die auf den Server zeigt, und offene Ports 80/443 |
 
 ### Download prüfen (empfohlen)
 
@@ -276,7 +276,7 @@ Apache, HAProxy, Traefik) beendet wird, legt die Konfigurationsdatei fest (Absch
 ### 6a) Empfohlen: Ansible, ohne Docker
 
 **Voraussetzungen** auf dem Steuerrechner (von dem aus du installierst): `ansible-core` ab 2.15 und Python 3, zum
-Beispiel `pip install ansible`. Auf dem Server: eines der unterstützten Systeme (Abschnitt 1), SSH-Zugang mit
+Beispiel `pip install ansible`. Für einen Server mit **Ubuntu 26.04** (Python 3.14) empfehle ich `ansible-core` ab 2.20. Auf dem Server: eines der unterstützten Systeme (Abschnitt 1), SSH-Zugang mit
 `sudo` und ausgehender HTTPS-Zugriff auf GitHub.
 
 **Schritt für Schritt:**
@@ -503,6 +503,8 @@ Eine automatische Update-Funktion im Programm gibt es noch nicht.
 | Linux: Passwörter werden nicht gespeichert | Schlüsselbund installieren und entsperren (`gnome-keyring`, KWallet oder KeePassXC mit Secret-Service). |
 | AppImage startet nicht, „FUSE“ | Siehe 3c. |
 | Server: Playbook bricht mit Hinweis auf Signatur oder Fingerabdruck ab | Siehe 6a, „Release-Signatur“. |
+| Ubuntu 26.04: Matrix-Synapse-Repository kennt „resolute“ nicht | Continuwuity verwenden (`tuxmail_matrix_server=continuwuity`, Standard); Einzelheiten in [deploy/README.md](../deploy/README.md), „Hinweise zu Ubuntu 26.04“. |
+| Ubuntu 26.04: PDF-Export startet nicht | Chromium gibt es nur als Snap: `tuxmail_pdf_chromium_path` setzen oder Gotenberg verwenden. |
 | Server: Playbook bricht bei der Sicherung ab | Siehe 6a, „Sicherungen“. |
 | Server erreicht den eigenen Mailserver nicht | Siehe 6e (`security.allowed_networks`). |
 | Nach Zertifikatserneuerung zeigt der Browser noch das alte Zertifikat | Nur bei `tls.mode: file`: `sudo systemctl restart tuxmail`. |

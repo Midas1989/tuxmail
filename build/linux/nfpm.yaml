@@ -30,7 +30,7 @@ description: |-
   command line ("tuxmail serve", "tuxmail user ...").
 
 # The built binary needs glibc >= 2.34, GTK 3 and WebKitGTK 4.1
-# (Debian 12+, Ubuntu 22.04+, Fedora 39+, openSUSE Tumbleweed).
+# (Debian 12+, Ubuntu 22.04+ incl. 26.04, Fedora 39+, openSUSE Tumbleweed).
 overrides:
   deb:
     depends:

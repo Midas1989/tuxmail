@@ -35,12 +35,35 @@
     fail_msg: "Der Schlüssel {{ tuxmail_synapse_apt_keyring }} hat nicht den erwarteten Fingerabdruck {{ tuxmail_synapse_apt_key_fingerprint }}."
     quiet: true
 
+- name: Suite im matrix.org-Repository bestimmen
+  ansible.builtin.set_fact:
+    tuxmail_bridges_synapse_suite: "{{ tuxmail_synapse_apt_suite if tuxmail_synapse_apt_suite | length > 0 else ansible_facts['distribution_release'] }}"
+
+- name: Prüfen, ob packages.matrix.org diese Suite anbietet
+  ansible.builtin.uri:
+    url: "{{ tuxmail_synapse_apt_repo | regex_replace('/*$', '/') }}dists/{{ tuxmail_bridges_synapse_suite }}/InRelease"
+    method: HEAD
+    status_code: [200, 404]
+  register: tuxmail_bridges_synapse_suite_check
+  changed_when: false
+  check_mode: false
+
+- name: Suite vorhanden
+  ansible.builtin.assert:
+    that: tuxmail_bridges_synapse_suite_check.status == 200
+    fail_msg: >-
+      packages.matrix.org bietet für "{{ tuxmail_bridges_synapse_suite }}" (noch) keine Synapse-Pakete an.
+      Empfohlen: den Homeserver Continuwuity verwenden (-e tuxmail_matrix_server=continuwuity).
+      Alternativ die letzte vorhandene Suite eintragen (z. B. -e tuxmail_synapse_apt_suite=noble);
+      ob die Pakete einer älteren Suite auf diesem System laufen, ist nicht gewährleistet.
+    quiet: true
+
 - name: Paketquelle packages.matrix.org eintragen
   ansible.builtin.deb822_repository:
     name: matrix-org
     types: [deb]
     uris: ["{{ tuxmail_synapse_apt_repo }}"]
-    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    suites: ["{{ tuxmail_bridges_synapse_suite }}"]
     components: [main]
     signed_by: "{{ tuxmail_synapse_apt_keyring }}"
     state: present

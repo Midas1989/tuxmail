@@ -148,6 +148,7 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_bridges_runtime: native           # native (ohne Container) | container
 # tuxmail_bridges_container_engine: podman  # nur container: podman | docker
 # tuxmail_matrix_server: continuwuity       # continuwuity | synapse (nur Debian/Ubuntu)
+# tuxmail_synapse_apt_suite: ""             # leer = Codename des Systems; bei neuen Ubuntu-/Debian-Versionen oft noch nicht vorhanden
 # tuxmail_matrix_server_name: "{{ tuxmail_domain }}"
 # tuxmail_matrix_federation: false
 # tuxmail_matrix_nginx_proxy: true          # https://<domain>/_matrix/ -> 127.0.0.1:8008

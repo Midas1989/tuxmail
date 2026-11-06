@@ -7,7 +7,7 @@
       - ansible_facts['distribution_major_version'] in tuxmail_supported_systems[ansible_facts['distribution']]
     fail_msg: >-
       {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }} wird nicht unterstützt.
-      Unterstützt: Debian 12/13, Ubuntu 22.04/24.04, RHEL/Rocky/Alma 9.
+      Unterstützt: Debian 12/13, Ubuntu 22.04/24.04/26.04, RHEL/Rocky/Alma 9.
       (Überspringen mit tuxmail_skip_os_check=true auf eigene Gefahr.)
     quiet: true
   when: not (tuxmail_skip_os_check | bool)
