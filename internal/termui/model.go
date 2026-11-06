@@ -78,6 +78,7 @@ type Model struct {
 	replyAll    bool
 	confirm     []string // checks to confirm on the next send
 	armedEsc    bool     // Esc pressed once on a composer with text
+	sending     bool     // a send is under way: Ctrl+S must not start a second
 
 	status  string
 	isError bool
@@ -98,8 +99,8 @@ func New(ctx context.Context, svc *mailcmd.Service) *Model {
 	body.Prompt = ""
 	body.FocusedStyle.CursorLine = lipgloss.NewStyle() // readable on light and dark terminals
 	m := &Model{ctx: ctx, svc: svc, w: 80, h: 24, input: in, to: to, subject: subj, body: body, title: "inbox"}
-	if svc.ReadOnly {
-		m.status = "read-only: another TuxMail process is running on this data"
+	if err := svc.Refused(); err != nil {
+		m.status = "read-only: " + err.Error()
 	}
 	return m
 }
@@ -126,6 +127,14 @@ type (
 	sentMsg struct {
 		res *mailcmd.SendOutcome
 		err error
+	}
+	replyMsg struct { // who a reply goes to
+		id      int64
+		all     bool
+		text    string
+		to, cc  []string
+		subject string
+		err     error
 	}
 	refreshMsg struct{}
 )
@@ -216,15 +225,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.msg, m.scroll, m.screen = msg.res, 0, screenReader
-		m.wrapBody()
-		if msg.res.Unread && !m.svc.ReadOnly {
-			id := msg.res.ID
-			return m, func() tea.Msg { // like the GUI: opening marks as read
-				ctx, cancel := m.callCtx()
-				defer cancel()
-				return doneMsg{err: m.svc.Mark(ctx, []int64{id}, "read")}
-			}
-		}
+		m.wrapBody() // stays unread (u marks it): reading must not start a sync
 		return m, nil
 	case foldersMsg:
 		if msg.err != nil {
@@ -244,6 +245,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadList(0, false)
 	case sentMsg:
 		return m.afterSend(msg)
+	case replyMsg:
+		if msg.err != nil {
+			m.fail(msg.err)
+			return m, nil
+		}
+		to := strings.Join(msg.to, ", ")
+		if len(msg.cc) > 0 {
+			to += "  Cc: " + strings.Join(msg.cc, ", ")
+		}
+		return m.openCompose(to, msg.subject, msg.text, msg.id, msg.all)
 	case refreshMsg:
 		if m.screen == screenList && m.inputMode == 0 && m.cursor < pageSize {
 			return m, tea.Batch(m.loadList(0, false), refreshTick())
@@ -335,6 +346,13 @@ func (m *Model) runLine(line string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	sel := m.selected()
+	// Options these views have no field for are refused, never dropped.
+	notHere := map[string][]string{"list": {"limit", "offset"}, "search": {"limit", "offset"},
+		"send": {"cc", "bcc", "identity", "confirm"}, "reply": {"identity", "confirm"}}
+	if err := cmd.RejectFlags(notHere[cmd.Name]...); err != nil {
+		m.fail(err)
+		return m, nil
+	}
 	switch cmd.Name {
 	case "quit":
 		m.quit = true
@@ -458,7 +476,7 @@ func (m *Model) sharedKeys(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // leave runs a move; a reader goes back to the list since the mail is gone.
 func (m *Model) leave(line string) (tea.Model, tea.Cmd) {
 	mm, cmd := m.act(line)
-	if m.screen == screenReader && !m.svc.ReadOnly {
+	if m.screen == screenReader && m.svc.Refused() == nil {
 		m.screen = screenList
 	}
 	return mm, cmd
@@ -584,16 +602,21 @@ func (m *Model) startReply(id int64, all bool, text string) (tea.Model, tea.Cmd)
 		m.fail(&mailcmd.ParseError{Code: mailcmd.ErrMissing, Detail: "id"})
 		return m, nil
 	}
-	label := "(reply)"
-	if all {
-		label = "(reply all)"
+	if err := m.svc.Refused(); err != nil {
+		m.fail(err)
+		return m, nil
 	}
-	return m.openCompose(label, "", text, id, all)
+	return m, func() tea.Msg {
+		ctx, cancel := m.callCtx()
+		defer cancel()
+		to, cc, subject, err := m.svc.ReplyPreview(ctx, id, all)
+		return replyMsg{id: id, all: all, text: text, to: to, cc: cc, subject: subject, err: err}
+	}
 }
 
 func (m *Model) openCompose(to, subject, text string, replyID int64, all bool) (tea.Model, tea.Cmd) {
-	if m.svc.ReadOnly {
-		m.fail(mailcmd.ErrBusy)
+	if err := m.svc.Refused(); err != nil {
+		m.fail(err)
 		return m, nil
 	}
 	m.to.SetValue(to)
@@ -630,6 +653,10 @@ func (m *Model) composeFocus() tea.Cmd {
 func (m *Model) updateCompose(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.Type {
 	case tea.KeyCtrlS:
+		if m.sending {
+			return m, nil
+		}
+		m.sending = true
 		return m, m.sendCompose()
 	case tea.KeyEsc:
 		dirty := m.body.Value() != "" || (m.replyID == 0 && (m.to.Value() != "" || m.subject.Value() != ""))
@@ -693,7 +720,7 @@ func (m *Model) sendCompose() tea.Cmd {
 }
 
 func (m *Model) afterSend(msg sentMsg) (tea.Model, tea.Cmd) {
-	m.loading = false
+	m.loading, m.sending = false, false
 	if errors.Is(msg.err, mailcmd.ErrBlocked) && msg.res != nil {
 		var notes []string
 		m.confirm = nil

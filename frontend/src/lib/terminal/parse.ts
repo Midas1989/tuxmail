@@ -33,7 +33,8 @@ export type ParseCode =
   | 'missing_value'
   | 'bad_value'
   | 'missing_argument'
-  | 'too_many_arguments';
+  | 'too_many_arguments'
+  | 'unsupported_flag';
 
 export class ParseError extends Error {
   constructor(

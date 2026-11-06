@@ -4,13 +4,20 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/Midas1989/Mailclient/internal/app"
 	"github.com/Midas1989/Mailclient/internal/app/demo"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/instance"
@@ -209,6 +216,139 @@ func TestMailSendRequiresRecipientAndValidAddress(t *testing.T) {
 	}
 	if code, _, errs := runCLI(t, "text", "mail", "send", "--to", "kein adresse", "--data-dir", dir); code != 2 || !strings.Contains(errs, "address") {
 		t.Fatal(code, errs)
+	}
+}
+
+// Server data: read-only session in server mode, no engine, no lock, and
+// changes refused whether or not the lock happens to be free.
+func TestMailServerDataIsReadOnly(t *testing.T) {
+	cfg, data := writeConfig(t, "")
+	if code, _, errs := runCLI(t, "correct horse battery staple\n", "user", "add", "--config", cfg, "--username", "anna", "--password-stdin"); code != 0 {
+		t.Fatal(errs)
+	}
+	if code, _, errs := runCLI(t, "", "demo", "seed", "--config", cfg, "--user", "anna"); code != 0 {
+		t.Fatal(errs)
+	}
+	base := []string{"--config", cfg, "--user", "anna"}
+	code, out, errs := runCLI(t, "", append([]string{"mail", "list"}, base...)...)
+	if code != 0 || out == "" {
+		t.Fatal(code, errs)
+	}
+	id := strings.SplitN(out, "\t", 2)[0]
+	for _, args := range [][]string{{"mark", id, "read"}, {"move", id, "archive"}, {"send", "--to", "a@x.invalid", "--text", "t"}, {"reply", id, "--text", "t"}} {
+		code, out, errs := runCLI(t, "", append(append([]string{"mail"}, args...), base...)...)
+		if code != 3 || out != "" || !strings.Contains(errs, "web interface") {
+			t.Errorf("%v: %d %q %q", args, code, out, errs)
+		}
+	}
+	if exists(filepath.Join(data, instance.FileName)) {
+		t.Fatal("commands on server data must not create the service lock")
+	}
+	o := &mailOptions{config: cfg, user: "anna"}
+	c := &cli{stdin: strings.NewReader(""), stdout: io.Discard, stderr: io.Discard}
+	s, err := c.openMail(context.Background(), o, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	if s.a.Mode() != app.ModeServer {
+		t.Fatalf("mode %s: the server rules (ND-01) must stay in force", s.a.Mode())
+	}
+}
+
+// A reading session (also term) holds no lock and writes nothing.
+func TestReadSessionHoldsNoLockAndWritesNothing(t *testing.T) {
+	dir, hostile := mailData(t)
+	sum := func() string {
+		b, err := os.ReadFile(filepath.Join(dir, "tuxmail.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fmt.Sprintf("%x", sha256.Sum256(b))
+	}
+	// Bring the database to a stable state (the seed connection has closed).
+	before := sum()
+	c := &cli{stdin: strings.NewReader(""), stdout: io.Discard, stderr: io.Discard}
+	s, err := c.openMail(context.Background(), &mailOptions{dataDir: dir}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.close()
+	l, err := instance.Acquire(dir)
+	if err != nil {
+		t.Fatalf("a service must get the lock next to a reader: %v", err)
+	}
+	l.Release()
+	if _, err := s.svc.Read(context.Background(), hostile); err != nil {
+		t.Fatal(err) // no conversation yet: reading must not try to repair that
+	}
+	if _, err := s.svc.List(context.Background(), "", 0, "Rechnung", 5, 0); err != nil {
+		t.Fatal(err)
+	}
+	if sum() != before {
+		t.Fatal("reading changed the database file")
+	}
+}
+
+func TestServiceLockDoesNotDelayAndIsFetchedLater(t *testing.T) {
+	dir := t.TempDir()
+	engineLockRetry = 20 * time.Millisecond
+	other, err := instance.Acquire(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now()
+	release := holdEngineLock(context.Background(), dir, 0, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	defer release()
+	if d := time.Since(start); d > 500*time.Millisecond {
+		t.Fatalf("service start delayed by %v", d)
+	}
+	other.Release()
+	for deadline := time.Now().Add(3 * time.Second); ; time.Sleep(20 * time.Millisecond) {
+		l, err := instance.Acquire(dir)
+		if errors.Is(err, instance.ErrHeld) {
+			break // the service has it now
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		l.Release()
+		if time.Now().After(deadline) {
+			t.Fatal("the service never fetched the lock")
+		}
+	}
+}
+
+func TestForeignDataIsRefused(t *testing.T) {
+	if err := ownerError(0, 999, "/var/lib/tuxmail"); err == nil || !strings.Contains(err.Error(), "sudo -u tuxmail") {
+		t.Fatal(err)
+	}
+	if err := ownerError(999, 999, "/x"); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkDataOwner(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errs := runCLI(t, "", "mail", "mark", "1", "read", "--config", "/nonexistent.yaml", "--user", "x"); code == 0 {
+		t.Fatal(errs)
+	}
+}
+
+// A server user directory given as --data-dir is server data.
+func TestServerUserDirViaDataDir(t *testing.T) {
+	data := t.TempDir()
+	dir := filepath.Join(data, "users", "1")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if isServerUserDir(dir) {
+		t.Fatal("no service lock yet")
+	}
+	if err := os.WriteFile(filepath.Join(data, instance.FileName), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if !isServerUserDir(dir) {
+		t.Fatal("not recognised")
 	}
 }
 

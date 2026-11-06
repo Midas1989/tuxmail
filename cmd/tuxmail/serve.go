@@ -20,9 +20,49 @@ import (
 	"github.com/Midas1989/Mailclient/web"
 )
 
-// engineLockWait is how long a starting service waits for a short command line
-// call to finish.
-const engineLockWait = 15 * time.Second
+// engineLockWait is how long a starting desktop window waits for a running
+// `tuxmail mail` change (bounded by mailWriteTimeout). Terminal sessions hold
+// no lock, and on server data no command takes it, so serve does not wait.
+const engineLockWait = 35 * time.Second
+
+// engineLockRetry is how often a service tries again to get the lock it did
+// not get at the start.
+var engineLockRetry = 5 * time.Second
+
+// holdEngineLock takes the engine lock of a service. A service keeps running
+// without it, so it tries again until it has it. release ends this.
+func holdEngineLock(ctx context.Context, dir string, wait time.Duration, log *slog.Logger) (release func()) {
+	l, err := instance.AcquireWait(dir, wait)
+	if err == nil {
+		return l.Release
+	}
+	log.Warn("the data directory lock is held or unavailable; retrying", "err", err)
+	stop, done := make(chan struct{}), make(chan struct{})
+	go func() {
+		defer close(done)
+		t := time.NewTicker(engineLockRetry)
+		defer t.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				if l, err = instance.Acquire(dir); err == nil {
+					log.Info("data directory lock acquired")
+					<-stop
+					l.Release()
+					return
+				}
+			}
+		}
+	}()
+	return func() {
+		close(stop)
+		<-done
+	}
+}
 
 // webFS is the embedded web frontend (package web; nil when the binary was
 // built without `go generate ./web`, then a placeholder page is served).
@@ -75,14 +115,8 @@ func (c *cli) serve(ctx context.Context, args []string) error {
 		return err
 	}
 	defer svc.Close()
-	// Marks the data as in use for `tuxmail mail` and `tuxmail term`, which
-	// must not run a second sync engine. A terminal session already holding
-	// it delays the start briefly; running anyway keeps the service available.
-	if l, err := instance.AcquireWait(cfg.DataDir, engineLockWait); err != nil {
-		log.Warn("another TuxMail process holds the data directory lock", "err", err)
-	} else {
-		defer l.Release()
-	}
+	// Marks the data as owned by a running engine.
+	defer holdEngineLock(ctx, cfg.DataDir, 0, log)()
 	if n, err := svc.CountUsers(ctx); err == nil && n == 0 {
 		log.Warn("no users exist yet; create an administrator with: tuxmail user add --admin --username NAME")
 	}

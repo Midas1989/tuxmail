@@ -190,6 +190,7 @@
         "missing_value": "Option {detail} needs a value",
         "bad_value": "Invalid value for {detail}",
         "missing_argument": "Missing: {detail}",
+        "unsupported_flag": "Option --{detail} is not available here, use tuxmail mail",
         "too_many_arguments": "Too many arguments: {detail}",
         "notFound": "Not found: {detail}",
         "ambiguous": "Ambiguous, please use the number: {detail}",

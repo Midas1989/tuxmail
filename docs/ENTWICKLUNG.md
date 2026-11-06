@@ -172,7 +172,7 @@ Drei Zugänge auf demselben Kern, erste Fassung nur E-Mail:
 | Zugang | Wofür | Technik |
 |---|---|---|
 | `tuxmail mail …` | Skripte, Text oder `--json` | `internal/mailcmd` auf `internal/app` |
-| `tuxmail term` | Vollbild im Terminal (Linux, Windows Terminal) | `internal/termui` (bubbletea) auf `internal/mailcmd` |
+| `tuxmail term` | Vollbild im Terminal (Linux, Windows Terminal), liest ohne Synchronisation | `internal/termui` (bubbletea) auf `internal/mailcmd` |
 | Ansicht „Terminal“ in der Oberfläche | Browser und Desktop-Fenster, auch mobil | normale Web-Oberfläche, normale API; kein Terminal, keine Shell, kein PTY |
 
 **Befehlssyntax an einer Stelle:** `internal/mailcmd/commands.json`. Go (`parse.go`) und die Oberfläche
@@ -205,23 +205,30 @@ tuxmail mail move    ID,.. FOLDER
   `4` nicht gefunden, `5` Versandprüfung hat gestoppt (mit `--confirm CHECK` bestätigen).
 - Die Befehlszeile in `term` und in der Oberfläche versteht dieselben Befehle ohne `tuxmail mail` und ohne die
   Instanz-Optionen, dazu `help` und `quit`; die Nummer darf fehlen, dann gilt die gewählte Nachricht. `send` und `reply`
-  öffnen dort immer erst den Editor, `--limit` und `--offset` von `list` wirken nur in `tuxmail mail`.
+  öffnen dort immer erst den Editor. Optionen ohne Gegenstück in der Ansicht werden mit Fehler abgelehnt, nie still verworfen:
+  `term`: `--limit`/`--offset` (`list`, `search`), `--cc`, `--bcc`, `--identity`, `--confirm`; Oberfläche: `--limit`/`--offset`
+  (`list`), `--bcc`, `--confirm`, `--identity` bei `reply`. In der Oberfläche prüft der Editor die Versandregeln selbst.
 
 ### Laufender Dienst: was passiert
 
 Geprüft: Der Server hat keine lokale API ohne Anmeldung, das Desktop-Fenster gar keine HTTP-API. Deshalb arbeitet die
 Befehlszeile direkt auf den Daten, mit dieser Regel:
 
-- **Lesen** (`folders`, `list`, `read`, `search`) geht immer. SQLite läuft im WAL-Modus mit Wartezeit und verträgt mehrere
-  Prozesse; dabei startet keine Synchronisation. Nicht heruntergeladene Texte zeigen dann nur die Vorschau.
-- **Ändern** (`send`, `reply`, `mark`, `move`) braucht die Synchronisation, und davon darf pro Datenverzeichnis nur eine
-  laufen. `tuxmail serve` und das Desktop-Fenster halten dafür die Sperre `engine.lock` (Betriebssystem-Sperre, verschwindet
-  mit dem Prozess). Ist sie belegt: Abbruch mit Exit-Code 3, bevor etwas geschrieben wird. Auf dem Server gehören Änderungen
-  bei laufendem Dienst in die Oberfläche.
-- Ist die Sperre frei, läuft die Synchronisation für den Befehl (ohne Messenger) und endet danach. Änderungen, die nach 20 s
-  noch nicht beim Server sind, bleiben in der Warteschlange und laufen mit der nächsten Synchronisation (Hinweis auf stderr).
-- `tuxmail term` synchronisiert selbst, wenn die Sperre frei ist; sonst zeigt es die Post nur lesend an.
-- Ein Dienst, der startet, während die Sperre belegt ist, wartet 15 s und läuft dann mit Warnung im Log weiter.
+- **Lesen** (`folders`, `list`, `read`, `search`, die ganze `tuxmail term`-Sitzung) öffnet die Datenbank nur lesend: keine
+  Migration, kein Schreiben, keine Sperre, keine Synchronisation, kein Workflow. Ein Dienst startet daneben ohne Verzögerung.
+  Nicht heruntergeladene Texte zeigen nur die Vorschau; `term` holt keine neue Post und markiert beim Öffnen nichts.
+- **Serverdaten** (`--user` oder ein `users/<id>`-Verzeichnis als `--data-dir`): nur Lesen, im Servermodus. `send`, `reply`,
+  `mark`, `move` brechen immer mit Exit-Code 3 ab, egal ob der Dienst gerade läuft; Änderungen gehören in die Oberfläche.
+  Darum läuft dort nie eine zweite Synchronisation und nie ein Workflow unter dem Konto des Aufrufers, und auch `--stop`-
+  Sicherungen (`deploy/systemd/tuxmail-backup.sh`) bekommen keinen Schreiber dazwischen.
+- **Fremde Daten:** Gehört das Verzeichnis einem anderen Systembenutzer (etwa `sudo tuxmail term`), bricht der Befehl ab,
+  bevor er dort eine Datei anlegt. Richtig ist `sudo -u tuxmail tuxmail …`.
+- **Lokale Installation, ändern:** Jede Änderung (auch aus `term`) nimmt nur für ihre Dauer die Sperre `engine.lock`,
+  startet die Synchronisation ohne Messenger und beendet sie wieder, höchstens 25 s. Ist die Sperre belegt (Desktop-Fenster
+  offen): Exit-Code 3, bevor etwas geschrieben wird. Änderungen, die noch nicht beim Server sind, bleiben in der Warteschlange
+  (Hinweis auf stderr).
+- **Dienste und die Sperre:** `serve` wartet nie; das Desktop-Fenster wartet höchstens 35 s auf eine laufende Änderung. Wer die
+  Sperre nicht bekommt, läuft mit Warnung weiter und holt sie alle 5 s nach.
 - `tuxmail mail list` synchronisiert nicht; ohne laufenden Dienst zeigt es den zuletzt geholten Stand.
 
 ### Tasten

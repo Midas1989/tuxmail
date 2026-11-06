@@ -34,7 +34,9 @@ type Backend interface {
 // Errors of the command layer; ExitCode maps them to process exit codes.
 var (
 	// ErrBusy: another process runs the sync engine on this data directory.
-	ErrBusy = errors.New("another TuxMail process is running on this data (desktop window, server or terminal): reading works, changes are refused to protect the sync state; use that program or stop it")
+	// ErrServerData: data of a server user, whose engine belongs to the service.
+	ErrServerData = errors.New("server data is read-only for terminal commands: changes go through the web interface")
+	ErrBusy       = errors.New("another TuxMail process is running on this data (desktop window, server or terminal): reading works, changes are refused to protect the sync state; use that program or stop it")
 	// ErrBlocked: the send checks stopped the message.
 	ErrBlocked = errors.New("send checks blocked the message; confirm with --confirm")
 )
@@ -57,7 +59,7 @@ func ExitCode(err error) int {
 		return ExitOK
 	case errors.As(err, &pe):
 		return ExitUsage
-	case errors.Is(err, ErrBusy):
+	case errors.Is(err, ErrBusy), errors.Is(err, ErrServerData):
 		return ExitBusy
 	case errors.Is(err, ErrBlocked):
 		return ExitBlocked
@@ -248,11 +250,39 @@ func (r Result) Text(w io.Writer) error {
 
 // Service executes parsed commands on a backend.
 type Service struct {
+	// B answers reads.
 	B Backend
-	// ReadOnly refuses every change with ErrBusy (another process runs the
-	// sync engine on this data).
+	// ReadOnly refuses every change with Refusal (default ErrBusy).
 	ReadOnly bool
+	Refusal  error
+	// Writer runs one change with a backend that may change data (it holds the
+	// engine lock only as long as the change takes); nil = B.
+	Writer func(ctx context.Context, change func(Backend) error) error
 }
+
+func (s *Service) change(ctx context.Context, fn func(Backend) error) error {
+	if err := s.refused(); err != nil {
+		return err
+	}
+	if s.Writer != nil {
+		return s.Writer(ctx, fn)
+	}
+	return fn(s.B)
+}
+
+// refused returns why changes are impossible (nil if they may work).
+func (s *Service) refused() error {
+	switch {
+	case !s.ReadOnly:
+		return nil
+	case s.Refusal != nil:
+		return s.Refusal
+	}
+	return ErrBusy
+}
+
+// Refused is refused for the views.
+func (s *Service) Refused() error { return s.refused() }
 
 const defaultLimit = 50
 
@@ -544,8 +574,8 @@ func outcome(r app.SendResult) (*SendOutcome, error) {
 
 // Send sends a new text mail.
 func (s *Service) Send(ctx context.Context, to, cc, bcc []string, subject, text string, identity int64, confirm []string) (*SendOutcome, error) {
-	if s.ReadOnly {
-		return nil, ErrBusy
+	if err := s.refused(); err != nil {
+		return nil, err
 	}
 	toA, err := parseAddresses(to)
 	if err != nil {
@@ -566,8 +596,12 @@ func (s *Service) Send(ctx context.Context, to, cc, bcc []string, subject, text 
 	if err != nil {
 		return nil, err
 	}
-	r, err := s.B.Send(ctx, app.OutgoingMessage{Channel: "email", IdentityID: id.ID, To: toA, Cc: ccA, Bcc: bccA, Subject: subject,
-		Text: text, ConfirmChecks: confirm, Attachments: []app.OutgoingAttachment{}})
+	var r app.SendResult
+	err = s.change(ctx, func(b Backend) (err error) {
+		r, err = b.Send(ctx, app.OutgoingMessage{Channel: "email", IdentityID: id.ID, To: toA, Cc: ccA, Bcc: bccA, Subject: subject,
+			Text: text, ConfirmChecks: confirm, Attachments: []app.OutgoingAttachment{}})
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -607,10 +641,32 @@ func ReplyRecipients(d app.MessageDetail, all bool, own []app.Identity) (to, cc 
 	return to, cc
 }
 
+func replySubject(s string) string {
+	s = CleanLine(s)
+	if !strings.HasPrefix(strings.ToLower(s), "re:") {
+		s = "Re: " + s
+	}
+	return s
+}
+
+// ReplyPreview tells who a reply would go to, for display before sending.
+func (s *Service) ReplyPreview(ctx context.Context, id int64, all bool) (to, cc []string, subject string, err error) {
+	d, err := s.B.GetMessage(ctx, id)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	_, own, err := s.pickIdentity(ctx, 0, d.AccountID)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	toA, ccA := ReplyRecipients(d, all, own)
+	return addressTexts(toA), addressTexts(ccA), replySubject(d.Subject), nil
+}
+
 // Reply answers a message (the original is quoted by the send layer).
 func (s *Service) Reply(ctx context.Context, id int64, all bool, text string, identity int64, confirm []string) (*SendOutcome, error) {
-	if s.ReadOnly {
-		return nil, ErrBusy
+	if err := s.refused(); err != nil {
+		return nil, err
 	}
 	d, err := s.B.GetMessage(ctx, id)
 	if err != nil {
@@ -621,12 +677,12 @@ func (s *Service) Reply(ctx context.Context, id int64, all bool, text string, id
 		return nil, err
 	}
 	to, cc := ReplyRecipients(d, all, own)
-	subject := CleanLine(d.Subject)
-	if !strings.HasPrefix(strings.ToLower(subject), "re:") {
-		subject = "Re: " + subject
-	}
-	r, err := s.B.Send(ctx, app.OutgoingMessage{Channel: "email", IdentityID: ident.ID, To: to, Cc: cc, Subject: subject, Text: text,
-		InReplyToMessageID: id, ConfirmChecks: confirm, Attachments: []app.OutgoingAttachment{}})
+	var r app.SendResult
+	err = s.change(ctx, func(b Backend) (err error) {
+		r, err = b.Send(ctx, app.OutgoingMessage{Channel: "email", IdentityID: ident.ID, To: to, Cc: cc, Subject: replySubject(d.Subject), Text: text,
+			InReplyToMessageID: id, ConfirmChecks: confirm, Attachments: []app.OutgoingAttachment{}})
+		return err
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -635,8 +691,8 @@ func (s *Service) Reply(ctx context.Context, id int64, all bool, text string, id
 
 // Mark sets a state (read, unread, flagged, unflagged).
 func (s *Service) Mark(ctx context.Context, ids []int64, state string) error {
-	if s.ReadOnly {
-		return ErrBusy
+	if err := s.refused(); err != nil {
+		return err
 	}
 	var add, remove []app.Flag
 	switch state {
@@ -651,13 +707,13 @@ func (s *Service) Mark(ctx context.Context, ids []int64, state string) error {
 	default:
 		return &ParseError{Code: ErrBadValue, Detail: "state"}
 	}
-	return s.B.SetFlags(ctx, ids, add, remove)
+	return s.change(ctx, func(b Backend) error { return b.SetFlags(ctx, ids, add, remove) })
 }
 
 // Move moves messages; FOLDER is looked up in the account of the first one.
 func (s *Service) Move(ctx context.Context, ids []int64, folder string, account int64) (string, error) {
-	if s.ReadOnly {
-		return "", ErrBusy
+	if err := s.refused(); err != nil {
+		return "", err
 	}
 	if account == 0 {
 		d, err := s.B.GetMessage(ctx, ids[0])
@@ -670,7 +726,7 @@ func (s *Service) Move(ctx context.Context, ids []int64, folder string, account 
 	if err != nil {
 		return "", err
 	}
-	if err := s.B.Move(ctx, ids, f.ID); err != nil {
+	if err := s.change(ctx, func(b Backend) error { return b.Move(ctx, ids, f.ID) }); err != nil {
 		return "", err
 	}
 	return f.Path, nil

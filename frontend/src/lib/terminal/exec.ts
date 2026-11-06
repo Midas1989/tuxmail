@@ -101,6 +101,12 @@ const FLAG_CHANGE: Record<string, { add: string[]; remove: string[] }> = {
   unflagged: { add: [], remove: [FLAG_FLAGGED] },
 };
 
+const NOT_HERE: Record<string, string[]> = {
+  list: ['limit', 'offset'],
+  send: ['bcc', 'confirm'],
+  reply: ['identity', 'confirm'],
+};
+
 /** Commands and their usage, for `help`. */
 export function usageLines(): string[] {
   return specs.map((s) => s.usage);
@@ -112,6 +118,10 @@ export async function runCommand(line: string, host: TermHost): Promise<OutLine[
   const a = cmd.args;
   const f = cmd.flags;
   const account = f.account as number | undefined;
+  // Options this view has no field for are refused, never dropped.
+  for (const name of NOT_HERE[cmd.name] ?? []) {
+    if (name in f) throw new ParseError('unsupported_flag', name);
+  }
   switch (cmd.name) {
     case 'help':
       return [...usageLines(), t('mail.terminal.keysHint')].map((text) => ({ kind: 'text', text }));

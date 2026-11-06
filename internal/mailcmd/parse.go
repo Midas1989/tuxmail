@@ -66,6 +66,7 @@ const (
 	ErrBadValue   = "bad_value"
 	ErrMissing    = "missing_argument"
 	ErrTooMany    = "too_many_arguments"
+	ErrNotHere    = "unsupported_flag"
 )
 
 // ParseError is a syntax error of a command line.
@@ -92,6 +93,8 @@ func (e *ParseError) Error() string {
 		return fmt.Sprintf("missing argument %s", e.Detail)
 	case ErrTooMany:
 		return fmt.Sprintf("too many arguments: %q", e.Detail)
+	case ErrNotHere:
+		return fmt.Sprintf("option --%s is not available here; use tuxmail mail", e.Detail)
 	}
 	return e.Code
 }
@@ -140,6 +143,16 @@ func (c Command) List(name string) []string {
 func (c Command) IDs(name string) []int64 {
 	v, _ := c.Args[name].([]int64)
 	return v
+}
+
+// RejectFlags fails for options a view cannot honour: never drop them silently.
+func (c Command) RejectFlags(names ...string) error {
+	for _, n := range names {
+		if _, set := c.Flags[n]; set {
+			return &ParseError{Code: ErrNotHere, Detail: n}
+		}
+	}
+	return nil
 }
 
 // Tokenize splits a command line: blanks separate, "..." and '...' group,

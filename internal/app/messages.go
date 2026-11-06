@@ -252,7 +252,7 @@ func (a *App) GetMessage(ctx context.Context, id int64) (MessageDetail, error) {
 	if err != nil {
 		return MessageDetail{}, err
 	}
-	if m.ConversationID == 0 {
+	if m.ConversationID == 0 && !a.opts.ReadOnly {
 		if m.ConversationID, err = a.ensureThread(ctx, m); err != nil {
 			return MessageDetail{}, err
 		}

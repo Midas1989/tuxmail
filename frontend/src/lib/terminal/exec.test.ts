@@ -90,6 +90,13 @@ describe('runCommand', () => {
     await runCommand('list Kunde', h);
     expect(h.select).toHaveBeenLastCalledWith({ kind: 'folder', accountId: 2, folderId: 4 });
   });
+  it('refuses options the view cannot honour', async () => {
+    const h = host();
+    for (const line of ['send --to a@x.test --bcc b@x.test', 'send --confirm c', 'reply --identity 2', 'list --limit 5']) {
+      await expect(runCommand(line, h)).rejects.toMatchObject({ code: 'unsupported_flag' });
+    }
+    expect(h.openCompose).not.toHaveBeenCalled();
+  });
   it('has no way to run anything but the mail commands', async () => {
     await expect(runCommand('rm -rf /', host())).rejects.toThrow();
     await expect(runCommand('!ls', host())).rejects.toThrow();

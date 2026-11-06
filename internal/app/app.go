@@ -94,6 +94,9 @@ type Options struct {
 	// DataDir is the per-user data directory (uploads, blobs).
 	DataDir string
 	Mode    string // ModeDesktop or ModeServer
+	// ReadOnly: the store is opened read-only and the App is never started
+	// (terminal commands next to the service); reads skip their repairs.
+	ReadOnly bool
 	Version string
 
 	// HTTPClient is used for remote calls (provisioning, AI).

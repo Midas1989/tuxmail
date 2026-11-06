@@ -47,7 +47,11 @@ func (f *fake) ListMessages(_ context.Context, q app.MessageQuery) (app.Page[app
 func (f *fake) GetMessage(_ context.Context, id int64) (app.MessageDetail, error) {
 	for _, m := range f.msgs {
 		if m.ID == id {
-			return app.MessageDetail{MessageSummary: m, Text: "Text\x1b[2J mit \x1b]0;Titel\x07Sequenz\nZeile zwei"}, nil
+			var replyTo []app.Address
+			if id == 2 {
+				replyTo = []app.Address{{Email: "liste@x.test"}}
+			}
+			return app.MessageDetail{MessageSummary: m, ReplyTo: replyTo, Text: "Text\x1b[2J mit \x1b]0;Titel\x07Sequenz\nZeile zwei"}, nil
 		}
 	}
 	return app.MessageDetail{}, app.Errorf(http.StatusNotFound, "not_found", "no")
@@ -172,8 +176,8 @@ func TestListNavigationAndRead(t *testing.T) {
 		t.Fatalf("reader: %s", v)
 	}
 	noEscapes(t, m)
-	if len(f.flags) != 1 || f.flags[0] != `+\Seen` {
-		t.Fatalf("opening an unread mail marks it read: %v", f.flags)
+	if len(f.flags) != 0 {
+		t.Fatalf("reading changes nothing: %v", f.flags)
 	}
 	keys(t, m, "n")
 	if m.msg.ID != 2 {
@@ -268,6 +272,40 @@ func TestReplyAndCompose(t *testing.T) {
 	keys(t, m, "esc")
 	if m.screen != screenList {
 		t.Fatal("second esc discards")
+	}
+}
+
+func TestCtrlSSendsOnlyOnce(t *testing.T) {
+	f := newFake()
+	m := start(t, f, false)
+	keys(t, m, "c", "z", "@", "x", ".", "t")
+	_, first := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	_, second := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	if first == nil || second != nil {
+		t.Fatal("a second Ctrl+S during a send must do nothing")
+	}
+	drive(t, m, first)
+	if len(f.sent) != 1 {
+		t.Fatalf("sent %d times", len(f.sent))
+	}
+}
+
+func TestReplyShowsRecipients(t *testing.T) {
+	f := newFake()
+	m := start(t, f, false)
+	keys(t, m, "j", "r")
+	if v := m.View(); !strings.Contains(v, "liste@x.test") || strings.Contains(v, "b@x.test") || !strings.Contains(v, "Re: Zweite") {
+		t.Fatalf("Reply-To must be visible: %s", v)
+	}
+}
+
+func TestUnavailableOptionsAreRefused(t *testing.T) {
+	for _, line := range []string{"send --to a@x.test --bcc b@x.test", "send --cc b@x.test", "send --identity 2", "reply --identity 2", "list --limit 5", "search x --offset 1"} {
+		m := start(t, newFake(), false)
+		_, _ = m.runLine(line)
+		if !m.isError || !strings.Contains(m.status, "not available here") || m.screen == screenCompose {
+			t.Errorf("%q: %q", line, m.status)
+		}
 	}
 }
 
