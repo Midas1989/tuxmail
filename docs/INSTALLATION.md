@@ -452,17 +452,21 @@ heruntergeladenen.
    bzw. Link mit dem Handy scannen. TuxMail wird ein „verknüpftes Gerät“, wie bei WhatsApp Web.
 4. Umzug von einem anderen Programm: *Einstellungen → Daten → Import* (Thunderbird-Profil, mbox/EML, PST, ICS,
    vCard/CSV/LDIF).
-5. Auf dem Server: Weitere Benutzer legt der Administrator auf dem Server mit `tuxmail user add` an (Beispiele in
-   [deploy/README.md](../deploy/README.md), Abschnitt 8). Gemeinsame Postfächer richten Administratoren in den
-   Team-Einstellungen ein.
-
-   **Zwei-Faktor-Anmeldung (TOTP):** Für Administratoren ist sie standardmäßig Pflicht
-   (`tuxmail_auth_totp_required_for_admins`, bzw. `auth.totp_required_for_admins` in der Konfiguration). Solange ein
-   Administrator sie nicht eingerichtet hat, lehnt der Server Admin-Funktionen wie die Team-Postfächer-Verwaltung mit
-   „mfa_setup_required“ ab. Die Weboberfläche bietet die Einrichtung noch nicht an; sie läuft bisher nur über die
-   API (`POST /api/auth/totp/setup`). Wer sie nicht nutzen kann, setzt für den Anfang
-   `tuxmail_auth_totp_required_for_admins: false` und aktiviert die Pflicht, sobald die Einrichtung in der
-   Oberfläche verfügbar ist.
+5. **Auf dem Server als Administrator:**
+   - **Zwei-Faktor-Anmeldung einrichten.** Für Administratoren ist sie standardmäßig Pflicht
+     (`tuxmail_auth_totp_required_for_admins`, in der Konfiguration `auth.totp_required_for_admins`). Nach der ersten
+     Anmeldung erscheint deshalb ein Dialog, den du nicht schließen kannst. Du scannst den QR-Code mit einer
+     Authenticator-App (z. B. Aegis, FreeOTP, Google Authenticator), gibst den ersten 6-stelligen Code ein und
+     speicherst die zehn **Wiederherstellungscodes** an einem sicheren Ort. Sie werden nur einmal angezeigt. Jeder
+     Benutzer kann dasselbe später unter *Einstellungen → Sicherheit & Datenschutz* tun, dort auch das Passwort ändern
+     und angemeldete Sitzungen beenden.
+   - **Benutzer verwalten.** *Einstellungen → Administration* (nur für Administratoren im Web-Client) enthält vier
+     Reiter: **Benutzer** (anlegen, bearbeiten, deaktivieren, Passwort und Zwei-Faktor zurücksetzen, Sitzungen
+     beenden, löschen und **gesperrte Konten entsperren**), **Einladungen** (Registrierungslinks, setzt
+     `auth.registration: invite` voraus), **Gruppen** und **Protokoll** (Audit-Log). Ein generiertes Passwort wird
+     nur einmal angezeigt. Alternativ geht es weiter auf der Kommandozeile mit `tuxmail user add`
+     ([deploy/README.md](../deploy/README.md), Abschnitt 8).
+   - **Gemeinsame Postfächer** richtest du in den Team-Einstellungen ein.
 
 ---
 
@@ -494,7 +498,8 @@ Eine automatische Update-Funktion im Programm gibt es noch nicht.
 | Server: Playbook bricht bei der Sicherung ab | Siehe 6a, „Sicherungen“. |
 | Server erreicht den eigenen Mailserver nicht | Siehe 6e (`security.allowed_networks`). |
 | Nach Zertifikatserneuerung zeigt der Browser noch das alte Zertifikat | Nur bei `tls.mode: file`: `sudo systemctl restart tuxmail`. |
-| Anmeldung wird kurz gesperrt | Mehrere falsche Passwörter lösen eine Wartezeit von einer Minute bis zu einer Stunde aus. Abwarten; ein Administrator kann die Sperre über die Admin-API aufheben (`POST /api/admin/users/<id>/unlock`). |
+| Anmeldung wird kurz gesperrt | Mehrere falsche Passwörter lösen eine Wartezeit von einer Minute bis zu einer Stunde aus. Abwarten, oder ein Administrator hebt die Sperre auf: *Einstellungen → Administration → Benutzer → Entsperren*. |
+| Authenticator-App verloren | Mit einem der zehn Wiederherstellungscodes anmelden und Zwei-Faktor neu einrichten. Ohne Code setzt ein anderer Administrator ihn zurück: *Administration → Benutzer → Verwalten → Zwei-Faktor zurücksetzen*. |
 | Messenger-Plugins fehlen unter Windows | Siehe 2b („Messenger-Plugins“). |
 
 Diagnose: *Einstellungen → Info & Diagnose → Diagnosebericht*; Passwörter und Tokens werden geschwärzt.

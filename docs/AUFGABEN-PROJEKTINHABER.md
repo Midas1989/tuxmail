@@ -22,7 +22,7 @@ Diese Punkte kann nur der Projektinhaber erledigen oder auf echter Hardware prü
 | G | **Erste CI-Läufe beobachten:** `linux-desktop` (neue AppImage-Werkzeug-Pins) und der Windows-Job (WebView2-Schritt) wurden noch nie auf GitHub ausgeführt. | 🟡 | – |
 | H | **Smoke-Tests auf echter Hardware:** Windows (Deinstallation für alle Benutzer, WebView2-Installation, Plugin-Vertrauensprüfung) und Android (erster Release-Build mit R8: Push, Benachrichtigungsaktionen, Teilen, Biometrie, Deep Links). | 🟡 | – |
 | I | **Betrieb bestehender Server prüfen:** Sicherungen brauchen jetzt age-Empfänger (`tuxmail_backup_age_recipients`) oder die ausdrückliche Klartext-Ausnahme; `tuxmail_tls_mode: none` hinter einem TLS-beendenden Proxy braucht `tuxmail_nginx_upstream_terminates_tls: true`; die Version erscheint auf `/healthz` nur noch mit `security.expose_version: true`. | 🟡 | – |
-| J | **Entscheidungen:** Soll das Projekt eine **Update-Funktion** im Programm bekommen (Vorschlag: signierter Update-Hinweis zuerst)? Soll die **TOTP-Einrichtung** in die Weboberfläche (bisher nur per API; Administratoren müssen sie standardmäßig nutzen)? | 🟡 | – |
+| J | **Entscheidung:** Soll das Projekt eine **Update-Funktion** im Programm bekommen (Vorschlag: signierter Update-Hinweis zuerst)? | 🟡 | – |
 | K | Projekt wurde nach `github.com/Midas1989/tuxmail` umbenannt: Der Go-Modulpfad (`go.mod`) heißt noch `github.com/Midas1989/Mailclient`. Das stört nichts; eine Umbenennung ist möglich, berührt aber alle Quelldateien. Ggf. Secrets/Variablen und Verknüpfungen (SignPath-Projekt, Docker-Paket auf ghcr.io) auf den neuen Namen prüfen. | 🟢 | – |
 
 Bewusst offen bleiben: Authenticode-Signatur der Windows-Programme (Punkt F), Signaturen für Messenger-Plugins und eine

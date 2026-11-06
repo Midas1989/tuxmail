@@ -377,7 +377,9 @@ Geprüft wird nur der Status 200; `/healthz` nennt die Version anonymen Clients 
 generiert, unter `deploy/ansible/credentials/<host>/admin_password` (0600, per `.gitignore`
 ausgeschlossen) gespeichert und **einmal** ausgegeben. Eine Markierung
 `/etc/tuxmail/.admin-initialized` verhindert Wiederholungen. Nach der ersten Anmeldung Passwort
-ändern, TOTP einrichten (für Admins standardmäßig Pflicht) und die Datei löschen.
+ändern und die Datei löschen. Für Admins ist TOTP standardmäßig Pflicht: Die Weboberfläche zeigt nach der ersten
+Anmeldung einen Einrichtungsdialog (QR-Code, erster Code, Wiederherstellungscodes); später unter *Einstellungen →
+Sicherheit & Datenschutz*.
 
 **Unix-Socket statt TCP:** `tuxmail_listen=unix:/run/tuxmail/tuxmail.sock`. systemd legt
 `/run/tuxmail` an (setgid, Gruppe `tuxmail-web`), nginx wird Mitglied von `tuxmail-web`.
@@ -558,8 +560,15 @@ $TM user delete $CFG anna --yes            # --keep-data behält die Benutzerdat
 ```
 
 Exit-Codes: `0` ok, `1` Fehler, `2` falscher Aufruf. Die genauen Optionen zeigt
-`tuxmail user --help`. Gemeinsame (Team-)Postfächer
-verwalten Administratoren zusätzlich in der Weboberfläche. Bei OIDC werden Benutzer bei der ersten Anmeldung
+`tuxmail user --help`.
+
+**In der Weboberfläche** (*Einstellungen → Administration*, nur für Administratoren, nicht in der Desktop- oder
+Android-App) gibt es dasselbe und mehr: Benutzer anlegen, bearbeiten, deaktivieren, Passwort und Zwei-Faktor
+zurücksetzen, Sitzungen beenden, löschen und **gesperrte Konten entsperren**; außerdem Einladungen (benötigen
+`auth.registration: invite`), Gruppen und das Audit-Log. Ein Konto sperrt sich nach 5 falschen Anmeldungen je
+Netzwerk (1 Minute, bis zu 1 Stunde); bei Angriffen aus vielen Netzwerken können sich nur noch bekannte Netze
+anmelden. „Entsperren“ hebt beides auf. Gemeinsame (Team-)Postfächer verwalten Administratoren ebenfalls in der
+Weboberfläche. Bei OIDC werden Benutzer bei der ersten Anmeldung
 angelegt; Admin-Rechte über `tuxmail_oidc_admin_group`.
 
 Umgebungsvariablen `TUXMAIL_LISTEN`, `TUXMAIL_DATA_DIR`, `TUXMAIL_PUBLIC_URL`,
