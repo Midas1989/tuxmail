@@ -16,7 +16,7 @@
           enable_registration: false
           app_service_config_files: >-
             {{ tuxmail_bridges_mautrix | map(attribute='name')
-               | map('regex_replace', '^(.*)$', '/data/appservices/\\1.yaml') | list }}
+               | map('regex_replace', '^', '/data/appservices/') | map('regex_replace', '$', '.yaml') | list }}
       no_log: true
 
     - name: Datei homeserver.yaml aktualisieren

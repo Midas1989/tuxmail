@@ -16,7 +16,7 @@
     tuxmail_nginx_enabled_dir_effective: "{{ tuxmail_nginx_enabled_dir if tuxmail_nginx_enabled_dir | length > 0 else tuxmail_nginx_os_enabled_dir }}"
     tuxmail_nginx_version: >-
       {{ (tuxmail_nginx_version_cmd.stderr ~ tuxmail_nginx_version_cmd.stdout)
-         | regex_search('nginx/([0-9]+\.[0-9]+\.[0-9]+)', '\\1') | default(['0.0.0'], true) | first }}
+         | regex_findall('nginx/([0-9]+[.][0-9]+[.][0-9]+)') | default(['0.0.0'], true) | first }}
 
 - name: HTTP/2-Syntax wählen ("http2 on;" ab nginx 1.25.1)
   ansible.builtin.set_fact:

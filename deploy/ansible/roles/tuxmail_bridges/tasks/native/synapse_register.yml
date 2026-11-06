@@ -27,7 +27,7 @@
   ansible.builtin.set_fact:
     tuxmail_bridges_synapse_as_files: >-
       {{ tuxmail_bridges_mautrix | map(attribute='name')
-         | map('regex_replace', '^(.*)$', '/etc/matrix-synapse/appservices/\1.yaml') | sort | list }}
+         | map('regex_replace', '^', '/etc/matrix-synapse/appservices/') | map('regex_replace', '$', '.yaml') | sort | list }}
 
 - name: Datei conf.d/tuxmail.yaml mit app_service_config_files schreiben
   ansible.builtin.template:

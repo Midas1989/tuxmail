@@ -138,8 +138,8 @@
       ansible.builtin.set_fact:
         tuxmail_archive_sha256: >-
           {{ (tuxmail_checksums_file.content | b64decode).splitlines()
-             | map('regex_search', '^([0-9a-f]{64}) [ *]' ~ (tuxmail_archive_name | regex_escape) ~ '$', '\1')
-             | select('truthy') | map('first') | list | first | default('') }}
+             | map('regex_search', '^[0-9a-f]{64}(?= [ *]' ~ (tuxmail_archive_name | regex_escape) ~ '$)')
+             | select('truthy') | list | first | default('') }}
 
     - name: Archiv steht in der geprüften checksums.txt
       ansible.builtin.assert:
