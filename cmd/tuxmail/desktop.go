@@ -27,6 +27,7 @@ import (
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"github.com/Midas1989/Mailclient/internal/app"
+	"github.com/Midas1989/Mailclient/internal/instance"
 	"github.com/Midas1989/Mailclient/internal/server/api"
 	"github.com/Midas1989/Mailclient/web"
 )
@@ -100,7 +101,13 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: level}))
-	a, st, err := openDesktopApp(ctx, loc, log)
+	// Marks this data directory as in use for `tuxmail mail` and `tuxmail term`.
+	if l, err := instance.AcquireWait(loc.Dir, engineLockWait); err != nil {
+		log.Warn("tuxmail desktop: another TuxMail process uses this data directory", "err", err)
+	} else {
+		defer l.Release()
+	}
+	a, st, err := openDesktopApp(ctx, loc, log, true)
 	if err != nil {
 		log.Error("tuxmail desktop: start failed", "err", err)
 		return err

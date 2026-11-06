@@ -10,13 +10,19 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/Midas1989/Mailclient/internal/auth"
 	"github.com/Midas1989/Mailclient/internal/config"
+	"github.com/Midas1989/Mailclient/internal/instance"
 	"github.com/Midas1989/Mailclient/internal/server"
 	"github.com/Midas1989/Mailclient/locales"
 	"github.com/Midas1989/Mailclient/web"
 )
+
+// engineLockWait is how long a starting service waits for a short command line
+// call to finish.
+const engineLockWait = 15 * time.Second
 
 // webFS is the embedded web frontend (package web; nil when the binary was
 // built without `go generate ./web`, then a placeholder page is served).
@@ -69,6 +75,14 @@ func (c *cli) serve(ctx context.Context, args []string) error {
 		return err
 	}
 	defer svc.Close()
+	// Marks the data as in use for `tuxmail mail` and `tuxmail term`, which
+	// must not run a second sync engine. A terminal session already holding
+	// it delays the start briefly; running anyway keeps the service available.
+	if l, err := instance.AcquireWait(cfg.DataDir, engineLockWait); err != nil {
+		log.Warn("another TuxMail process holds the data directory lock", "err", err)
+	} else {
+		defer l.Release()
+	}
 	if n, err := svc.CountUsers(ctx); err == nil && n == 0 {
 		log.Warn("no users exist yet; create an administrator with: tuxmail user add --admin --username NAME")
 	}

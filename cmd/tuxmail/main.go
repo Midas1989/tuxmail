@@ -10,6 +10,8 @@
 //	tuxmail user add|list|disable|enable|reset-password|reset-2fa|set-role|delete --config ...
 //	tuxmail import|export|backup|restore [--data-dir DIR | --user NAME] ...  (see io.go)
 //	tuxmail backup-settings --data-dir DIR --out DIR
+//	tuxmail mail folders|list|read|send|reply|search|mark|move ...  (see mail.go)
+//	tuxmail term         [--data-dir DIR | --user NAME]
 package main
 
 import (
@@ -85,6 +87,10 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		err = c.restoreCmd(ctx, args[1:])
 	case "backup-settings":
 		err = c.backupSettingsCmd(ctx, args[1:])
+	case "mail":
+		err = c.mailCmd(ctx, args[1:])
+	case "term":
+		err = c.termCmd(ctx, args[1:])
 	case "help", "-h", "--help":
 		c.usage()
 	default:
@@ -92,9 +98,13 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		c.usage()
 		return 2
 	}
+	var exit *exitError
 	switch {
 	case err == nil:
 		return 0
+	case errors.As(err, &exit):
+		fmt.Fprintln(stderr, "tuxmail:", err)
+		return exit.code
 	case errors.Is(err, flag.ErrHelp):
 		return 0
 	case errors.Is(err, errUsage):
@@ -140,7 +150,9 @@ func (c *cli) usage() {
   tuxmail backup-settings --data-dir DIR --out DIR   (admin: settings only, unencrypted tree for the daily job)
   tuxmail restore --in FILE [--inspect | --verify] [--mode replace|merge] [--accounts ..] [--config-only]
                   [--secrets] [--base B.txmb] | --server --in FILE --target-dir DIR
-  import/export/backup/restore work on --data-dir DIR (desktop) or --user NAME (server, with --config);
+  tuxmail mail    folders|list|read|send|reply|search|mark|move  (tuxmail mail help)  [--json]
+  tuxmail term    [--data-dir DIR | --user NAME]   (full-screen terminal interface)
+  import/export/backup/restore/mail/term work on --data-dir DIR (desktop) or --user NAME (server, with --config);
   the passphrase can also be given in TUXMAIL_BACKUP_PASSPHRASE.
 
 All commands accept --config FILE (default `+DefaultConfigPath+`).

@@ -29,6 +29,12 @@ eigener Webserver.** Freie Software unter der AGPLv3.
 
 Oberfläche auf Deutsch und Englisch.
 
+## Terminal-Modus
+
+E-Mail geht auch ohne Fenster: `tuxmail mail list|read|send|reply|search|mark|move|folders` für Skripte (Text oder `--json`),
+`tuxmail term` als Vollbild im Terminal und die Ansicht „Terminal“ in der Oberfläche, alle mit denselben Befehlen und
+Tasten (`j`/`k`, `Enter`, `r`, `/`, `:`). Details: [Entwicklung, Abschnitt Terminal-Modus](docs/ENTWICKLUNG.md#terminal-modus-tuxmail-mail-tuxmail-term-ansicht-terminal).
+
 ## Schnell installieren
 
 Alle Pakete stehen unter **[Releases](https://github.com/Midas1989/tuxmail/releases)**. Ausführliche Anleitung

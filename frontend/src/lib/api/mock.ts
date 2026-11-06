@@ -768,7 +768,9 @@ export class MockTransport implements Api {
   listMessages(q: MessageQuery): Promise<Page<MessageSummary>> {
     let list = [...this.messages.values()];
     const s = q.scope;
-    if (s.kind === 'folder') {
+    if (s.kind === 'all') {
+      list = list.filter((m) => !this.isHidden(m));
+    } else if (s.kind === 'folder') {
       list = list.filter((m) => m.folderIds.includes(s.folderId));
     } else if (s.kind === 'tag') {
       list = list.filter((m) => !this.isHidden(m) && this.org.hasTag(this.org.tagIds({ kind: 'message', id: m.id }), s.tagId));

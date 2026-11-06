@@ -13,6 +13,7 @@ import type { ConversationGrouping, RegionSettings, UserPreferences } from '../t
 
 export type Theme = 'system' | 'light' | 'dark';
 export type Density = 'compact' | 'normal' | 'comfortable';
+export type ViewMode = 'classic' | 'hybrid' | 'chat' | 'terminal';
 
 interface Stored {
   theme: Theme;
@@ -21,8 +22,8 @@ interface Stored {
   locale: string;
   region: RegionSettings;
   grouping: ConversationGrouping;
-  viewMode: 'classic' | 'hybrid' | 'chat';
-  folderViewModes?: Record<string, 'classic' | 'hybrid' | 'chat'>;
+  viewMode: ViewMode;
+  folderViewModes?: Record<string, ViewMode>;
   hybridOnlyFolder?: boolean;
   chatEnterSends: boolean;
   chatSignatures: 'collapsed' | 'shown';
@@ -46,9 +47,9 @@ class Prefs {
   locale = $state<string>('system');
   region = $state<RegionSettings>({ ...DEFAULT_REGION });
   grouping = $state<ConversationGrouping>('person');
-  viewMode = $state<'classic' | 'hybrid' | 'chat'>('classic');
+  viewMode = $state<ViewMode>('classic');
   /** Per-folder default view (key: SidebarSel key such as "f:17", "u:inbox", "t:3"). */
-  folderViewModes = $state<Record<string, 'classic' | 'hybrid' | 'chat'>>({});
+  folderViewModes = $state<Record<string, ViewMode>>({});
   /** Hybrid view: show only the messages of the selected folder. */
   hybridOnlyFolder = $state(false);
   /** Messenger composer: Enter sends (Shift+Enter = newline); off = Ctrl+Enter sends. */

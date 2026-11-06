@@ -87,6 +87,7 @@ export type TransportKind = 'wails' | 'http' | 'mock';
 
 /** What the message list shows. */
 export type MessageScope =
+  | { kind: 'all' }
   | { kind: 'folder'; folderId: number }
   /** Virtual folder across all mail accounts (e.g. unified inbox). */
   | { kind: 'unified'; role: 'inbox' | 'sent' | 'drafts' | 'archive' | 'trash' | 'junk' | 'flagged' | 'unread' }

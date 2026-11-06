@@ -54,10 +54,21 @@ func addTargetFlags(fs *flag.FlagSet, cfg *string) ioTarget {
 
 // resolved is an opened data location.
 type resolved struct {
-	dir     string
-	secrets domain.SecretStore
-	server  bool
-	close   func()
+	dir      string
+	dataDir  string // server mode: the data_dir of the running service
+	portable bool   // desktop: portable location (always the password vault)
+	secrets  domain.SecretStore
+	server   bool
+	close    func()
+}
+
+// lockDir is where the engine lock of the location lives: one per data
+// directory on the desktop, the whole data_dir on a server.
+func (r *resolved) lockDir() string {
+	if r.dataDir != "" {
+		return r.dataDir
+	}
+	return r.dir
 }
 
 func (t ioTarget) resolve(ctx context.Context) (*resolved, error) {
@@ -80,19 +91,30 @@ func (t ioTarget) resolve(ctx context.Context) (*resolved, error) {
 			svc.Close()
 			return nil, err
 		}
-		return &resolved{dir: svc.UserDir(u.ID), secrets: sec, server: true, close: func() { svc.Close() }}, nil
+		return &resolved{dir: svc.UserDir(u.ID), dataDir: cfg.DataDir, secrets: sec, server: true, close: func() { svc.Close() }}, nil
 	}
 	exe, _ := os.Executable()
 	loc, err := resolveDataDir(*t.dataDir, *t.portable, exe)
 	if err != nil {
 		return nil, err
 	}
-	return &resolved{dir: loc.Dir, close: func() {}}, nil
+	return &resolved{dir: loc.Dir, portable: loc.Portable, close: func() {}}, nil
 }
 
 // openApp opens the application layer of the location (sync only when
 // needed, i.e. for imports into server folders).
 func (c *cli) openApp(ctx context.Context, r *resolved, withSync bool) (*app.App, *store.Store, error) {
+	a, st, err := c.openAppOptions(ctx, r, true, withSync)
+	if err == nil && withSync {
+		a.Start()
+	}
+	return a, st, err
+}
+
+// openAppOptions opens the application layer without starting it. configured
+// wires sync and send in server mode (the desktop variant always has them);
+// withMessenger adds the messenger plugins on the desktop.
+func (c *cli) openAppOptions(ctx context.Context, r *resolved, withMessenger, configured bool) (*app.App, *store.Store, error) {
 	if err := os.MkdirAll(r.dir, 0o700); err != nil {
 		return nil, nil, err
 	}
@@ -101,27 +123,20 @@ func (c *cli) openApp(ctx context.Context, r *resolved, withSync bool) (*app.App
 	}
 	log := slog.New(slog.NewTextHandler(c.stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	if !r.server {
-		a, st, err := openDesktopApp(ctx, dataLocation{Dir: r.dir}, log)
-		if err == nil && withSync {
-			a.Start()
-		}
-		return a, st, err
+		return openDesktopApp(ctx, dataLocation{Dir: r.dir, Portable: r.portable}, log, withMessenger)
 	}
 	st, err := store.Open(ctx, filepath.Join(r.dir, server.UserStoreFile))
 	if err != nil {
 		return nil, nil, err
 	}
 	opts := app.Options{Store: st, DataDir: r.dir, Mode: app.ModeDesktop, Version: version, Secrets: r.secrets, Logger: log, Locales: locales.FS}
-	if withSync {
+	if configured {
 		opts.Sync, opts.Send = &app.SyncOptions{}, &app.SendOptions{}
 	}
 	a, err := app.New(ctx, opts)
 	if err != nil {
 		st.Close()
 		return nil, nil, err
-	}
-	if withSync {
-		a.Start()
 	}
 	return a, st, nil
 }

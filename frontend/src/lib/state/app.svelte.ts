@@ -54,8 +54,9 @@ import type { WorkflowContext } from '../workflow/schema';
 
 export type Route = 'mail' | 'search' | 'projects' | 'calendar' | 'contacts' | 'files' | 'settings';
 export const ROUTES: Route[] = ['mail', 'search', 'projects', 'calendar', 'contacts', 'files', 'settings'];
-export type ViewMode = 'classic' | 'hybrid' | 'chat';
-export const VIEW_MODES: ViewMode[] = ['classic', 'hybrid', 'chat'];
+export type { ViewMode } from './prefs.svelte';
+import type { ViewMode } from './prefs.svelte';
+export const VIEW_MODES: ViewMode[] = ['classic', 'hybrid', 'chat', 'terminal'];
 export type UnifiedRole = 'inbox' | 'flagged' | 'unread';
 
 export type SidebarSel =
@@ -271,6 +272,11 @@ export class AppState {
 
   get viewMode(): ViewMode {
     return prefs.viewMode;
+  }
+
+  /** Classic and terminal view show the same message list (not conversations). */
+  get messageListView(): boolean {
+    return prefs.viewMode === 'classic' || prefs.viewMode === 'terminal';
   }
 
   get mailAccounts(): Account[] {
@@ -577,7 +583,7 @@ export class AppState {
         break;
       case 'conversation.updated':
         this.reloadPersonsDebounced();
-        if (this.viewMode !== 'classic') this.reloadListDebounced();
+        if (!this.messageListView) this.reloadListDebounced();
         if (this.selectedConversationId === e.conversationId) this.reloadItemsDebounced(e.itemId);
         break;
     }
@@ -655,7 +661,7 @@ export class AppState {
   }
 
   async reloadList(opts: { keepSelection?: boolean } = {}): Promise<void> {
-    if (this.viewMode === 'classic') await this.loadMessages(opts.keepSelection);
+    if (this.messageListView) await this.loadMessages(opts.keepSelection);
     else await this.loadConversations(opts.keepSelection);
     this.checked = this.checked.filter((id) => this.messages.some((m) => m.id === id));
   }
@@ -822,7 +828,7 @@ export class AppState {
   }
 
   moveSelection(delta: 1 | -1): void {
-    if (this.viewMode === 'classic') {
+    if (this.messageListView) {
       const list = this.messages;
       if (list.length === 0) return;
       const idx = list.findIndex((m) => m.id === this.selectedMessageId);
@@ -898,13 +904,13 @@ export class AppState {
   async setViewMode(mode: ViewMode): Promise<void> {
     if (mode === this.viewMode) return;
     // The selection survives every switch: classic mail <-> bubble.
-    const msgId = this.viewMode === 'classic' ? this.selectedMessageId : (messageIdFromItemId(this.focusedItemId) ?? classicSelectionFromChat(this.items, this.focusedItemId));
-    if (mode === 'classic') await this.toClassic(msgId);
+    const msgId = this.messageListView ? this.selectedMessageId : (messageIdFromItemId(this.focusedItemId) ?? classicSelectionFromChat(this.items, this.focusedItemId));
+    if (mode === 'classic' || mode === 'terminal') await this.toClassic(msgId, mode);
     else await this.toConversations(mode, msgId);
     prefs.save();
   }
 
-  /** Ctrl+Shift+V: classic -> hybrid -> chat -> classic. */
+  /** Ctrl+Shift+V: classic -> hybrid -> chat -> terminal -> classic. */
   toggleViewMode(): Promise<void> {
     return this.setViewMode(VIEW_MODES[(VIEW_MODES.indexOf(this.viewMode) + 1) % VIEW_MODES.length]);
   }
@@ -939,8 +945,8 @@ export class AppState {
     await this.selectConversation(ref.conversationId, ref.itemId);
   }
 
-  private async toClassic(msgId: number | null): Promise<void> {
-    prefs.viewMode = 'classic';
+  private async toClassic(msgId: number | null, mode: 'classic' | 'terminal' = 'classic'): Promise<void> {
+    prefs.viewMode = mode;
     if (msgId == null) {
       if (this.sel.kind === 'account') this.sel = { kind: 'unified', role: 'inbox' };
       await this.loadMessages();
@@ -974,7 +980,7 @@ export class AppState {
   /** Open a mail in the classic view (search results, notifications). */
   async revealMessage(messageId: number): Promise<void> {
     this.navigate('mail');
-    prefs.viewMode = 'classic';
+    if (prefs.viewMode !== 'terminal') prefs.viewMode = 'classic';
     const detail = await this.api.getMessage(messageId);
     if (!this.scopeContains(detail)) {
       const folders = this.folders[detail.accountId] ?? [];
@@ -1468,7 +1474,7 @@ export class AppState {
 
   /** "t": tag the selection (checked mails, the open mail or the focused bubble). */
   tagSelection(): void {
-    if (this.viewMode === 'classic') {
+    if (this.messageListView) {
       const ids = this.checked.length ? this.checked : this.selectedMessageId != null ? [this.selectedMessageId] : [];
       const current = ids.length === 1 ? (this.messages.find((m) => m.id === ids[0])?.tagIds ?? this.message?.tagIds ?? []) : [];
       this.openTagPicker(ids.map((id) => ({ kind: 'message' as const, id })), current);

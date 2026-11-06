@@ -39,6 +39,7 @@ const maxScopeIDs = 5000
 func (a *App) messageFilter(ctx context.Context, sc MessageScope) (store.MessageFilter, error) {
 	var f store.MessageFilter
 	switch sc.Kind {
+	case "all": // every mail of the user (terminal search)
 	case "folder":
 		if _, err := a.st.GetFolder(ctx, sc.FolderID); err != nil {
 			return f, err
@@ -453,4 +454,18 @@ func statusOf(err error) int {
 		return e.Status
 	}
 	return http.StatusInternalServerError
+}
+
+// PendingMailOps counts the queued operations (flags, moves, sends) that have
+// not reached the servers yet. One-shot commands wait for them before exiting.
+func (a *App) PendingMailOps(ctx context.Context) (int, error) {
+	n := 0
+	for _, state := range []store.OpState{store.OpPending, store.OpRunning} {
+		ops, err := a.st.ListOps(ctx, state)
+		if err != nil {
+			return 0, err
+		}
+		n += len(ops)
+	}
+	return n, nil
 }

@@ -67,6 +67,7 @@
       "themeSystem": "Design: System",
       "title": "Befehlspalette",
       "toChat": "Zur Chat-Ansicht wechseln",
+      "toTerminal": "Zur Terminal-Ansicht wechseln",
       "toClassic": "Zur klassischen Ansicht wechseln",
       "nextView": "Nächste Ansicht (Klassisch → Hybrid → Chat)",
       "toHybrid": "Zur Hybrid-Ansicht wechseln"
@@ -160,7 +161,43 @@
     "toast": {
       "moved": "Nach „{folder}\" verschoben"
     },
+    "terminal": {
+      "marked": "{ids}: {state}",
+      "moved": "{ids} verschoben nach {folder}",
+      "keysHint": "Tasten: j/k wählen, Enter öffnen, r antworten, R allen antworten, c verfassen, s Stern, u gelesen/ungelesen, e archivieren, # Papierkorb, / suchen, : Befehlszeile, Esc zurück",
+      "listLabel": "Nachrichten",
+      "readerLabel": "Nachricht",
+      "actionsLabel": "Aktionen",
+      "outputLabel": "Ausgabe der Befehle",
+      "commandLabel": "Befehlszeile",
+      "placeholder": "Befehl, z. B. list, search, mark read, help",
+      "nothingOpen": "Keine Nachricht geöffnet. Mit j und k wählen, : öffnet die Befehlszeile.",
+      "flag": "Stern",
+      "unread": "Gelesen/Ungelesen",
+      "archive": "Archiv",
+      "trash": "Papierkorb",
+      "from": "Von",
+      "to": "An",
+      "date": "Datum",
+      "subject": "Betreff",
+      "attachment": "Anhang",
+      "error": {
+        "empty": "Kein Befehl eingegeben",
+        "unterminated_quote": "Anführungszeichen nicht geschlossen",
+        "unknown_command": "Unbekannter Befehl: {detail} (help zeigt alle)",
+        "unknown_flag": "Unbekannte Option: {detail}",
+        "missing_value": "Option {detail} braucht einen Wert",
+        "bad_value": "Ungültiger Wert für {detail}",
+        "missing_argument": "Es fehlt: {detail}",
+        "too_many_arguments": "Zu viele Angaben: {detail}",
+        "notFound": "Nicht gefunden: {detail}",
+        "ambiguous": "Nicht eindeutig, bitte die Nummer nehmen: {detail}",
+        "noSelection": "Keine Nachricht ausgewählt"
+      }
+    },
     "view": {
+      "terminal": "Terminal",
+      "terminalHint": "Terminal: Liste und Text in Festbreitenschrift, mit Befehlszeile",
       "chat": "Chat",
       "classic": "Klassisch",
       "label": "Ansicht",

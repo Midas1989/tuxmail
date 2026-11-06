@@ -36,6 +36,7 @@ COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
 COPY locales/ /src/locales/
+COPY internal/mailcmd/ /src/internal/mailcmd/
 COPY assets/branding/ /src/assets/branding/
 # Settings → About embeds these repository-root files (?raw imports).
 COPY VERSION LICENSE NOTICE THIRD_PARTY_NOTICES.md /src/

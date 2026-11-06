@@ -1,5 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import TerminalView from '../components/mail/TerminalView.svelte';
   import { fade, fly } from 'svelte/transition';
   import Search from '@lucide/svelte/icons/search';
   import Menu from '@lucide/svelte/icons/menu';
@@ -124,7 +125,9 @@
     </header>
 
     <div class="panes" class:has-selection={hasSelection} data-mode={prefs.viewMode}>
-      {#if hybrid}
+      {#if prefs.viewMode === 'terminal'}
+        <TerminalView />
+      {:else if hybrid}
         <div class="pane-list"><HybridList title={scopeTitle} subtitle={scopeSub} /></div>
         <div class="pane-detail"><Conversation hybrid /></div>
       {:else}

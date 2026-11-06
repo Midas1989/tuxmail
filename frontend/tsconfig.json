@@ -16,6 +16,7 @@
     "skipLibCheck": true,
     "paths": {
       "$locales/*": ["../locales/*"],
+      "$mailcmd/*": ["../internal/mailcmd/*"],
       "$branding/*": ["../assets/branding/*"]
     }
   },

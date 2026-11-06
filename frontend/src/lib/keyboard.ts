@@ -7,6 +7,19 @@
 import type { AppState } from './state/app.svelte';
 import { prefs } from './state/prefs.svelte';
 
+/** Marks the command line of the terminal view. */
+export const TERM_INPUT_ATTR = 'data-term-cmd';
+
+function focusTermCommand(prefill: string): void {
+  const el = document.querySelector<HTMLInputElement>(`[${TERM_INPUT_ATTR}]`);
+  if (!el) return;
+  if (prefill) {
+    el.value = prefill;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  el.focus();
+}
+
 export function isEditable(el: EventTarget | null): boolean {
   if (!(el instanceof HTMLElement)) return false;
   if (el.isContentEditable) return true;
@@ -44,7 +57,8 @@ export function installShortcuts(app: AppState): () => void {
     if (editable || dialogOpen || mod || e.altKey) return;
     if (app.route !== 'mail') return;
 
-    const classic = prefs.viewMode === 'classic';
+    const terminal = prefs.viewMode === 'terminal';
+    const classic = app.messageListView; // the terminal view has the classic shortcuts
     const msgId = app.selectedMessageId;
     switch (e.key) {
       case 'j':
@@ -60,6 +74,7 @@ export function installShortcuts(app: AppState): () => void {
         e.preventDefault();
         if (classic) {
           if (msgId == null && app.messages.length) void app.selectMessage(app.messages[0].id, { scroll: true });
+          else if (terminal) document.querySelector<HTMLElement>('[data-term-body]')?.focus();
           else document.querySelector<HTMLElement>('.pane-detail iframe, .pane-detail [role="toolbar"] button')?.focus();
         } else if (app.selectedConversationId == null && app.conversations.length) {
           void app.selectConversation(app.conversations[0].id);
@@ -88,7 +103,14 @@ export function installShortcuts(app: AppState): () => void {
         break;
       case '/':
         e.preventDefault();
-        document.querySelector<HTMLInputElement>('[data-search]')?.focus();
+        if (terminal) focusTermCommand('search ');
+        else document.querySelector<HTMLInputElement>('[data-search]')?.focus();
+        break;
+      case ':':
+        if (terminal) {
+          e.preventDefault();
+          focusTermCommand('');
+        }
         break;
       case 'r':
       case 'R':

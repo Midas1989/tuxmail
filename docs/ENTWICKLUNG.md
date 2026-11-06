@@ -165,6 +165,102 @@ Web-Build blockiert die CSP alle Anfragen an den Server (die App meldet das beim
 Entfernte Quellen: Es gibt im Frontend keine `EventSource`/Fremd-`fetch`-Aufrufe; entfernte Mailbilder laufen nur über
 `/api/proxy/image` des eigenen Servers, Avatare nur als `data:`/`blob:`/`/api/`-URL (`lib/avatar.ts`).
 
+## Terminal-Modus (`tuxmail mail`, `tuxmail term`, Ansicht „Terminal“)
+
+Drei Zugänge auf demselben Kern, erste Fassung nur E-Mail:
+
+| Zugang | Wofür | Technik |
+|---|---|---|
+| `tuxmail mail …` | Skripte, Text oder `--json` | `internal/mailcmd` auf `internal/app` |
+| `tuxmail term` | Vollbild im Terminal (Linux, Windows Terminal) | `internal/termui` (bubbletea) auf `internal/mailcmd` |
+| Ansicht „Terminal“ in der Oberfläche | Browser und Desktop-Fenster, auch mobil | normale Web-Oberfläche, normale API; kein Terminal, keine Shell, kein PTY |
+
+**Befehlssyntax an einer Stelle:** `internal/mailcmd/commands.json`. Go (`parse.go`) und die Oberfläche
+(`frontend/src/lib/terminal/parse.ts`, kleine Portierung) lesen dieselbe Tabelle; `internal/mailcmd/testdata/vectors.json`
+legt die Ergebnisse für beide Sprachen fest (auch die Entfernung von Steuerzeichen). Neuer Befehl: Tabelle und
+Vektoren ändern, dann `service.go`, `termui` und `exec.ts`.
+
+### Befehle
+
+```text
+tuxmail mail folders [--account N]
+tuxmail mail list    [FOLDER] [--limit N] [--offset N] [--account N]
+tuxmail mail read    ID
+tuxmail mail reply   ID [--all] [--identity N] [--text TEXT] [--confirm CHECK,..]
+tuxmail mail send    --to ADDR,.. [--cc ..] [--bcc ..] [--subject TEXT] [--identity N] [--text TEXT] [--confirm CHECK,..]
+tuxmail mail search  QUERY.. [--folder FOLDER] [--limit N] [--offset N] [--account N]
+tuxmail mail mark    ID,.. read|unread|flagged|unflagged
+tuxmail mail move    ID,.. FOLDER
+```
+
+- Zusätzlich überall: `--json`, `--data-dir DIR` oder `--portable` (lokale Installation, Standard: das normale
+  Datenverzeichnis), `--user NAME [--config FILE]` (Server), `--vault-passphrase-file FILE` (vorhandener Passwort-Tresor).
+  Passwörter stehen nie in Argumenten.
+- `send` und `reply` lesen den Text von der Standardeingabe, wenn `--text` fehlt.
+- `FOLDER`: Nummer, Rolle (`inbox`, `sent`, `drafts`, `archive`, `junk`, `trash`, `templates`), `unread`, `flagged` oder
+  Name/Pfad. Rollen in `list` gelten über alle Konten; in der Oberfläche ist bei mehreren Konten die Nummer nötig.
+- Ausgabe als Text: Zeilen mit Tabulatoren. `list`/`search`: `ID Datum Flags Von Betreff`, Flags aus `U`/`F`/`A` oder `-`.
+  `folders`: `ID Konto Rolle Ungelesen Gesamt Pfad`. Fehler stehen auf stderr.
+- Exit-Codes: `0` ok, `1` Fehler, `2` Aufruf falsch, `3` anderes TuxMail läuft (Änderung abgewiesen),
+  `4` nicht gefunden, `5` Versandprüfung hat gestoppt (mit `--confirm CHECK` bestätigen).
+- Die Befehlszeile in `term` und in der Oberfläche versteht dieselben Befehle ohne `tuxmail mail` und ohne die
+  Instanz-Optionen, dazu `help` und `quit`; die Nummer darf fehlen, dann gilt die gewählte Nachricht. `send` und `reply`
+  öffnen dort immer erst den Editor, `--limit` und `--offset` von `list` wirken nur in `tuxmail mail`.
+
+### Laufender Dienst: was passiert
+
+Geprüft: Der Server hat keine lokale API ohne Anmeldung, das Desktop-Fenster gar keine HTTP-API. Deshalb arbeitet die
+Befehlszeile direkt auf den Daten, mit dieser Regel:
+
+- **Lesen** (`folders`, `list`, `read`, `search`) geht immer. SQLite läuft im WAL-Modus mit Wartezeit und verträgt mehrere
+  Prozesse; dabei startet keine Synchronisation. Nicht heruntergeladene Texte zeigen dann nur die Vorschau.
+- **Ändern** (`send`, `reply`, `mark`, `move`) braucht die Synchronisation, und davon darf pro Datenverzeichnis nur eine
+  laufen. `tuxmail serve` und das Desktop-Fenster halten dafür die Sperre `engine.lock` (Betriebssystem-Sperre, verschwindet
+  mit dem Prozess). Ist sie belegt: Abbruch mit Exit-Code 3, bevor etwas geschrieben wird. Auf dem Server gehören Änderungen
+  bei laufendem Dienst in die Oberfläche.
+- Ist die Sperre frei, läuft die Synchronisation für den Befehl (ohne Messenger) und endet danach. Änderungen, die nach 20 s
+  noch nicht beim Server sind, bleiben in der Warteschlange und laufen mit der nächsten Synchronisation (Hinweis auf stderr).
+- `tuxmail term` synchronisiert selbst, wenn die Sperre frei ist; sonst zeigt es die Post nur lesend an.
+- Ein Dienst, der startet, während die Sperre belegt ist, wartet 15 s und läuft dann mit Warnung im Log weiter.
+- `tuxmail mail list` synchronisiert nicht; ohne laufenden Dienst zeigt es den zuletzt geholten Stand.
+
+### Tasten
+
+| Taste | `tuxmail term` | Ansicht „Terminal“ |
+|---|---|---|
+| `j`/`k`, Pfeile | wählen oder rollen | wählen (öffnet wie in „Klassisch“) |
+| `Enter` | öffnen | in den Text springen |
+| `Esc` | zurück, Suche löschen | zurück |
+| `n`/`p` | nächste/vorige Nachricht | – |
+| `g`/`G` | Anfang/Ende | – |
+| `r`/`R` | antworten/allen antworten | gleich |
+| `c` | verfassen (`Strg+S` sendet, `Tab` nächstes Feld) | verfassen |
+| `f` | – | weiterleiten |
+| `s`, `u` | Stern, gelesen/ungelesen | gleich |
+| `e`, `#`/`Entf` | archivieren, Papierkorb | gleich |
+| `/` | suchen | Befehlszeile mit `search` |
+| `:` | Befehlszeile | Befehlszeile |
+| `F`/`Tab` | Ordner | Seitenleiste |
+| `?`, `q`, `Strg+C` | Hilfe, zurück/beenden, beenden | `help` in der Befehlszeile, `quit` wechselt zu „Klassisch“ |
+| `Strg+Umschalt+V` | – | Ansicht wechseln |
+
+### Mailinhalt ist nicht vertrauenswürdig
+
+`mailcmd.CleanLine`/`CleanText` entfernen ganze Escape-Sequenzen (CSI, OSC, DCS, C1), alle Steuerzeichen und
+Richtungs-Umschalter aus Betreff, Absender, Text, Dateinamen und Fehlermeldungen, auch in `--json`. HTML wird zu Text,
+Remote-Inhalte werden nie geladen, Anhänge nur aufgelistet und nie geöffnet.
+
+### Ausprobieren
+
+```sh
+bin/tuxmail demo seed --data-dir /tmp/tx-demo
+bin/tuxmail mail list --data-dir /tmp/tx-demo
+bin/tuxmail term --data-dir /tmp/tx-demo
+```
+
+Die Demo-Konten zeigen auf `.invalid`, Änderungen bleiben also in der Warteschlange. Echter Versand zum Testen:
+`tuxmail devserver` und der Test `TestMailLiveAgainstDevserver` in `cmd/tuxmail/mail_live_test.go`.
+
 ## 5. Desktop-Modus
 
 ```sh

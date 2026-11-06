@@ -42,6 +42,7 @@
       <button role="radio" aria-checked={prefs.viewMode === 'classic'} onclick={() => app.setViewMode('classic')}>{t('mail.view.classic')}</button>
       <button role="radio" aria-checked={prefs.viewMode === 'hybrid'} onclick={() => app.setViewMode('hybrid')}>{t('mail.view.hybrid')}</button>
       <button role="radio" aria-checked={prefs.viewMode === 'chat'} onclick={() => app.setViewMode('chat')}>{t('mail.view.chat')}</button>
+      <button role="radio" aria-checked={prefs.viewMode === 'terminal'} onclick={() => app.setViewMode('terminal')}>{t('mail.view.terminal')}</button>
     </div>
   </div>
 </section>
