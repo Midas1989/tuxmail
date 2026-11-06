@@ -466,6 +466,14 @@ heruntergeladenen.
      `auth.registration: invite` voraus), **Gruppen** und **Protokoll** (Audit-Log). Ein generiertes Passwort wird
      nur einmal angezeigt. Alternativ geht es weiter auf der Kommandozeile mit `tuxmail user add`
      ([deploy/README.md](../deploy/README.md), Abschnitt 8).
+   - **Passkeys** (Anmeldung ohne Passwort mit Fingerabdruck, Gesicht, PIN oder Sicherheitsschlüssel): *Einstellungen →
+     Sicherheit & Datenschutz → Passkeys → Hinzufügen*. Zum Hinzufügen bestätigst du dich noch einmal mit Passwort
+     und Code. Danach erscheint auf der Anmeldeseite die Schaltfläche „Sign in with a passkey“. Eine Anmeldung per
+     Passkey zählt als Zwei-Faktor-Anmeldung. Voraussetzung ist `https` oder `http://localhost`; ändert sich der
+     Hostname der `public_url`, werden alle Passkeys unbrauchbar und müssen neu angelegt werden. Abschalten oder
+     erzwingen: `auth.passkeys.enabled` (Ansible: `tuxmail_auth_passkeys_enabled: auto|true|false`), Anzeigename
+     `tuxmail_auth_passkeys_rp_name`. Geht ein Gerät verloren, entfernt ein Administrator unter *Administration →
+     Benutzer → Verwalten → Zwei-Faktor zurücksetzen* TOTP, Wiederherstellungscodes **und** Passkeys des Kontos.
    - **Gemeinsame Postfächer** richtest du in den Team-Einstellungen ein.
 
 ---
@@ -499,6 +507,7 @@ Eine automatische Update-Funktion im Programm gibt es noch nicht.
 | Server erreicht den eigenen Mailserver nicht | Siehe 6e (`security.allowed_networks`). |
 | Nach Zertifikatserneuerung zeigt der Browser noch das alte Zertifikat | Nur bei `tls.mode: file`: `sudo systemctl restart tuxmail`. |
 | Anmeldung wird kurz gesperrt | Mehrere falsche Passwörter lösen eine Wartezeit von einer Minute bis zu einer Stunde aus. Abwarten, oder ein Administrator hebt die Sperre auf: *Einstellungen → Administration → Benutzer → Entsperren*. |
+| Passkey-Schaltfläche fehlt auf der Anmeldeseite | Der Browser unterstützt WebAuthn nicht, die `public_url` ist weder `https` noch `http://localhost` (IP-Adressen gehen nicht), oder `auth.passkeys.enabled` steht auf `false`. |
 | Authenticator-App verloren | Mit einem der zehn Wiederherstellungscodes anmelden und Zwei-Faktor neu einrichten. Ohne Code setzt ein anderer Administrator ihn zurück: *Administration → Benutzer → Verwalten → Zwei-Faktor zurücksetzen*. |
 | Messenger-Plugins fehlen unter Windows | Siehe 2b („Messenger-Plugins“). |
 

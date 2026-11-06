@@ -23,7 +23,7 @@ eigener Webserver.** Freie Software unter der AGPLv3.
 - **PDF-Archiv und Druckansicht**, Erkennung von **E-Rechnungen** (ZUGFeRD/Factur-X, XRechnung).
 - **Optionale KI-Assistenz**, lokal (z. B. Ollama) oder über einen Cloud-Anbieter. Standardmäßig aus.
 - **Import und Export:** Thunderbird-Profil, mbox, EML, Maildir, PST, ICS, vCard, CSV, LDIF; **Backup und Restore**.
-- **Server-Modus für Teams:** mehrere Benutzer, gemeinsame Postfächer, Anmeldung per OIDC, Zwei-Faktor-Anmeldung (TOTP),
+- **Server-Modus für Teams:** mehrere Benutzer, gemeinsame Postfächer, Anmeldung per OIDC, Zwei-Faktor-Anmeldung (TOTP) und **Passkeys** (WebAuthn),
   Web-Oberfläche als **PWA** mit Push-Benachrichtigungen, **Android-App** als Client.
 - **Portabel oder installiert:** Windows-ZIP und Linux-Archiv laufen ohne Installation, auch vom USB-Stick.
 

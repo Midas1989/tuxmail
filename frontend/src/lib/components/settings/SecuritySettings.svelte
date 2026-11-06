@@ -81,6 +81,7 @@
   </section>
   {#if security.available}
     <TwoFactorCard />
+    <PasskeyCard />
     <PasswordSessionsCard />
   {/if}
   {#if canSignOut}
@@ -90,7 +91,6 @@
       <button class="btn" onclick={() => void signOut()}><LogOut size={14} /> {t('settings.pages.session.signOut')}</button>
     </section>
   {/if}
-  <PasskeyCard />
 {/if}
 
 <style>

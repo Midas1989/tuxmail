@@ -29,7 +29,7 @@ describe('SecuritySettings: account security cards (web client only)', () => {
     flags.web = true;
     const root = render(SecuritySettings, { part: 'privacy' });
     await until(() => expect(root.querySelector('#set-sessions [data-testid="sessions"] li')).toBeTruthy());
-    expect([...root.querySelectorAll('section.card')].map((s) => s.id)).toEqual(['set-privacy', 'set-twofactor', 'set-password', 'set-sessions', 'set-session']);
+    expect([...root.querySelectorAll('section.card')].map((s) => s.id)).toEqual(['set-privacy', 'set-twofactor', 'set-passkeys', 'set-password', 'set-sessions', 'set-session']);
   });
 
   it('desktop shell, demo and native app: neither card is rendered, no account request is made', () => {
