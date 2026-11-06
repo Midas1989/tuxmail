@@ -75,6 +75,13 @@ func (c *renderCache) put(k string, r RenderedMessage) {
 	c.bytes += cost
 }
 
+// clear forgets all entries (the keys that decrypted them changed).
+func (c *renderCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.m, c.size, c.order, c.bytes = nil, nil, nil, 0
+}
+
 // renderCached renders a stored mail (downloading its body on demand);
 // errNoBody when the body is not available.
 func (a *App) renderCached(ctx context.Context, m store.Message) (RenderedMessage, error) {

@@ -76,6 +76,8 @@ var userStoreTables = map[string]TableClass{
 	"signature_images":     TableKeep,
 	"snippets":             TableKeep,
 	"smime_certs":          TableKeep,
+	"pgp_keys":             TableKeep, // private parts: secret store (secrets.vault)
+	"pgp_trust":            TableKeep, // only user decisions
 	"vacation_settings":    TableKeep,
 	"remote_content_allow": TableKeep,
 	"subscriptions":        TableKeep,
@@ -85,6 +87,7 @@ var userStoreTables = map[string]TableClass{
 
 	// Mail.
 	"messages":               TablePurge,
+	"pgp_peers":              TablePurge, // Autocrypt: collected again from mail
 	"message_addresses":      TablePurge,
 	"message_counterparts":   TablePurge,
 	"message_insights":       TablePurge,

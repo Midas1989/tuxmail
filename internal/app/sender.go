@@ -144,6 +144,10 @@ func (s *MailSender) Send(ctx context.Context, r SendRequest) (SendResult, error
 		return SendResult{Blocked: true, Findings: findings(blocked.Findings)}, nil
 	case errors.As(err, &tooLarge):
 		return SendResult{}, &Error{Code: "too_large", Status: http.StatusRequestEntityTooLarge, Message: tooLarge.Suggestion, Err: err}
+	case errors.Is(err, send.ErrCannotEncrypt):
+		return SendResult{}, &Error{Code: "pgp_missing_key", Status: http.StatusUnprocessableEntity, Message: strings.TrimPrefix(err.Error(), "send: "), Err: err}
+	case errors.Is(err, send.ErrNoSigningKey):
+		return SendResult{}, &Error{Code: "pgp_no_own_key", Status: http.StatusUnprocessableEntity, Message: strings.TrimPrefix(err.Error(), "send: "), Err: err}
 	case err != nil:
 		return SendResult{}, err
 	}

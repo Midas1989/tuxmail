@@ -107,6 +107,8 @@
 
   const formatDate = (iso: string) => fmt().date(iso);
   const sig = $derived(ins?.smime?.signature);
+  const pgpSig = $derived(ins?.pgp?.signature);
+  const pgpBad = $derived(pgpSig === 'invalid' || pgpSig === 'mismatch' || pgpSig === 'revoked_key' || (ins?.pgp?.encrypted && !ins.pgp.decrypted));
 </script>
 
 {#if ins}
@@ -131,6 +133,22 @@
           {t(`comfort.smime.sig.${sig ?? 'invalid'}`, { name: ins.smime.signerName || ins.smime.signerEmail || '' })}
           {#if ins.smime.issuer}<span class="muted"> · {t('comfort.smime.issuer', { issuer: ins.smime.issuer })}</span>{/if}
         {/if}
+      </span>
+    </div>
+  {/if}
+
+  {#if ins.pgp?.present}
+    <div class="banner pgp" class:ok={pgpSig === 'valid' && !pgpBad} class:bad={pgpBad} role="status">
+      {#if pgpBad}<ShieldAlert size={16} aria-hidden="true" />{:else if pgpSig === 'valid'}<ShieldCheck size={16} aria-hidden="true" />{:else if ins.pgp.encrypted}<Lock size={16} aria-hidden="true" />{:else}<ShieldQuestion size={16} aria-hidden="true" />{/if}
+      <span class="txt">
+        {#if ins.pgp.encrypted}{ins.pgp.decrypted ? t('comfort.pgp.status.decrypted') : t('comfort.pgp.status.cannotDecrypt')}{/if}
+        {#if ins.pgp.signed && pgpSig}
+          {t(`comfort.pgp.status.sig.${pgpSig}`)}
+          {#if pgpSig === 'valid' && ins.pgp.signerTrust}<span class="muted"> · {t(`comfort.pgp.trust.${ins.pgp.signerTrust}`)}</span>{/if}
+        {:else if ins.pgp.decrypted}{t('comfort.pgp.status.unsigned')}{/if}
+        {#if ins.pgp.signerFingerprint && pgpSig !== 'valid'}<span class="muted"> · {ins.pgp.signerFingerprint}</span>{/if}
+        {#if ins.pgp.protectedSubject}<span class="muted"> · {t('comfort.pgp.status.subject', { subject: ins.pgp.protectedSubject })}</span>{/if}
+        {#if ins.pgp.partiallyProtected}<span class="muted"> · {t('comfort.pgp.status.partial')}</span>{/if}
       </span>
     </div>
   {/if}
@@ -207,6 +225,12 @@
   }
   .spam.unsure {
     background: color-mix(in srgb, var(--tm-warn) 14%, var(--tm-surface));
+  }
+  .pgp.ok {
+    background: color-mix(in srgb, #16a34a 12%, var(--tm-surface));
+  }
+  .pgp.bad {
+    background: color-mix(in srgb, #dc2626 13%, var(--tm-surface));
   }
   .smime.ok {
     background: color-mix(in srgb, #16a34a 12%, var(--tm-surface));

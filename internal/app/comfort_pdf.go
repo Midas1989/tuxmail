@@ -226,7 +226,7 @@ func (a *App) PrintView(ctx context.Context, in PrintInput) (string, error) {
 			v.Mails = append(v.Mails, pdf.PrintMail{From: m.From, Subject: m.Subject, Date: msgTime(m), Text: m.Snippet})
 			continue
 		}
-		pm, err := parse.ParseContext(ctx, raw, parse.Options{SkipAttachmentData: true, SMIME: smimeReader{a: a}})
+		pm, err := parse.ParseContext(ctx, raw, parse.Options{SkipAttachmentData: true, SMIME: smimeReader{a: a}, KeyRing: a.pgpRing(), PGPSenderKeys: a.pgpSenderKeys})
 		if err != nil {
 			continue
 		}

@@ -72,7 +72,7 @@ Ziel ist ein **lokal laufender Desktop-Client**, der klassische E-Mail-Arbeit (O
 | M-11 | Mail | Persistente Beziehungstabelle (Antwort, Weiterleitung, …) – auch nach Verschieben | Muss |
 | M-12 | Mail | Import/Export (EML, MBOX, Maildir, PST-Import) | Muss |
 | M-13 | Mail | Filter/Regeln (lokal + Sieve) | Soll |
-| M-14 | Mail | OpenPGP (inkl. Autocrypt, WKD) | Muss |
+| M-14 | Mail | OpenPGP (inkl. Autocrypt, WKD; Stand siehe 8.6) | Muss |
 | M-15 | Mail | S/MIME | Soll |
 | M-16 | Mail | Lokaler Spam-Filter, Ein-Klick-Newsletter-Abmeldung | Muss |
 | M-17 | Mail | Smarte Kategorien (lokal) | Soll |
@@ -734,6 +734,18 @@ Statt einer reinen Mail-Regel-Engine erhält TuxMail ein **allgemeines Workflow-
 
 ### 8.6 Verschlüsselung
 **OpenPGP ist Bestandteil des Mail-MVP (Phase 1)** – nicht erst des Feinschliffs.
+
+**Stand der Umsetzung (2026-11):** Angebunden sind Schlüsselverwaltung (Einstellungen → Sicherheit → OpenPGP: Erzeugen
+Curve25519, Import und Export, Vertrauensstand, Löschen), Lesen mit Statusanzeige, Senden im Verfasser, Autocrypt-Header
+senden und sammeln (`internal/app/comfort_pgp.go`) sowie WKD und keys.openpgp.org auf Klick. Zur Bibliothek vorhanden, aber
+**noch nicht in der Oberfläche:** Passphrase ändern, Widerruf, Ablaufdatum, mehrere Benutzer-IDs, Autocrypt-Setup-Message,
+angehängte Schlüssel mit einem Klick, RSA-4096 und v6-Schlüssel, Zuordnung je Identität (es zählt die Adresse im Schlüssel).
+**Bewusst anders als unten:** Privater Schlüssel ohne eigene Passphrase im Tresor wie bei S/MIME, eine Import-Passphrase
+wird nur einmal zum Entsperren genutzt. Entschlüsselter Text wird nicht indexiert, also keine Suche in verschlüsselten
+Mails; die Analyse (Spam, Kategorien, Rechnungen) und PDF-Archiv entschlüsseln OpenPGP nicht, die Druckansicht schon.
+Betreff wird beim Versand nicht verborgen, nur zusätzlich geschützt. **Noch nicht gebaut:** verschlüsselte Ablage von
+Entwürfen (sie liegen wie jeder Entwurf im Klartext im Entwurfsordner), Schloss-Symbol in Liste und Chat-Blase. Empfänger
+in Bcc sind an den Schlüssel-IDs im Geheimtext erkennbar.
 
 - Bibliothek: `ProtonMail/go-crypto` (unterstützt v4- und v6-Schlüssel nach RFC 9580), Paket `internal/crypto/pgp`.
 - **Schlüsselverwaltung:** Erzeugen (Ed25519/Curve25519 als Standard, RSA-4096 optional), Import/Export (ASCII-armored, binär), Passphrase ändern, Widerruf, Ablaufdatum, mehrere Benutzer-IDs; Schlüssel je Identität zuordnen.

@@ -40,6 +40,8 @@ func (a *App) applyOutgoingCrypto(req *send.Request, c *OutgoingCrypto) {
 	default:
 		// Automatic: OpenPGP keeps its Autocrypt logic; S/MIME encrypts when
 		// every recipient has a certificate (if enabled), signs by setting.
+		// When both would act, the setting decides.
+		req.PreferPGP = s.Prefer != "smime"
 		req.SMIME = send.SMIMEOptions{Sign: send.PGPAuto, Encrypt: send.PGPOff}
 		if s.EncryptAutomatically {
 			req.SMIME.Encrypt = send.PGPAuto

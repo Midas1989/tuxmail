@@ -59,6 +59,7 @@ type MessageInsights struct {
 	Unsubscribed   bool               `json:"unsubscribed,omitempty"`
 	Invoice        *einvoice.Invoice  `json:"invoice,omitempty"`
 	SMIME          *parse.SMIMEInfo   `json:"smime,omitempty"`
+	PGP            *PGPMessageStatus  `json:"pgp,omitempty"`
 	Reasons        map[string]float64 `json:"categoryScores,omitempty"`
 }
 
@@ -112,6 +113,9 @@ func (a *App) analyze(ctx context.Context, msg store.Message, raw []byte) (*anal
 		}
 	} else {
 		an.verdict = spam.Verdict{Level: spam.LevelHam}
+	}
+	if an.verdict.Level != spam.LevelSpam {
+		a.collectAutocrypt(ctx, pm) // Autocrypt: spam must not change a peer's key
 	}
 	var atts []einvoice.Attachment
 	cm := categorize.Mail{From: from, Subject: pm.Header.Subject, Text: pm.Text, Headers: hdr, HasCalendar: len(pm.CalendarParts) > 0}
@@ -264,7 +268,7 @@ func (a *App) MessageInsights(ctx context.Context, id int64) (MessageInsights, e
 			}
 		}
 		if errors.Is(err, store.ErrNotFound) {
-			return MessageInsights{MessageID: id, Spam: SpamInfo{Level: "ham"}}, nil
+			return MessageInsights{MessageID: id, Spam: SpamInfo{Level: "ham"}, PGP: a.messagePGPStatus(ctx, m)}, nil
 		}
 	}
 	if err != nil {
@@ -296,6 +300,7 @@ func (a *App) MessageInsights(ctx context.Context, id int64) (MessageInsights, e
 			out.SMIME = &si
 		}
 	}
+	out.PGP = a.messagePGPStatus(ctx, m)
 	if addrs, err := a.st.MessageAddresses(ctx, id); err == nil {
 		for _, ad := range addrs {
 			if ad.Role == store.RoleFrom {

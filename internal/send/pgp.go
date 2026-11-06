@@ -10,6 +10,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/crypto/pgp"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"github.com/Midas1989/Mailclient/internal/mime/compose"
+	"github.com/Midas1989/Mailclient/internal/mime/parse"
 )
 
 // pgpPlan is the resolved OpenPGP decision for one send.
@@ -19,7 +20,25 @@ type pgpPlan struct {
 	recipients    []*pgp.Key
 }
 
+// PGPPrefs are the user's OpenPGP preferences.
+type PGPPrefs struct {
+	Prefer      pgp.PreferEncrypt
+	NoAutocrypt bool
+	// SignAlways makes PGPAuto signing sign whenever the sender has a key.
+	SignAlways bool
+}
+
+func (s *Service) pgpPrefs() PGPPrefs {
+	if s.cfg.PGPPrefs != nil {
+		return s.cfg.PGPPrefs()
+	}
+	return PGPPrefs{}
+}
+
 func (s *Service) ownPrefer() pgp.PreferEncrypt {
+	if p := s.pgpPrefs().Prefer; p != "" {
+		return p
+	}
 	if s.cfg.PGP != nil && s.cfg.PGP.OwnPreferEncrypt != "" {
 		return s.cfg.PGP.OwnPreferEncrypt
 	}
@@ -69,6 +88,17 @@ func allRecipients(d *compose.Draft) []string {
 	return out
 }
 
+// repliesToEncrypted reports whether the draft answers an encrypted mail; the
+// ciphertext is recognised without any key.
+func repliesToEncrypted(d *compose.Draft) bool {
+	raw := originalRaw(d)
+	if d.Kind == compose.KindNew || len(raw) == 0 {
+		return false
+	}
+	m, err := parse.Parse(raw, parse.Options{SkipAttachmentData: true})
+	return err == nil && m.PGP.Encrypted
+}
+
 // planPGP decides whether to sign and encrypt.
 func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPlan, error) {
 	var p pgpPlan
@@ -90,7 +120,9 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 	p.ownKey = own
 
 	if o.Encrypt != PGPOff {
-		plan, err := s.cfg.PGP.Plan(ctx, allRecipients(d), o.ReplyToEncrypted, s.cfg.Now())
+		planner := *s.cfg.PGP
+		planner.OwnPreferEncrypt = s.ownPrefer()
+		plan, err := planner.Plan(ctx, allRecipients(d), o.ReplyToEncrypted || repliesToEncrypted(d), s.cfg.Now())
 		if err != nil {
 			return p, err
 		}
@@ -101,7 +133,8 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 			}
 			p.encrypt = true
 		case PGPAuto:
-			p.encrypt = plan.CanEncrypt && plan.Recommendation == pgp.RecEncrypt
+			// Without an own key the copy in Sent would be unreadable.
+			p.encrypt = own != nil && plan.CanEncrypt && plan.Recommendation == pgp.RecEncrypt
 		}
 		if p.encrypt {
 			p.recipients = plan.Keys()
@@ -114,7 +147,7 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 		}
 		p.sign = true
 	case PGPAuto:
-		p.sign = p.encrypt && own != nil
+		p.sign = (p.encrypt || s.pgpPrefs().SignAlways) && own != nil
 	}
 	return p, nil
 }

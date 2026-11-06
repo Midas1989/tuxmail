@@ -61,6 +61,13 @@ func (c *bodyCache) get(k string) (bodyParts, bool) {
 	return v, ok
 }
 
+// clear forgets all entries (the keys that decrypted them changed).
+func (c *bodyCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.m, c.size, c.order, c.bytes = nil, nil, nil, 0
+}
+
 func (c *bodyCache) put(k string, v bodyParts) {
 	cost := v.cost()
 	if cost > maxBodyCacheBytes/8 { // one huge mail must not flush the cache

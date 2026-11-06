@@ -43,7 +43,11 @@ func (p *parser) applyPGP(raw []byte) {
 	if m.PGP.Format == pgp.FormatNone || p.opts.KeyRing == nil {
 		return
 	}
-	res, err := p.opts.KeyRing.ReadMessage(p.ctx, raw, p.opts.PGP)
+	ropts := p.opts.PGP
+	if p.opts.PGPSenderKeys != nil && len(m.Header.From) == 1 {
+		ropts.VerificationKeys = append(append([]*pgp.Key(nil), ropts.VerificationKeys...), p.opts.PGPSenderKeys(p.ctx, strings.ToLower(m.Header.From[0].Email))...)
+	}
+	res, err := p.opts.KeyRing.ReadMessage(p.ctx, raw, ropts)
 	if err != nil {
 		m.PGP.Error = err.Error()
 	}
@@ -62,6 +66,7 @@ func (p *parser) applyPGP(raw []byte) {
 	m.PGP.DecryptionKey = res.DecryptionKey
 	m.PGP.EncryptedTo = res.EncryptedTo
 	m.PGP.ProtectedHeaders = res.HasProtectedHeaders
+	m.PGP.PartiallyProtected = res.InlineHasUnprotectedText
 	if res.SignatureError != nil && m.PGP.Error == "" {
 		m.PGP.Error = res.SignatureError.Error()
 	}

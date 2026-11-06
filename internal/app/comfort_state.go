@@ -33,6 +33,7 @@ type ComfortSettings struct {
 	Meeting    MeetingSettings    `json:"meeting"`
 	Merge      MergeSettings      `json:"merge"`
 	SMIME      SMIMESettings      `json:"smime"`
+	PGP        PGPSettings        `json:"pgp"`
 	PDF        PDFSettings        `json:"pdf"`
 	Newsletter NewsletterSettings `json:"newsletter"`
 }
@@ -112,6 +113,7 @@ func DefaultComfortSettings() ComfortSettings {
 		Meeting:    MeetingSettings{DefaultProvider: meeting.ProviderJitsi, JitsiBaseURL: "https://meet.jit.si"},
 		Merge:      MergeSettings{PerMinute: 30},
 		SMIME:      SMIMESettings{EncryptAutomatically: true, Prefer: "pgp"},
+		PGP:        PGPSettings{SendAutocrypt: true},
 		PDF:        PDFSettings{UseChromium: true, NameTemplate: "{{datum}}_{{absender}}_{{betreff}}.pdf"},
 		Newsletter: NewsletterSettings{ShowBar: true},
 	}
@@ -137,6 +139,8 @@ type comfortState struct {
 
 	smimeMu    sync.Mutex
 	smimeCache map[string]any // decoded identities by cert id
+
+	pgp *pgpState // comfort_pgp.go
 }
 
 func newComfortState(a *App) *comfortState {
@@ -150,8 +154,11 @@ func newComfortState(a *App) *comfortState {
 	c.unsub = &unsubscribe.Unsubscriber{Mail: comfortUnsubMail{a: a}}
 	c.meeting = &meeting.Service{Talk: &meeting.TalkClient{Credentials: nextcloudLogins{a: a}, HTTP: a.opts.HTTPClient}}
 	c.runner = &merge.Runner{Sender: mergeSender{a: a}}
+	c.pgp = newPGPState(a)
 	if r, ok := a.render.(*MIMERenderer); ok {
 		r.Parse.SMIME = smimeReader{a: a}
+		r.Parse.KeyRing = c.pgp.ring
+		r.Parse.PGPSenderKeys = a.pgpSenderKeys
 	}
 	a.SetPDFRenderer(a.renderArchivePDF)
 	return c
@@ -214,9 +221,14 @@ func (a *App) configureComfortSync(cfg *tsync.Config) {
 	cfg.Comfort = comfortProcessor{a: a}
 }
 
-// configureComfortSend installs the S/MIME keys into the send pipeline.
+// configureComfortSend installs the S/MIME and OpenPGP keys into the send pipeline.
 func (a *App) configureComfortSend(cfg *send.Config) {
 	cfg.SMIME = smimeKeys{a: a}
+	cfg.PGP = a.comfort.pgp.planner
+	cfg.PGPPrefs = func() send.PGPPrefs {
+		s := a.comfortSettings().PGP
+		return send.PGPPrefs{Prefer: a.pgpOwnPrefer(), NoAutocrypt: !s.SendAutocrypt, SignAlways: s.SignByDefault}
+	}
 }
 
 // comfortLoop runs the background work: spam moves and training on folder

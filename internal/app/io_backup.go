@@ -86,7 +86,23 @@ func (a *App) backupWriteTarget(ctx context.Context, t BackupTarget, scheduleID 
 	return nil, invalid("unknown backup target %q", t.Kind)
 }
 
-func (a *App) secretRefs() []string { return []string{aiSecretRef} }
+// secretRefs lists what a backup with credentials carries besides the account
+// passwords: the AI key and the private keys of OpenPGP and S/MIME.
+func (a *App) secretRefs() []string {
+	refs := []string{aiSecretRef}
+	ctx := context.Background()
+	if keys, err := a.st.ListPGPKeys(ctx); err == nil {
+		for _, k := range keys {
+			refs = append(refs, k.SecretRef)
+		}
+	}
+	if certs, err := a.st.ListSMIMECerts(ctx, ""); err == nil {
+		for _, c := range certs {
+			refs = append(refs, c.SecretRef)
+		}
+	}
+	return refs
+}
 
 // CreateBackup starts a backup job.
 func (a *App) CreateBackup(ctx context.Context, req BackupRequest) (IOJob, error) {

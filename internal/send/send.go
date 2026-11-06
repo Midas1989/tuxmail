@@ -148,6 +148,8 @@ type PGPOptions struct {
 
 // Request is a send request.
 type Request struct {
+	// PreferPGP keeps S/MIME out when OpenPGP would sign or encrypt anyway.
+	PreferPGP bool `json:"preferPgp,omitempty"`
 	// IdentityID selects the sender identity; if 0, Draft.Identity must be
 	// complete (ID, AccountID, Email).
 	IdentityID int64         `json:"identityId,omitempty"`
@@ -251,6 +253,8 @@ type Config struct {
 	Blobs      BlobResolver
 	// PGP enables OpenPGP (Planner.Ring must hold the own secret keys).
 	PGP *pgp.Planner
+	// PGPPrefs returns the user's current OpenPGP preferences (optional).
+	PGPPrefs func() PGPPrefs
 	// SMIME provides S/MIME identities and recipient certificates (optional).
 	SMIME SMIMEKeys
 	// Locale for generated texts (cloud link block, password mail) when
@@ -587,6 +591,14 @@ func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Resul
 		insertLinkBlock(d, shares, req.Cloud.Delivery, locale)
 	}
 
+	// Both are possible and the user prefers OpenPGP: S/MIME stays out, unless
+	// it was chosen explicitly.
+	if req.PreferPGP && req.SMIME.Sign != PGPOn && req.SMIME.Encrypt != PGPOn {
+		if pl, err := s.planPGP(ctx, &req, false); err == nil && (pl.encrypt || pl.sign) {
+			req.SMIME = SMIMEOptions{Sign: PGPOff, Encrypt: PGPOff}
+		}
+	}
+
 	// S/MIME plan (takes precedence over OpenPGP when active).
 	smPlan, err := s.planSMIME(ctx, &req)
 	if err != nil {
@@ -601,7 +613,7 @@ func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Resul
 	if err != nil {
 		return res, err
 	}
-	if plan.ownKey != nil && !req.PGP.NoAutocrypt {
+	if plan.ownKey != nil && !req.PGP.NoAutocrypt && !s.pgpPrefs().NoAutocrypt {
 		if ac, err := pgp.NewAutocryptHeader(ident.Email, plan.ownKey, s.ownPrefer(), s.cfg.Now()); err == nil {
 			d.Autocrypt = ac
 		}

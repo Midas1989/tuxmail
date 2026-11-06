@@ -134,5 +134,40 @@ func comfortRoutes() []Route {
 			}
 			send(w)(a.SMIMEStatusFor(r.Context(), q.Get("from"), rcpts))
 		}},
+		{"GET /api/comfort/pgp/keys", func(w w, r r, a A) { send(w)(a.ListPGPKeys(r.Context())) }},
+		{"POST /api/comfort/pgp/keys", jsonHandler(func(w w, r r, a A, in app.PGPImportInput) { send(w)(a.ImportPGPKeys(r.Context(), in)) })},
+		{"POST /api/comfort/pgp/keys/generate", jsonHandler(func(w w, r r, a A, in app.PGPGenerateInput) { send(w)(a.GeneratePGPKey(r.Context(), in)) })},
+		{"POST /api/comfort/pgp/keys/lookup", jsonHandler(func(w w, r r, a A, in app.PGPLookupInput) { send(w)(a.LookupPGPKey(r.Context(), in)) })},
+		{"GET /api/comfort/pgp/keys/{id}/public", withID(func(w w, r r, a A, id int64) {
+			armored, err := a.ExportPGPPublicKey(r.Context(), id)
+			send(w)(map[string]string{"armored": armored}, err)
+		})},
+		{"POST /api/comfort/pgp/keys/{id}/secret", withID(func(w w, r r, a A, id int64) {
+			var in app.PGPExportInput
+			if readJSON(w, r, &in) {
+				armored, err := a.ExportPGPSecretKey(r.Context(), id, in)
+				send(w)(map[string]string{"armored": armored}, err)
+			}
+		})},
+		{"PUT /api/comfort/pgp/keys/{id}/trust", withID(func(w w, r r, a A, id int64) {
+			var in struct{ Verified bool }
+			if readJSON(w, r, &in) {
+				done(w, a.SetPGPKeyVerified(r.Context(), id, in.Verified))
+			}
+		})},
+		{"DELETE /api/comfort/pgp/keys/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DeletePGPKey(r.Context(), id)) })},
+		{"GET /api/comfort/pgp/peers", func(w w, r r, a A) { send(w)(a.ListPGPPeers(r.Context())) }},
+		{"POST /api/comfort/pgp/peers/verify", jsonHandler(func(w w, r r, a A, in app.PGPPeerInput) { send(w)(a.VerifyPGPPeer(r.Context(), in)) })},
+		{"POST /api/comfort/pgp/peers/delete", jsonHandler(func(w w, r r, a A, in app.PGPPeerInput) { done(w, a.DeletePGPPeer(r.Context(), in.Address)) })},
+		{"GET /api/comfort/pgp/status", func(w w, r r, a A) {
+			q := r.URL.Query()
+			var rcpts []string
+			for _, s := range strings.Split(q.Get("recipients"), ",") {
+				if s = strings.TrimSpace(s); s != "" {
+					rcpts = append(rcpts, s)
+				}
+			}
+			send(w)(a.PGPStatusFor(r.Context(), q.Get("from"), rcpts))
+		}},
 	}
 }

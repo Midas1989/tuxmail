@@ -1580,7 +1580,8 @@
           "signin": "Anmeldedienste",
           "vault": "Master-Passwort",
           "applock": "App-Sperre",
-          "privacy": "Datenschutz"
+          "privacy": "Datenschutz",
+          "pgp": "OpenPGP-Schlüssel"
         }
       },
       "data": {
@@ -2965,7 +2966,7 @@
       "chats": "Messenger",
       "settings": "Einstellungen & Regeln"
     },
-    "includeSecrets": "Zugangsdaten einschließen (Passwörter, Tokens)",
+    "includeSecrets": "Zugangsdaten und private Schlüssel einschließen (Passwörter, Tokens, OpenPGP, S/MIME)",
     "messengerEncrypt": "Messenger-Sitzungen sind enthalten – eine Passphrase ist erforderlich.",
     "encryption": "Verschlüsselung",
     "passphrase": "Passphrase",
@@ -3720,7 +3721,12 @@
       "smimeSign": "S/MIME: signieren",
       "smimeEncrypt": "S/MIME: signieren + verschlüsseln",
       "pgpEncrypt": "OpenPGP: signieren + verschlüsseln",
-      "none": "Unverschlüsselt"
+      "none": "Unverschlüsselt",
+      "pgpSign": "OpenPGP: signieren",
+      "pgpMissing": "Kein Schlüssel für: {recipients}. Die Mail wird so nicht versendet.",
+      "pgpLookup": "Schlüssel online suchen",
+      "pgpLookupConfirm": "Für {recipients} einen Schlüssel online suchen? Der Mailanbieter der Adressen und gegebenenfalls keys.openpgp.org erfahren davon.",
+      "pgpLookupNone": "Nicht gefunden: {recipients}"
     },
     "merge": {
       "open": "Serienmail",
@@ -3793,6 +3799,83 @@
       "useChromium": "HTML-Mails mit Chromium rendern, falls installiert",
       "chromiumPath": "Chromium / Chrome / Edge",
       "chromiumAuto": "automatisch erkannt"
+    },
+    "pgp": {
+      "title": "OpenPGP-Schlüssel",
+      "intro": "Mit einem eigenen Schlüssel signieren und entschlüsseln Sie Mails. Private Schlüssel liegen verschlüsselt im Tresor von TuxMail, eine beim Import eingegebene Passphrase wird nicht gespeichert.",
+      "import": "Importieren",
+      "importNow": "Schlüssel importieren",
+      "generate": "Schlüssel erzeugen",
+      "email": "E-Mail-Adresse",
+      "name": "Name (optional)",
+      "passphrase": "Passphrase des Schlüssels",
+      "exportPassphrase": "Neue Passphrase (mindestens 12 Zeichen)",
+      "exportPublic": "Öffentlichen Schlüssel exportieren",
+      "exportSecret": "Privaten Schlüssel exportieren",
+      "delete": "Schlüssel löschen",
+      "generated": "Schlüssel für {email} erzeugt.",
+      "imported": "{count} Schlüssel importiert.",
+      "found": "Schlüssel für {email} gefunden und übernommen. Bitte den Fingerabdruck vergleichen.",
+      "none": "Noch keine Schlüssel.",
+      "confirmDelete": "Schlüssel von {email} löschen?",
+      "confirmDeleteOwn": "Eigenen Schlüssel von {email} löschen? Ohne Sicherung lassen sich damit verschlüsselte Mails nicht mehr lesen.",
+      "confirmVerify": "Stimmt dieser Fingerabdruck mit dem überein, den Ihnen die Person auf anderem Weg genannt hat?\n\n{fingerprint}",
+      "verify": "Fingerabdruck bestätigt",
+      "unverify": "Bestätigung zurücknehmen",
+      "keyChanged": "Schlüssel gewechselt",
+      "peersTitle": "Per Autocrypt gesammelt",
+      "peersIntro": "Schlüssel, die andere in ihren Mails mitschicken. Sie gelten als „in Mails gesehen“, nicht als geprüft: Eine gefälschte Mail kann so einen Schlüssel einschleusen, bis Sie den Fingerabdruck bestätigen.",
+      "nonePeers": "Noch keine gesammelten Schlüssel.",
+      "lookupTitle": "Schlüssel online suchen",
+      "lookupIntro": "Nur auf Klick. Die Suche verrät dem Verzeichnis, nach welcher Adresse Sie suchen. Beim WKD erfährt es der Mailanbieter der Adresse, beim Schlüsselserver keys.openpgp.org.",
+      "lookupWkd": "Beim Mailanbieter suchen (WKD)",
+      "lookupKeyserver": "Auf keys.openpgp.org suchen",
+      "lookupConfirm": {
+        "wkd": "Beim Mailanbieter von {email} nach dem Schlüssel fragen? Der Anbieter erfährt davon.",
+        "keyserver": "Auf keys.openpgp.org nach dem Schlüssel von {email} fragen? Der Betreiber erfährt davon."
+      },
+      "signByDefault": "Jede Mail signieren, wenn ein eigener Schlüssel vorhanden ist",
+      "sendAutocrypt": "Öffentlichen Schlüssel per Autocrypt mit jeder Mail mitsenden",
+      "preferEncrypt": "Autocrypt: Automatisch verschlüsseln, wenn die Gegenseite das auch wünscht",
+      "source": {
+        "own": "eigener",
+        "manual": "importiert",
+        "wkd": "WKD",
+        "keyserver": "Schlüsselserver",
+        "autocrypt": "Autocrypt",
+        "gossip": "Autocrypt (über Dritte)"
+      },
+      "trust": {
+        "unknown": "nicht geprüft",
+        "tofu": "in Mails gesehen",
+        "verified": "Fingerabdruck bestätigt",
+        "revoked": "widerrufen",
+        "expired": "abgelaufen"
+      },
+      "err": {
+        "pgp_import": "Die Datei enthält keinen lesbaren OpenPGP-Schlüssel.",
+        "pgp_passphrase_required": "Dieser private Schlüssel braucht seine Passphrase.",
+        "pgp_wrong_passphrase": "Die Passphrase passt nicht zu diesem Schlüssel.",
+        "pgp_passphrase_short": "Die Passphrase muss mindestens 12 Zeichen haben.",
+        "pgp_key_not_found": "Für diese Adresse wurde kein Schlüssel gefunden.",
+        "pgp_lookup_failed": "Das Schlüsselverzeichnis war nicht erreichbar.",
+        "pgp_key_changed": "Der Schlüssel hat sich inzwischen geändert. Bitte erneut prüfen."
+      },
+      "status": {
+        "decrypted": "Entschlüsselt (OpenPGP).",
+        "cannotDecrypt": "Mit OpenPGP verschlüsselt, aber kein passender privater Schlüssel vorhanden.",
+        "unsigned": "Nicht signiert: Der Absender ist nicht belegt.",
+        "subject": "Verschlüsselter Betreff: {subject}",
+        "partial": "Text außerhalb des geschützten Bereichs wurde ausgeblendet.",
+        "sig": {
+          "valid": "Signatur gültig.",
+          "invalid": "Ungültige Signatur: Der Inhalt wurde möglicherweise verändert.",
+          "unknown_key": "Signiert, aber der Schlüssel ist unbekannt: nicht prüfbar.",
+          "expired_key": "Signiert mit abgelaufenem Schlüssel.",
+          "revoked_key": "Signiert mit widerrufenem Schlüssel.",
+          "mismatch": "Gültige Signatur, der Schlüssel gehört aber nicht zur Absenderadresse."
+        }
+      }
     }
   },
   "sync": {
