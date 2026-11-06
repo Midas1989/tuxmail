@@ -54,6 +54,33 @@ func TestUpdateMeChangesOwnDisplayNameAndAudits(t *testing.T) {
 	}
 }
 
+func TestUpdateMeSameNameWritesNothing(t *testing.T) {
+	e := newEnv(t, Options{})
+	u := e.user("dora", auth.RoleUser)
+	b := e.browser()
+	b.login("dora")
+	if resp, m := b.do("PATCH", "/api/auth/me", map[string]any{"displayName": "Dora"}); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+	if _, err := e.svc.DB().Exec(`UPDATE users SET updated_at = 1 WHERE id = ?`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	resp, m := b.do("PATCH", "/api/auth/me", map[string]any{"displayName": " Dora "})
+	if resp.StatusCode != 200 || m["user"].(map[string]any)["displayName"] != "Dora" {
+		t.Fatal(resp.Status, m)
+	}
+	var updated int64
+	if err := e.svc.DB().QueryRow(`SELECT updated_at FROM users WHERE id = ?`, u.ID).Scan(&updated); err != nil {
+		t.Fatal(err)
+	}
+	if updated != 1 {
+		t.Fatalf("row written: updated_at = %d", updated)
+	}
+	if list := auditEntries(t, e, "user.update"); len(list) != 1 {
+		t.Fatalf("audit entries: %+v", list)
+	}
+}
+
 func TestUpdateMeNeedsSession(t *testing.T) {
 	e := newEnv(t, Options{})
 	e.user("dora", auth.RoleUser)
@@ -94,15 +121,25 @@ func TestUpdateMeRejectsInvalidNames(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]map[string]any{
-		"missing":    {},
-		"empty":      {"displayName": ""},
-		"blank":      {"displayName": "   "},
-		"too long":   {"displayName": strings.Repeat("ä", auth.MaxDisplayNameLength+1)},
-		"newline":    {"displayName": "Dora\nBcc: x@example.de"},
-		"control":    {"displayName": "Do\x00ra"},
-		"separator":  {"displayName": "Do ra"},
-		"override":   {"displayName": "Do‮ra"},
-		"wrong type": {"displayName": 5},
+		"missing":          {},
+		"empty":            {"displayName": ""},
+		"blank":            {"displayName": "   "},
+		"too long":         {"displayName": strings.Repeat("ä", auth.MaxDisplayNameLength+1)},
+		"newline":          {"displayName": "Dora\nBcc: x@example.de"},
+		"control":          {"displayName": "Do\x00ra"},
+		"separator":        {"displayName": "Do\u2028ra"},
+		"override":         {"displayName": "Do\u202Era"},
+		"zero width space": {"displayName": "Do\u200Bra"},
+		"soft hyphen":      {"displayName": "Do\u00ADra"},
+		"word joiner":      {"displayName": "Do\u2060ra"},
+		"hangul filler":    {"displayName": "Do\u3164ra"},
+		"tag character":    {"displayName": "Do\U000E0041ra"},
+		"only U+200B":      {"displayName": "\u200B"},
+		"only joiners":     {"displayName": "\u200C\u200D"},
+		"only selector":    {"displayName": "\uFE0F"},
+		"only blank":       {"displayName": "\u2800"},
+		"only mark":        {"displayName": "\u0301"},
+		"wrong type":       {"displayName": 5},
 	} {
 		if resp, m := b.do("PATCH", "/api/auth/me", body); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("%s: %s %v", name, resp.Status, m)
@@ -112,7 +149,7 @@ func TestUpdateMeRejectsInvalidNames(t *testing.T) {
 		t.Fatalf("name changed by a rejected request: %q", got.DisplayName)
 	}
 	// The limit counts characters, not bytes; names of real people pass.
-	for _, ok := range []string{strings.Repeat("ä", auth.MaxDisplayNameLength), "José O'Neill-Müller", "山田 太郎", "می‌خواهم"} {
+	for _, ok := range []string{strings.Repeat("ä", auth.MaxDisplayNameLength), "José O'Neill-Müller", "山田 太郎", "\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645", "Anna \U0001F469\u200D\U0001F4BB", "\u2764\uFE0F"} {
 		if resp, m := b.do("PATCH", "/api/auth/me", map[string]any{"displayName": ok}); resp.StatusCode != 200 {
 			t.Errorf("%q: %s %v", ok, resp.Status, m)
 		}

@@ -14,7 +14,7 @@
   import { app, team } from '../../state';
   import { t, fmt } from '../../i18n/index.svelte';
   import type { TeamPriority, TeamStatus, TeamMember } from '../../api/team';
-  import { activeMention, insertMention, mentionSegments } from './mentions';
+  import { activeMention, insertMention, memberHandle, mentionSegments, nameWithHandle } from './mentions';
 
   interface Props {
     conversationId?: number | null;
@@ -138,7 +138,7 @@
         <select class="input sel" value={String(a.assigneeId ?? 0)} onchange={onAssignee} disabled={!team.can('reply')} aria-label={t('team.assignee')}>
           <option value="0">{t('team.unassigned')}</option>
           {#each workers as m (m.userId)}
-            <option value={String(m.userId)} disabled={!canAssignOthers && m.userId !== me && m.userId !== a.assigneeId}>{m.displayName}{m.userId === me ? ` (${t('team.me')})` : ''}</option>
+            <option value={String(m.userId)} disabled={!canAssignOthers && m.userId !== me && m.userId !== a.assigneeId}>{nameWithHandle(team.members, m.userId, m.displayName)}{m.userId === me ? ` (${t('team.me')})` : ''}</option>
           {/each}
         </select>
       </label>
@@ -170,14 +170,14 @@
     {#if replying.length || viewing.length || d.drafts.length}
       <div class="presence" role="status" aria-live="polite">
         {#each replying as p (p.userId)}
-          <span class="pchip replying"><PenLine size={13} /> {t('team.presence.replying', { name: p.userName })}</span>
+          <span class="pchip replying"><PenLine size={13} /> {t('team.presence.replying', { name: nameWithHandle(team.members, p.userId, p.userName) })}</span>
         {/each}
         {#each viewing as p (p.userId)}
-          <span class="pchip"><Eye size={13} /> {t('team.presence.viewing', { name: p.userName })}</span>
+          <span class="pchip"><Eye size={13} /> {t('team.presence.viewing', { name: nameWithHandle(team.members, p.userId, p.userName) })}</span>
         {/each}
         {#each d.drafts as dr (dr.userId)}
           <button class="pchip draft" onclick={() => (draftOpen = draftOpen === dr.userId ? null : dr.userId)} aria-expanded={draftOpen === dr.userId} disabled={!dr.body}>
-            <FileText size={13} /> {t('team.presence.draft', { name: dr.userName, when: fmt().relative(dr.updatedAt) })}
+            <FileText size={13} /> {t('team.presence.draft', { name: nameWithHandle(team.members, dr.userId, dr.userName), when: fmt().relative(dr.updatedAt) })}
           </button>
         {/each}
       </div>
@@ -195,6 +195,7 @@
           <article class="note" class:mine={c.authorId === me} class:mentioned={me != null && c.mentions.includes(me)}>
             <header>
               <strong>{c.authorName}</strong>
+              {#if memberHandle(team.members, c.authorId, c.authorName)}<span class="handle">@{memberHandle(team.members, c.authorId, c.authorName)}</span>{/if}
               <time datetime={c.createdAt}>{fmt().relative(c.createdAt)}</time>
               {#if c.authorId === me || team.can('manage')}
                 <button class="icon-btn del" aria-label={t('team.comments.delete')} onclick={() => team.deleteComment(c.id)}><Trash size={13} /></button>
@@ -358,6 +359,10 @@
   }
   .note time {
     color: var(--tm-faint);
+  }
+  .note .handle {
+    color: var(--tm-muted);
+    overflow-wrap: anywhere;
   }
   .note .del {
     margin-left: auto;

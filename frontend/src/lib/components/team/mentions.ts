@@ -36,3 +36,19 @@ export function mentionSegments(body: string): { text: string; mention: boolean 
   if (last < body.length) out.push({ text: body.slice(last), mention: false });
   return out;
 }
+
+/**
+ * The login name to show next to a team member's display name: display names
+ * are self-chosen ("Admin"), the username is what tells people apart. Null if
+ * it adds nothing or the user is no longer a member (the data has no username then).
+ */
+export function memberHandle(members: readonly { userId: number; username: string }[], userId: number | null | undefined, name: string): string | null {
+  const username = members.find((m) => m.userId === userId)?.username;
+  return username && username !== name ? username : null;
+}
+
+/** "Name (@username)" for places that take one string, like translated sentences. */
+export function nameWithHandle(members: readonly { userId: number; username: string }[], userId: number | null | undefined, name: string): string {
+  const handle = memberHandle(members, userId, name);
+  return handle ? `${name} (@${handle})` : name;
+}
