@@ -29,8 +29,8 @@ Linux-Server zu betreiben (siehe [KONZEPT.md, Kap. 4.5, 15.5, 15.6](../docs/KONZ
 - **Release-Signatur:** Das Binary läuft als root-eigener Dienst, daher wird das Release vor der Installation
   über die GPG-Signatur von `checksums.txt` geprüft – siehe „Release-Signatur“ unten (Fingerabdruck
   `tuxmail_release_gpg_fingerprint` ist **Pflicht**, sonst bricht das Playbook vor jeder Änderung ab).
-- **Sicherungen:** ohne age-Empfänger (`tuxmail_backup_age_recipients`) verweigert das Backup-Skript den Lauf, siehe
-  Abschnitt 7 (`tuxmail_backup_allow_plaintext: true` erlaubt Klartext ausdrücklich).
+- **Sicherungen:** nach dem Rollout in der Oberfläche den Backup-Schlüssel erzeugen (Einstellungen → Administration →
+  Sicherung). Bis dahin läuft keine Sicherung, das Playbook warnt und läuft weiter, siehe Abschnitt 7.
 
 **Steuerrechner** (von dem aus Ansible läuft):
 
@@ -371,6 +371,7 @@ ansible-playbook site.yml --check --diff     # Probelauf (Befehle werden dabei �
 | `/opt/tuxmail/current` | Symlink auf die aktive Version; `/usr/local/bin/tuxmail` zeigt darauf |
 | `/etc/tuxmail/` | `root:tuxmail 0750`; `config.yaml` (0640), `oidc_client_secret` (0640) |
 | `/var/lib/tuxmail/` | `tuxmail:tuxmail 0750` – Daten (siehe Abschnitt 7) |
+| `/var/lib/tuxmail/backup/` | `tuxmail:tuxmail 0750` – öffentlicher Backup-Schlüssel und Ergebnis des letzten Laufs; das Backup-Skript liest als root |
 | `/var/log/tuxmail/` | `tuxmail:tuxmail 0750` – nur genutzt, wenn `tuxmail_log_file` gesetzt ist (sonst journald) |
 | `/var/backups/tuxmail/` | `root 0700` – Sicherungen (Archive 0600) |
 | `tuxmail.service` | gehärtet: `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`, `NoNewPrivileges`, leeres `CapabilityBoundingSet`, `RestrictAddressFamilies`, `SystemCallFilter=@system-service`, `MemoryDenyWriteExecute`, `ReadWritePaths` nur Daten/Logs, `LimitNOFILE=65536`, `Restart=on-failure`, `ExecStartPre=… check-config` |
@@ -457,8 +458,8 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_backup_timer_enabled` | `false` | tägliche Sicherung |
 | `tuxmail_backup_keep_scheduled` | `14` | aufbewahrte tägliche Sicherungen |
 | `tuxmail_backup_compression` | `zstd` | `zstd` (tar.zst) \| `gzip` (tar.gz) |
-| `tuxmail_backup_age_recipients` | `[]` | öffentliche age-Schlüssel → Sicherungen verschlüsseln |
-| `tuxmail_backup_allow_plaintext` | `false` | Sicherungen ohne age-Empfänger zulassen (sonst bricht das Skript ab) |
+| `tuxmail_backup_age_recipients` | `[]` | nur Bestand: öffentliche age-Schlüssel, einmalig in die Ablage übernommen; neu nicht nötig |
+| `tuxmail_backup_allow_plaintext` | `false` | Sicherungen ohne Schlüssel zulassen (sonst endet das Skript mit Exit 3) |
 | `tuxmail_service_environment` | `{}` | zusätzliche Umgebungsvariablen (z. B. `TUXMAIL_LOG_LEVEL`) |
 | `tuxmail_nginx_strip_subpath` | `false` | Unterpfad vor dem Weiterreichen entfernen |
 | `tuxmail_nginx_csp` | `""` | `""` = die CSP von TuxMail gilt allein; sonst ersetzt nginx sie durch genau diese (nie zwei CSP-Header) |
@@ -514,7 +515,8 @@ ansible-playbook site.yml -e tuxmail_version=1.1.0 --tags tuxmail
 Ablauf: neues Archiv herunterladen und per `checksums.txt` (SHA-256) prüfen → nach
 `/opt/tuxmail/versions/1.1.0/` entpacken → `config.yaml` mit dem **neuen** Binary prüfen →
 Dienst stoppen → `/var/lib/tuxmail` sichern
-(`/var/backups/tuxmail/tuxmail-pre-upgrade-<datum>-<alt>-to-<neu>.tar.zst`) → Symlink `current`
+(`/var/backups/tuxmail/tuxmail-pre-upgrade-<datum>-<alt>-to-<neu>.tar.zst.age`; ohne Backup-Schlüssel nur eine
+Warnung und keine Sicherung) → Symlink `current`
 umstellen → Dienst starten (Datenbank-Migration läuft automatisch) → Health-Check.
 Ältere Versionen über `tuxmail_keep_versions` hinaus werden gelöscht.
 
@@ -532,8 +534,9 @@ sudo ln -sfn /opt/tuxmail/versions/1.0.0 /opt/tuxmail/current && sudo systemctl 
 ```bash
 sudo systemctl stop tuxmail
 sudo mv /var/lib/tuxmail /var/lib/tuxmail.defekt
-sudo tar --zstd -xpf /var/backups/tuxmail/tuxmail-pre-upgrade-<…>.tar.zst -C /var/lib   # .tar.gz: -xzpf
-# verschlüsselt: age -d -i schluessel.txt <datei>.tar.zst.age | sudo tar --zstd -xpf - -C /var/lib
+# schluessel.txt enthält den privaten Schlüssel aus dem Tresor (AGE-SECRET-KEY-…)
+age -d -i schluessel.txt /var/backups/tuxmail/tuxmail-pre-upgrade-<…>.tar.zst.age | sudo tar --zstd -xpf - -C /var/lib
+# ausdrücklich unverschlüsselte Sicherung: sudo tar --zstd -xpf <datei>.tar.zst -C /var/lib   (.tar.gz: -xzpf)
 sudo ln -sfn /opt/tuxmail/versions/1.0.0 /opt/tuxmail/current
 sudo systemctl start tuxmail && curl -fsS http://127.0.0.1:8080/healthz
 ```
@@ -551,15 +554,27 @@ Manuelle Sicherung jederzeit: `sudo /usr/local/sbin/tuxmail-backup --stop manual
 | `vapid.json` | Web-Push-Schlüssel (0600). Bei Verlust funktionieren bestehende Push-Abonnements nicht mehr – bei Neuinstallation übernehmen. |
 | `users/<id>/` | je Benutzer `tuxmail.db` und `secrets.vault` |
 
-Sicherungen enthalten daher `master.key` und sind entsprechend zu schützen: Das Skript erzeugt
-sie mit `umask 077` (Archive 0600, Verzeichnis 0700). Werden Sicherungen außerhalb des Servers
-abgelegt, **verschlüsseln** (`tuxmail_backup_age_recipients: ["age1…"]`, privaten age-Schlüssel
-getrennt aufbewahren). Beim Zurückspielen Rechte erhalten (`tar -p` als root).
+Sicherungen enthalten daher `master.key` und werden mit [age](https://age-encryption.org) verschlüsselt. Das Skript
+erzeugt sie mit `umask 077` (Archive 0600, Verzeichnis 0700). Beim Zurückspielen Rechte erhalten (`tar -p` als root).
 
-**Klartext nur ausdrücklich (Re-Audit ND-14):** Ohne age-Empfänger verweigert das Skript `tuxmail-backup` den
-Lauf (Exit 3, bevor der Dienst angehalten wird) – auch die Sicherung vor einem Versionswechsel. Das Playbook
-prüft das schon vorab. Wer bewusst unverschlüsselt sichert (Archive sind nur für root lesbar), setzt
-`tuxmail_backup_allow_plaintext: true` bzw. startet das Skript manuell mit `TUXMAIL_BACKUP_ALLOW_PLAINTEXT=1`.
+**Backup-Schlüssel – nach dem Rollout im Frontend erzeugen:** Einstellungen → Administration → Sicherung →
+„Schlüssel erzeugen“ (nur Administratoren, mit Passwort bzw. zweitem Faktor bestätigen).
+
+- Der private Schlüssel wird genau einmal angezeigt. Lege ihn im Tresor ab: Ohne ihn lässt sich keine Sicherung
+  zurückspielen. Am Server bleibt nur der öffentliche Schlüssel (`/var/lib/tuxmail/backup/recipients.txt`).
+- Statt dessen kannst du dort einen eigenen öffentlichen Schlüssel (`age1…`) eintragen, etwa aus `age-keygen`.
+- Ersetzen geht jederzeit und landet im Audit-Log. Ältere Sicherungen brauchen weiter den alten privaten Schlüssel.
+- **Bestand:** Steht `tuxmail_backup_age_recipients` im Inventory, übernimmt das Playbook die Werte einmalig in die
+  Datei. Danach gilt allein die Oberfläche, die Variable kann entfallen.
+- Die Seite zeigt auch das Ergebnis des letzten Laufs. Tägliche Sicherungen laufen nur mit
+  `tuxmail_backup_timer_enabled: true`.
+- Installation ohne Ansible: `deploy/systemd/tuxmail-backup.sh` nutzt dieselbe Datei und braucht das Paket `age`.
+
+**Ohne Schlüssel keine Klartext-Sicherung (Re-Audit ND-14):** `tuxmail-backup` endet mit Exit 3 und ohne Datei, bevor
+der Dienst angehalten wird. Das Playbook bricht deshalb nicht ab: Es warnt, auch wenn dadurch die Sicherung vor einem
+Versionswechsel entfällt, und der Rollout läuft weiter. Wer bewusst unverschlüsselt sichert (Archive sind nur für root
+lesbar), setzt `tuxmail_backup_allow_plaintext: true` bzw. startet das Skript manuell mit
+`TUXMAIL_BACKUP_ALLOW_PLAINTEXT=1`. Eine beschädigte Schlüsseldatei stoppt den Lauf in jedem Fall.
 
 ## 8. Benutzerverwaltung
 

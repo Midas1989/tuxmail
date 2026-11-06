@@ -11,7 +11,6 @@
 
 - name: Age für verschlüsselte Sicherungen installieren
   ansible.builtin.include_tasks: age.yml
-  when: tuxmail_backup_age_recipients | length > 0
 
 - name: Programmverzeichnisse (root-eigen)
   ansible.builtin.file:

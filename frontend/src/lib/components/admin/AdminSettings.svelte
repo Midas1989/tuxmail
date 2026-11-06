@@ -2,7 +2,7 @@
 <!--
   Settings -> Administration (web client, administrators only; the page is
   hidden for everyone else, see settings/catalog.ts "admin"): users, invites,
-  groups and the audit log of the server. The server checks the admin role on
+  groups, the backup key and the audit log of the server. The server checks the admin role on
   every call; hiding the page is a convenience, not the protection.
 -->
 <script lang="ts">
@@ -12,6 +12,7 @@
   import AdminUsers from './AdminUsers.svelte';
   import AdminInvites from './AdminInvites.svelte';
   import AdminGroups from './AdminGroups.svelte';
+  import AdminBackup from './AdminBackup.svelte';
   import AdminAudit from './AdminAudit.svelte';
   import { ADMIN_TABS, type AdminTab } from '../../admin/tabs';
 
@@ -64,6 +65,7 @@
           {#if tab === 'users'}<AdminUsers {client} {me} config={admin.config} {notify} />
           {:else if tab === 'invites'}<AdminInvites {client} {me} config={admin.config} {notify} />
           {:else if tab === 'groups'}<AdminGroups {client} {me} config={admin.config} {notify} />
+          {:else if tab === 'backup'}<AdminBackup {client} {me} config={admin.config} {notify} />
           {:else}<AdminAudit {client} {me} config={admin.config} {notify} />{/if}
         {/key}
       </div>

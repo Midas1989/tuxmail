@@ -143,7 +143,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: 'admin',
     only: 'admin',
-    sections: [sec('manage', ['admin.users.title', 'admin.users.create', 'admin.users.unlock', 'admin.tabs.invites', 'admin.tabs.groups', 'admin.tabs.audit', 'admin.users.resetPassword', 'admin.users.reset2fa'])],
+    sections: [sec('manage', ['admin.users.title', 'admin.users.create', 'admin.users.unlock', 'admin.tabs.invites', 'admin.tabs.groups', 'admin.tabs.backup', 'admin.tabs.audit', 'admin.users.resetPassword', 'admin.users.reset2fa'])],
   },
   {
     id: 'about',

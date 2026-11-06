@@ -17,6 +17,9 @@
 //   GET/POST /api/admin/groups; DELETE /api/admin/groups/{id}; PUT/DELETE /api/admin/groups/{id}/members/{uid}
 //   GET/POST /api/admin/invites; DELETE /api/admin/invites/{id}   (create -> {invite, token, url}, token once)
 //   GET    /api/admin/audit?limit=&before=&action=&actor=&result=failed -> {entries}
+//   GET    /api/admin/backup                         -> {keys, invalid, lastRun, reauth}
+//   POST   /api/admin/backup/key/generate            -> {publicKey, fingerprint, privateKey}   (private key once)
+//   POST   /api/admin/backup/key/import              -> {publicKey, fingerprint}
 //
 // The pure parts (types, error mapping, the in-memory MockAdminClient used by
 // `?api=mock`) live here; the logic of the screens is in lib/admin/.
@@ -24,6 +27,7 @@
 import type { Api } from './api';
 import { ApiError } from './api';
 import type { HttpTransportOptions } from './http';
+import type { Reauth } from './security';
 import { isNativeShell } from '../platform';
 
 export type AdminRole = 'admin' | 'user' | 'readonly';
@@ -152,6 +156,28 @@ export interface AuditQuery {
   onlyFailed?: boolean;
 }
 
+export interface BackupKey {
+  publicKey: string;
+  fingerprint: string;
+}
+
+/** What the backup job left behind after its last run (no_key: nothing was written). */
+export interface BackupRun {
+  finishedAt: string;
+  label: string;
+  result: 'ok' | 'failed' | 'no_key' | 'invalid_key';
+  encrypted: boolean;
+}
+
+export interface BackupStatus {
+  keys: BackupKey[];
+  /** The stored file has a line the job refuses; no backups run. */
+  invalid: boolean;
+  lastRun: BackupRun | null;
+  /** Which proofs the confirmation asks for. */
+  reauth: { password: boolean; code: boolean };
+}
+
 export interface AdminClient {
   me(): Promise<AdminMe>;
   config(): Promise<AdminServerConfig>;
@@ -176,6 +202,10 @@ export interface AdminClient {
   createInvite(input: NewAdminInvite): Promise<CreatedInvite>;
   deleteInvite(id: number): Promise<void>;
   auditLog(q?: AuditQuery): Promise<AdminAuditEntry[]>;
+  backupStatus(): Promise<BackupStatus>;
+  /** Creates a key pair; the private key is in this answer only. `replace` confirms giving up an existing key. */
+  generateBackupKey(reauth: Reauth, replace: boolean): Promise<BackupKey & { privateKey: string }>;
+  importBackupKey(publicKey: string, reauth: Reauth, replace: boolean): Promise<BackupKey>;
 }
 
 /** Server error codes (writeError in internal/server) the screens show in their own words. */
@@ -190,6 +220,10 @@ export const ADMIN_ERROR_CODES = [
   'registration_disabled',
   'throttled',
   'reauth_required',
+  'invalid_credentials',
+  'backup_key_exists',
+  'backup_key_private',
+  'backup_key_invalid',
   'network',
 ] as const;
 export type AdminErrorCode = (typeof ADMIN_ERROR_CODES)[number];
@@ -354,6 +388,15 @@ export class HttpAdminClient implements AdminClient {
     const qs = sp.toString();
     const r = await this.req<{ entries: AdminAuditEntry[] | null }>('GET', '/api/admin/audit' + (qs ? '?' + qs : ''));
     return r.entries ?? [];
+  }
+  backupStatus() {
+    return this.req<BackupStatus>('GET', '/api/admin/backup');
+  }
+  generateBackupKey(reauth: Reauth, replace: boolean) {
+    return this.req<BackupKey & { privateKey: string }>('POST', '/api/admin/backup/key/generate', { ...reauth, replace });
+  }
+  importBackupKey(publicKey: string, reauth: Reauth, replace: boolean) {
+    return this.req<BackupKey>('POST', '/api/admin/backup/key/import', { ...reauth, publicKey, replace });
   }
 }
 
@@ -614,6 +657,30 @@ export class MockAdminClient implements AdminClient {
     if (q.actor?.trim()) list = list.filter((e) => lower(e.actor).startsWith(lower(q.actor!.trim())));
     if (q.onlyFailed) list = list.filter((e) => !e.success);
     return this.wait(list.slice(0, q.limit && q.limit > 0 ? Math.min(q.limit, 1000) : 100));
+  }
+  private backupKey: BackupKey | null = null;
+  private storeBackupKey(publicKey: string, replace: boolean): BackupKey {
+    if (this.backupKey && !replace) throw new ApiError('a backup key exists', 409, 'backup_key_exists');
+    this.backupKey = { publicKey, fingerprint: `SHA256:mock-${publicKey.slice(-12)}` };
+    return this.backupKey;
+  }
+  async backupStatus(): Promise<BackupStatus> {
+    this.requireAdmin();
+    return this.wait({ keys: this.backupKey ? [this.backupKey] : [], invalid: false, lastRun: null, reauth: { password: true, code: false } });
+  }
+  async generateBackupKey(_reauth: Reauth, replace: boolean) {
+    this.requireAdmin();
+    const key = this.storeBackupKey(`age1mock${randomPassword(40).toLowerCase().replace(/[^a-z0-9]/g, 'x')}`, replace);
+    this.log('backup.key.generate', 'backup');
+    return this.wait({ ...key, privateKey: `AGE-SECRET-KEY-1MOCK${randomPassword(40).toUpperCase().replace(/[^A-Z0-9]/g, 'X')}` });
+  }
+  async importBackupKey(publicKey: string, _reauth: Reauth, replace: boolean) {
+    this.requireAdmin();
+    if (publicKey.toUpperCase().includes('AGE-SECRET-KEY')) throw new ApiError('this is a private key', 400, 'backup_key_private');
+    if (!/^age1[0-9a-z]{58}$/.test(publicKey.trim())) throw new ApiError('not a valid age public key', 400, 'backup_key_invalid');
+    const key = this.storeBackupKey(publicKey.trim(), replace);
+    this.log('backup.key.import', 'backup');
+    return this.wait(key);
   }
 }
 

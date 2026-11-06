@@ -1,0 +1,23 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Der öffentliche age-Schlüssel wird in der Oberfläche erzeugt und vom Dienst in dieses Verzeichnis geschrieben;
+# das Backup-Skript (root) liest ihn dort. Nur der Dienstbenutzer darf schreiben, andere haben keinen Zugriff.
+- name: Verzeichnis des Backup-Schlüssels (dem Dienst gehörend)
+  ansible.builtin.file:
+    path: "{{ tuxmail_backup_key_dir }}"
+    state: directory
+    owner: "{{ tuxmail_user }}"
+    group: "{{ tuxmail_group }}"
+    mode: "0750"
+
+# Bestandsinstallationen: Empfänger aus der früheren Variablen einmalig übernehmen. Die Datei hat danach Vorrang,
+# ein in der Oberfläche ersetzter Schlüssel wird nicht zurückgedreht.
+- name: Vorhandene age-Empfänger übernehmen
+  ansible.builtin.copy:
+    content: "{{ tuxmail_backup_age_recipients | join('\n') }}\n"
+    dest: "{{ tuxmail_backup_key_dir }}/recipients.txt"
+    owner: "{{ tuxmail_user }}"
+    group: "{{ tuxmail_group }}"
+    mode: "0640"
+    force: false
+  when: tuxmail_backup_age_recipients | length > 0

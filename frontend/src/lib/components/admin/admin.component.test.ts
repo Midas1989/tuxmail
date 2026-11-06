@@ -14,6 +14,7 @@ import AdminUsers from './AdminUsers.svelte';
 import AdminInvites from './AdminInvites.svelte';
 import AdminGroups from './AdminGroups.svelte';
 import AdminAudit from './AdminAudit.svelte';
+import AdminBackup from './AdminBackup.svelte';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Comp = any;
@@ -407,5 +408,66 @@ describe('Tables are accessible', () => {
     // Every row action has an accessible name that says which user it is for.
     for (const b of table.querySelectorAll('button')) expect((b.getAttribute('aria-label') ?? b.textContent ?? '').trim().length).toBeGreaterThan(0);
     expect(rowBtn('ben', 'unlock')!.getAttribute('aria-label')).toContain('ben');
+  });
+});
+
+describe('AdminBackup', () => {
+  const REAUTH_PW = 'correct horse battery staple';
+
+  async function confirmWithPassword(el: HTMLElement) {
+    const pw = document.querySelector<HTMLInputElement>('form.stepup input[type=password]')!;
+    pw.value = REAUTH_PW;
+    pw.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    document.querySelector<HTMLButtonElement>('form.stepup button[type=submit]')!.click();
+    await settle();
+    return el;
+  }
+
+  it('warns without a key, shows the private key once and only closes after the vault confirmation', async () => {
+    const client = new MockAdminClient({ latencyMs: 0 });
+    const el = show(AdminBackup, panel(client));
+    await settle();
+    expect(el.querySelector('[data-testid=backup-nokey]')).toBeTruthy();
+
+    el.querySelector<HTMLButtonElement>('[data-testid=backup-generate]')!.click();
+    await settle();
+    expect(document.querySelector('[data-testid=backup-replace-warning]')).toBeNull();
+    await confirmWithPassword(el);
+
+    const value = document.querySelector<HTMLInputElement>('[data-testid=secret-value]')!;
+    expect(value.value).toMatch(/^AGE-SECRET-KEY-/);
+    const done = document.querySelector<HTMLButtonElement>('[data-testid=secret-done]')!;
+    expect(done.disabled).toBe(true);
+    const ack = document.querySelector<HTMLInputElement>('[data-testid=secret-ack]')!;
+    ack.click();
+    flushSync();
+    expect(done.disabled).toBe(false);
+    done.click();
+    await settle();
+
+    expect(document.querySelector('[data-testid=secret-value]')).toBeNull();
+    expect(document.body.innerHTML).not.toContain('AGE-SECRET-KEY-');
+    expect(el.querySelector('[data-testid=backup-nokey]')).toBeNull();
+    expect(el.querySelector('[data-testid=backup-key]')).toBeTruthy();
+  });
+
+  it('warns before replacing and refuses a private key in the import field', async () => {
+    const client = new MockAdminClient({ latencyMs: 0 });
+    await client.generateBackupKey({ password: REAUTH_PW }, false);
+    const el = show(AdminBackup, panel(client));
+    await settle();
+
+    el.querySelector<HTMLButtonElement>('[data-testid=backup-own-toggle]')!.click();
+    flushSync();
+    const own = el.querySelector<HTMLInputElement>('[data-testid=backup-own]')!;
+    own.value = 'AGE-SECRET-KEY-1ABC';
+    own.dispatchEvent(new Event('input', { bubbles: true }));
+    flushSync();
+    el.querySelector<HTMLButtonElement>('[data-testid=backup-own-submit]')!.click();
+    await settle();
+    expect(document.querySelector('[data-testid=backup-replace-warning]')).toBeTruthy();
+    await confirmWithPassword(el);
+    expect(document.querySelector('form.stepup [role=alert]')?.textContent).toContain('age1');
   });
 });

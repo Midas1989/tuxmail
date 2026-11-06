@@ -142,12 +142,15 @@ tuxmail_healthcheck_delay: 2
 # --- Backups -----------------------------------------------------------------------
 # zstd (tar.zst) oder gzip (tar.gz)
 tuxmail_backup_compression: "zstd"
-# Sicherungen enthalten master.key (entschlüsselt alle Benutzer-Geheimnisse) –
-# Archive sind 0600 im Verzeichnis 0700. Zusätzlich mit age verschlüsseln, wenn
-# hier öffentliche age-Schlüssel (age1...) angegeben sind (empfohlen bei externer Ablage).
+# Sicherungen enthalten master.key (entschlüsselt alle Benutzer-Geheimnisse) und werden mit age verschlüsselt. Den
+# Schlüssel erzeugst du nach dem Rollout in der Oberfläche (Einstellungen → Administration → Sicherung); nur der
+# öffentliche Teil bleibt am Server, hier (fest: <data_dir>/backup, so sucht ihn auch der Dienst):
+tuxmail_backup_key_dir: "{{ tuxmail_data_dir }}/backup"
+# Nur für Bestandsinstallationen: öffentliche age-Schlüssel (age1...) werden einmalig in die Ablage übernommen,
+# solange dort noch keine Datei liegt. Danach gilt allein die Oberfläche.
 tuxmail_backup_age_recipients: []
-# Ohne age-Empfänger verweigert das Backup-Skript den Lauf (Re-Audit ND-14), auch die Sicherung
-# vor einem Versionswechsel. Klartext-Archive (nur root lesbar, 0600 in 0700) ausdrücklich erlauben:
+# Ohne Schlüssel verweigert das Backup-Skript den Lauf (Exit 3, Re-Audit ND-14); der Rollout läuft mit einer Warnung
+# weiter. Klartext-Archive (nur root lesbar, 0600 in 0700) ausdrücklich erlauben:
 tuxmail_backup_allow_plaintext: false
 # Vor einem Versionswechsel /var/lib/tuxmail sichern (Dienst wird dafür kurz gestoppt).
 tuxmail_backup_before_upgrade: true

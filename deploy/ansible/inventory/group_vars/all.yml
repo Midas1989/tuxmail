@@ -95,8 +95,9 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 
 # --- Backups ---
 # tuxmail_backup_compression: zstd          # zstd | gzip
-# tuxmail_backup_age_recipients: []          # öffentliche age-Schlüssel (age1...) - Sicherungen enthalten master.key
-# tuxmail_backup_allow_plaintext: false      # ohne age-Empfänger verweigert das Backup-Skript den Lauf, außer true
+# Backup-Schlüssel: nach dem Rollout in der Oberfläche erzeugen (Einstellungen → Administration → Sicherung).
+# tuxmail_backup_age_recipients: []          # nur Bestand: age1...-Schlüssel, einmalig in die Ablage übernommen
+# tuxmail_backup_allow_plaintext: false      # ohne Schlüssel verweigert das Backup-Skript den Lauf, außer true
 # tuxmail_backup_before_upgrade: true
 # tuxmail_backup_keep_upgrade: 5
 # tuxmail_backup_timer_enabled: false

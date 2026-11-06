@@ -20,6 +20,10 @@ const KEYS = {
   registration_disabled: 'admin.errors.registration_disabled',
   throttled: 'admin.errors.throttled',
   reauth_required: 'admin.errors.reauth_required',
+  invalid_credentials: 'admin.errors.invalid_credentials',
+  backup_key_exists: 'admin.errors.backup_key_exists',
+  backup_key_private: 'admin.errors.backup_key_private',
+  backup_key_invalid: 'admin.errors.backup_key_invalid',
   network: 'admin.errors.network',
 } as const satisfies Record<AdminErrorCode, MessageKey>;
 
