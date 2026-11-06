@@ -56,7 +56,7 @@ cp inventory/hosts.example.ini inventory/hosts.ini && $EDITOR inventory/hosts.in
 ansible-galaxy collection install -r requirements.yml
 ansible-playbook -i inventory/hosts.ini site.yml \
   -e tuxmail_domain=mail.example.de -e tuxmail_tls_letsencrypt_email=admin@example.de \
-  -e tuxmail_allow_unsigned_release=true -e tuxmail_backup_allow_plaintext=true
+  -e tuxmail_allow_unsigned_release=true
 ```
 
 **Solange es kein Server-Archiv im Release gibt**, baust du es auf dem Server und gibst es dem Playbook mit:
@@ -66,13 +66,14 @@ ansible-playbook -i inventory/hosts.ini site.yml -e tuxmail_domain=mail.example.
   -e tuxmail_tls_letsencrypt_email=admin@example.de \
   -e tuxmail_binary_src=/opt/tuxmail/dist/tuxmail_<Version>_linux_amd64.tar.gz -e tuxmail_version=<Version>
 ```
-(`<Version>` steht im Dateinamen, z. B. `0.1.0-dev.ab12cd3`.) Dabei entfallen die Schalter für Signatur und
-Sicherung nicht automatisch; die Sicherung braucht weiter `tuxmail_backup_allow_plaintext=true` oder age-Empfänger.
+(`<Version>` steht im Dateinamen, z. B. `0.1.0-dev.ab12cd3`.) Der Schalter für die Signatur entfällt dabei.
 
 Das Passwort des ersten Administrators (`admin`) steht danach in `credentials/<Servername>/admin_password` auf
-deinem Rechner. Die beiden letzten Schalter sind Ausnahmen für den ersten Test (siehe
-[6a](#6a-empfohlen-ansible-ohne-docker)): Das Release ist noch nicht signiert, und Sicherungen sind noch nicht
-verschlüsselt.
+deinem Rechner. Der letzte Schalter ist eine Ausnahme für den ersten Test (siehe
+[6a](#6a-empfohlen-ansible-ohne-docker)): Das Release ist noch nicht signiert.
+
+**Danach gleich in der Oberfläche den Backup-Schlüssel erzeugen:** Einstellungen → Administration → Sicherung. Bis
+dahin laufen keine Sicherungen.
 
 **Unter Windows und Linux gilt:** Wer nichts installieren möchte, nimmt die **portable** Variante (ZIP bzw.
 `tar.gz`), die man auch vom USB-Stick starten kann.
@@ -339,9 +340,14 @@ Messenger-Bridges sind optional und standardmäßig aus.
   gibt, den Fingerabdruck eintragen und die Ausnahme entfernen. Wer ein **selbst gebautes** Archiv installiert
   (`-e tuxmail_binary_src=/pfad/tuxmail_<v>_linux_amd64.tar.gz`), braucht beides nicht, denn dann wird nichts
   heruntergeladen.
-- **Sicherungen.** Das Backup enthält den Hauptschlüssel des Servers und wird daher verschlüsselt:
-  `tuxmail_backup_age_recipients: ["age1…"]` (privaten Schlüssel getrennt aufbewahren). Ohne Empfänger verweigert
-  das Playbook die Sicherung, außer du erlaubst Klartext ausdrücklich mit `tuxmail_backup_allow_plaintext: true`.
+- **Sicherungen.** TuxMail ist ein Mailclient: Die tägliche Sicherung enthält nur die Einstellungen (Benutzer, Konten
+  mit ihren Passwörtern, Regeln, Signaturen, Schlüssel), keine Mails, Chats, Kalender oder Kontakte. Sie enthält den
+  Hauptschlüssel des Servers und wird daher verschlüsselt. Den Schlüssel erzeugst du nach dem Rollout in der
+  Oberfläche (Einstellungen → Administration → Sicherung). Der private Schlüssel wird genau einmal angezeigt, lege ihn
+  im Tresor ab; am Server bleibt nur der öffentliche. Ein `age-keygen` ist nicht nötig. Ohne Schlüssel läuft keine
+  Sicherung, das Playbook warnt und läuft weiter. Klartext gibt es nur ausdrücklich mit
+  `tuxmail_backup_allow_plaintext: true`. Ein vorhandenes `tuxmail_backup_age_recipients` wird einmalig übernommen.
+  Wer lokale Ordner, importierte Mails oder Chat-Verläufe braucht, sichert sie selbst (Benutzer-Sicherung `.txmb`).
 
 **Varianten**, die du mit denselben Befehlen und anderen Schaltern erreichst:
 
@@ -379,7 +385,20 @@ sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail
 # 4. Ersten Administrator anlegen (Passwort wird über stdin übergeben)
 echo 'SicheresPasswort' | sudo runuser -u tuxmail -- /opt/tuxmail/current/tuxmail user add \
   --config /etc/tuxmail/config.yaml --username admin --email admin@example.org --admin --password-stdin
+
+# 5. Tägliche Sicherung (Skript und Timer; braucht die Pakete age, zstd und tar)
+sudo apt install age zstd                    # RHEL-Familie: EPEL aktivieren, dann dnf install age zstd
+sudo install -d -o tuxmail -g tuxmail -m 0750 /var/lib/tuxmail/backup
+sudo install -d -o root -g root -m 0700 /var/backups/tuxmail
+sudo install -o root -g root -m 0750 deploy/systemd/tuxmail-backup.sh /usr/local/sbin/tuxmail-backup
+sudo install -m 0644 deploy/systemd/tuxmail-backup.service deploy/systemd/tuxmail-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now tuxmail-backup.timer
 ```
+
+Dann in der Oberfläche den **Backup-Schlüssel erzeugen**: Einstellungen → Administration → Sicherung. Bis du „Im Tresor
+gesichert“ bestätigt hast, endet das Skript mit Fehler und sichert nichts. Danach sichert es jede Nacht die
+Einstellungen, der Dienst läuft dabei weiter. Was enthalten ist und wie du zurückspielst, steht in
+[deploy/README.md, Abschnitt 7](../deploy/README.md#7-daten-und-sicherungen--wichtig).
 
 Danach brauchst du TLS: entweder einen Reverse Proxy (Beispiel `deploy/nginx/tuxmail.conf`) oder die Einstellung
 `tls.mode: file` (Abschnitt 6d). Den Dienst prüfst du mit `systemctl status tuxmail` und
@@ -551,8 +570,9 @@ Fehler melden: [Issues](https://github.com/Midas1989/tuxmail/issues). Sicherheit
 
 Server quick start: `git clone --branch main https://github.com/Midas1989/tuxmail.git && cd tuxmail/deploy/ansible`, copy and edit
 `inventory/hosts.example.ini`, then
-`ansible-playbook -i inventory/hosts.ini site.yml -e tuxmail_domain=mail.example.com -e tuxmail_tls_letsencrypt_email=you@example.com -e tuxmail_allow_unsigned_release=true -e tuxmail_backup_allow_plaintext=true`
-(the two last switches are only for a first test: releases are not signed yet and backups are not encrypted).
+`ansible-playbook -i inventory/hosts.ini site.yml -e tuxmail_domain=mail.example.com -e tuxmail_tls_letsencrypt_email=you@example.com -e tuxmail_allow_unsigned_release=true`
+(the last switch is only for a first test: releases are not signed yet). After the rollout, create the backup key in the
+web UI: Settings → Administration → Backup. Until then no backups run; the private key is shown once, keep it in a vault.
 TLS can be terminated by the server itself (`tls.mode: file`, restart after renewing the certificate) or by a reverse
 proxy (`tls.mode: none`).
 

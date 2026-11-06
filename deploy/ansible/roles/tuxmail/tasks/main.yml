@@ -20,19 +20,6 @@
       verzichte AUSDRÜCKLICH auf die Prüfung mit tuxmail_allow_unsigned_release: true (nur die Prüfsumme
       aus demselben Release gilt dann). Es wurde nichts installiert oder verändert.
 
-- name: Sicherungen sind verschlüsselt (oder Klartext ist ausdrücklich erlaubt)
-  ansible.builtin.assert:
-    that: >-
-      tuxmail_backup_age_recipients | length > 0
-      or tuxmail_backup_allow_plaintext | bool
-      or not (tuxmail_backup_before_upgrade | bool or tuxmail_backup_timer_enabled | bool)
-    quiet: true
-    fail_msg: >-
-      Sicherungen (vor einem Versionswechsel bzw. per Timer) würden master.key unverschlüsselt ablegen.
-      Setze tuxmail_backup_age_recipients (öffentliche age-Schlüssel, age1...) oder erlaube Klartext ausdrücklich
-      mit tuxmail_backup_allow_plaintext: true (nur root liest die Archive; relevant, sobald sie das System verlassen).
-      Es wurde nichts verändert.
-
 - name: Pakete und Verzeichnisse
   ansible.builtin.import_tasks: directories.yml
 
@@ -61,3 +48,17 @@
 
 - name: Alte Versionen aufräumen
   ansible.builtin.import_tasks: prune.yml
+
+- name: Prüfen, ob ein Backup-Schlüssel hinterlegt ist
+  ansible.builtin.stat:
+    path: "{{ tuxmail_backup_key_dir }}/recipients.txt"
+  register: tuxmail_backup_key_file
+
+- name: Hinweis auf den fehlenden Backup-Schlüssel
+  ansible.builtin.debug:
+    msg: >-
+      WARNUNG: Es gibt noch keinen Backup-Schlüssel, deshalb laufen keine Sicherungen. Erzeuge ihn nach dem Rollout
+      in der Oberfläche: Einstellungen → Administration → Sicherung.
+  when:
+    - not tuxmail_backup_key_file.stat.exists
+    - not (tuxmail_backup_allow_plaintext | bool)

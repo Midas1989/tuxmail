@@ -7,7 +7,7 @@ After={{ tuxmail_service_name }}.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/tuxmail-backup {{ '--stop ' if tuxmail_backup_stop_service | bool else '' }}scheduled {{ tuxmail_backup_keep_scheduled | int }}
+ExecStart=/usr/local/sbin/tuxmail-backup scheduled {{ tuxmail_backup_keep_scheduled | int }}
 Nice=10
 IOSchedulingClass=idle
 PrivateTmp=true

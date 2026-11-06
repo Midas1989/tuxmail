@@ -402,6 +402,37 @@ func (c *cli) readPassphrase(file string, stdin bool) (string, error) {
 	return os.Getenv("TUXMAIL_BACKUP_PASSPHRASE"), nil
 }
 
+// backupSettingsCmd writes the settings of a server (no mail, chats, calendar or
+// contact data) as a tree into an existing private directory. The tree is not
+// encrypted: tuxmail-backup puts it into its age archive and removes it. The
+// service may keep running.
+func (c *cli) backupSettingsCmd(ctx context.Context, args []string) error {
+	fs := flag.NewFlagSet("backup-settings", flag.ContinueOnError)
+	fs.SetOutput(c.stderr)
+	dataDir := fs.String("data-dir", "", "data directory of the server")
+	out := fs.String("out", "", "existing private directory (mode 0700) for the result")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *dataDir == "" || *out == "" {
+		fs.Usage()
+		return fmt.Errorf("%w: --data-dir and --out are required", errUsage)
+	}
+	fi, err := os.Stat(*out)
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() || fi.Mode().Perm()&0o077 != 0 {
+		return fmt.Errorf("%s must be a directory only its owner can access", *out)
+	}
+	rep, err := backup.CreateSettings(ctx, *dataDir, *out)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(c.stdout, "settings of %d users and %d team mailboxes, %d bytes\n", rep.Users, rep.Teams, rep.Bytes)
+	return nil
+}
+
 func (c *cli) backupCmd(ctx context.Context, args []string) error {
 	fs, cfg := newFlagSet("backup", c)
 	t := addTargetFlags(fs, cfg)

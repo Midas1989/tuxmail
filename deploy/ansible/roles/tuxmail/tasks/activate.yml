@@ -36,15 +36,27 @@
       ansible.builtin.command:
         argv:
           - /usr/local/sbin/tuxmail-backup
+          - --full
           - pre-upgrade
           - "{{ tuxmail_backup_keep_upgrade | string }}"
           - "{{ tuxmail_previous_version }}-to-{{ tuxmail_version }}"
       register: tuxmail_pre_upgrade_backup
-      changed_when: true
+      changed_when: tuxmail_pre_upgrade_backup.rc == 0
+      # Exit 3: kein Backup-Schlüssel. Das darf den Rollout nicht aufhalten, sonst käme eine Neuinstallation nie
+      # bis zur Oberfläche, in der er erzeugt wird. Andere Fehler halten den Versionswechsel an.
+      failed_when: tuxmail_pre_upgrade_backup.rc not in [0, 3]
 
     - name: Sicherung ausgeben
       ansible.builtin.debug:
         msg: "{{ tuxmail_pre_upgrade_backup.stdout_lines }}"
+      when: tuxmail_pre_upgrade_backup.rc == 0
+
+    - name: Warnung, wenn vor dem Versionswechsel nichts gesichert wurde
+      ansible.builtin.debug:
+        msg:
+          - "WARNUNG: Vor dem Wechsel auf {{ tuxmail_version }} wurde NICHT gesichert."
+          - "{{ tuxmail_pre_upgrade_backup.stderr_lines }}"
+      when: tuxmail_pre_upgrade_backup.rc == 3
 
 - name: Version aktivieren (Symlink current)
   ansible.builtin.file:

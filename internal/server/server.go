@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/app"
@@ -66,6 +67,8 @@ type Server struct {
 	static   fs.FS
 	trusted  []netip.Prefix
 	mailData MailDataSource
+
+	backupKeyMu sync.Mutex // serialises replacing the backup key (api_admin_backup.go)
 
 	locales    fs.FS
 	appOptions func(userID int64, o *app.Options)
@@ -302,6 +305,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/admin/invites", s.admin(s.handleAdminCreateInvite))
 	mux.HandleFunc("DELETE /api/admin/invites/{id}", s.admin(s.handleAdminDeleteInvite))
 	mux.HandleFunc("GET /api/admin/audit", s.admin(s.handleAdminAudit))
+	mux.HandleFunc("GET /api/admin/backup", s.admin(s.handleAdminBackupStatus))
+	mux.HandleFunc("POST /api/admin/backup/key/generate", s.admin(s.handleAdminBackupGenerate))
+	mux.HandleFunc("POST /api/admin/backup/key/confirm", s.admin(s.handleAdminBackupConfirm))
+	mux.HandleFunc("POST /api/admin/backup/key/import", s.admin(s.handleAdminBackupImport))
 	mux.HandleFunc("GET /api/admin/provisioning/templates", s.admin(s.handleAdminListTemplates))
 	mux.HandleFunc("POST /api/admin/provisioning/templates", s.admin(s.handleAdminCreateTemplate))
 	mux.HandleFunc("GET /api/admin/provisioning/templates/{id}", s.admin(s.handleAdminGetTemplate))

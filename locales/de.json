@@ -3289,6 +3289,7 @@
       "users": "Benutzer",
       "invites": "Einladungen",
       "groups": "Gruppen",
+      "backup": "Sicherung",
       "audit": "Audit-Log"
     },
     "role": {
@@ -3418,7 +3419,8 @@
       "createdTitle": "Erzeugtes Passwort",
       "createdIntro": "{name} wurde angelegt. Gib dieses Passwort auf einem sicheren Weg weiter.",
       "resetTitle": "Neues Passwort",
-      "resetIntro": "Das Passwort von {name} wurde zurückgesetzt und alle Sitzungen beendet. Gib das neue Passwort auf einem sicheren Weg weiter."
+      "resetIntro": "Das Passwort von {name} wurde zurückgesetzt und alle Sitzungen beendet. Gib das neue Passwort auf einem sicheren Weg weiter.",
+      "ackFirst": "Bestätige zuerst „Im Tresor gesichert“."
     },
     "sessions": {
       "title": "Sitzungen von {name}",
@@ -3517,7 +3519,8 @@
       "inviteCreated": "Einladung erstellt",
       "inviteRevoked": "Einladung widerrufen",
       "groupCreated": "Gruppe {name} angelegt",
-      "groupDeleted": "Gruppe {name} gelöscht"
+      "groupDeleted": "Gruppe {name} gelöscht",
+      "backupKeyImported": "Backup-Schlüssel gespeichert."
     },
     "errors": {
       "weak_password": "Das Passwort erfüllt die Vorgaben nicht (mindestens {min} Zeichen, nicht zu einfach).",
@@ -3531,7 +3534,42 @@
       "throttled": "Zu viele Versuche. Warte einen Moment und versuche es erneut.",
       "reauth_required": "Bitte bestätige deine Identität erneut.",
       "network": "Der Server ist nicht erreichbar.",
-      "unknown": "Etwas ist schiefgegangen."
+      "unknown": "Etwas ist schiefgegangen.",
+      "invalid_credentials": "Passwort oder Code stimmt nicht.",
+      "backup_key_exists": "Es gibt schon einen Backup-Schlüssel. Lade die Seite neu und ersetze ihn bewusst.",
+      "backup_key_private": "Das ist ein privater Schlüssel. Füge ihn hier nicht ein, sondern den öffentlichen (age1…).",
+      "backup_key_invalid": "Das ist kein gültiger öffentlicher age-Schlüssel (age1…).",
+      "backup_key_not_pending": "Dieser Schlüssel wartet nicht mehr auf die Bestätigung und gilt nicht. Erzeuge einen neuen."
+    },
+    "backup": {
+      "what": "Sicherungen enthalten die Einstellungen dieses Servers und werden verschlüsselt. Am Server bleibt nur der öffentliche Schlüssel. Zum Zurückspielen brauchst du den privaten Schlüssel, bewahre ihn also im Tresor auf, getrennt von diesem Server.",
+      "noKey": "Es gibt noch keinen Backup-Schlüssel. Deshalb laufen keine Sicherungen. Erzeuge jetzt einen.",
+      "invalid": "Die gespeicherte Schlüsseldatei ist beschädigt. Deshalb laufen keine Sicherungen. Erzeuge einen neuen Schlüssel.",
+      "fingerprint": "Fingerabdruck des öffentlichen Schlüssels",
+      "publicKey": "Öffentlicher Schlüssel",
+      "lastRun": "Letzte Sicherung",
+      "neverRun": "Es lief noch keine Sicherung. Die tägliche Sicherung braucht den Timer der Installation (tuxmail_backup_timer_enabled).",
+      "runOk": "Erfolgreich am {date}.",
+      "runPlain": "Erfolgreich am {date}, aber NICHT verschlüsselt (in der Installation so erlaubt).",
+      "runFailed": "Fehlgeschlagen am {date}. Details stehen im Server-Log (tuxmail-backup).",
+      "runNoKey": "Abgelehnt am {date}: Es gab keinen gültigen Schlüssel, es wurde nichts gesichert.",
+      "generate": "Schlüssel erzeugen",
+      "replace": "Schlüssel ersetzen",
+      "useOwn": "Eigenen öffentlichen Schlüssel verwenden",
+      "ownLabel": "Dein öffentlicher age-Schlüssel (age1…)",
+      "ownHint": "Nur den öffentlichen Schlüssel. Füge hier nie einen privaten Schlüssel (AGE-SECRET-KEY…) ein.",
+      "continue": "Weiter",
+      "confirmGenerate": "Backup-Schlüssel erzeugen",
+      "confirmReplace": "Backup-Schlüssel ersetzen",
+      "confirmImport": "Öffentlichen Schlüssel speichern",
+      "replaceWarning": "Ältere Sicherungen bleiben mit dem alten Schlüssel verschlüsselt. Behalte den alten privaten Schlüssel, solange du diese Sicherungen aufbewahrst.",
+      "secretTitle": "Dein privater Backup-Schlüssel",
+      "secretLabel": "Privater Schlüssel",
+      "secretIntro": "Sichere diesen Schlüssel jetzt in deinem Tresor und bestätige unten. Ohne ihn lässt sich keine Sicherung zurückspielen, und der Server behält ihn nicht. Der Schlüssel gilt erst nach deiner Bestätigung.",
+      "secretAck": "Im Tresor gesichert",
+      "pending": "Ein neuer Schlüssel wurde erzeugt, aber nicht bestätigt, und gilt deshalb nicht. Sicherungen nutzen weiter den hier gezeigten Schlüssel, falls es einen gibt. Erzeuge zum Abschluss einen neuen.",
+      "included": "Enthalten: Benutzer, Konten mit ihren Passwörtern, Ordnereinstellungen, Regeln, Tags, Signaturen, Verschlüsselungsschlüssel und Einstellungen.",
+      "excluded": "Nicht enthalten: Mails, Anhänge, Chats, Kalendereinträge und Kontakte. Nach dem Zurückspielen holen die Konten ihre Mails neu vom Mailserver. Endgültig weg sind: POP3-Mails, die auf dem Server gelöscht wurden, lokale Ordner, importierte Mails, Chat-Verläufe, lokale Kalender und Kontakte. Dafür macht jeder Benutzer seine eigene Sicherung."
     }
   },
   "comfort": {
@@ -3800,7 +3838,9 @@
       "introPassword": "Zu deiner Sicherheit bestätigst du das mit deinem Passwort und einem Code.",
       "password": "Passwort",
       "code": "Authenticator-Code oder Wiederherstellungscode",
-      "codeHint": "Der 6-stellige Code aus deiner App oder einer deiner Wiederherstellungscodes."
+      "codeHint": "Der 6-stellige Code aus deiner App oder einer deiner Wiederherstellungscodes.",
+      "introPasswordOnly": "Bestätige das zu deiner Sicherheit mit deinem Passwort.",
+      "introRecentLogin": "Das braucht eine frische Anmeldung. Wird es abgelehnt, melde dich neu an und versuche es noch einmal."
     },
     "setup": {
       "step": "Schritt {current} von {total}",

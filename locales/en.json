@@ -3290,6 +3290,7 @@
       "users": "Users",
       "invites": "Invites",
       "groups": "Groups",
+      "backup": "Backup",
       "audit": "Audit log"
     },
     "role": {
@@ -3419,7 +3420,8 @@
       "createdTitle": "Generated password",
       "createdIntro": "{name} was created. Pass this password on securely.",
       "resetTitle": "New password",
-      "resetIntro": "The password of {name} was reset and all sessions ended. Pass the new password on securely."
+      "resetIntro": "The password of {name} was reset and all sessions ended. Pass the new password on securely.",
+      "ackFirst": "Tick “Saved in the vault” first."
     },
     "sessions": {
       "title": "Sessions of {name}",
@@ -3518,7 +3520,8 @@
       "inviteCreated": "Invite created",
       "inviteRevoked": "Invite revoked",
       "groupCreated": "Group {name} created",
-      "groupDeleted": "Group {name} deleted"
+      "groupDeleted": "Group {name} deleted",
+      "backupKeyImported": "Backup key saved."
     },
     "errors": {
       "weak_password": "The password does not meet the policy (at least {min} characters, not too simple).",
@@ -3532,7 +3535,42 @@
       "throttled": "Too many attempts. Wait a moment and try again.",
       "reauth_required": "Please confirm your identity again.",
       "network": "The server cannot be reached.",
-      "unknown": "Something went wrong."
+      "unknown": "Something went wrong.",
+      "invalid_credentials": "The password or code is wrong.",
+      "backup_key_exists": "A backup key already exists. Refresh the page and replace it deliberately.",
+      "backup_key_private": "This is a private key. Do not paste it here: enter the public key (age1…).",
+      "backup_key_invalid": "This is not a valid public age key (age1…).",
+      "backup_key_not_pending": "This key is no longer waiting for confirmation. It does not count: create a new one."
+    },
+    "backup": {
+      "what": "Backups contain the settings of this server and are encrypted. The server only keeps the public key. You need the private key to restore a backup, so keep it in a vault, away from this server.",
+      "noKey": "There is no backup key yet, so no backups are running. Create one now.",
+      "invalid": "The stored key file is damaged, so no backups are running. Create a new key.",
+      "fingerprint": "Fingerprint of the public key",
+      "publicKey": "Public key",
+      "lastRun": "Last backup",
+      "neverRun": "No backup has run yet. The daily backup needs the timer of the installation (tuxmail_backup_timer_enabled).",
+      "runOk": "Successful on {date}.",
+      "runPlain": "Successful on {date}, but NOT encrypted (allowed in the installation settings).",
+      "runFailed": "Failed on {date}. Details are in the server log (tuxmail-backup).",
+      "runNoKey": "Refused on {date}: there was no valid key, nothing was saved.",
+      "generate": "Create key",
+      "replace": "Replace key",
+      "useOwn": "Use my own public key",
+      "ownLabel": "Your public age key (age1…)",
+      "ownHint": "Only the public key. Never paste a private key (AGE-SECRET-KEY…) here.",
+      "continue": "Continue",
+      "confirmGenerate": "Create backup key",
+      "confirmReplace": "Replace backup key",
+      "confirmImport": "Save public key",
+      "replaceWarning": "Older backups stay encrypted with the old key. Keep the old private key as long as you keep those backups.",
+      "secretTitle": "Your private backup key",
+      "secretLabel": "Private key",
+      "secretIntro": "Save this key in your vault now, then confirm below. Without it no backup can be restored, and the server does not keep it. The key only counts after your confirmation.",
+      "secretAck": "Saved in the vault",
+      "pending": "A new key was created but not confirmed, so it does not count. Backups keep using the key shown here, if there is one. Create a new key to finish.",
+      "included": "Included: users, accounts with their passwords, folder settings, rules, tags, signatures, encryption keys and preferences.",
+      "excluded": "Not included: mail, attachments, chats, calendar entries and contacts. After a restore, accounts fetch mail again from the mail server. Lost for good: POP3 mail deleted on the server, local folders, imported mail, chat histories, local calendars and contacts. For those, each user makes their own backup."
     }
   },
   "comfort": {
@@ -3801,7 +3839,9 @@
       "introPassword": "For your security, confirm this with your password and a code.",
       "password": "Password",
       "code": "Authenticator code or recovery code",
-      "codeHint": "The 6-digit code from your app, or one of your recovery codes."
+      "codeHint": "The 6-digit code from your app, or one of your recovery codes.",
+      "introPasswordOnly": "For your security, confirm this with your password.",
+      "introRecentLogin": "This needs a recent sign-in. If it is refused, sign in again and retry."
     },
     "setup": {
       "step": "Step {current} of {total}",

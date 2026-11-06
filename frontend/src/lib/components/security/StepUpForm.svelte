@@ -15,6 +15,8 @@
 
   interface Props {
     hasPassword: boolean;
+    /** False: the account has no second factor to ask for (backup key of an administrator without one). */
+    hasSecondFactor?: boolean;
     submitLabel: string;
     danger?: boolean;
     busy?: boolean;
@@ -22,12 +24,12 @@
     onsubmit: (reauth: Reauth) => void;
     oncancel: () => void;
   }
-  let { hasPassword, submitLabel, danger = false, busy = false, error = null, onsubmit, oncancel }: Props = $props();
+  let { hasPassword, hasSecondFactor = true, submitLabel, danger = false, busy = false, error = null, onsubmit, oncancel }: Props = $props();
 
   let form = $state<HTMLFormElement>();
   let password = $state('');
   let secondFactor = $state('');
-  const complete = $derived(reauthComplete({ hasPassword, password, secondFactor }));
+  const complete = $derived(hasSecondFactor ? reauthComplete({ hasPassword, password, secondFactor }) : !hasPassword || password.length > 0);
 
   onMount(() => form?.querySelector('input')?.focus());
 
@@ -39,18 +41,23 @@
 </script>
 
 <form class="stepup" bind:this={form} onsubmit={submit}>
-  <p class="muted">{hasPassword ? t('security.stepup.introPassword') : t('security.stepup.intro')}</p>
+  <p class="muted">
+    {#if !hasSecondFactor}{hasPassword ? t('security.stepup.introPasswordOnly') : t('security.stepup.introRecentLogin')}
+    {:else}{hasPassword ? t('security.stepup.introPassword') : t('security.stepup.intro')}{/if}
+  </p>
   {#if hasPassword}
     <label>
       <span class="label">{t('security.stepup.password')}</span>
       <input class="input" type="password" bind:value={password} autocomplete="current-password" />
     </label>
   {/if}
-  <label>
-    <span class="label">{t('security.stepup.code')}</span>
-    <input class="input" bind:value={secondFactor} autocomplete="one-time-code" autocapitalize="off" spellcheck="false" />
-    <span class="hint">{t('security.stepup.codeHint')}</span>
-  </label>
+  {#if hasSecondFactor}
+    <label>
+      <span class="label">{t('security.stepup.code')}</span>
+      <input class="input" bind:value={secondFactor} autocomplete="one-time-code" autocapitalize="off" spellcheck="false" />
+      <span class="hint">{t('security.stepup.codeHint')}</span>
+    </label>
+  {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="row">
     <button type="submit" class="btn" class:danger class:btn-primary={!danger} disabled={!complete || busy}>

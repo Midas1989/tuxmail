@@ -1,6 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!--
-  Shows a secret exactly once: a generated password or an invite link. The
+  Shows a secret exactly once: a generated password, an invite link or a
+  backup key. The
   server never returns it again, so the dialog does not close by accident
   (Esc / click outside) before it was copied; "Done" always closes it. The
   value lives only in this component's props and is gone with it.
@@ -20,13 +21,22 @@
     /** Sentence above the field, e.g. who the password is for. */
     intro: string;
     value: string;
+    /** If set, "Done" stays disabled until this statement is ticked ("Saved in the vault"). */
+    ack?: string;
+    /** Shown under the field, e.g. when the confirmation failed; the dialog stays open. */
+    error?: string | null;
+    /** Disables the buttons while the confirmation is on its way. */
+    busy?: boolean;
+    /** If set, the dialog offers to give up: nothing was saved, nothing changes. */
+    oncancel?: () => void;
     onclose: () => void;
   }
-  let { title, label, intro, value, onclose }: Props = $props();
+  let { title, label, intro, value, ack, error = null, busy = false, oncancel, onclose }: Props = $props();
 
   let copied = $state(false);
   let failed = $state(false);
   let warn = $state(false);
+  let acked = $state(false);
   let field = $state<HTMLInputElement>();
 
   async function copy() {
@@ -37,7 +47,8 @@
 
   /** Esc / backdrop: only once the secret was copied; otherwise point at the copy button. */
   function guardedClose() {
-    if (copied) onclose();
+    if (busy) return;
+    if (ack ? acked : copied) onclose();
     else warn = true;
   }
 </script>
@@ -52,11 +63,15 @@
     </button>
   </div>
   <p class="once" role="note"><TriangleAlert size={14} aria-hidden="true" /> {t('admin.secret.once')}</p>
+  {#if ack}
+    <label class="ack"><input type="checkbox" bind:checked={acked} data-testid="secret-ack" /> {ack}</label>
+  {/if}
   <div class="status" role="status">
-    {#if failed}{t('admin.secret.copyFailed')}{:else if warn && !copied}{t('admin.secret.copyFirst')}{/if}
+    {#if error}{error}{:else if failed}{t('admin.secret.copyFailed')}{:else if warn && ack}{t('admin.secret.ackFirst')}{:else if warn && !copied}{t('admin.secret.copyFirst')}{/if}
   </div>
   {#snippet footer()}
-    <button class="btn btn-primary" onclick={onclose} data-testid="secret-done">{t('admin.secret.done')}</button>
+    {#if oncancel}<button class="btn btn-ghost" onclick={oncancel} disabled={busy} data-testid="secret-cancel">{t('common.action.cancel')}</button>{/if}
+    <button class="btn btn-primary" onclick={onclose} disabled={busy || (!!ack && !acked)} data-testid="secret-done">{t('admin.secret.done')}</button>
   {/snippet}
 </Modal>
 
@@ -67,7 +82,12 @@
   }
   .row {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
+  }
+  .row .input {
+    flex: 1 1 220px;
+    min-width: 0;
   }
   .mono {
     font-family: var(--tm-mono);
@@ -80,6 +100,14 @@
     margin: 12px 0 0;
     font-size: 13px;
     color: var(--tm-muted);
+  }
+  .ack {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    font-size: 14px;
+    font-weight: 500;
   }
   .status {
     min-height: 18px;

@@ -1,5 +1,8 @@
 ---
 # SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Ablage des Backup-Schlüssels
+  ansible.builtin.import_tasks: backup_key.yml
+
 - name: Backup-Skript installieren
   ansible.builtin.template:
     src: tuxmail-backup.sh.j2

@@ -7,7 +7,7 @@ After=tuxmail.service
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/sbin/tuxmail-backup --stop scheduled 14
+ExecStart=/usr/local/sbin/tuxmail-backup scheduled 14
 Nice=10
 IOSchedulingClass=idle
 PrivateTmp=true
