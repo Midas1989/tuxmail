@@ -7,6 +7,8 @@
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { MockPim } from './mockPim';
+import { MockSecurity, type MockSecurityOptions } from './mockSecurity';
+import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
 import type * as pim from '../types';
 import { ApiError, EventHub } from './api';
 import { chatItemId, mailItemId, normalizeSubject, splitMail, splitQuoted } from '../conversation';
@@ -184,6 +186,8 @@ export interface MockOptions {
   autoReply?: boolean;
   /** Messenger pairing: a shown QR/pairing code counts as scanned after this delay (ms, 0 = never). */
   messengerAutoAcceptMs?: number;
+  /** Demo account for the security pages (mockSecurity.ts); default: a normal user with a password and without TOTP. */
+  security?: MockSecurityOptions;
 }
 
 /** Day 0 of the demo data. Before 13:00 local time we use yesterday so no item lies in the future. */
@@ -1389,6 +1393,42 @@ export class MockTransport implements Api {
 
   logout(): Promise<void> {
     return this.reply(undefined);
+  }
+
+  // --- Account security --- (mockSecurity.ts)
+  private securityMock?: MockSecurity;
+  private get sec(): MockSecurity {
+    return (this.securityMock ??= new MockSecurity({ now: () => this.opts.now ?? new Date(), ...this.opts.security }));
+  }
+  getAuthMe(): Promise<AuthMe> {
+    return this.run(() => this.sec.me());
+  }
+  getAuthConfig(): Promise<AuthConfigInfo> {
+    return this.run(() => this.sec.config());
+  }
+  totpSetup(): Promise<TotpEnrollment> {
+    return this.run(() => this.sec.setup());
+  }
+  totpConfirm(code: string): Promise<string[]> {
+    return this.run(() => this.sec.confirm(code));
+  }
+  totpDisable(reauth: Reauth): Promise<void> {
+    return this.run(() => this.sec.disable(reauth));
+  }
+  regenerateRecoveryCodes(reauth: Reauth): Promise<string[]> {
+    return this.run(() => this.sec.regenerate(reauth));
+  }
+  changePassword(input: PasswordChange): Promise<void> {
+    return this.run(() => this.sec.changePassword(input));
+  }
+  listAuthSessions(): Promise<AuthSession[]> {
+    return this.run(() => this.sec.list());
+  }
+  revokeAuthSession(id: number): Promise<void> {
+    return this.run(() => this.sec.revoke(id));
+  }
+  revokeOtherSessions(): Promise<void> {
+    return this.run(() => this.sec.revokeOthers());
   }
 
   vaultStatus(): Promise<VaultStatus> {

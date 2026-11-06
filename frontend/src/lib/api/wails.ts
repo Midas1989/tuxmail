@@ -12,6 +12,7 @@
 
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
+import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
 import type * as pim from '../types';
 // --- OAuth/Cloud accounts ---
 import type {
@@ -271,6 +272,41 @@ export class WailsTransport implements Api {
   }
   logout(): Promise<void> {
     return Promise.resolve(); // the desktop shell talks to its own core: there is no server session to end
+  }
+
+  // --- Account security: the desktop shell has no server account (the pages are hidden there) ---
+  private noAccount<T>(): Promise<T> {
+    return Promise.reject(new ApiError('account security is only available in server mode', 0, 'not_supported'));
+  }
+  getAuthMe(): Promise<AuthMe> {
+    return this.noAccount();
+  }
+  getAuthConfig(): Promise<AuthConfigInfo> {
+    return this.noAccount();
+  }
+  totpSetup(): Promise<TotpEnrollment> {
+    return this.noAccount();
+  }
+  totpConfirm(_code: string): Promise<string[]> {
+    return this.noAccount();
+  }
+  totpDisable(_reauth: Reauth): Promise<void> {
+    return this.noAccount();
+  }
+  regenerateRecoveryCodes(_reauth: Reauth): Promise<string[]> {
+    return this.noAccount();
+  }
+  changePassword(_input: PasswordChange): Promise<void> {
+    return this.noAccount();
+  }
+  listAuthSessions(): Promise<AuthSession[]> {
+    return this.noAccount();
+  }
+  revokeAuthSession(_id: number): Promise<void> {
+    return this.noAccount();
+  }
+  revokeOtherSessions(): Promise<void> {
+    return this.noAccount();
   }
   vaultStatus(): Promise<VaultStatus> {
     return this.call('VaultStatus');

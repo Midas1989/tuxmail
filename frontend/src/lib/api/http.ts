@@ -3,6 +3,7 @@
 // HttpTransport: web client in server mode (`tuxmail serve`, KONZEPT 4.5).
 //
 // REST routes (all JSON, session cookie auth, CSRF token echoed in a header):
+//   /api/auth/*  account security (2FA, password, sessions): see security.ts
 //   GET  /api/accounts                          -> Account[]
 //   POST /api/accounts                          NewAccountInput -> Account
 //   POST /api/accounts/discover                 {email,password} -> DiscoveryResult
@@ -212,6 +213,7 @@
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type { ConversationScope } from './api';
+import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
 import type { AssignableRole, FolderBehaviour, FolderConfig } from '../types';
 import type * as pim from '../types';
 // --- OAuth/Cloud accounts ---
@@ -317,6 +319,8 @@ export interface HttpTransportOptions {
   authToken?: () => string | undefined;
   /** Called on HTTP 401 (expired/revoked device token). */
   onUnauthorized?: () => void;
+  /** Called on HTTP 403 "mfa_setup_required": an administrator must set up two-factor authentication first (web client: blocking dialog). */
+  onMfaSetupRequired?: () => void;
   /** Rewrites request paths, e.g. to the team mailbox prefix /api/team/{id}/ (api/team.ts). */
   rewritePath?: (path: string) => string;
 }
@@ -352,6 +356,7 @@ export class HttpTransport implements Api {
   private readonly maxDelay: number;
   private readonly authToken: () => string | undefined;
   private readonly onUnauthorized: (() => void) | undefined;
+  private readonly onMfaSetupRequired: (() => void) | undefined;
   private readonly rewritePath: ((path: string) => string) | undefined;
 
   constructor(opts: HttpTransportOptions = {}) {
@@ -363,6 +368,7 @@ export class HttpTransport implements Api {
     this.maxDelay = opts.maxReconnectDelay ?? 30000;
     this.authToken = opts.authToken ?? (() => undefined);
     this.onUnauthorized = opts.onUnauthorized;
+    this.onMfaSetupRequired = opts.onMfaSetupRequired;
   }
 
   private async request<T>(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<T> {
@@ -404,7 +410,9 @@ export class HttpTransport implements Api {
       // Session gone: a rejected device token (any 401), or the server's "unauthenticated" on a cookie session.
       // Other 401s (invalid_credentials of a password prompt, ...) do not end the session.
       if (res.status === 401 && (bearer || code === 'unauthenticated')) this.onUnauthorized?.();
-      throw new ApiError(msg, res.status, code);
+      if (res.status === 403 && code === 'mfa_setup_required') this.onMfaSetupRequired?.();
+      const wait = Number(res.headers?.get('Retry-After'));
+      throw new ApiError(msg, res.status, code, res.status === 429 && Number.isFinite(wait) && wait > 0 ? wait : undefined);
     }
     if (res.status === 204) return undefined as T;
     const text = await res.text();
@@ -642,6 +650,41 @@ export class HttpTransport implements Api {
   }
   logout(): Promise<void> {
     return this.request('POST', '/api/auth/logout');
+  }
+
+  // --- Account security (server mode, see security.ts) ---
+  getAuthMe(): Promise<AuthMe> {
+    return this.request('GET', '/api/auth/me');
+  }
+  getAuthConfig(): Promise<AuthConfigInfo> {
+    return this.request('GET', '/api/auth/config');
+  }
+  totpSetup(): Promise<TotpEnrollment> {
+    return this.request('POST', '/api/auth/totp/setup');
+  }
+  async totpConfirm(code: string): Promise<string[]> {
+    const r = await this.request<{ recoveryCodes?: string[] }>('POST', '/api/auth/totp/confirm', { code });
+    return r?.recoveryCodes ?? [];
+  }
+  totpDisable(reauth: Reauth): Promise<void> {
+    return this.request('POST', '/api/auth/totp/disable', reauth);
+  }
+  async regenerateRecoveryCodes(reauth: Reauth): Promise<string[]> {
+    const r = await this.request<{ recoveryCodes?: string[] }>('POST', '/api/auth/recovery-codes', reauth);
+    return r?.recoveryCodes ?? [];
+  }
+  changePassword(input: PasswordChange): Promise<void> {
+    return this.request('POST', '/api/auth/password', input);
+  }
+  async listAuthSessions(): Promise<AuthSession[]> {
+    const r = await this.request<{ sessions?: AuthSession[] }>('GET', '/api/auth/sessions');
+    return r?.sessions ?? [];
+  }
+  revokeAuthSession(id: number): Promise<void> {
+    return this.request('DELETE', `/api/auth/sessions/${id}`);
+  }
+  revokeOtherSessions(): Promise<void> {
+    return this.request('POST', '/api/auth/sessions/revoke-others');
   }
   vaultStatus(): Promise<VaultStatus> {
     return this.request('GET', '/api/vault/status');

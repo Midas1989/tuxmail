@@ -430,11 +430,14 @@ export interface Api {
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  constructor(message: string, status = 0, code = 'error') {
+  /** Seconds from the Retry-After header of a 429 answer (server mode), when present. */
+  readonly retryAfter?: number;
+  constructor(message: string, status = 0, code = 'error', retryAfter?: number) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    if (retryAfter !== undefined) this.retryAfter = retryAfter;
   }
 }
 
@@ -606,4 +609,32 @@ export interface Api {
   setDefaultIdentity(identityId: number): Promise<void>;
   /** Support export of one account (no secrets). */
   accountDiagnostics(accountId: number): Promise<AccountDiagnostics>;
+}
+
+// --- Account security ---
+// Two-factor authentication, password and sessions of the web client (types
+// and routes: security.ts). Server mode only: the desktop shell has no server
+// account (Wails: ApiError "not_supported"), the mock keeps the state in memory.
+
+import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
+
+export interface Api {
+  /** Signed-in user, current session and whether TOTP must be set up first (GET /api/auth/me). */
+  getAuthMe(): Promise<AuthMe>;
+  /** Public server settings (password policy). */
+  getAuthConfig(): Promise<AuthConfigInfo>;
+  /** Start enrolment: new secret + otpauth URL (replaces a pending secret). Error "exists": TOTP already active. */
+  totpSetup(): Promise<TotpEnrollment>;
+  /** Activate TOTP with the first code; returns the recovery codes (shown once). Error "invalid_code". */
+  totpConfirm(code: string): Promise<string[]>;
+  /** Switch TOTP off (re-authentication). Errors: invalid_credentials, invalid_code, throttled. */
+  totpDisable(reauth: Reauth): Promise<void>;
+  /** Replace the recovery codes (re-authentication); returns the new ones. Error "totp_not_enabled". */
+  regenerateRecoveryCodes(reauth: Reauth): Promise<string[]>;
+  /** Change the password (or set a first local password); the server ends all other sessions. */
+  changePassword(input: PasswordChange): Promise<void>;
+  listAuthSessions(): Promise<AuthSession[]>;
+  revokeAuthSession(id: number): Promise<void>;
+  /** Sign out everywhere except this session. */
+  revokeOtherSessions(): Promise<void>;
 }
