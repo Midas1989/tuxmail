@@ -73,6 +73,16 @@ func (s *Server) writeAuthError(w http.ResponseWriter, err error) {
 		writeError(w, http.StatusBadRequest, "invalid_input", err.Error())
 	case errors.Is(err, auth.ErrRegistration):
 		writeError(w, http.StatusForbidden, "registration_disabled", err.Error())
+	case errors.Is(err, auth.ErrPasskeysDisabled):
+		writeError(w, http.StatusNotFound, "passkeys_disabled", err.Error())
+	case errors.Is(err, auth.ErrPasskeyLimit):
+		writeError(w, http.StatusConflict, "passkey_limit", err.Error())
+	case errors.Is(err, auth.ErrPasskeyChallenge):
+		writeError(w, http.StatusBadRequest, "passkey_challenge", err.Error())
+	case errors.Is(err, auth.ErrPasskeyInvalid):
+		writeError(w, http.StatusBadRequest, "passkey_invalid", err.Error())
+	case errors.Is(err, auth.ErrMFASetupRequired):
+		writeError(w, http.StatusForbidden, "mfa_setup_required", err.Error())
 	case errors.Is(err, auth.ErrOIDCDisabled):
 		writeError(w, http.StatusNotFound, "oidc_disabled", err.Error())
 	case errors.Is(err, auth.ErrOIDCDenied):

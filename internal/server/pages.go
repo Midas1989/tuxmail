@@ -4,6 +4,7 @@ package server
 
 import (
 	"bytes"
+	_ "embed"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -40,7 +41,8 @@ const loginBody = `<h1>TuxMail</h1>
 <form id="login"><label for="u">Username or e-mail</label><input id="u" name="username" autocomplete="username" required autofocus>
 <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required>
 <div id="totp" class="hidden"><label for="t">Two-factor code</label><input id="t" name="totp" inputmode="numeric" autocomplete="one-time-code"></div>
-<button type="submit" id="submit">Log in</button><div class="err" id="err" role="alert"></div></form>`
+<button type="submit" id="submit">Log in</button>
+<button type="button" id="passkey" class="secondary hidden">Sign in with a passkey</button><div class="err" id="err" role="alert"></div></form>`
 
 // commonJS reads the CSRF token and posts JSON.
 const commonJS = `async function csrf(){const r=await fetch('/api/auth/csrf',{credentials:'same-origin'});return (await r.json()).csrfToken}
@@ -50,7 +52,12 @@ let j={};try{j=await r.json()}catch(e){}return {status:r.status,body:j}}
 function msg(j){return j.message||j.error||'Error'}
 `
 
-const loginJS = commonJS + `const f=document.getElementById('login'),err=document.getElementById('err');let challenge='';
+// passkeyLoginJS (passkey_login.js) holds the WebAuthn helpers of the login page.
+//
+//go:embed passkey_login.js
+var passkeyLoginJS string
+
+const loginJS = `const f=document.getElementById('login'),err=document.getElementById('err');let challenge='';
 function next(){const n=new URLSearchParams(location.search).get('next');if(!n||n[0]!=='/'||n[1]==='/'||n[1]==='\\')return '/';
 try{const u=new URL(n,location.origin);if(u.origin===location.origin)return u.pathname+u.search+u.hash}catch(e){}return '/'}
 f.addEventListener('submit',async(e)=>{e.preventDefault();err.textContent='';
@@ -58,7 +65,11 @@ const u=f.username.value,p=f.password.value,t=f.totp.value.trim();
 const res=challenge?await post('/api/auth/login/totp',{challenge,code:t}):await post('/api/auth/login',{username:u,password:p});
 if(res.status!==200){err.textContent=msg(res.body);return}
 if(res.body.status==='mfa_required'){challenge=res.body.challenge;document.getElementById('totp').classList.remove('hidden');f.totp.focus();return}
-location.href=next()});`
+location.href=next()});
+const pkBtn=document.getElementById('passkey');
+if(pkBtn){fetch('/api/auth/config',{credentials:'same-origin'}).then((r)=>r.json()).then((c)=>{if(pkShowButton(window,c))pkBtn.classList.remove('hidden')}).catch(()=>{});
+pkBtn.addEventListener('click',async()=>{err.textContent='';pkBtn.disabled=true;
+try{await pkSignIn(post,navigator);location.href=next()}catch(e){err.textContent=pkErrorMessage(e)}finally{pkBtn.disabled=false}})}`
 
 const deviceBody = `<h1>Connect a device</h1>
 <div id="step1"><form id="code"><label for="c">Code shown on the device</label><input id="c" name="code" autocomplete="off" required autofocus>
@@ -94,7 +105,9 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, "Log in", "/login.js", template.HTML(loginBody))
 }
 
-func (s *Server) handleLoginScript(w http.ResponseWriter, r *http.Request) { serveScript(w, loginJS) }
+func (s *Server) handleLoginScript(w http.ResponseWriter, r *http.Request) {
+	serveScript(w, commonJS+passkeyLoginJS+loginJS)
+}
 
 func (s *Server) handleDevicePage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, "Connect a device", "/device.js", template.HTML(deviceBody))

@@ -252,6 +252,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/auth/csrf", s.handleCSRF)
 	mux.HandleFunc("POST /api/auth/login", s.handleLogin)
 	mux.HandleFunc("POST /api/auth/login/totp", s.handleLoginTOTP)
+	mux.HandleFunc("POST /api/auth/passkeys/login/begin", s.handlePasskeyLoginBegin)   // api_passkeys.go
+	mux.HandleFunc("POST /api/auth/passkeys/login/finish", s.handlePasskeyLoginFinish) // api_passkeys.go
 	mux.HandleFunc("GET /api/auth/invites/{token}", s.handleInviteInfo)
 	mux.HandleFunc("POST /api/auth/register", s.handleRegister)
 	mux.HandleFunc("GET /api/auth/oidc/login", s.handleOIDCLogin)
@@ -268,6 +270,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/totp/confirm", s.user(s.handleTOTPConfirm))
 	mux.HandleFunc("POST /api/auth/totp/disable", s.user(s.handleTOTPDisable))
 	mux.HandleFunc("POST /api/auth/recovery-codes", s.user(s.handleRecoveryCodes))
+	mux.HandleFunc("GET /api/auth/passkeys", s.user(s.handlePasskeyList))
+	mux.HandleFunc("POST /api/auth/passkeys/register/begin", s.user(s.handlePasskeyRegisterBegin))
+	mux.HandleFunc("POST /api/auth/passkeys/register/finish", s.user(s.handlePasskeyRegisterFinish))
+	mux.HandleFunc("PATCH /api/auth/passkeys/{id}", s.user(s.handlePasskeyRename))
+	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", s.user(s.handlePasskeyDelete))
 
 	// User settings (opaque JSON per key)
 	mux.HandleFunc("GET /api/settings", s.user(s.handleListSettings))
