@@ -1357,6 +1357,67 @@
       "diagnosticsExport": "Diagnose exportieren",
       "diagnosticsDone": "Diagnose exportiert."
     },
+    "passkeys": {
+      "title": "Passkeys",
+      "intro": "Melde dich mit Fingerabdruck, Gesicht oder Geräte-PIN an, statt ein Passwort einzugeben. Der Passkey bleibt auf deinem Gerät oder im Passkey-Manager deiner Plattform; der Server speichert nur den öffentlichen Schlüssel.",
+      "twoFactorNote": "Eine Anmeldung mit Passkey zählt als zwei Faktoren. Sie ersetzt aber nicht die Zwei-Faktor-Authentifizierung bei Anmeldungen mit Passwort.",
+      "empty": "Noch keine Passkeys.",
+      "created": "Hinzugefügt am {date}",
+      "lastUsed": "Zuletzt benutzt: {date}",
+      "neverUsed": "Noch nie benutzt",
+      "synced": "Synchronisiert",
+      "deviceBound": "Nur dieses Gerät",
+      "stale": "Hier nicht nutzbar",
+      "staleHint": "Dieser Passkey wurde für eine andere Webadresse angelegt und lässt sich hier nicht verwenden. Du kannst ihn entfernen.",
+      "unsupported": "Dieser Browser oder diese Verbindung unterstützt keine Passkeys. Nutze einen aktuellen Browser über HTTPS.",
+      "disabledByServer": "Passkeys sind auf diesem Server nicht aktiviert.",
+      "loading": "Passkeys werden geladen …",
+      "add": {
+        "title": "Passkey hinzufügen",
+        "name": "Name",
+        "namePlaceholder": "z. B. Arbeitslaptop",
+        "defaultName": "Passkey",
+        "password": "Aktuelles Passwort",
+        "code": "Zwei-Faktor-Code oder Wiederherstellungscode",
+        "submit": "Passkey hinzufügen",
+        "waiting": "Warte auf dein Gerät …",
+        "limit": "Du kannst bis zu {max} Passkeys registrieren."
+      },
+      "rename": "Umbenennen",
+      "renameLabel": "Neuer Name für den Passkey {name}",
+      "save": "Speichern",
+      "remove": {
+        "action": "Entfernen",
+        "title": "Passkey „{name}“ entfernen?",
+        "text": "Du kannst dich danach nicht mehr damit anmelden. Die Kopie auf deinem Gerät wird nicht automatisch gelöscht; entferne sie zusätzlich in den Einstellungen deines Geräts oder Passwortmanagers.",
+        "password": "Aktuelles Passwort",
+        "code": "Zwei-Faktor-Code oder Wiederherstellungscode",
+        "confirm": "Passkey entfernen"
+      },
+      "done": {
+        "added": "Passkey „{name}“ hinzugefügt.",
+        "renamed": "Passkey umbenannt.",
+        "removed": "Passkey entfernt."
+      },
+      "errors": {
+        "cancelled": "Die Anfrage wurde abgebrochen oder ist abgelaufen. Versuche es erneut.",
+        "unsupported": "Dieses Gerät kann hier keinen Passkey erstellen.",
+        "insecure": "Passkeys funktionieren unter dieser Webadresse nicht. Öffne TuxMail über HTTPS mit der normalen Adresse.",
+        "duplicate": "Dieses Gerät hat bereits einen Passkey für dein Konto.",
+        "reauth": "Das Passwort ist falsch oder fehlt.",
+        "badCode": "Der Zwei-Faktor-Code ist falsch oder fehlt.",
+        "reauthRequired": "Melde dich zuerst erneut an und versuche es dann innerhalb weniger Minuten noch einmal.",
+        "rateLimited": "Zu viele Versuche. Warte ein paar Minuten und versuche es dann erneut.",
+        "limit": "Du hast die maximale Anzahl an Passkeys erreicht. Entferne zuerst einen.",
+        "mfaSetup": "Richte zuerst die Zwei-Faktor-Authentifizierung ein.",
+        "disabled": "Passkeys sind auf diesem Server nicht aktiviert.",
+        "expired": "Die Anfrage ist abgelaufen. Beginne von vorn.",
+        "invalid": "Der Passkey oder sein Name wurde nicht akzeptiert. Prüfe den Namen und versuche es erneut.",
+        "forbidden": "Passkeys lassen sich nur im Webclient verwalten.",
+        "network": "Der Server ist nicht erreichbar.",
+        "failed": "Etwas ist schiefgelaufen. Versuche es erneut."
+      }
+    },
     "identities": {
       "intro": "Absenderadressen dieses Kontos. Die Standardidentität wird für neue Mails verwendet; Antworten nutzen die Adresse, an die die Mail ging.",
       "default": "Standard",

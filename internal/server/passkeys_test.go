@@ -82,6 +82,8 @@ func TestPasskeyHTTPEndToEnd(t *testing.T) {
 	}
 	if resp, m := b.do("GET", "/api/auth/passkeys", nil); resp.StatusCode != 200 || len(m["passkeys"].([]any)) != 0 || m["max"] != float64(10) || m["enabled"] != true {
 		t.Fatal(resp.Status, m)
+	} else if r := m["reauth"].(map[string]any); r["password"] != true || r["code"] != false {
+		t.Fatalf("reauth hint: %v", r)
 	}
 
 	a := passkeytest.New(pkOrigin, pkRPID)

@@ -12,7 +12,7 @@ import (
 
 // Passkey endpoints (WebAuthn, see internal/auth/passkeys.go):
 //
-//	GET    /api/auth/passkeys                        list own passkeys
+//	GET    /api/auth/passkeys                        -> {passkeys, enabled, max, reauth: {password, code}}
 //	POST   /api/auth/passkeys/register/begin         {password, code, recoveryCode} -> {challengeId, publicKey}
 //	POST   /api/auth/passkeys/register/finish        {challengeId, name, credential} -> 201 {passkey}
 //	PATCH  /api/auth/passkeys/{id}                   {name}
@@ -46,7 +46,11 @@ func (s *Server) handlePasskeyList(w http.ResponseWriter, r *http.Request, a *au
 		s.writeAuthError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"passkeys": list, "enabled": s.auth.PasskeysEnabled(), "max": auth.MaxPasskeysPerUser})
+	// "reauth" tells the UI which proofs adding or removing a passkey asks for.
+	writeJSON(w, http.StatusOK, map[string]any{
+		"passkeys": list, "enabled": s.auth.PasskeysEnabled(), "max": auth.MaxPasskeysPerUser,
+		"reauth": map[string]bool{"password": a.User.HasPassword, "code": a.User.TOTPEnabled},
+	})
 }
 
 func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Request, a *authInfo) {
