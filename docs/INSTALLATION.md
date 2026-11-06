@@ -30,6 +30,12 @@ Versionsnummer, zurzeit `0.1.0`.
 > **Vorab-Version:** Solange die Versionsnummer mit 0 beginnt, sind die Pakete Test-Versionen (auf GitHub als
 > „Pre-release“ markiert). Bitte vorher eine Sicherung der eigenen Mails anlegen.
 
+> **Stand der Releases:** Das Release `v0.1.0` (04.11.2026) enthält bisher nur die Android-Debug-APK mit ihrer
+> Prüfsummendatei. Windows-Setup, Linux-Pakete, Server-Archive und `checksums.txt` fehlen, weil der Release-Workflow
+> nicht vollständig durchgelaufen ist. Bis ein vollständiges Release erscheint, baust du das, was du brauchst, selbst
+> ([Abschnitt 7](#7-selbst-bauen)); die Befehle unten gelten dann mit deinen selbst gebauten Dateien aus `dist/`.
+> Ist das Repository privat, liefert GitHub außerdem für anonyme Downloads einen 404-Fehler.
+
 **Meine Empfehlung je nach Ziel:**
 
 | Ich möchte … | Das ist der einfachste Weg |
@@ -52,6 +58,16 @@ ansible-playbook -i inventory/hosts.ini site.yml \
   -e tuxmail_domain=mail.example.de -e tuxmail_tls_letsencrypt_email=admin@example.de \
   -e tuxmail_allow_unsigned_release=true -e tuxmail_backup_allow_plaintext=true
 ```
+
+**Solange es kein Server-Archiv im Release gibt**, baust du es auf dem Server und gibst es dem Playbook mit:
+```bash
+cd /opt/tuxmail && TUXMAIL_SIGNAL_CLI=skip build/build-all.sh server --arch amd64     # braucht Go und Node 22
+ansible-playbook -i inventory/hosts.ini site.yml -e tuxmail_domain=mail.example.de \
+  -e tuxmail_tls_letsencrypt_email=admin@example.de \
+  -e tuxmail_binary_src=/opt/tuxmail/dist/tuxmail_<Version>_linux_amd64.tar.gz -e tuxmail_version=<Version>
+```
+(`<Version>` steht im Dateinamen, z. B. `0.1.0-dev.ab12cd3`.) Dabei entfallen die Schalter für Signatur und
+Sicherung nicht automatisch; die Sicherung braucht weiter `tuxmail_backup_allow_plaintext=true` oder age-Empfänger.
 
 Das Passwort des ersten Administrators (`admin`) steht danach in `credentials/<Servername>/admin_password` auf
 deinem Rechner. Die beiden letzten Schalter sind Ausnahmen für den ersten Test (siehe

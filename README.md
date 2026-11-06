@@ -44,6 +44,9 @@ mit allen Varianten: **[docs/INSTALLATION.md](docs/INSTALLATION.md)**.
 | **iPhone / jedes Smartphone** | Server-Adresse im Browser öffnen und zum Home-Bildschirm hinzufügen (PWA) |
 | **eigener Server (Linux)** | Ansible-Playbook in [deploy/](deploy/README.md), alternativ Docker |
 
+> **Stand der Releases:** `v0.1.0` enthält bisher nur die Android-Debug-APK. Alles andere baust du bis zum nächsten
+> Release selbst, siehe „Selbst bauen“ unten.
+
 `<v>` ist die Versionsnummer, z. B. `0.1.0`. Auf ARM-Geräten (`arm64`, Raspberry Pi 4/5, Snapdragon-Notebooks)
 dieselben Dateien mit `arm64` bzw. `aarch64` nehmen.
 

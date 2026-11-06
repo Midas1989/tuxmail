@@ -11,6 +11,29 @@
     group: root
     mode: "0755"
 
+- name: Prüfen, ob das Release das Server-Archiv enthält
+  ansible.builtin.uri:
+    url: "{{ tuxmail_archive_url }}"
+    method: HEAD
+  register: tuxmail_archive_probe
+  failed_when: false
+  changed_when: false
+  check_mode: false
+  when: tuxmail_binary_src | length == 0
+
+- name: Server-Archiv ist im Release vorhanden
+  ansible.builtin.assert:
+    that: tuxmail_archive_probe.status | default(0) | int != 404
+    fail_msg: >-
+      Das Release v{{ tuxmail_version }} enthält das Archiv {{ tuxmail_archive_name }} nicht
+      ({{ tuxmail_archive_url }} liefert 404). Entweder existiert die Version nicht, oder das Release
+      ist unvollständig oder das Repository privat. Abhilfe: Archiv selbst bauen
+      (build/build-all.sh server --arch {{ tuxmail_arch }}) und mit
+      -e tuxmail_binary_src=/pfad/tuxmail_<version>_linux_{{ tuxmail_arch }}.tar.gz installieren,
+      oder eine andere Quelle über tuxmail_release_base_url angeben.
+    quiet: true
+  when: tuxmail_binary_src | length == 0
+
 - name: Herkunft des Releases prüfen (GPG-Signatur von checksums.txt, ND-05)
   ansible.builtin.include_tasks: verify_release.yml
   when:
