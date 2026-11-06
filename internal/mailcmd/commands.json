@@ -1,0 +1,26 @@
+{
+  "_comment": "The one definition of the terminal command syntax. Go (parse.go) and the web view (frontend/src/lib/terminal/parse.ts) both interpret this table; testdata/vectors.json pins their behaviour.",
+  "commands": [
+    {"name": "folders", "aliases": [], "usage": "folders [--account N]",
+     "positional": [], "flags": {"account": "int"}},
+    {"name": "list", "aliases": ["ls"], "usage": "list [FOLDER] [--limit N] [--offset N] [--account N]",
+     "positional": [{"name": "folder", "type": "string", "optional": true}], "flags": {"limit": "int", "offset": "int", "account": "int"}},
+    {"name": "read", "aliases": ["open"], "usage": "read [ID]",
+     "positional": [{"name": "id", "type": "ids", "optional": true}], "flags": {}},
+    {"name": "reply", "aliases": [], "usage": "reply [ID] [--all] [--identity N] [--text TEXT] [--confirm CHECK,..]",
+     "positional": [{"name": "id", "type": "ids", "optional": true}], "flags": {"all": "bool", "identity": "int", "text": "string", "confirm": "list"}},
+    {"name": "send", "aliases": ["compose"], "usage": "send --to ADDR,.. [--cc ADDR,..] [--bcc ADDR,..] [--subject TEXT] [--identity N] [--text TEXT] [--confirm CHECK,..]",
+     "positional": [], "flags": {"to": "list", "cc": "list", "bcc": "list", "subject": "string", "identity": "int", "text": "string", "confirm": "list"}},
+    {"name": "search", "aliases": ["find"], "usage": "search QUERY.. [--folder FOLDER] [--limit N] [--offset N] [--account N]",
+     "positional": [{"name": "query", "type": "rest"}], "flags": {"folder": "string", "limit": "int", "offset": "int", "account": "int"}},
+    {"name": "mark", "aliases": [], "usage": "mark [ID,..] read|unread|flagged|unflagged",
+     "positional": [{"name": "ids", "type": "ids", "optional": true}, {"name": "state", "type": "enum", "values": ["read", "unread", "flagged", "unflagged"]}], "flags": {}},
+    {"name": "move", "aliases": ["mv"], "usage": "move [ID,..] FOLDER",
+     "positional": [{"name": "ids", "type": "ids", "optional": true}, {"name": "folder", "type": "string"}], "flags": {"account": "int"}},
+    {"name": "help", "aliases": ["?"], "usage": "help", "ui": true, "positional": [], "flags": {}},
+    {"name": "quit", "aliases": ["q"], "usage": "quit", "ui": true, "positional": [], "flags": {}}
+  ],
+  "states": {"read": {"add": ["\\Seen"]}, "unread": {"remove": ["\\Seen"]}, "flagged": {"add": ["\\Flagged"]}, "unflagged": {"remove": ["\\Flagged"]}},
+  "roles": ["inbox", "drafts", "sent", "archive", "junk", "trash", "templates"],
+  "unified": ["unread", "flagged"]
+}

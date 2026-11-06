@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!--
-  Klassisch / Hybrid / Chat. Always reachable: a segmented control with
+  Klassisch / Hybrid / Chat / Terminal. Always reachable: a segmented control with
   labels on wide screens, icon-only below 1280 px; variant "menu" (chat
   list header, phones) is one button with the current view's icon that
   opens a menu. Ctrl+Shift+V cycles the views everywhere (keyboard.ts).
@@ -9,6 +9,7 @@
   import Rows3 from '@lucide/svelte/icons/rows-3';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import MessageSquareText from '@lucide/svelte/icons/message-square-text';
+  import SquareTerminal from '@lucide/svelte/icons/square-terminal';
   import ChevronDown from '@lucide/svelte/icons/chevron-down';
   import Check from '@lucide/svelte/icons/check';
   import { app, prefs } from '../state';
@@ -21,6 +22,7 @@
     { id: 'classic', icon: Rows3 },
     { id: 'hybrid', icon: MessageSquareText },
     { id: 'chat', icon: MessagesSquare },
+    { id: 'terminal', icon: SquareTerminal },
   ];
   const current = $derived(MODES.find((m) => m.id === prefs.viewMode) ?? MODES[0]);
   let open = $state(false);

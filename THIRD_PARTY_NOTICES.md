@@ -17,6 +17,20 @@ The dictionaries are embedded gzip-compressed and unchanged.
 Modified versions of the German dictionary may only be distributed under
 the GPL (igerman98 licence terms); TuxMail does not modify it.
 
+## Terminal interface (`tuxmail term`, Go modules)
+
+`internal/termui` links these modules. All are MIT unless noted; versions are in `go.mod`.
+
+| Module | License |
+|---|---|
+| `github.com/charmbracelet/bubbletea`, `bubbles`, `lipgloss`, `colorprofile`, `x/ansi`, `x/cellbuf`, `x/term` | MIT |
+| `github.com/muesli/termenv`, `muesli/ansi`, `muesli/cancelreader` | MIT |
+| `github.com/mattn/go-runewidth`, `clipperhouse/displaywidth`, `clipperhouse/uax29/v2` | MIT |
+| `github.com/aymanbagabas/go-osc52/v2`, `xo/terminfo`, `erikgeiser/coninput` | MIT |
+| `github.com/lucasb-eyer/go-colorful` | MIT |
+| `github.com/atotto/clipboard` | BSD-3-Clause |
+| `github.com/mattn/go-localereader` v0.0.1 (Windows builds only) | MIT, stated only in its `README.md` ("## License: MIT"); the module has no LICENSE file |
+
 ## Fonts (`golang.org/x/image/font/gofont`)
 
 The PDF/A renderer (`internal/pdf`) embeds the Go fonts (Go Regular, Go

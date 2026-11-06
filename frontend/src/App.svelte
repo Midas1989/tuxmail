@@ -67,7 +67,7 @@
 {#if desktopWindow.custom}
   <TitleBar />
 {/if}
-<div class="app" class:framed={desktopWindow.custom} class:chat-open={app.route === 'mail' && prefs.viewMode !== 'classic' && app.selectedConversationId != null}>
+<div class="app" class:framed={desktopWindow.custom} class:chat-open={app.route === 'mail' && !app.messageListView && app.selectedConversationId != null}>
   <ActivityBar />
   <main id="main" class="main" tabindex="-1">
     {#if app.loadError}

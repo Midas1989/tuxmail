@@ -100,7 +100,9 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 		level = slog.LevelDebug
 	}
 	log := slog.New(slog.NewTextHandler(logOut, &slog.HandlerOptions{Level: level}))
-	a, st, err := openDesktopApp(ctx, loc, log)
+	// Marks this data directory as in use for `tuxmail mail` and `tuxmail term`.
+	defer holdEngineLock(ctx, loc.Dir, engineLockWait, log)()
+	a, st, err := openDesktopApp(ctx, loc, log, true)
 	if err != nil {
 		log.Error("tuxmail desktop: start failed", "err", err)
 		return err

@@ -207,8 +207,8 @@ func (r *requiredKeyring) Set(ref string, value []byte) error { return r.wrap(r.
 func (r *requiredKeyring) Delete(ref string) error { return r.wrap(r.inner.Delete(ref)) }
 
 // openDesktopApp opens the store and the application layer of the desktop
-// client (sync and send enabled).
-func openDesktopApp(ctx context.Context, loc dataLocation, log *slog.Logger) (*app.App, *store.Store, error) {
+// client (sync and send enabled; messengers only where they should run).
+func openDesktopApp(ctx context.Context, loc dataLocation, log *slog.Logger, withMessenger bool) (*app.App, *store.Store, error) {
 	if err := os.MkdirAll(loc.Dir, 0o700); err != nil {
 		return nil, nil, err
 	}
@@ -222,7 +222,10 @@ func openDesktopApp(ctx context.Context, loc dataLocation, log *slog.Logger) (*a
 		return nil, nil, err
 	}
 	opts := app.Options{Store: st, DataDir: loc.Dir, Mode: app.ModeDesktop, Version: version, Logger: log,
-		Locales: locales.FS, LocaleDir: filepath.Join(loc.Dir, "locales"), Sync: &app.SyncOptions{}, Send: &app.SendOptions{}, Messenger: &app.MessengerOptions{}}
+		Locales: locales.FS, LocaleDir: filepath.Join(loc.Dir, "locales"), Sync: &app.SyncOptions{}, Send: &app.SendOptions{}}
+	if withMessenger {
+		opts.Messenger = &app.MessengerOptions{}
+	}
 	kr := secrets.NewKeyring()
 	prefs := loadDesktopPrefs(loc.Dir)
 	kind, persist := chooseSecretStore(loc.Portable, prefs.SecretStore, kr.Available)

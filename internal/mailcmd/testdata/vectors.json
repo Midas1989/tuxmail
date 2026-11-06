@@ -1,0 +1,308 @@
+{
+ "parse": [
+  {
+   "line": "folders",
+   "want": {
+    "name": "folders",
+    "args": {},
+    "flags": {}
+   }
+  },
+  {
+   "line": "ls inbox --limit 5",
+   "want": {
+    "name": "list",
+    "args": {
+     "folder": "inbox"
+    },
+    "flags": {
+     "limit": 5
+    }
+   }
+  },
+  {
+   "line": "list \"Mein Ordner\" --offset=10",
+   "want": {
+    "name": "list",
+    "args": {
+     "folder": "Mein Ordner"
+    },
+    "flags": {
+     "offset": 10
+    }
+   }
+  },
+  {
+   "line": "list 'a b' c",
+   "error": "too_many_arguments"
+  },
+  {
+   "line": "read",
+   "want": {
+    "name": "read",
+    "args": {},
+    "flags": {}
+   }
+  },
+  {
+   "line": "open 42",
+   "want": {
+    "name": "read",
+    "args": {
+     "id": [
+      42
+     ]
+    },
+    "flags": {}
+   }
+  },
+  {
+   "line": "read abc",
+   "error": "bad_value"
+  },
+  {
+   "line": "read 0",
+   "error": "bad_value"
+  },
+  {
+   "line": "reply --all --text \"Danke \\\"dir\\\"\"",
+   "want": {
+    "name": "reply",
+    "args": {},
+    "flags": {
+     "all": true,
+     "text": "Danke \"dir\""
+    }
+   }
+  },
+  {
+   "line": "reply 7 --all=yes",
+   "error": "bad_value"
+  },
+  {
+   "line": "compose --to a@x.test,b@x.test --subject Hallo",
+   "want": {
+    "name": "send",
+    "args": {},
+    "flags": {
+     "to": [
+      "a@x.test",
+      "b@x.test"
+     ],
+     "subject": "Hallo"
+    }
+   }
+  },
+  {
+   "line": "send --to",
+   "error": "missing_value"
+  },
+  {
+   "line": "send --bogus 1",
+   "error": "unknown_flag"
+  },
+  {
+   "line": "send --identity x",
+   "error": "bad_value"
+  },
+  {
+   "line": "send --identity -1",
+   "error": "bad_value"
+  },
+  {
+   "line": "search foo bar --limit 3",
+   "want": {
+    "name": "search",
+    "args": {
+     "query": "foo bar"
+    },
+    "flags": {
+     "limit": 3
+    }
+   }
+  },
+  {
+   "line": "find -- --limit",
+   "want": {
+    "name": "search",
+    "args": {
+     "query": "--limit"
+    },
+    "flags": {}
+   }
+  },
+  {
+   "line": "search",
+   "error": "missing_argument"
+  },
+  {
+   "line": "mark read",
+   "want": {
+    "name": "mark",
+    "args": {
+     "state": "read"
+    },
+    "flags": {}
+   }
+  },
+  {
+   "line": "mark 1,2,3 flagged",
+   "want": {
+    "name": "mark",
+    "args": {
+     "ids": [
+      1,
+      2,
+      3
+     ],
+     "state": "flagged"
+    },
+    "flags": {}
+   }
+  },
+  {
+   "line": "mark 1 gelesen",
+   "error": "bad_value"
+  },
+  {
+   "line": "mark",
+   "error": "missing_argument"
+  },
+  {
+   "line": "mark 1 2 read",
+   "error": "bad_value"
+  },
+  {
+   "line": "move archive",
+   "want": {
+    "name": "move",
+    "args": {
+     "folder": "archive"
+    },
+    "flags": {}
+   }
+  },
+  {
+   "line": "mv 4,5 \"Projekte/Alt\"",
+   "want": {
+    "name": "move",
+    "args": {
+     "ids": [
+      4,
+      5
+     ],
+     "folder": "Projekte/Alt"
+    },
+    "flags": {}
+   }
+  },
+  {
+   "line": "move",
+   "error": "missing_argument"
+  },
+  {
+   "line": "? ",
+   "want": {
+    "name": "help",
+    "args": {},
+    "flags": {}
+   }
+  },
+  {
+   "line": "q",
+   "want": {
+    "name": "quit",
+    "args": {},
+    "flags": {}
+   }
+  },
+  {
+   "line": "   ",
+   "error": "empty"
+  },
+  {
+   "line": "rm -rf /",
+   "error": "unknown_command"
+  },
+  {
+   "line": "list \"offen",
+   "error": "unterminated_quote"
+  },
+  {
+   "line": "list $(id)",
+   "want": {
+    "name": "list",
+    "args": {
+     "folder": "$(id)"
+    },
+    "flags": {}
+   }
+  },
+  {
+   "line": "list a\\ b",
+   "want": {
+    "name": "list",
+    "args": {
+     "folder": "a b"
+    },
+    "flags": {}
+   }
+  }
+ ],
+ "cleanLine": [
+  {
+   "in": "Rechnung\u001b[31m rot\u001b[0m",
+   "want": "Rechnung rot"
+  },
+  {
+   "in": "\u001b]0;gehackt\u0007Titel",
+   "want": "Titel"
+  },
+  {
+   "in": "\u001b]52;c;Zm9v\u001b\\Clip",
+   "want": "Clip"
+  },
+  {
+   "in": "2JFrei",
+   "want": "Frei"
+  },
+  {
+   "in": "a\r\nb\tc\u0007\b",
+   "want": "a b c"
+  },
+  {
+   "in": "evil‮gnp.exe",
+   "want": "evilgnp.exe"
+  },
+  {
+   "in": "Grüße ✓",
+   "want": "Grüße ✓"
+  },
+  {
+   "in": "\u001bPq#0;2;0;0;0\u001b\\x",
+   "want": "x"
+  },
+  {
+   "in": "\u001b(Bok",
+   "want": "ok"
+  },
+  {
+   "in": "ende\u001b",
+   "want": "ende"
+  }
+ ],
+ "cleanText": [
+  {
+   "in": "Zeile 1\r\nZeile 2\rZeile 3\n\tEingerückt",
+   "want": "Zeile 1\nZeile 2\nZeile 3\n\tEingerückt"
+  },
+  {
+   "in": "a\u001b[2Jb\u001b[1;1H\u0000c",
+   "want": "abc"
+  },
+  {
+   "in": "x y",
+   "want": "x\ny"
+  }
+ ]
+}

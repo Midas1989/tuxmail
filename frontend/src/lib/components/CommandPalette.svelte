@@ -52,6 +52,7 @@
       { id: 'view.classic', label: t('common.palette.toClassic'), section: view, run: () => (app.navigate('mail'), app.setViewMode('classic')) },
       { id: 'view.hybrid', label: t('common.palette.toHybrid'), section: view, run: () => (app.navigate('mail'), app.setViewMode('hybrid')) },
       { id: 'view.chat', label: t('common.palette.toChat'), section: view, run: () => (app.navigate('mail'), app.setViewMode('chat')) },
+      { id: 'view.terminal', label: t('common.palette.toTerminal'), section: view, run: () => (app.navigate('mail'), app.setViewMode('terminal')) },
       { id: 'nav.projects', label: t('nav.projects'), section: nav, run: () => app.openProject(null) },
       { id: 'project.new', label: t('projects.new'), section: act, run: () => void (app.organizeDialog = { kind: 'newProject' }) },
       { id: 'nav.workflows', label: t('settings.workflows.title'), section: nav, run: () => app.openSettings('automation', 'workflows') },
@@ -74,7 +75,7 @@
       ...i18n.locales.map((l) => ({ id: 'lang.' + l.code, label: `${t('settings.language')}: ${l.nativeName}`, section: view, run: () => prefs.setLocale(l.code) })),
       { id: 'nav.search', label: t('common.palette.openSearch'), section: nav, hint: '/', run: () => app.navigate('search') },
     ];
-    if (app.message && prefs.viewMode === 'classic') {
+    if (app.message && app.messageListView) {
       const id = app.message.id;
       list.unshift(
         { id: 'reply', label: t('common.action.reply'), section: act, hint: 'R', run: () => app.replyTo('reply') },

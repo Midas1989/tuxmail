@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -69,6 +70,34 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// OpenReadOnly opens an existing database without writing to it: no migration,
+// no pragma that writes, no checkpoint. Connections are not kept between
+// queries, so an idle reader leaves the -wal and -shm files alone (a backup
+// of the stopped service sees stable files). It is for the terminal commands
+// that run next to the service.
+func OpenReadOnly(ctx context.Context, path string) (*Store, error) {
+	if strings.ContainsAny(path, "?#") {
+		return nil, fmt.Errorf("store: database path must not contain '?' or '#': %q", path)
+	}
+	if _, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("store: open %s: %w", path, err)
+	}
+	q := url.Values{}
+	q.Set("mode", "ro")
+	q.Add("_pragma", "busy_timeout(10000)")
+	q.Add("_pragma", "query_only(1)")
+	db, err := sql.Open("sqlite", "file:"+(&url.URL{Path: filepath.ToSlash(path)}).EscapedPath()+"?"+q.Encode())
+	if err != nil {
+		return nil, fmt.Errorf("store: open %s: %w", path, err)
+	}
+	db.SetMaxIdleConns(0)
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store: open %s: %w", path, err)
+	}
+	return &Store{db: db}, nil
 }
 
 // Close closes the database.

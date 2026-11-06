@@ -116,6 +116,8 @@ export default defineConfig({
     alias: {
       // Single source of truth for translations and branding at the repo root.
       $locales: join(root, '../locales'),
+      // The terminal command syntax (shared with Go, lib/terminal/parse.ts).
+      $mailcmd: join(root, '../internal/mailcmd'),
       $branding: join(root, '../assets/branding'),
     },
   },

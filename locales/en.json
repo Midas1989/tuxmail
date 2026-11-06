@@ -68,6 +68,7 @@
       "themeSystem": "Theme: System",
       "title": "Command palette",
       "toChat": "Switch to chat view",
+      "toTerminal": "Switch to terminal view",
       "toClassic": "Switch to classic view",
       "nextView": "Next view (Classic → Hybrid → Chat)",
       "toHybrid": "Switch to hybrid view"
@@ -161,7 +162,44 @@
     "toast": {
       "moved": "Moved to “{folder}”"
     },
+    "terminal": {
+      "marked": "{ids}: {state}",
+      "moved": "{ids} moved to {folder}",
+      "keysHint": "Keys: j/k choose, Enter open, r reply, R reply all, c compose, s star, u read/unread, e archive, # trash, / search, : command line, Esc back",
+      "listLabel": "Messages",
+      "readerLabel": "Message",
+      "actionsLabel": "Actions",
+      "outputLabel": "Command output",
+      "commandLabel": "Command line",
+      "placeholder": "Command, e.g. list, search, mark read, help",
+      "nothingOpen": "No message open. Choose with j and k, : opens the command line.",
+      "flag": "Star",
+      "unread": "Read/unread",
+      "archive": "Archive",
+      "trash": "Trash",
+      "from": "From",
+      "to": "To",
+      "date": "Date",
+      "subject": "Subject",
+      "attachment": "Attachment",
+      "error": {
+        "empty": "No command entered",
+        "unterminated_quote": "Unterminated quote",
+        "unknown_command": "Unknown command: {detail} (help lists them)",
+        "unknown_flag": "Unknown option: {detail}",
+        "missing_value": "Option {detail} needs a value",
+        "bad_value": "Invalid value for {detail}",
+        "missing_argument": "Missing: {detail}",
+        "unsupported_flag": "Option --{detail} is not available here, use tuxmail mail",
+        "too_many_arguments": "Too many arguments: {detail}",
+        "notFound": "Not found: {detail}",
+        "ambiguous": "Ambiguous, please use the number: {detail}",
+        "noSelection": "No message selected"
+      }
+    },
     "view": {
+      "terminal": "Terminal",
+      "terminalHint": "Terminal: list and text in a fixed-width font, with a command line",
       "chat": "Chat",
       "classic": "Classic",
       "label": "View",
