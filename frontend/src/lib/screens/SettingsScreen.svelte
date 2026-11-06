@@ -21,6 +21,7 @@
   import Shield from '@lucide/svelte/icons/shield';
   import Database from '@lucide/svelte/icons/database';
   import Users from '@lucide/svelte/icons/users';
+  import UserCog from '@lucide/svelte/icons/user-cog';
   import Info from '@lucide/svelte/icons/info';
   import Search from '@lucide/svelte/icons/search';
   import X from '@lucide/svelte/icons/x';
@@ -29,7 +30,7 @@
   import Server from '@lucide/svelte/icons/server';
   import en from '$locales/en.json';
   import de from '$locales/de.json';
-  import { app, team } from '../state';
+  import { admin, app, team } from '../state';
   import { t, type MessageKey } from '../i18n/index.svelte';
   import { flatten, type Dict } from '../i18n/core';
   import { isNativeShell } from '../platform';
@@ -82,6 +83,7 @@
   import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
   import BackupSettings from '../components/settings/BackupSettings.svelte';
   import TeamSettings from '../components/team/TeamSettings.svelte';
+  import AdminSettings from '../components/admin/AdminSettings.svelte';
   import AboutSettings from '../components/settings/AboutSettings.svelte';
   import DiagnosticsSettings from '../components/settings/DiagnosticsSettings.svelte';
 
@@ -98,6 +100,7 @@
     security: Shield,
     data: Database,
     team: Users,
+    admin: UserCog,
     about: Info,
   };
 
@@ -113,11 +116,16 @@
       () => (teamAdmin = false),
     );
   });
+  // Administration: role from /api/auth/me (web client only).
+  $effect(() => {
+    void admin.init();
+  });
   const env = $derived<SettingsEnv>({
     desktop: !!desktopWindow.info,
     native: isNativeShell(),
     team: !!team.client && (teamAdmin || team.mailboxes.some((m) => m.role === 'manage')),
     vault: !!app.vault?.portable,
+    admin: admin.isAdmin,
   });
   const categories = $derived(visibleCategories(env));
 
@@ -369,6 +377,7 @@
   {:else if k === 'data/import'}<ImportExportSettings />
   {:else if k === 'data/backup'}<BackupSettings />
   {:else if k === 'team/mailboxes'}<TeamSettings />
+  {:else if k === 'admin/manage'}<AdminSettings />
   {:else if k === 'about/about'}<AboutSettings part="about" />
   {:else if k === 'about/diagnostics'}<DiagnosticsSettings />
   {:else if k === 'about/licenses'}<AboutSettings part="licenses" />
