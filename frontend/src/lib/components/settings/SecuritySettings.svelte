@@ -10,11 +10,13 @@
   import Smartphone from '@lucide/svelte/icons/smartphone';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import LogOut from '@lucide/svelte/icons/log-out';
-  import { app } from '../../state';
+  import { app, security } from '../../state';
   import { isNativeShell } from '../../platform';
   import { signOutWeb } from '../../session';
   import { t, type MessageKey } from '../../i18n/index.svelte';
   import type { SettingsCategoryId } from '../../settings/catalog';
+  import TwoFactorCard from './TwoFactorCard.svelte';
+  import PasswordSessionsCard from './PasswordSessionsCard.svelte';
 
   interface Props {
     part: 'vault' | 'applock' | 'app' | 'privacy';
@@ -76,6 +78,10 @@
       {/each}
     </ul>
   </section>
+  {#if security.available}
+    <TwoFactorCard />
+    <PasswordSessionsCard />
+  {/if}
   {#if canSignOut}
     <section class="card" id="set-session" aria-labelledby="set-session-h">
       <h2 id="set-session-h">{t('settings.pages.session.title')}</h2>

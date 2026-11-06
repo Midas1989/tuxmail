@@ -110,6 +110,8 @@ export default defineConfig({
   base: './',
   plugins: [tailwindcss(), svelte(), cspMeta(), serviceWorker(), branding()],
   resolve: {
+    // Component tests mount Svelte components in jsdom: they need the client build of svelte (mount()), not the server one.
+    conditions: process.env.VITEST ? ['browser'] : undefined,
     alias: {
       // Single source of truth for translations and branding at the repo root.
       $locales: join(root, '../locales'),

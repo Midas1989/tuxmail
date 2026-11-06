@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { app, prefs, team } from './lib/state';
+  import { app, prefs, security, team } from './lib/state';
   import { startRouter } from './lib/router';
   import { parseSettingsHash } from './lib/settings/catalog';
   import { installShortcuts } from './lib/keyboard';
@@ -21,6 +21,7 @@
   import IosInstallHint from './lib/components/IosInstallHint.svelte';
   import Reminders from './lib/components/calendar/Reminders.svelte';
   import VaultUnlock from './lib/components/settings/VaultUnlock.svelte';
+  import MfaSetupDialog from './lib/components/security/MfaSetupDialog.svelte';
   import { registerServiceWorker } from './lib/pwa';
   import CloudDialogs from './lib/components/cloud/CloudDialogs.svelte';
   import TitleBar from './lib/components/TitleBar.svelte';
@@ -39,6 +40,7 @@
     });
     const stopKeys = installShortcuts(app);
     void desktopWindow.init();
+    const stopSecurity = security.start(); // web client: forced two-factor set-up for administrators
     void app.init().then(() => {
       // PWA shortcuts: #/mail?compose=1, #/mail?view=chat
       const q = new URLSearchParams(location.hash.split('?')[1] ?? '');
@@ -55,6 +57,7 @@
     return () => {
       stopRouter();
       stopKeys();
+      stopSecurity();
       app.destroy();
     };
   });
@@ -93,6 +96,9 @@
 
 {#if app.vault?.locked}
   <VaultUnlock />
+{/if}
+{#if security.mfaSetupRequired}
+  <MfaSetupDialog />
 {/if}
 {#if app.paletteOpen}
   <CommandPalette />

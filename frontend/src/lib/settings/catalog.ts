@@ -123,7 +123,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
       sec('signin', ['cloud.services.title', 'cloud.services.clientId', 'cloud.services.tenant']),
       sec('vault', ['vault.password', 'vault.unlockTitle'], { only: 'vault' }),
       sec('applock', ['native.settings.appLock', 'native.settings.lockAfter'], { only: 'native' }),
-      sec('privacy', ['settings.remote.title', 'notifications.privacy', 'settings.ai.mask']),
+      sec('privacy', ['settings.remote.title', 'notifications.privacy', 'settings.ai.mask', 'security.twofactor.title', 'security.password.title', 'security.sessions.title']),
     ],
   },
   {
