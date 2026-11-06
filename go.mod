@@ -20,7 +20,7 @@ require (
 	github.com/go-ole/go-ole v1.3.0
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/gotd/td v0.163.0
-	github.com/klauspost/compress v1.19.1
+	github.com/klauspost/compress v1.20.2
 	github.com/microcosm-cc/bluemonday v1.0.27
 	github.com/mooijtech/go-pst/v6 v6.0.2
 	github.com/nyaruka/phonenumbers v1.8.1
@@ -49,7 +49,7 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	filippo.io/hpke v0.4.0 // indirect
 	git.sr.ht/~jackmordaunt/go-toast/v2 v2.0.3 // indirect
-	github.com/andybalholm/brotli v1.2.1 // indirect
+	github.com/andybalholm/brotli v1.2.7 // indirect
 	github.com/aymerick/douceur v0.2.0 // indirect
 	github.com/beeper/argo-go v1.1.2 // indirect
 	github.com/bep/debounce v1.2.1 // indirect
