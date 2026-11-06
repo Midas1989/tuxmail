@@ -106,6 +106,7 @@ func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
 	if err != nil {
 		return bodyParts{visible: m.Snippet}
 	}
+	generation := a.comfort.pgp.generation.Load()
 	r, err := a.render.Render(WithMessageID(ctx, m.ID), raw)
 	if err != nil {
 		return bodyParts{visible: m.Snippet}
@@ -135,7 +136,9 @@ func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
 			v.quoted, v.signature = "", ""
 		}
 	}
-	a.bubbles.put(m.BlobHash, v)
+	if a.comfort.pgp.generation.Load() == generation {
+		a.bubbles.put(m.BlobHash, v)
+	}
 	return v
 }
 

@@ -182,6 +182,8 @@ type pgpState struct {
 	lookup func(source string) pgp.KeyLookup
 	// unlocks holds the passphrases in memory (comfort_pgp_lock.go).
 	unlocks pgpUnlocks
+	// generation changes with every change of keys or passphrases.
+	generation atomic.Uint64
 }
 
 func newPGPState(a *App) *pgpState {
@@ -218,6 +220,7 @@ func (a *App) pgpRing() *pgp.KeyRing {
 
 // pgpChanged drops everything that was rendered with the old set of keys.
 func (a *App) pgpChanged() {
+	a.comfort.pgp.generation.Add(1) // first: a render in flight must not store
 	a.rendered.clear()
 	a.bubbles.clear()
 }

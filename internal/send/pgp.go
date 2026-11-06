@@ -119,11 +119,14 @@ func (s *Service) checkDecryptedInPlain(ctx context.Context, req *Request) *Bloc
 	if !repliesToEncrypted(&req.Draft) || (req.Override && slices.Contains(req.Confirm, CheckDecryptedInPlain)) {
 		return nil
 	}
-	// A plan that fails refuses the send later on: no plain text either.
-	if p, err := s.planPGP(ctx, req, false); err != nil || p.encrypt {
+	// The same decision as in deliver. A plan that fails refuses the send later
+	// on: no plain text either.
+	r := *req
+	sm, err := s.chooseCrypto(ctx, &r)
+	if err != nil || sm.encrypt {
 		return nil
 	}
-	if p, err := s.planSMIME(ctx, req); err != nil || p.encrypt {
+	if p, err := s.planPGP(ctx, &r, false); err != nil || p.encrypt {
 		return nil
 	}
 	return &BlockedError{Findings: []events.Finding{{Check: CheckDecryptedInPlain, Severity: events.SeverityBlock, Key: "send.decrypted_in_plain",
@@ -131,12 +134,33 @@ func (s *Service) checkDecryptedInPlain(ctx context.Context, req *Request) *Bloc
 		EN: "You are answering or forwarding an encrypted mail, but this mail would leave unencrypted. The quoted text would be readable."}}}
 }
 
+// chooseCrypto decides between S/MIME and OpenPGP and turns the loser off in req.
+func (s *Service) chooseCrypto(ctx context.Context, req *Request) (smimePlan, error) {
+	// Both are possible and the user prefers OpenPGP: S/MIME stays out, unless
+	// it was chosen explicitly.
+	if req.PreferPGP && req.SMIME.Sign != PGPOn && req.SMIME.Encrypt != PGPOn {
+		if pl, err := s.planPGP(ctx, req, false); err == nil && (pl.encrypt || pl.sign) {
+			req.SMIME = SMIMEOptions{Sign: PGPOff, Encrypt: PGPOff}
+		}
+	}
+	// S/MIME takes precedence over OpenPGP when active.
+	sm, err := s.planSMIME(ctx, req)
+	if err != nil {
+		return sm, err
+	}
+	if sm.active() {
+		req.PGP.Sign, req.PGP.Encrypt = PGPOff, PGPOff
+	}
+	return sm, nil
+}
+
 // checkPlannable refuses a scheduled send whose keys are missing right now.
 func (s *Service) checkPlannable(ctx context.Context, req *Request) error {
-	if _, err := s.planPGP(ctx, req, true); err != nil {
+	r := *req
+	if _, err := s.chooseCrypto(ctx, &r); err != nil {
 		return err
 	}
-	_, err := s.planSMIME(ctx, req)
+	_, err := s.planPGP(ctx, &r, true)
 	return err
 }
 

@@ -97,6 +97,7 @@ func (a *App) renderCached(ctx context.Context, m store.Message) (RenderedMessag
 	if err != nil {
 		return RenderedMessage{}, errNoBody
 	}
+	generation := a.comfort.pgp.generation.Load()
 	r, err := a.render.Render(WithMessageID(ctx, m.ID), raw)
 	if err != nil {
 		return r, err
@@ -106,7 +107,7 @@ func (a *App) renderCached(ctx context.Context, m store.Message) (RenderedMessag
 			key = mm.BlobHash + "#" + strconv.FormatInt(m.ID, 10)
 		}
 	}
-	if key != "" {
+	if key != "" && a.comfort.pgp.generation.Load() == generation {
 		a.rendered.put(key, r)
 	}
 	return r, nil

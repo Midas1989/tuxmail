@@ -236,6 +236,10 @@ func (r *KeyRing) decryptPGPMIME(ctx context.Context, op *opKeyRing, body []byte
 	}
 	// Part 1: application/pgp-encrypted with "Version: 1" (not checked
 	// strictly). Part 2: application/octet-stream with the message.
+	vh, _ := splitEntity(parts[0])
+	if vhh, err := parseHeader(vh); err != nil || !hasMediaType(vhh, "application/pgp-encrypted") {
+		res.ForeignParts = true
+	}
 	ph, pb := splitEntity(parts[1])
 	phh, err := parseHeader(ph)
 	if err != nil {
@@ -244,6 +248,9 @@ func (r *KeyRing) decryptPGPMIME(ctx context.Context, op *opKeyRing, body []byte
 	pb, err = decodeTransfer(pb, phh.Get("Content-Transfer-Encoding"))
 	if err != nil {
 		return nil, err
+	}
+	if !hasMediaType(phh, "application/octet-stream") || !pureArmor(pb, "PGP MESSAGE") {
+		res.ForeignParts = true
 	}
 	plain, err := r.decryptMessage(ctx, op, pb, opts, res)
 	if err != nil {
@@ -376,8 +383,35 @@ func verifyPGPMIME(op *opKeyRing, body []byte, boundary string, opts ReadOptions
 	if err != nil {
 		return nil, err
 	}
+	// The second part is a signature and nothing else: whatever else it holds
+	// could be shown or filed by a reader without being signed.
+	if !hasMediaType(shh, "application/pgp-signature") || !pureArmor(sb, "PGP SIGNATURE") {
+		res.ForeignParts, res.Signed, res.Signature = true, true, SigInvalid
+		res.SignatureError = fmt.Errorf("%w: the signature part holds more than a signature", ErrMalformedMIME)
+		return signed, nil
+	}
 	verifyDetached(op, signed, sb, opts, res)
 	return signed, nil
+}
+
+func hasMediaType(h textproto.MIMEHeader, want string) bool {
+	mt, _ := mediaType(h.Get("Content-Type"))
+	return mt == want
+}
+
+// pureArmor reports whether b is binary, or exactly one armored block of the
+// given type with nothing around it.
+func pureArmor(b []byte, blockType string) bool {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 {
+		return false
+	}
+	begin, end := []byte("-----BEGIN "+blockType+"-----"), []byte("-----END "+blockType+"-----")
+	if bytes.HasPrefix(b, begin) {
+		return bytes.HasSuffix(b, end) && bytes.Count(b, []byte("-----BEGIN ")) == 1
+	}
+	// Binary OpenPGP packets start with the high bit set, text does not.
+	return b[0]&0x80 != 0 && !bytes.Contains(b, []byte("-----BEGIN "))
 }
 
 // verifyDetached verifies an (armored or binary) detached signature over

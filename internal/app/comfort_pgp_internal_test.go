@@ -747,3 +747,99 @@ func TestFailedSendsAndSMIMEMerge(t *testing.T) {
 		t.Fatalf("merged key: %q %v", v, err)
 	}
 }
+
+// The second part of multipart/signed is a signature and nothing else.
+func TestPGPSignaturePartIsPure(t *testing.T) {
+	a := pgpTestApp(t)
+	ctx := context.Background()
+	info, err := a.GeneratePGPKey(ctx, PGPGenerateInput{Email: "bob@example.org"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, _ := a.pgpRing().Get(ctx, info.Fingerprint)
+	ent, err := pgp.SignMIME([]byte("Content-Type: text/plain\r\n\r\nSIGNIERTER TEXT\r\n"), k, pgp.SignOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mail := func(body string) []byte {
+		return []byte("From: bob@example.org\r\nSubject: s\r\nMIME-Version: 1.0\r\n" + body)
+	}
+	body := string(ent.Bytes())
+	const sigType = "Content-Type: application/pgp-signature; name=\"signature.asc\"\r\n"
+	const armorStart = "-----BEGIN PGP SIGNATURE-----"
+	if !strings.Contains(body, sigType) || !strings.Contains(body, armorStart) {
+		t.Fatalf("unexpected form:\n%s", body)
+	}
+	intact, err := parse.Parse(mail(body), parse.Options{KeyRing: a.pgpRing()})
+	if err != nil || !intact.PGP.Verified || intact.PGP.PartiallyProtected {
+		t.Fatalf("intact: %+v %v", intact.PGP, err)
+	}
+	for name, tampered := range map[string]string{
+		"text before": strings.Replace(body, armorStart, "FREMD-EVIL\r\n"+armorStart, 1),
+		"text after":  strings.Replace(body, "-----END PGP SIGNATURE-----", "-----END PGP SIGNATURE-----\r\nFREMD-EVIL", 1),
+		"html":        strings.Replace(strings.Replace(body, sigType, "Content-Type: text/html\r\n", 1), armorStart, "<p>FREMD-EVIL</p>\r\n"+armorStart, 1),
+		"attachment": strings.Replace(strings.Replace(body, sigType, "Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"FREMD-EVIL.pdf\"\r\n", 1),
+			armorStart, "FREMD-EVIL\r\n"+armorStart, 1),
+	} {
+		raw := mail(tampered)
+		pm, err := parse.Parse(raw, parse.Options{KeyRing: a.pgpRing()})
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if pm.PGP.Verified || pm.PGP.Signature != pgp.SigInvalid || !pm.PGP.PartiallyProtected {
+			t.Errorf("%s: %+v", name, pm.PGP)
+		}
+		r, err := a.render.Render(ctx, raw)
+		if err != nil || strings.Contains(r.Text+r.HTML, "FREMD-EVIL") || !strings.Contains(r.Text, "SIGNIERTER TEXT") {
+			t.Errorf("%s: shown: %+v %v", name, r, err)
+		}
+		for _, at := range r.Attachments {
+			if strings.Contains(at.Filename, "EVIL") {
+				t.Errorf("%s: attachment %q", name, at.Filename)
+			}
+		}
+	}
+}
+
+type lockingRenderer struct {
+	a *App
+}
+
+func (r lockingRenderer) Render(context.Context, []byte) (RenderedMessage, error) {
+	r.a.LockPGPKeys() // "lock" while this render is running
+	return RenderedMessage{Text: "GEHEIMWORT"}, nil
+}
+
+func (r lockingRenderer) Attachment(context.Context, []byte, int) (RenderedAttachment, []byte, error) {
+	return RenderedAttachment{}, nil, errNotFound
+}
+
+// A render in flight while the keys are locked must not fill the caches.
+func TestPGPLockDuringRender(t *testing.T) {
+	a := pgpTestApp(t)
+	ctx := context.Background()
+	hash, err := a.blobs.Put(strings.NewReader("Subject: s\r\n\r\nx\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.render = lockingRenderer{a: a}
+	m := store.Message{ID: 7, BlobHash: hash}
+	if _, err := a.renderCached(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a.rendered.get(hash + "#7"); ok {
+		t.Fatal("render cache filled after locking")
+	}
+	a.bubble(ctx, m)
+	if _, ok := a.bubbles.get(hash); ok {
+		t.Fatal("bubble cache filled after locking")
+	}
+	// Normal case: still cached.
+	a.render = NewMIMERenderer()
+	if _, err := a.renderCached(ctx, m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := a.rendered.get(hash + "#7"); !ok {
+		t.Fatal("render cache unused")
+	}
+}

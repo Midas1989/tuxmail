@@ -316,11 +316,12 @@ func (s *Service) send(ctx context.Context, req Request, checked bool) (*Result,
 		if blocked != nil {
 			return res, blocked
 		}
-		if blocked := s.checkDecryptedInPlain(ctx, &req); blocked != nil {
-			res.Blocked = true
-			res.Findings = append(res.Findings, blocked.Findings...)
-			return res, blocked
-		}
+	}
+	// Also when a scheduled send falls due: the keys may be gone by then.
+	if blocked := s.checkDecryptedInPlain(ctx, &req); blocked != nil {
+		res.Blocked = true
+		res.Findings = append(res.Findings, blocked.Findings...)
+		return res, blocked
 	}
 
 	now := s.cfg.Now()
@@ -610,21 +611,9 @@ func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Resul
 		insertLinkBlock(d, shares, req.Cloud.Delivery, locale)
 	}
 
-	// Both are possible and the user prefers OpenPGP: S/MIME stays out, unless
-	// it was chosen explicitly.
-	if req.PreferPGP && req.SMIME.Sign != PGPOn && req.SMIME.Encrypt != PGPOn {
-		if pl, err := s.planPGP(ctx, &req, false); err == nil && (pl.encrypt || pl.sign) {
-			req.SMIME = SMIMEOptions{Sign: PGPOff, Encrypt: PGPOff}
-		}
-	}
-
-	// S/MIME plan (takes precedence over OpenPGP when active).
-	smPlan, err := s.planSMIME(ctx, &req)
+	smPlan, err := s.chooseCrypto(ctx, &req)
 	if err != nil {
 		return res, err
-	}
-	if smPlan.active() {
-		req.PGP.Sign, req.PGP.Encrypt = PGPOff, PGPOff
 	}
 
 	// PGP plan and Autocrypt.
