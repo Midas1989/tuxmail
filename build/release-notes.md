@@ -14,8 +14,8 @@
 
 ARM: Dateien mit `arm64` (`.rpm`: `aarch64`) / use the `arm64` files.
 
-📖 **Genaue Installationsanleitung / Installation guide:** [docs/INSTALLATION.md](https://github.com/Midas1989/Mailclient/blob/main/docs/INSTALLATION.md)
-· Server: [deploy/README.md](https://github.com/Midas1989/Mailclient/blob/main/deploy/README.md)
+📖 **Genaue Installationsanleitung / Installation guide:** [docs/INSTALLATION.md](https://github.com/Midas1989/tuxmail/blob/main/docs/INSTALLATION.md)
+· Server: [deploy/README.md](https://github.com/Midas1989/tuxmail/blob/main/deploy/README.md)
 
 Prüfsummen / Checksums: `sha256sum -c checksums.txt --ignore-missing` (Android: `SHA256SUMS`).
 

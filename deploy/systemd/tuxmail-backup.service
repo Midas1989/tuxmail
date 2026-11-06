@@ -2,7 +2,7 @@
 # Beispiel (aus der Ansible-Rolle tuxmail erzeugt) – Pfade ggf. anpassen.
 [Unit]
 Description=TuxMail data backup
-Documentation=https://github.com/Midas1989/Mailclient/tree/main/deploy
+Documentation=https://github.com/Midas1989/tuxmail/tree/main/deploy
 After=tuxmail.service
 
 [Service]

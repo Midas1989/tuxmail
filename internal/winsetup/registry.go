@@ -57,7 +57,7 @@ const (
 	RegisteredAppKey = `Software\RegisteredApplications`
 	ProgID           = "TuxMail.mailto"
 	Publisher        = "TuxMail"
-	Homepage         = "https://github.com/Midas1989/Mailclient"
+	Homepage         = "https://github.com/Midas1989/tuxmail"
 )
 
 // OpKind is a registry operation.

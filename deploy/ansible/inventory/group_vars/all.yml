@@ -15,7 +15,7 @@
 # ============================================================================
 # Grundeinstellungen
 # ============================================================================
-tuxmail_version: "1.0.0"
+tuxmail_version: "0.1.0"
 tuxmail_domain: "mail.example.org"
 
 # nginx: new | existing | none
@@ -39,7 +39,7 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_listen: "127.0.0.1:8080"          # oder "unix:/run/tuxmail/tuxmail.sock"
 
 # --- Binary ---
-# tuxmail_release_base_url: "https://github.com/Midas1989/Mailclient/releases/download/v{{ tuxmail_version }}/"
+# tuxmail_release_base_url: "https://github.com/Midas1989/tuxmail/releases/download/v{{ tuxmail_version }}/"
 # PFLICHT: Fingerabdruck des Release-Schlüssels (GPG-Signatur von checksums.txt, siehe deploy/README.md).
 # tuxmail_release_gpg_fingerprint: "ABCDEF0123456789ABCDEF0123456789ABCDEF01"
 # tuxmail_release_gpg_key_src: ""           # öffentlicher Schlüssel als Datei auf dem Steuerrechner (sonst aus dem Release)

@@ -18,9 +18,9 @@ version_schema: semver
 release: "1"
 section: mail
 priority: optional
-maintainer: "TuxMail contributors <https://github.com/Midas1989/Mailclient/issues>"
+maintainer: "TuxMail contributors <https://github.com/Midas1989/tuxmail/issues>"
 vendor: TuxMail
-homepage: https://github.com/Midas1989/Mailclient
+homepage: https://github.com/Midas1989/tuxmail
 license: AGPL-3.0-or-later
 description: |-
   Email, calendar, contacts and messengers in one app

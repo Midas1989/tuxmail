@@ -390,7 +390,7 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 
 | Variable | Standard | Bedeutung |
 |---|---|---|
-| `tuxmail_version` | `1.0.0` | zu installierende Version (ohne `v`) |
+| `tuxmail_version` | `0.1.0` (aktuelles Release) | zu installierende Version (ohne `v`) |
 | `tuxmail_domain` | `mail.example.org` | öffentlicher Hostname |
 | `tuxmail_domain_aliases` | `[]` | weitere Hostnamen (server_name, Zertifikat) |
 | `tuxmail_subpath` | `""` | Unterpfad, z. B. `/tuxmail` |
@@ -558,8 +558,8 @@ $TM user delete $CFG anna --yes            # --keep-data behält die Benutzerdat
 ```
 
 Exit-Codes: `0` ok, `1` Fehler, `2` falscher Aufruf. Die genauen Optionen zeigt
-`tuxmail user --help`. Alles davon ist auch in der
-Weboberfläche für Administratoren möglich. Bei OIDC werden Benutzer bei der ersten Anmeldung
+`tuxmail user --help`. Gemeinsame (Team-)Postfächer
+verwalten Administratoren zusätzlich in der Weboberfläche. Bei OIDC werden Benutzer bei der ersten Anmeldung
 angelegt; Admin-Rechte über `tuxmail_oidc_admin_group`.
 
 Umgebungsvariablen `TUXMAIL_LISTEN`, `TUXMAIL_DATA_DIR`, `TUXMAIL_PUBLIC_URL`,

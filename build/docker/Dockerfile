@@ -87,7 +87,7 @@ ARG VERSION=dev
 LABEL org.opencontainers.image.title="TuxMail" \
       org.opencontainers.image.description="TuxMail server (web client, PWA and API)" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
-      org.opencontainers.image.source="https://github.com/Midas1989/Mailclient" \
+      org.opencontainers.image.source="https://github.com/Midas1989/tuxmail" \
       org.opencontainers.image.version="${VERSION}"
 
 # ca-certificates: TLS to mail servers; tzdata: time zones; wget for the health check.

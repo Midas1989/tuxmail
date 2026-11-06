@@ -18,7 +18,7 @@
   }
   let { part }: Props = $props();
 
-  const SOURCE_URL = 'https://github.com/Midas1989/Mailclient';
+  const SOURCE_URL = 'https://github.com/Midas1989/tuxmail';
 
   let version = $state(buildVersion.trim());
   $effect(() => {

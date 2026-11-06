@@ -1294,7 +1294,7 @@ Unabhängig von der Sprache einstellbar unter *Einstellungen → Sprache & Regio
 ## 19. Projektstruktur (Repository)
 
 ```
-Mailclient/
+tuxmail/
 ├── cmd/
 │   ├── tuxmail/               # Hauptprogramm (GUI + Kern)
 │   ├── tuxmail-cli/           # Kommandozeile: Backup, Import/Export, Headless

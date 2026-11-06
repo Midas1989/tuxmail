@@ -1,8 +1,32 @@
 # Aufgaben für den Projektinhaber (Midas Wollinger)
 
-Stand: 03.11.2026 – Diese Liste enthält alles, was **nur du** erledigen kannst (Konten, Verträge, Entscheidungen). Die Programmierung läuft parallel weiter; nichts davon blockiert die aktuelle Entwicklung.
+Stand: 06.11.2026 (Abschnitt „Neu“ ergänzt, die nummerierten Aufgaben darunter stammen vom 03.11.) – Diese Liste enthält alles, was **nur du** erledigen kannst (Konten, Verträge, Entscheidungen). Die Programmierung läuft parallel weiter; nichts davon blockiert die aktuelle Entwicklung.
 
 Legende: 🔴 bald nötig · 🟡 vor der ersten öffentlichen Version · 🟢 später / optional
+
+---
+
+## Neu: Aufgaben nach dem Sicherheits-Re-Audit (Stand 06.11.2026)
+
+Der Programmcode ist behoben und getestet (Bericht: [security/REAUDIT-2026-11-05.md](security/REAUDIT-2026-11-05.md)).
+Diese Punkte kann nur der Projektinhaber erledigen oder auf echter Hardware prüfen:
+
+| # | Aufgabe | Priorität | Kosten |
+|---|---|---|---|
+| A | **GitHub Actions läuft nicht:** Alle Läufe der letzten Pushes schlagen nach wenigen Sekunden ohne Protokoll fehl (auch schon vor den Sicherheitsänderungen). Vermutlich Abrechnung oder Actions-Minuten: *Settings → Billing and plans* und den Reiter *Actions* prüfen. Danach die Läufe `CI`, `Security`, `Release`, `Android` erneut starten. | 🔴 | – |
+| B | **Neues Release erstellen:** `v0.1.0` (04.11.) enthält die Korrekturen nicht. Nach grünen Läufen Version erhöhen und taggen ([RELEASE.md](RELEASE.md), Abschnitt 2). | 🔴 | – |
+| C | **GPG-Release-Schlüssel anlegen:** `gpg --full-generate-key`, privaten Schlüssel (`gpg --armor --export-secret-keys KEYID`) als Secret `GPG_PRIVATE_KEY`, dazu `GPG_PASSPHRASE` in *Settings → Secrets and variables → Actions*. Fingerabdruck als `tuxmail_release_gpg_fingerprint` in `deploy/ansible/inventory/group_vars/all.yml` eintragen. Bis dahin installiert Ansible nur mit `tuxmail_allow_unsigned_release: true`. | 🔴 | kostenlos |
+| D | Repository-Einstellung **„Require actions to be pinned to a full-length commit SHA“** aktivieren (*Settings → Actions → General*). Alle Actions sind bereits gepinnt. | 🔴 | – |
+| E | **Android-Schlüssel erzeugen und sichern:** `keytool -genkeypair -v -keystore release.jks -alias tuxmail -keyalg RSA -keysize 4096 -validity 10000`, dann Secrets `KEYSTORE_BASE64` (`base64 -w0 release.jks`), `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD`. Ohne den Schlüssel lassen sich installierte Apps nie wieder aktualisieren: Datei und Passwörter mehrfach sichern. | 🟡 | kostenlos |
+| F | **Windows-Signatur** (siehe Punkt 6): bei SignPath Foundation bewerben, danach Secret `SIGNPATH_API_TOKEN` und die Variablen `SIGNPATH_ORGANIZATION_ID`, `SIGNPATH_PROJECT_SLUG`, `SIGNPATH_SIGNING_POLICY_SLUG` setzen ([RELEASE.md](RELEASE.md), Abschnitt 5). | 🟡 | 0 € (SignPath) |
+| G | **Erste CI-Läufe beobachten:** `linux-desktop` (neue AppImage-Werkzeug-Pins) und der Windows-Job (WebView2-Schritt) wurden noch nie auf GitHub ausgeführt. | 🟡 | – |
+| H | **Smoke-Tests auf echter Hardware:** Windows (Deinstallation für alle Benutzer, WebView2-Installation, Plugin-Vertrauensprüfung) und Android (erster Release-Build mit R8: Push, Benachrichtigungsaktionen, Teilen, Biometrie, Deep Links). | 🟡 | – |
+| I | **Betrieb bestehender Server prüfen:** Sicherungen brauchen jetzt age-Empfänger (`tuxmail_backup_age_recipients`) oder die ausdrückliche Klartext-Ausnahme; `tuxmail_tls_mode: none` hinter einem TLS-beendenden Proxy braucht `tuxmail_nginx_upstream_terminates_tls: true`; die Version erscheint auf `/healthz` nur noch mit `security.expose_version: true`. | 🟡 | – |
+| J | **Entscheidungen:** Soll das Projekt eine **Update-Funktion** im Programm bekommen (Vorschlag: signierter Update-Hinweis zuerst)? Soll die **TOTP-Einrichtung** in die Weboberfläche (bisher nur per API; Administratoren müssen sie standardmäßig nutzen)? | 🟡 | – |
+| K | Projekt wurde nach `github.com/Midas1989/tuxmail` umbenannt: Der Go-Modulpfad (`go.mod`) heißt noch `github.com/Midas1989/Mailclient`. Das stört nichts; eine Umbenennung ist möglich, berührt aber alle Quelldateien. Ggf. Secrets/Variablen und Verknüpfungen (SignPath-Projekt, Docker-Paket auf ghcr.io) auf den neuen Namen prüfen. | 🟢 | – |
+
+Bewusst offen bleiben: Authenticode-Signatur der Windows-Programme (Punkt F), Signaturen für Messenger-Plugins und eine
+Sandbox für Plugins (sie laufen als derselbe Benutzer wie TuxMail).
 
 ---
 
@@ -33,7 +57,7 @@ Gesetzlich nicht vorgeschrieben (siehe Chat). Vorschlag für einen freiwilligen 
 
 ## 2. 🔴 GitHub-Repository vorbereiten
 
-Repository: `github.com/Midas1989/Mailclient`
+Repository: `github.com/Midas1989/tuxmail` (früher `Mailclient`; GitHub leitet alte Links weiter)
 
 - [ ] **Zwei-Faktor-Anmeldung** für dein GitHub-Konto aktivieren (Pflicht für kostenlose Code-Signatur über SignPath, siehe Punkt 6).
 - [ ] Entscheiden, ob das Repository **öffentlich** wird (nötig für SignPath und für Open Source generell). Empfehlung: öffentlich schalten, sobald die erste lauffähige Version steht.

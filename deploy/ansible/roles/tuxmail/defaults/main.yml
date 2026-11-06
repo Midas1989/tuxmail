@@ -7,7 +7,7 @@
 
 # --- Bezugsquelle des Binaries ------------------------------------------------
 # Basis-URL der Release-Dateien (mit abschließendem "/").
-tuxmail_release_base_url: "https://github.com/Midas1989/Mailclient/releases/download/v{{ tuxmail_version }}/"
+tuxmail_release_base_url: "https://github.com/Midas1989/tuxmail/releases/download/v{{ tuxmail_version }}/"
 # Architektur-Zuordnung (Ansible-Fakt -> Release-Name).
 tuxmail_arch_map:
   x86_64: amd64

@@ -11,7 +11,7 @@ Bitte melde Sicherheitslücken **nicht** über öffentliche Issues, Pull Request
 
 Nutze stattdessen die private Meldung von GitHub:
 **Repository → Security → Advisories → „Report a vulnerability“**
-(<https://github.com/Midas1989/Mailclient/security/advisories/new>).
+(<https://github.com/Midas1989/tuxmail/security/advisories/new>).
 
 Hilfreich sind:
 
@@ -59,7 +59,7 @@ Please do **not** report security issues through public issues, pull requests or
 
 Use GitHub private vulnerability reporting instead:
 **Repository → Security → Advisories → "Report a vulnerability"**
-(<https://github.com/Midas1989/Mailclient/security/advisories/new>).
+(<https://github.com/Midas1989/tuxmail/security/advisories/new>).
 
 Please include the affected version (`tuxmail version` or Settings, About; `/healthz` only reports it with `security.expose_version: true`), the component (server, desktop,
 Android, plugin), a description with impact and reproduction steps (proof of concept), relevant
