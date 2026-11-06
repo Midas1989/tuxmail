@@ -45,7 +45,7 @@ Versionsnummer, zurzeit `0.1.0`.
 **Eigener Server in fünf Befehlen** (Debian/Ubuntu/RHEL-Familie, Domain zeigt auf den Server, Ports 80 und 443 offen):
 
 ```bash
-git clone https://github.com/Midas1989/tuxmail.git && cd tuxmail/deploy/ansible
+git clone --branch main https://github.com/Midas1989/tuxmail.git && cd tuxmail/deploy/ansible
 cp inventory/hosts.example.ini inventory/hosts.ini && $EDITOR inventory/hosts.ini     # Server eintragen
 ansible-galaxy collection install -r requirements.yml
 ansible-playbook -i inventory/hosts.ini site.yml \
@@ -283,7 +283,7 @@ Beispiel `pip install ansible`. Für einen Server mit **Ubuntu 26.04** (Python 3
 
 1. Repository holen und ins Ansible-Verzeichnis wechseln:
    ```bash
-   git clone https://github.com/Midas1989/tuxmail.git
+   git clone --branch main https://github.com/Midas1989/tuxmail.git
    cd tuxmail/deploy/ansible
    ```
 2. Server eintragen:
@@ -429,7 +429,7 @@ Mehr dazu in [deploy/README.md](../deploy/README.md).
 Alle Varianten lassen sich ohne GitHub auf einem Linux-Rechner bauen.
 
 ```bash
-git clone https://github.com/Midas1989/tuxmail.git && cd tuxmail
+git clone --branch main https://github.com/Midas1989/tuxmail.git && cd tuxmail
 build/build-all.sh --check        # was lässt sich hier bauen, was fehlt?
 build/build-all.sh                # alles Mögliche nach dist/
 build/build-all.sh server         # nur die Server-Archive
@@ -503,6 +503,7 @@ Eine automatische Update-Funktion im Programm gibt es noch nicht.
 | Linux: Passwörter werden nicht gespeichert | Schlüsselbund installieren und entsperren (`gnome-keyring`, KWallet oder KeePassXC mit Secret-Service). |
 | AppImage startet nicht, „FUSE“ | Siehe 3c. |
 | Server: Playbook bricht mit Hinweis auf Signatur oder Fingerabdruck ab | Siehe 6a, „Release-Signatur“. |
+| Playbook meldet „Ubuntu 26.04 wird nicht unterstützt“ oder ein anderer bekannter Fehler ist noch da | Du hast einen alten Stand ausgecheckt. Mit `git branch --show-current` prüfen: Es muss `main` sein. Wechseln: `git fetch origin && git checkout main && git pull origin main` (eigene Änderungen vorher sichern, siehe `git stash`). |
 | Ubuntu 26.04: Matrix-Synapse-Repository kennt „resolute“ nicht | Continuwuity verwenden (`tuxmail_matrix_server=continuwuity`, Standard); Einzelheiten in [deploy/README.md](../deploy/README.md), „Hinweise zu Ubuntu 26.04“. |
 | Ubuntu 26.04: PDF-Export startet nicht | Chromium gibt es nur als Snap: `tuxmail_pdf_chromium_path` setzen oder Gotenberg verwenden. |
 | Server: Playbook bricht bei der Sicherung ab | Siehe 6a, „Sicherungen“. |
@@ -532,7 +533,7 @@ Fehler melden: [Issues](https://github.com/Midas1989/tuxmail/issues). Sicherheit
 | Android | `TuxMail-<v>-foss.apk` | allow "install unknown apps", install, enter your TuxMail server URL |
 | Server | `tuxmail_<v>_linux_amd64.tar.gz` / `ghcr.io/midas1989/tuxmail:<v>` | Ansible: `deploy/ansible`; Docker: `deploy/docker`; see [deploy/README.md](../deploy/README.md) |
 
-Server quick start: `git clone https://github.com/Midas1989/tuxmail.git && cd tuxmail/deploy/ansible`, copy and edit
+Server quick start: `git clone --branch main https://github.com/Midas1989/tuxmail.git && cd tuxmail/deploy/ansible`, copy and edit
 `inventory/hosts.example.ini`, then
 `ansible-playbook -i inventory/hosts.ini site.yml -e tuxmail_domain=mail.example.com -e tuxmail_tls_letsencrypt_email=you@example.com -e tuxmail_allow_unsigned_release=true -e tuxmail_backup_allow_plaintext=true`
 (the two last switches are only for a first test: releases are not signed yet and backups are not encrypted).
