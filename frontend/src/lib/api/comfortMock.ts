@@ -19,6 +19,7 @@ import type {
   MeetingLink,
   MessageInsights,
   SmimeCertificate,
+  PgpKey,
   Subscription,
   UnsubscribeResult,
 } from './comfort';
@@ -73,6 +74,7 @@ function insightFor(m: MailSpec, overrides: Map<number, CategoryId>, spamOverrid
     };
   }
   if (m.id === 4) out.smime = { present: true, signed: true, encrypted: false, decrypted: false, signature: 'trusted', signerEmail: from, signerName: name(m.from), issuer: 'D-TRUST Mail CA 2-2 2023' };
+  if (m.id === 7) out.pgp = { present: true, encrypted: true, decrypted: true, signed: true, signature: 'valid', signerTrust: 'tofu', signerFingerprint: 'C5AA1F0E7B3D42189E60D1A4F3B27C9E1D80A6F4' };
   if (m.id === 11) out.smime = { present: true, signed: true, encrypted: true, decrypted: true, signature: 'untrusted', signerEmail: from, signerName: name(m.from), issuer: 'Kanzlei Sommer interne CA' };
   return out;
 }
@@ -112,6 +114,7 @@ export function comfortMock(): ComfortApi {
     meeting: { defaultProvider: 'jitsi', jitsiBaseUrl: 'https://meet.jit.si' },
     merge: { perMinute: 30 },
     smime: { signByDefault: false, encryptAutomatically: true, prefer: 'pgp' },
+    pgp: { signByDefault: false, sendAutocrypt: true, preferEncrypt: false },
     pdf: { useChromium: true, nameTemplate: '{{datum}}_{{absender}}_{{betreff}}.pdf' },
     newsletter: { showBar: true },
   };
@@ -121,6 +124,7 @@ export function comfortMock(): ComfortApi {
   const unsubscribed = new Set<string>();
   const autoArchive = new Set<string>();
   const jobs = new Map<string, MergeJob>();
+  let pgpKeys: PgpKey[] = [];
   let certs: SmimeCertificate[] = [
     { id: 1, email: 'jonas.becker@posteo.de', subject: 'Jonas Becker', issuer: 'Actalis Client Authentication CA G3', fingerprint: '3F:9A:…:C1', notBefore: new Date(Date.now() - 90 * DAY).toISOString(), notAfter: new Date(Date.now() + 275 * DAY).toISOString(), own: true, trusted: true, source: 'own', expired: false, canEncrypt: true },
     { id: 2, email: 'l.schneider@schneider-kg.de', subject: 'Lisa Schneider', issuer: 'D-TRUST Mail CA 2-2 2023', fingerprint: '8B:12:…:7E', notBefore: new Date(Date.now() - 200 * DAY).toISOString(), notAfter: new Date(Date.now() + 165 * DAY).toISOString(), own: false, trusted: false, source: 'collected', expired: false, canEncrypt: true },
@@ -322,6 +326,53 @@ export function comfortMock(): ComfortApi {
     },
     deleteCertificate: async (id) => {
       certs = certs.filter((c) => c.id !== id);
+    },
+    listPgpKeys: async () => structuredClone(pgpKeys),
+    unlockPgpKey: async (id) => {
+      pgpKeys = pgpKeys.map((k) => (k.id === id ? { ...k, locked: false } : k));
+      return structuredClone(pgpKeys.find((k) => k.id === id)!);
+    },
+    changePgpPassphrase: async (id, _current, next) => {
+      pgpKeys = pgpKeys.map((k) => (k.id === id ? { ...k, protected: !!next, locked: !!next } : k));
+      return structuredClone(pgpKeys.find((k) => k.id === id)!);
+    },
+    lockPgpKeys: async () => {
+      pgpKeys = pgpKeys.map((k) => ({ ...k, locked: k.protected }));
+    },
+    generatePgpKey: async ({ name: n, email, passphrase }) => {
+      const k: PgpKey = { protected: !!passphrase, locked: !!passphrase, id: pgpKeys.length + 1, fingerprint: 'A1B2C3D4E5F60718293A4B5C6D7E8F9012345678', email, userId: `${n} <${email}>`, algorithm: 'Ed25519', created: new Date().toISOString(), status: 'valid', own: true, canEncrypt: true, canSign: true, source: 'own', trust: 'verified' };
+      pgpKeys.push(k);
+      return k;
+    },
+    importPgpKeys: async (file) => {
+      const email = file.name.replace(/\.[^.]+$/, '') + '@example.org';
+      const k: PgpKey = { protected: false, locked: false, id: pgpKeys.length + 1, fingerprint: 'F0E1D2C3B4A5968778695A4B3C2D1E0F12345678', email, userId: email, algorithm: 'Ed25519', created: new Date().toISOString(), status: 'valid', own: false, canEncrypt: true, canSign: false, source: 'manual', trust: 'unknown' };
+      pgpKeys.push(k);
+      return [k];
+    },
+    exportPgpPublicKey: async () => '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nDemo\n-----END PGP PUBLIC KEY BLOCK-----\n',
+    exportPgpSecretKey: async () => '-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nDemo\n-----END PGP PRIVATE KEY BLOCK-----\n',
+    verifyPgpKey: async (id, verified) => {
+      pgpKeys = pgpKeys.map((k) => (k.id === id ? { ...k, trust: verified ? 'verified' : 'unknown' } : k));
+    },
+    deletePgpKey: async (id) => {
+      pgpKeys = pgpKeys.filter((k) => k.id !== id);
+    },
+    lookupPgpKey: async (email) => {
+      throw new ApiError(`no key for ${email}`, 404, 'pgp_key_not_found');
+    },
+    listPgpPeers: async () => [],
+    verifyPgpPeer: async () => {
+      throw new ApiError('not found', 404, 'not_found');
+    },
+    deletePgpPeer: async () => {},
+    acceptPgpPeer: async () => {},
+    failedSends: async () => [],
+    dismissFailedSend: async () => {},
+    pgpStatus: async (from, recipients) => {
+      const canSign = pgpKeys.some((k) => k.own && k.email === from.toLowerCase());
+      const missing = recipients.filter((r) => !pgpKeys.some((k) => k.email === r.toLowerCase()));
+      return { canSign, canEncrypt: canSign && recipients.length > 0 && missing.length === 0, missing };
     },
     smimeStatus: async (from, recipients) => {
       const canSign = certs.some((c) => c.own && c.email === from.toLowerCase());

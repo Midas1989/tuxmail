@@ -1154,6 +1154,7 @@ const (
 	EventSearchFoldersChange = "searchfolders.changed"
 	EventWorkflowRun         = "workflow.run"
 	EventVaultLocked         = "vault.locked"
+	EventSendFailed          = "mail.send_failed"
 	// EventSyncStatus carries the sync status (state, folder, progress) of
 	// one account; progress updates are throttled to about 4 per second.
 	EventSyncStatus = "sync.status"

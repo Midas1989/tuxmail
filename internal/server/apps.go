@@ -201,6 +201,17 @@ func (p *appPool) drop(userID int64) {
 	}
 }
 
+// lockPGP forgets the OpenPGP passphrases of a user whose session ended. An App
+// that is not open has none.
+func (p *appPool) lockPGP(userID int64) {
+	p.mu.Lock()
+	e := p.m[userID]
+	p.mu.Unlock()
+	if e != nil && e.app != nil {
+		e.app.LockPGPKeys()
+	}
+}
+
 func (p *appPool) closeAll() {
 	p.mu.Lock()
 	all := p.m

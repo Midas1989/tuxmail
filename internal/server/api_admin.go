@@ -150,6 +150,7 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request, a
 		}
 		if *req.Disabled {
 			s.streams.revokeUser(id, 0)
+			s.apps.lockPGP(id)
 		}
 	}
 	u, err := s.auth.GetUser(ctx, id)
@@ -179,6 +180,7 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request, a
 	}
 	s.apps.drop(id) // a request may have reopened it meanwhile
 	s.streams.revokeUser(id, 0)
+	s.apps.lockPGP(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -199,6 +201,7 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 			return
 		}
 		s.streams.revokeUser(id, 0)
+		s.apps.lockPGP(id)
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -208,6 +211,7 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.streams.revokeUser(id, 0)
+	s.apps.lockPGP(id)
 	writeJSON(w, http.StatusOK, map[string]string{"password": pw})
 }
 
@@ -264,6 +268,7 @@ func (s *Server) handleAdminRevokeSessions(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.streams.revokeUser(id, 0)
+	s.apps.lockPGP(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -281,6 +286,7 @@ func (s *Server) handleAdminRevokeSession(w http.ResponseWriter, r *http.Request
 		return
 	}
 	s.streams.revokeSession(id, sid)
+	s.apps.lockPGP(id)
 	w.WriteHeader(http.StatusNoContent)
 }
 

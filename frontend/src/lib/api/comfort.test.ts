@@ -13,6 +13,22 @@ describe('comfort API', () => {
     expect(comfortFor(mock)).toBe(comfortFor(mock));
   });
 
+  it('OpenPGP goes through the documented routes, key lookup only on request', async () => {
+    const calls: [string, string, string | undefined][] = [];
+    const f = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push([init?.method ?? 'GET', url, init?.body as string | undefined]);
+      return new Response(JSON.stringify({ armored: 'x', canSign: true, canEncrypt: false, missing: ['b@example.org'] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    const c = new ComfortHttp('https://mail.example', f, () => 'tok');
+    await c.pgpStatus('a@example.org', ['b@example.org']);
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1]).toBe('https://mail.example/api/comfort/pgp/status?from=a%40example.org&recipients=b%40example.org');
+    expect(await c.exportPgpSecretKey(3, 'lange passphrase')).toBe('x');
+    expect(calls[1]).toEqual(['POST', 'https://mail.example/api/comfort/pgp/keys/3/secret', JSON.stringify({ passphrase: 'lange passphrase' })]);
+    await c.lookupPgpKey('b@example.org', 'wkd');
+    expect(calls[2]).toEqual(['POST', 'https://mail.example/api/comfort/pgp/keys/lookup', JSON.stringify({ email: 'b@example.org', source: 'wkd' })]);
+  });
+
   it('HTTP transport calls the documented routes', async () => {
     const calls: [string, string, string | undefined][] = [];
     const f = vi.fn(async (url: string, init?: RequestInit) => {

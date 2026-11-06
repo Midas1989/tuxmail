@@ -118,3 +118,51 @@ type PDFFile struct {
 	Filename string `json:"filename"`
 	Data     string `json:"data"`
 }
+
+func (x *Api) ComfortListPGPKeys() ([]PGPKeyInfo, error) { return r1(x.app.ListPGPKeys(x.ctx)) }
+func (x *Api) ComfortGeneratePGPKey(in PGPGenerateInput) (PGPKeyInfo, error) {
+	return r1(x.app.GeneratePGPKey(x.ctx, in))
+}
+func (x *Api) ComfortImportPGPKeys(in PGPImportInput) ([]PGPKeyInfo, error) {
+	return r1(x.app.ImportPGPKeys(x.ctx, in))
+}
+func (x *Api) ComfortExportPGPPublicKey(id int64) (string, error) {
+	return r1(x.app.ExportPGPPublicKey(x.ctx, id))
+}
+func (x *Api) ComfortExportPGPSecretKey(id int64, in PGPExportInput) (string, error) {
+	return r1(x.app.ExportPGPSecretKey(x.ctx, id, in))
+}
+func (x *Api) ComfortSetPGPKeyVerified(id int64, verified bool) error {
+	return werr(x.app.SetPGPKeyVerified(x.ctx, id, verified))
+}
+func (x *Api) ComfortDeletePGPKey(id int64) error { return werr(x.app.DeletePGPKey(x.ctx, id)) }
+func (x *Api) ComfortLookupPGPKey(in PGPLookupInput) (PGPKeyInfo, error) {
+	return r1(x.app.LookupPGPKey(x.ctx, in))
+}
+func (x *Api) ComfortPGPStatus(from string, recipients []string) (PGPStatus, error) {
+	return r1(x.app.PGPStatusFor(x.ctx, from, recipients))
+}
+func (x *Api) ComfortListPGPPeers() ([]PGPPeerInfo, error) { return r1(x.app.ListPGPPeers(x.ctx)) }
+func (x *Api) ComfortVerifyPGPPeer(in PGPPeerInput) (PGPKeyInfo, error) {
+	return r1(x.app.VerifyPGPPeer(x.ctx, in))
+}
+func (x *Api) ComfortDeletePGPPeer(address string) error {
+	return werr(x.app.DeletePGPPeer(x.ctx, address))
+}
+func (x *Api) ComfortUnlockPGPKey(id int64, in PGPUnlockInput) (PGPKeyInfo, error) {
+	return r1(x.app.UnlockPGPKey(x.ctx, id, in))
+}
+func (x *Api) ComfortChangePGPPassphrase(id int64, in PGPPassphraseInput) (PGPKeyInfo, error) {
+	return r1(x.app.ChangePGPPassphrase(x.ctx, id, in))
+}
+func (x *Api) ComfortLockPGPKeys() error {
+	x.app.LockPGPKeys()
+	return nil
+}
+func (x *Api) ComfortAcceptPGPPeer(in PGPPeerInput) error {
+	return werr(x.app.AcceptPGPPeer(x.ctx, in))
+}
+func (x *Api) ComfortFailedSends() ([]FailedSend, error) { return r1(x.app.FailedSends(x.ctx)) }
+func (x *Api) ComfortDismissFailedSend(id int64) error {
+	return werr(x.app.DismissFailedSend(x.ctx, id))
+}

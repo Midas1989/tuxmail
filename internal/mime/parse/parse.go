@@ -47,6 +47,9 @@ type Options struct {
 	KeyRing *pgp.KeyRing
 	// PGP are options passed to KeyRing.ReadMessage.
 	PGP pgp.ReadOptions
+	// PGPSenderKeys, if set, adds verification keys for the From address
+	// (e.g. the sender's Autocrypt key).
+	PGPSenderKeys func(ctx context.Context, from string) []*pgp.Key
 	// SMIME, if set, verifies and decrypts S/MIME messages (smime.go).
 	SMIME SMIMEReader
 	// FallbackCharset decodes 8-bit text without (valid) charset label
@@ -128,6 +131,11 @@ type PGPInfo struct {
 	EncryptedTo       []string  `json:"encryptedTo,omitempty"`
 	// ProtectedHeaders is true if the inner part carried protected headers.
 	ProtectedHeaders bool `json:"protectedHeaders"`
+	// PartiallyProtected is true for inline PGP with text outside the
+	// protected block; that text was dropped.
+	PartiallyProtected bool `json:"partiallyProtected,omitempty"`
+	// LockedKeys could decrypt the message, but need their passphrase.
+	LockedKeys []string `json:"lockedKeys,omitempty"`
 	// Error describes a decryption failure or signature problem.
 	Error string `json:"error,omitempty"`
 }

@@ -43,6 +43,24 @@
 //   PUT /api/comfort/smime/certificates/{id}/trust  {trusted}
 //   DELETE /api/comfort/smime/certificates/{id}
 //   GET /api/comfort/smime/status                   ?from=&recipients=a,b -> SmimeStatus
+//   GET /api/comfort/pgp/keys                       -> PgpKey[]
+//   POST /api/comfort/pgp/keys                      {data (base64), passphrase} -> PgpKey[]
+//   POST /api/comfort/pgp/keys/generate             {name, email, passphrase} -> PgpKey
+//   POST /api/comfort/pgp/keys/{id}/unlock          {passphrase} -> PgpKey
+//   POST /api/comfort/pgp/keys/{id}/passphrase      {current, new} -> PgpKey (new empty: remove)
+//   POST /api/comfort/pgp/lock
+//   POST /api/comfort/pgp/keys/lookup               {email, source: wkd|keyserver} -> PgpKey (only on a click)
+//   GET /api/comfort/pgp/keys/{id}/public           -> {armored}
+//   POST /api/comfort/pgp/keys/{id}/secret          {passphrase, current} -> {armored}
+//   PUT /api/comfort/pgp/keys/{id}/trust            {verified}
+//   DELETE /api/comfort/pgp/keys/{id}
+//   GET /api/comfort/pgp/peers                      -> PgpPeer[]
+//   POST /api/comfort/pgp/peers/verify              {address, fingerprint} -> PgpKey
+//   POST /api/comfort/pgp/peers/delete              {address}
+//   POST /api/comfort/pgp/peers/accept              {address, fingerprint}
+//   GET /api/comfort/send-failures                  -> FailedSend[]
+//   DELETE /api/comfort/send-failures/{id}
+//   GET /api/comfort/pgp/status                     ?from=&recipients=a,b -> PgpStatus
 
 import type { Api } from './api';
 import { ApiError } from './api';
@@ -61,6 +79,7 @@ export interface ComfortSettings {
   meeting: { defaultProvider: MeetingProvider; jitsiBaseUrl: string; nextcloudAccountId?: number };
   merge: { perMinute: number };
   smime: { signByDefault: boolean; encryptAutomatically: boolean; prefer: 'pgp' | 'smime' };
+  pgp: { signByDefault: boolean; sendAutocrypt: boolean; preferEncrypt: boolean };
   pdf: { chromiumPath?: string; useChromium: boolean; nameTemplate: string };
   newsletter: { showBar: boolean };
 }
@@ -111,6 +130,20 @@ export interface SmimeInfo {
   error?: string;
 }
 
+export interface PgpMessageStatus {
+  present: boolean;
+  encrypted: boolean;
+  decrypted: boolean;
+  signed: boolean;
+  signature?: 'valid' | 'invalid' | 'unknown_key' | 'expired_key' | 'revoked_key' | 'mismatch' | 'conflict';
+  signerFingerprint?: string;
+  signerKeyId?: string;
+  signerTrust?: 'unknown' | 'tofu' | 'verified';
+  protectedSubject?: string;
+  partiallyProtected?: boolean;
+  lockedKeys?: { id: number; email: string; fingerprint: string }[];
+}
+
 export interface MessageInsights {
   messageId: number;
   spam: { score: number; level: 'ham' | 'unsure' | 'spam'; server?: boolean; trained?: boolean; reasons?: string[] };
@@ -122,6 +155,7 @@ export interface MessageInsights {
   unsubscribed?: boolean;
   invoice?: Invoice;
   smime?: SmimeInfo;
+  pgp?: PgpMessageStatus;
 }
 
 export interface CategoryInfo {
@@ -264,6 +298,52 @@ export interface SmimeStatus {
   missing?: string[];
 }
 
+export interface PgpKey {
+  id: number;
+  fingerprint: string;
+  email: string;
+  emails?: string[];
+  userId: string;
+  algorithm: string;
+  created: string;
+  expires?: string;
+  status: string;
+  own: boolean;
+  canEncrypt: boolean;
+  canSign: boolean;
+  source: 'own' | 'manual' | 'wkd' | 'keyserver' | 'autocrypt';
+  trust: 'unknown' | 'tofu' | 'verified' | 'revoked' | 'expired';
+  protected: boolean;
+  locked: boolean;
+  unlockedUntil?: string;
+}
+
+export interface PgpPeer {
+  address: string;
+  fingerprint: string;
+  gossip: boolean;
+  preferEncrypt: boolean;
+  lastSeen?: string;
+  keyChanged: boolean;
+  trust: 'unknown' | 'tofu' | 'verified' | 'revoked' | 'expired';
+}
+
+export interface PgpStatus {
+  canSign: boolean;
+  canEncrypt: boolean;
+  missing?: string[];
+  recipients?: { address: string; fingerprint?: string; source?: string; trust: string; pendingKey?: string; keyChanged?: boolean }[];
+  recommendation?: string;
+  ownLocked?: boolean;
+  ownKeyId?: number;
+}
+
+export interface FailedSend {
+  id: number;
+  subject: string;
+  error: string;
+}
+
 export interface OutgoingCrypto {
   method: 'auto' | 'smime' | 'pgp' | 'none';
   sign?: boolean;
@@ -316,6 +396,24 @@ export interface ComfortApi {
   trustCertificate(id: number, trusted: boolean): Promise<void>;
   deleteCertificate(id: number): Promise<void>;
   smimeStatus(from: string, recipients: string[]): Promise<SmimeStatus>;
+  listPgpKeys(): Promise<PgpKey[]>;
+  generatePgpKey(input: { name: string; email: string; passphrase?: string }): Promise<PgpKey>;
+  unlockPgpKey(id: number, passphrase: string): Promise<PgpKey>;
+  changePgpPassphrase(id: number, current: string, next: string): Promise<PgpKey>;
+  lockPgpKeys(): Promise<void>;
+  importPgpKeys(file: File, passphrase?: string): Promise<PgpKey[]>;
+  exportPgpPublicKey(id: number): Promise<string>;
+  exportPgpSecretKey(id: number, passphrase: string, current?: string): Promise<string>;
+  verifyPgpKey(id: number, verified: boolean): Promise<void>;
+  deletePgpKey(id: number): Promise<void>;
+  lookupPgpKey(email: string, source: 'wkd' | 'keyserver'): Promise<PgpKey>;
+  listPgpPeers(): Promise<PgpPeer[]>;
+  verifyPgpPeer(address: string, fingerprint: string): Promise<PgpKey>;
+  deletePgpPeer(address: string): Promise<void>;
+  acceptPgpPeer(address: string, fingerprint: string): Promise<void>;
+  failedSends(): Promise<FailedSend[]>;
+  dismissFailedSend(id: number): Promise<void>;
+  pgpStatus(from: string, recipients: string[]): Promise<PgpStatus>;
 }
 
 // ---- helpers ---------------------------------------------------------------------
@@ -434,6 +532,25 @@ export class ComfortHttp implements ComfortApi {
   deleteCertificate = (id: number) => this.req<void>('DELETE', `/api/comfort/smime/certificates/${id}`);
   smimeStatus = (from: string, recipients: string[]) =>
     this.req<SmimeStatus>('GET', `/api/comfort/smime/status${query({ from, recipients: recipients.join(',') })}`);
+  listPgpKeys = () => this.req<PgpKey[]>('GET', '/api/comfort/pgp/keys');
+  generatePgpKey = (input: { name: string; email: string; passphrase?: string }) => this.req<PgpKey>('POST', '/api/comfort/pgp/keys/generate', input);
+  unlockPgpKey = (id: number, passphrase: string) => this.req<PgpKey>('POST', `/api/comfort/pgp/keys/${id}/unlock`, { passphrase });
+  changePgpPassphrase = (id: number, current: string, next: string) => this.req<PgpKey>('POST', `/api/comfort/pgp/keys/${id}/passphrase`, { current, new: next });
+  lockPgpKeys = () => this.req<void>('POST', '/api/comfort/pgp/lock');
+  importPgpKeys = async (file: File, passphrase?: string) => this.req<PgpKey[]>('POST', '/api/comfort/pgp/keys', { data: await fileToBase64(file), passphrase });
+  exportPgpPublicKey = async (id: number) => (await this.req<{ armored: string }>('GET', `/api/comfort/pgp/keys/${id}/public`)).armored;
+  exportPgpSecretKey = async (id: number, passphrase: string, current?: string) => (await this.req<{ armored: string }>('POST', `/api/comfort/pgp/keys/${id}/secret`, { passphrase, current })).armored;
+  verifyPgpKey = (id: number, verified: boolean) => this.req<void>('PUT', `/api/comfort/pgp/keys/${id}/trust`, { verified });
+  deletePgpKey = (id: number) => this.req<void>('DELETE', `/api/comfort/pgp/keys/${id}`);
+  lookupPgpKey = (email: string, source: 'wkd' | 'keyserver') => this.req<PgpKey>('POST', '/api/comfort/pgp/keys/lookup', { email, source });
+  listPgpPeers = () => this.req<PgpPeer[]>('GET', '/api/comfort/pgp/peers');
+  verifyPgpPeer = (address: string, fingerprint: string) => this.req<PgpKey>('POST', '/api/comfort/pgp/peers/verify', { address, fingerprint });
+  deletePgpPeer = (address: string) => this.req<void>('POST', '/api/comfort/pgp/peers/delete', { address });
+  acceptPgpPeer = (address: string, fingerprint: string) => this.req<void>('POST', '/api/comfort/pgp/peers/accept', { address, fingerprint });
+  failedSends = () => this.req<FailedSend[]>('GET', '/api/comfort/send-failures');
+  dismissFailedSend = (id: number) => this.req<void>('DELETE', `/api/comfort/send-failures/${id}`);
+  pgpStatus = (from: string, recipients: string[]) =>
+    this.req<PgpStatus>('GET', `/api/comfort/pgp/status${query({ from, recipients: recipients.join(',') })}`);
 }
 
 // ---- Wails ------------------------------------------------------------------------
@@ -499,6 +616,24 @@ export class ComfortWails implements ComfortApi {
   trustCertificate = (id: number, trusted: boolean) => this.call<void>('ComfortTrustCertificate', id, trusted);
   deleteCertificate = (id: number) => this.call<void>('ComfortDeleteCertificate', id);
   smimeStatus = (from: string, recipients: string[]) => this.call<SmimeStatus>('ComfortSMIMEStatus', from, recipients);
+  listPgpKeys = () => this.call<PgpKey[]>('ComfortListPGPKeys');
+  generatePgpKey = (input: { name: string; email: string; passphrase?: string }) => this.call<PgpKey>('ComfortGeneratePGPKey', input);
+  unlockPgpKey = (id: number, passphrase: string) => this.call<PgpKey>('ComfortUnlockPGPKey', id, { passphrase });
+  changePgpPassphrase = (id: number, current: string, next: string) => this.call<PgpKey>('ComfortChangePGPPassphrase', id, { current, new: next });
+  lockPgpKeys = () => this.call<void>('ComfortLockPGPKeys');
+  importPgpKeys = async (file: File, passphrase?: string) => this.call<PgpKey[]>('ComfortImportPGPKeys', { data: await fileToBase64(file), passphrase });
+  exportPgpPublicKey = (id: number) => this.call<string>('ComfortExportPGPPublicKey', id);
+  exportPgpSecretKey = (id: number, passphrase: string, current?: string) => this.call<string>('ComfortExportPGPSecretKey', id, { passphrase, current });
+  verifyPgpKey = (id: number, verified: boolean) => this.call<void>('ComfortSetPGPKeyVerified', id, verified);
+  deletePgpKey = (id: number) => this.call<void>('ComfortDeletePGPKey', id);
+  lookupPgpKey = (email: string, source: 'wkd' | 'keyserver') => this.call<PgpKey>('ComfortLookupPGPKey', { email, source });
+  listPgpPeers = () => this.call<PgpPeer[]>('ComfortListPGPPeers');
+  verifyPgpPeer = (address: string, fingerprint: string) => this.call<PgpKey>('ComfortVerifyPGPPeer', { address, fingerprint });
+  deletePgpPeer = (address: string) => this.call<void>('ComfortDeletePGPPeer', address);
+  acceptPgpPeer = (address: string, fingerprint: string) => this.call<void>('ComfortAcceptPGPPeer', { address, fingerprint });
+  failedSends = () => this.call<FailedSend[]>('ComfortFailedSends');
+  dismissFailedSend = (id: number) => this.call<void>('ComfortDismissFailedSend', id);
+  pgpStatus = (from: string, recipients: string[]) => this.call<PgpStatus>('ComfortPGPStatus', from, recipients);
 }
 
 // ---- selection -----------------------------------------------------------------------

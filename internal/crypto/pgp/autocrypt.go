@@ -242,6 +242,23 @@ type PeerState struct {
 	PreferEncrypt      PreferEncrypt `json:"preferEncrypt"`
 	GossipTimestamp    time.Time     `json:"gossipTimestamp"`
 	GossipKey          []byte        `json:"gossipKey,omitempty"`
+	// KeyChanged: the key to encrypt to was replaced by a different one and
+	// the user has not accepted that yet.
+	KeyChanged bool `json:"keyChanged,omitempty"`
+}
+
+// targetFingerprint is the fingerprint of TargetKey ("" if there is none).
+func (p *PeerState) targetFingerprint() string {
+	if k, _, err := p.TargetKey(); err == nil && k != nil {
+		return k.Fingerprint()
+	}
+	return ""
+}
+
+func (p *PeerState) noteChange(before string) {
+	if after := p.targetFingerprint(); before != "" && after != before {
+		p.KeyChanged = true
+	}
 }
 
 // EffectiveDate returns the effective message date as defined by Autocrypt:
@@ -269,6 +286,7 @@ func (p *PeerState) UpdateFromHeader(header *AutocryptHeader, date time.Time) bo
 	if header == nil {
 		return changed
 	}
+	defer p.noteChange(p.targetFingerprint())
 	p.AutocryptTimestamp = date
 	p.PublicKey = append([]byte(nil), header.KeyData...)
 	p.PreferEncrypt = header.PreferEncrypt
@@ -284,6 +302,7 @@ func (p *PeerState) UpdateFromGossip(header *AutocryptHeader, date time.Time) bo
 	if header == nil || date.Before(p.GossipTimestamp) {
 		return false
 	}
+	defer p.noteChange(p.targetFingerprint())
 	p.GossipTimestamp = date
 	p.GossipKey = append([]byte(nil), header.KeyData...)
 	return true

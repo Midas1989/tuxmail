@@ -74,6 +74,11 @@ func (w workflowCloud) UploadAttachments(ctx context.Context, ref workflow.ItemR
 	if err != nil {
 		return nil, err
 	}
+	if rm.Encrypted {
+		// The renderer decrypts for the reading pane: a rule must not carry
+		// the plaintext of encrypted attachments to a cloud (KONZEPT 8.5).
+		return nil, workflow.Permanent(errors.New("attachments of PGP-encrypted mail are not uploaded by rules"))
+	}
 	key := m.Key()
 	var out []workflow.UploadedFile
 	for _, at := range rm.Attachments {

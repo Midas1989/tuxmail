@@ -4,22 +4,53 @@ package send
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/crypto/pgp"
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/mime/compose"
+	"github.com/Midas1989/Mailclient/internal/mime/parse"
 )
 
 // pgpPlan is the resolved OpenPGP decision for one send.
 type pgpPlan struct {
 	encrypt, sign bool
 	ownKey        *pgp.Key // unlocked own secret key (nil if none)
+	lockedKey     *pgp.Key // own key whose passphrase is not known right now
 	recipients    []*pgp.Key
 }
 
+// publicKey is the own key for the Autocrypt header: that needs no passphrase.
+func (p pgpPlan) publicKey() *pgp.Key {
+	if p.ownKey != nil {
+		return p.ownKey
+	}
+	return p.lockedKey
+}
+
+// PGPPrefs are the user's OpenPGP preferences.
+type PGPPrefs struct {
+	Prefer      pgp.PreferEncrypt
+	NoAutocrypt bool
+	// SignAlways makes PGPAuto signing sign whenever the sender has a key.
+	SignAlways bool
+}
+
+func (s *Service) pgpPrefs() PGPPrefs {
+	if s.cfg.PGPPrefs != nil {
+		return s.cfg.PGPPrefs()
+	}
+	return PGPPrefs{}
+}
+
 func (s *Service) ownPrefer() pgp.PreferEncrypt {
+	if p := s.pgpPrefs().Prefer; p != "" {
+		return p
+	}
 	if s.cfg.PGP != nil && s.cfg.PGP.OwnPreferEncrypt != "" {
 		return s.cfg.PGP.OwnPreferEncrypt
 	}
@@ -69,6 +100,70 @@ func allRecipients(d *compose.Draft) []string {
 	return out
 }
 
+// repliesToEncrypted reports whether the draft answers an encrypted mail; the
+// ciphertext is recognised without any key.
+func repliesToEncrypted(d *compose.Draft) bool {
+	raw := originalRaw(d)
+	if len(raw) == 0 {
+		return false
+	}
+	m, err := parse.Parse(raw, parse.Options{SkipAttachmentData: true})
+	return err == nil && (m.PGP.Encrypted || m.SMIME.Encrypted)
+}
+
+// CheckDecryptedInPlain is the send check for answering or forwarding an
+// encrypted mail without encryption: the quote carries the decrypted text.
+const CheckDecryptedInPlain = "decrypted_in_plain"
+
+func (s *Service) checkDecryptedInPlain(ctx context.Context, req *Request) *BlockedError {
+	if !repliesToEncrypted(&req.Draft) || (req.Override && slices.Contains(req.Confirm, CheckDecryptedInPlain)) {
+		return nil
+	}
+	// The same decision as in deliver. A plan that fails refuses the send later
+	// on: no plain text either.
+	r := *req
+	sm, err := s.chooseCrypto(ctx, &r)
+	if err != nil || sm.encrypt {
+		return nil
+	}
+	if p, err := s.planPGP(ctx, &r, false); err != nil || p.encrypt {
+		return nil
+	}
+	return &BlockedError{Findings: []events.Finding{{Check: CheckDecryptedInPlain, Severity: events.SeverityBlock, Key: "send.decrypted_in_plain",
+		DE: "Sie antworten auf eine verschlüsselte Mail oder leiten sie weiter, diese Mail ginge aber unverschlüsselt hinaus. Der zitierte Text wäre lesbar.",
+		EN: "You are answering or forwarding an encrypted mail, but this mail would leave unencrypted. The quoted text would be readable."}}}
+}
+
+// chooseCrypto decides between S/MIME and OpenPGP and turns the loser off in req.
+func (s *Service) chooseCrypto(ctx context.Context, req *Request) (smimePlan, error) {
+	// Both are possible and the user prefers OpenPGP: S/MIME stays out, unless
+	// it was chosen explicitly.
+	if req.PreferPGP && req.SMIME.Sign != PGPOn && req.SMIME.Encrypt != PGPOn {
+		if pl, err := s.planPGP(ctx, req, false); err == nil && (pl.encrypt || pl.sign) {
+			req.SMIME = SMIMEOptions{Sign: PGPOff, Encrypt: PGPOff}
+		}
+	}
+	// S/MIME takes precedence over OpenPGP when active.
+	sm, err := s.planSMIME(ctx, req)
+	if err != nil {
+		return sm, err
+	}
+	if sm.active() {
+		req.PGP.Sign, req.PGP.Encrypt = PGPOff, PGPOff
+	}
+	return sm, nil
+}
+
+// checkPlannable refuses a scheduled send whose keys are missing right now.
+func (s *Service) checkPlannable(ctx context.Context, req *Request) error {
+	r := *req
+	if _, err := s.chooseCrypto(ctx, &r); err != nil {
+		return err
+	}
+	_, err := s.planPGP(ctx, &r, true)
+	return err
+}
+
 // planPGP decides whether to sign and encrypt.
 func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPlan, error) {
 	var p pgpPlan
@@ -81,6 +176,14 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 	}
 	d := &req.Draft
 	own, err := s.ownSecretKey(ctx, senderEmail(d), unlock)
+	if errors.Is(err, pgp.ErrKeyLocked) {
+		// Chosen signing or encryption does not silently go without the key.
+		if o.Sign == PGPOn || o.Encrypt == PGPOn {
+			return p, ErrPGPKeyLocked
+		}
+		p.lockedKey, _ = s.ownSecretKey(ctx, senderEmail(d), false)
+		own, err = nil, nil
+	}
 	if err != nil {
 		if o.Sign == PGPOn {
 			return p, fmt.Errorf("%w: %v", ErrNoSigningKey, err)
@@ -90,7 +193,9 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 	p.ownKey = own
 
 	if o.Encrypt != PGPOff {
-		plan, err := s.cfg.PGP.Plan(ctx, allRecipients(d), o.ReplyToEncrypted, s.cfg.Now())
+		planner := *s.cfg.PGP
+		planner.OwnPreferEncrypt = s.ownPrefer()
+		plan, err := planner.Plan(ctx, allRecipients(d), o.ReplyToEncrypted || repliesToEncrypted(d), s.cfg.Now())
 		if err != nil {
 			return p, err
 		}
@@ -101,7 +206,11 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 			}
 			p.encrypt = true
 		case PGPAuto:
-			p.encrypt = plan.CanEncrypt && plan.Recommendation == pgp.RecEncrypt
+			// Without an own key the copy in Sent would be unreadable.
+			p.encrypt = own != nil && plan.CanEncrypt && plan.Recommendation == pgp.RecEncrypt
+			if p.lockedKey != nil && plan.CanEncrypt && plan.Recommendation == pgp.RecEncrypt {
+				return p, ErrPGPKeyLocked
+			}
 		}
 		if p.encrypt {
 			p.recipients = plan.Keys()
@@ -114,7 +223,10 @@ func (s *Service) planPGP(ctx context.Context, req *Request, unlock bool) (pgpPl
 		}
 		p.sign = true
 	case PGPAuto:
-		p.sign = p.encrypt && own != nil
+		if p.lockedKey != nil && s.pgpPrefs().SignAlways {
+			return p, ErrPGPKeyLocked
+		}
+		p.sign = (p.encrypt || s.pgpPrefs().SignAlways) && own != nil
 	}
 	return p, nil
 }

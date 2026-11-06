@@ -61,6 +61,13 @@ func (c *bodyCache) get(k string) (bodyParts, bool) {
 	return v, ok
 }
 
+// clear forgets all entries (the keys that decrypted them changed).
+func (c *bodyCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.m, c.size, c.order, c.bytes = nil, nil, nil, 0
+}
+
 func (c *bodyCache) put(k string, v bodyParts) {
 	cost := v.cost()
 	if cost > maxBodyCacheBytes/8 { // one huge mail must not flush the cache
@@ -88,6 +95,7 @@ func (c *bodyCache) put(k string, v bodyParts) {
 
 // bubble returns the bubble text of a mail.
 func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
+	a.pgpSweep() // nothing decrypted outlives its passphrase
 	if m.BlobHash == "" {
 		return bodyParts{visible: m.Snippet}
 	}
@@ -98,6 +106,7 @@ func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
 	if err != nil {
 		return bodyParts{visible: m.Snippet}
 	}
+	generation := a.comfort.pgp.generation.Load()
 	r, err := a.render.Render(WithMessageID(ctx, m.ID), raw)
 	if err != nil {
 		return bodyParts{visible: m.Snippet}
@@ -127,7 +136,9 @@ func (a *App) bubble(ctx context.Context, m store.Message) bodyParts {
 			v.quoted, v.signature = "", ""
 		}
 	}
-	a.bubbles.put(m.BlobHash, v)
+	if a.comfort.pgp.generation.Load() == generation {
+		a.bubbles.put(m.BlobHash, v)
+	}
 	return v
 }
 

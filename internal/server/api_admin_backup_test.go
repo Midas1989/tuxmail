@@ -844,6 +844,8 @@ const (
 	markerAccount    = "MARKER-KONTO-7f3a"
 	markerRule       = "MARKER-REGEL-7f3a"
 	markerCert       = "MARKER-SMIME-7f3a"
+	markerPGPKey     = "MARKER-PGPKEY-7f3a"
+	markerPGPPeer    = "marker-pgppeer-7f3a@example.de"
 	markerSignature  = "MARKER-SIGNATUR-7f3a"
 	secretPayload    = "-----BEGIN PGP PRIVATE KEY BLOCK----- geheim"
 	markerSigImage   = "MARKER-SIGNATURBILD-7f3a"
@@ -888,6 +890,9 @@ func seedUserData(t *testing.T, dir string) {
 		`INSERT INTO signatures(id, name, html, plain) VALUES (1, '` + markerSignature + `', '', '')`,
 		`INSERT INTO signature_images(signature_id, content_id, blob_hash, mime_type) VALUES (1, 'c1', '` + sigImage + `', 'image/png')`,
 		`INSERT INTO smime_certs(fingerprint, email, subject, der, created_at) VALUES ('fp', 'a@example.de', '` + markerCert + `', x'00', 1)`,
+		`INSERT INTO pgp_keys(fingerprint, email, user_id, public_key, secret_ref, created_at, updated_at) VALUES ('AB', 'a@example.de', '` + markerPGPKey + `', x'00', 'pgp:AB', 1, 1)`,
+		`INSERT INTO pgp_trust(address, fingerprint, level) VALUES ('a@example.de', 'AB', 'verified')`,
+		`INSERT INTO pgp_peers(addr, public_key) VALUES ('` + markerPGPPeer + `', x'00')`,
 		`INSERT INTO app_settings(key, value_json, updated_at) VALUES ('search.history', '["` + markerMail + `"]', 1), ('prefs', '{"a":1}', 1)`,
 		`INSERT INTO calendars(id, name, sync_token) VALUES (1, 'Privat', 'tok')`,
 		`INSERT INTO addressbooks(id, name) VALUES (1, 'Adressen')`,
@@ -967,6 +972,9 @@ func TestSettingsArchiveHoldsNoDataAndRestores(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := secretStore.Set("account:1", []byte(secretPayload)); err != nil {
+		t.Fatal(err)
+	}
+	if err := secretStore.Set("pgp:AB", []byte(secretPayload)); err != nil {
 		t.Fatal(err)
 	}
 	master, err := os.ReadFile(filepath.Join(e.cfg.DataDir, "master.key"))
@@ -1056,12 +1064,12 @@ func TestSettingsArchiveHoldsNoDataAndRestores(t *testing.T) {
 
 	// Byte search through everything the archive holds.
 	tarball := decryptArchive(t, filepath.Join(job.backupDir, names[0]), private)
-	for _, absent := range []string{markerMail, markerSubject, markerAttachment, markerChat, markerEvent, markerContact, markerPlugin, markerComment, "marker-adresse-7f3a", "uidvalidity=1"} {
+	for _, absent := range []string{markerMail, markerSubject, markerAttachment, markerChat, markerEvent, markerContact, markerPlugin, markerComment, markerPGPPeer, "marker-adresse-7f3a", "uidvalidity=1"} {
 		if bytes.Contains(tarball, []byte(absent)) || bytes.Contains(bytes.ToLower(tarball), []byte(strings.ToLower(absent))) {
 			t.Errorf("%s is in the archive", absent)
 		}
 	}
-	for _, present := range []string{markerAccount, markerRule, markerCert, markerSignature, markerSigImage, "mailnutzer"} {
+	for _, present := range []string{markerAccount, markerRule, markerCert, markerPGPKey, markerSignature, markerSigImage, "mailnutzer"} {
 		if !bytes.Contains(tarball, []byte(present)) {
 			t.Errorf("%s is missing from the archive", present)
 		}
@@ -1098,6 +1106,9 @@ func TestSettingsArchiveHoldsNoDataAndRestores(t *testing.T) {
 	}
 	if got, err := restoredSecrets.Get("account:1"); err != nil || string(got) != secretPayload {
 		t.Fatalf("vault after restore: %q %v", got, err)
+	}
+	if got, err := restoredSecrets.Get("pgp:AB"); err != nil || string(got) != secretPayload {
+		t.Fatalf("private OpenPGP key after restore: %q %v", got, err)
 	}
 	// The running service opens the store of the user, with its migrations.
 	if resp, raw := func() (*http.Response, string) {

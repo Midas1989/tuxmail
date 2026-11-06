@@ -17,6 +17,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/ProtonMail/go-crypto/openpgp/clearsign"
 	pgperrors "github.com/ProtonMail/go-crypto/openpgp/errors"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	openpgp "github.com/ProtonMail/go-crypto/openpgp/v2"
 )
 
@@ -99,6 +100,13 @@ type ReadResult struct {
 	// InnerHeader is the parsed header of Content (e.g. for
 	// Autocrypt-Gossip processing).
 	InnerHeader textproto.MIMEHeader
+	// ForeignParts is true when a PGP/MIME message had parts besides the ones
+	// RFC 3156 allows. They are unprotected whatever the signature says and are
+	// not part of Content (EFAIL-like mixtures, added text).
+	ForeignParts bool
+	// LockedKeys are the fingerprints of keys that could decrypt the message,
+	// but whose passphrase the PassphraseFunc refused with ErrKeyLocked.
+	LockedKeys []string
 	// InlineHasUnprotectedText is true for inline PGP when text outside
 	// the armored block was dropped from Content.
 	InlineHasUnprotectedText bool
@@ -223,8 +231,15 @@ func (r *KeyRing) decryptPGPMIME(ctx context.Context, op *opKeyRing, body []byte
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("%w: multipart/encrypted needs two parts", ErrMalformedMIME)
 	}
+	if len(parts) > 2 {
+		res.ForeignParts = true
+	}
 	// Part 1: application/pgp-encrypted with "Version: 1" (not checked
 	// strictly). Part 2: application/octet-stream with the message.
+	vh, _ := splitEntity(parts[0])
+	if vhh, err := parseHeader(vh); err != nil || !hasMediaType(vhh, "application/pgp-encrypted") {
+		res.ForeignParts = true
+	}
 	ph, pb := splitEntity(parts[1])
 	phh, err := parseHeader(ph)
 	if err != nil {
@@ -233,6 +248,9 @@ func (r *KeyRing) decryptPGPMIME(ctx context.Context, op *opKeyRing, body []byte
 	pb, err = decodeTransfer(pb, phh.Get("Content-Transfer-Encoding"))
 	if err != nil {
 		return nil, err
+	}
+	if !hasMediaType(phh, "application/octet-stream") || !pureArmor(pb, "PGP MESSAGE") {
+		res.ForeignParts = true
 	}
 	plain, err := r.decryptMessage(ctx, op, pb, opts, res)
 	if err != nil {
@@ -280,6 +298,12 @@ func (r *KeyRing) decryptMessage(ctx context.Context, op *opKeyRing, data []byte
 				Fingerprint: fpr, KeyID: e.PrimaryKey.KeyIdString(),
 				UserID: primaryUID(&Key{entity: e}), Attempt: attempts[fpr],
 			})
+			if errors.Is(err, ErrKeyLocked) {
+				// Another recipient key may be available.
+				attempts[fpr] = MaxPassphraseAttempts
+				res.LockedKeys = append(res.LockedKeys, fpr)
+				continue
+			}
 			if err != nil {
 				promptErr = err
 				return nil, err
@@ -290,9 +314,12 @@ func (r *KeyRing) decryptMessage(ctx context.Context, op *opKeyRing, data []byte
 			return nil, nil
 		}
 		promptErr = ErrWrongPassphrase
+		if len(res.LockedKeys) > 0 {
+			promptErr = ErrKeyLocked
+		}
 		return nil, promptErr
 	}
-	md, err := openpgp.ReadMessage(in, op, prompt, configAt(opts.Now))
+	md, err := openpgp.ReadMessage(in, op, prompt, verifyConfig(opts.Now))
 	if err != nil {
 		if promptErr != nil {
 			return nil, promptErr
@@ -323,6 +350,18 @@ func (r *KeyRing) decryptMessage(ctx context.Context, op *opKeyRing, data []byte
 	return plain, nil
 }
 
+// signatureClockSkew is what a sender's clock may be ahead: a signature from
+// "the future" is refused by go-crypto, and a clock a few seconds off is no
+// sign of a changed message.
+const signatureClockSkew = 5 * time.Minute
+
+func verifyConfig(now time.Time) *packet.Config {
+	if now.IsZero() {
+		now = time.Now().Add(signatureClockSkew)
+	}
+	return configAt(now)
+}
+
 func verifyPGPMIME(op *opKeyRing, body []byte, boundary string, opts ReadOptions, res *ReadResult) ([]byte, error) {
 	parts, err := splitMultipart(body, boundary)
 	if err != nil {
@@ -330,6 +369,9 @@ func verifyPGPMIME(op *opKeyRing, body []byte, boundary string, opts ReadOptions
 	}
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("%w: multipart/signed needs two parts", ErrMalformedMIME)
+	}
+	if len(parts) > 2 {
+		res.ForeignParts = true
 	}
 	signed := parts[0]
 	sh, sb := splitEntity(parts[1])
@@ -341,8 +383,35 @@ func verifyPGPMIME(op *opKeyRing, body []byte, boundary string, opts ReadOptions
 	if err != nil {
 		return nil, err
 	}
+	// The second part is a signature and nothing else: whatever else it holds
+	// could be shown or filed by a reader without being signed.
+	if !hasMediaType(shh, "application/pgp-signature") || !pureArmor(sb, "PGP SIGNATURE") {
+		res.ForeignParts, res.Signed, res.Signature = true, true, SigInvalid
+		res.SignatureError = fmt.Errorf("%w: the signature part holds more than a signature", ErrMalformedMIME)
+		return signed, nil
+	}
 	verifyDetached(op, signed, sb, opts, res)
 	return signed, nil
+}
+
+func hasMediaType(h textproto.MIMEHeader, want string) bool {
+	mt, _ := mediaType(h.Get("Content-Type"))
+	return mt == want
+}
+
+// pureArmor reports whether b is binary, or exactly one armored block of the
+// given type with nothing around it.
+func pureArmor(b []byte, blockType string) bool {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 {
+		return false
+	}
+	begin, end := []byte("-----BEGIN "+blockType+"-----"), []byte("-----END "+blockType+"-----")
+	if bytes.HasPrefix(b, begin) {
+		return bytes.HasSuffix(b, end) && bytes.Count(b, []byte("-----BEGIN ")) == 1
+	}
+	// Binary OpenPGP packets start with the high bit set, text does not.
+	return b[0]&0x80 != 0 && !bytes.Contains(b, []byte("-----BEGIN "))
 }
 
 // verifyDetached verifies an (armored or binary) detached signature over
@@ -363,7 +432,7 @@ func verifyDetached(op *opKeyRing, signed, sig []byte, opts ReadOptions, res *Re
 
 func verifyDetachedReader(op *opKeyRing, signed []byte, sigReader io.Reader, opts ReadOptions, res *ReadResult) {
 	res.Signed = true
-	md, err := openpgp.VerifyDetachedSignatureReader(op, bytes.NewReader(signed), sigReader, configAt(opts.Now))
+	md, err := openpgp.VerifyDetachedSignatureReader(op, bytes.NewReader(signed), sigReader, verifyConfig(opts.Now))
 	if err != nil {
 		res.Signature, res.SignatureError = SigInvalid, err
 		if errors.Is(err, pgperrors.ErrUnknownIssuer) {

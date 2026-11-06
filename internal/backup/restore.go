@@ -694,6 +694,9 @@ func restoreMerge(ctx context.Context, ex *Extracted, opts RestoreOptions, res *
 	// (AUDIT-C).
 	for _, q := range []struct{ table, cols, sel string }{
 		{"app_settings", "key, value_json, updated_at", "key, value_json, updated_at"},
+		{"smime_certs", "fingerprint, email, subject, issuer, not_before, not_after, der, own, trusted, source, secret_ref, created_at", "fingerprint, email, subject, issuer, not_before, not_after, der, own, trusted, source, secret_ref, created_at"},
+		{"pgp_keys", "fingerprint, email, user_id, public_key, source, secret_ref, created_at, updated_at", "fingerprint, email, user_id, public_key, source, secret_ref, created_at, updated_at"},
+		{"pgp_trust", "address, fingerprint, level, source, first_seen, last_seen, verified_at, seen_count", "address, fingerprint, level, source, first_seen, last_seen, verified_at, seen_count"},
 		{"workflows", "id, name, enabled, yaml, external_confirmed, created_at, updated_at", "id, name, enabled, yaml, 0, created_at, updated_at"},
 	} {
 		rows, err := src.DB().QueryContext(ctx, `SELECT `+q.sel+` FROM `+q.table) // #nosec G202 -- table and column lists are constants above
@@ -719,6 +722,17 @@ func restoreMerge(ctx context.Context, ex *Extracted, opts RestoreOptions, res *
 				if n, _ := r.RowsAffected(); n > 0 {
 					res.Counts[q.table]++
 				}
+			}
+		}
+	}
+	// Private keys (OpenPGP, S/MIME) that do not exist here yet.
+	if opts.SecretStore != nil {
+		for ref, v := range secrets {
+			if !strings.HasPrefix(ref, "pgp:") && !strings.HasPrefix(ref, "smime:") {
+				continue
+			}
+			if _, err := opts.SecretStore.Get(ref); err != nil && opts.SecretStore.Set(ref, v) == nil {
+				res.Secrets++
 			}
 		}
 	}

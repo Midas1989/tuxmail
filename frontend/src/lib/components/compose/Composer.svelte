@@ -52,7 +52,9 @@
   import Signature from '@lucide/svelte/icons/signature';
   import Cloud from '@lucide/svelte/icons/cloud';
   import CloudDownload from '@lucide/svelte/icons/cloud-download';
-  import { app, cloud } from '../../state';
+  import { app, cloud, comfort } from '../../state';
+  import { ApiError } from '../../api/api';
+  import PgpUnlockDialog from '../comfort/PgpUnlockDialog.svelte';
   import CloudPickerDialog from '../cloud/CloudPickerDialog.svelte';
   import type { CloudImportResult, CloudShare } from '../../types';
   import type { ComposerInit } from '../../state';
@@ -95,6 +97,7 @@
   let dragOver = $state(false);
   let pickCloud = $state(false);
   let crypto = $state<OutgoingCrypto>({ method: 'auto' });
+  let unlockKey = $state<number | null>(null);
 
   const identity = $derived(app.identities.find((i) => i.id === identityId));
   const isReply = start.mode === 'reply' || start.mode === 'replyAll';
@@ -362,6 +365,13 @@
       app.toast(res.queued ? t('compose.queued') : t('compose.sent'));
       onclose();
     } catch (err) {
+      // A locked OpenPGP key: nothing was sent; ask, then the user sends again.
+      if (err instanceof ApiError && err.code === 'pgp_key_locked') {
+        const st = await comfort.api.pgpStatus(identity?.email ?? '', [...to, ...cc, ...bcc].map((r) => r.email)).catch(() => null);
+        if (st?.ownKeyId) unlockKey = st.ownKeyId;
+        error = t('comfort.crypto.pgpLocked');
+        return;
+      }
       error = t('compose.sendFailed', { error: err instanceof Error ? err.message : String(err) });
     } finally {
       sending = false;
@@ -437,6 +447,9 @@
       <button class="icon-btn" title={t('compose.attach')} aria-label={t('compose.attach')} onclick={() => fileInput?.click()}><Paperclip size={16} /></button>
       {#if cloud.storageAccounts.length}
         <button class="icon-btn" title={t('cloud.picker.title')} aria-label={t('cloud.picker.title')} onclick={() => (pickCloud = true)}><CloudDownload size={16} /></button>
+      {/if}
+      {#if unlockKey}
+        <PgpUnlockDialog id={unlockKey} email={identity?.email ?? ''} onclose={() => (unlockKey = null)} ondone={() => { unlockKey = null; error = null; void doSend(); }} />
       {/if}
       <ComposerComfort {editor} {identityId} fromEmail={identity?.email ?? ''} recipients={[...to, ...cc, ...bcc]} {subject} bind:crypto />
       <input type="file" multiple hidden bind:this={fileInput} onchange={(e) => addFiles((e.currentTarget as HTMLInputElement).files)} />

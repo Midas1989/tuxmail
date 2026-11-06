@@ -1619,7 +1619,8 @@
           "signin": "Sign-in services",
           "vault": "Master password",
           "applock": "App lock",
-          "privacy": "Privacy"
+          "privacy": "Privacy",
+          "pgp": "OpenPGP keys"
         }
       },
       "data": {
@@ -3004,7 +3005,7 @@
       "chats": "Messenger",
       "settings": "Settings & rules"
     },
-    "includeSecrets": "Include credentials (passwords, tokens)",
+    "includeSecrets": "Include credentials and private keys (passwords, tokens, OpenPGP, S/MIME)",
     "messengerEncrypt": "Messenger sessions are included – a passphrase is required.",
     "encryption": "Encryption",
     "passphrase": "Passphrase",
@@ -3759,7 +3760,20 @@
       "smimeSign": "S/MIME: sign",
       "smimeEncrypt": "S/MIME: sign + encrypt",
       "pgpEncrypt": "OpenPGP: sign + encrypt",
-      "none": "Unencrypted"
+      "none": "Unencrypted",
+      "pgpSign": "OpenPGP: sign",
+      "pgpMissing": "No key for: {recipients}. The mail will not be sent like this.",
+      "pgpLookup": "Search for keys online",
+      "pgpLookupConfirm": "Search online for a key for {recipients}? The mail provider of the addresses and possibly keys.openpgp.org will know about it.",
+      "pgpLookupNone": "Not found: {recipients}",
+      "pgpLocked": "Your key is locked. Without the passphrase the mail will not be sent.",
+      "pgpVisibleNote": "Subject and recipients stay visible. Drafts are stored unencrypted in the drafts folder.",
+      "pgpKeyChanged": "The key of {address} was replaced by a mail, which may be forged. Nothing is encrypted to it until you confirm.",
+      "pgpKeyDiffers": "A mail from {address} brings another key. Encryption stays with the imported one.",
+      "pgpUnconfirmed": "The key of {address} is not confirmed.",
+      "pgpAccept": "Accept new key",
+      "pgpAcceptConfirm": "Accept the new key of {address}? Please compare the fingerprint through another channel:\n\n{fingerprint}",
+      "sendFailed": "Scheduled send of \"{subject}\" failed, nothing was sent: {error}"
     },
     "merge": {
       "open": "Mail merge",
@@ -3832,6 +3846,103 @@
       "useChromium": "Render HTML mails with Chromium when installed",
       "chromiumPath": "Chromium / Chrome / Edge",
       "chromiumAuto": "detected automatically"
+    },
+    "pgp": {
+      "title": "OpenPGP keys",
+      "intro": "An own key signs and decrypts mail. Private keys are stored encrypted in TuxMail's vault. Subject and recipients stay visible when encrypting, drafts are stored unencrypted in the drafts folder.",
+      "import": "Import",
+      "importNow": "Import key",
+      "generate": "Create key",
+      "email": "E-mail address",
+      "name": "Name (optional)",
+      "passphrase": "Key passphrase",
+      "exportPassphrase": "New passphrase (at least 12 characters)",
+      "exportPublic": "Export public key",
+      "exportSecret": "Export private key",
+      "delete": "Delete key",
+      "generated": "Key for {email} created.",
+      "imported": "{count} key(s) imported.",
+      "found": "Key for {email} found and added. Please compare the fingerprint.",
+      "none": "No keys yet.",
+      "confirmDelete": "Delete the key of {email}?",
+      "confirmDeleteOwn": "Delete your own key of {email}? Without a backup, mail encrypted to it can no longer be read.",
+      "confirmVerify": "Does this fingerprint match the one the person gave you through another channel?\n\n{fingerprint}",
+      "verify": "Fingerprint confirmed",
+      "unverify": "Take back confirmation",
+      "keyChanged": "Key changed",
+      "peersTitle": "Collected through Autocrypt",
+      "peersIntro": "Keys that others send along with their mail. They count as seen in mail, not as checked: a forged mail can plant such a key until you confirm the fingerprint.",
+      "nonePeers": "No collected keys yet.",
+      "lookupTitle": "Search for a key online",
+      "lookupIntro": "Only on a click. The search tells the directory which address you are looking for. With WKD that is the address's mail provider, with the key server keys.openpgp.org.",
+      "lookupWkd": "Ask the mail provider (WKD)",
+      "lookupKeyserver": "Search keys.openpgp.org",
+      "lookupConfirm": {
+        "wkd": "Ask the mail provider of {email} for the key? The provider will know about it.",
+        "keyserver": "Ask keys.openpgp.org for the key of {email}? The operator will know about it."
+      },
+      "signByDefault": "Sign every mail when an own key exists",
+      "sendAutocrypt": "Send the public key with every mail through Autocrypt",
+      "preferEncrypt": "Autocrypt: encrypt automatically when the other side wants that as well",
+      "source": {
+        "own": "own",
+        "manual": "imported",
+        "wkd": "WKD",
+        "keyserver": "key server",
+        "autocrypt": "Autocrypt",
+        "gossip": "Autocrypt (via others)"
+      },
+      "trust": {
+        "unknown": "not checked",
+        "tofu": "seen in mail",
+        "verified": "fingerprint confirmed",
+        "revoked": "revoked",
+        "expired": "expired"
+      },
+      "err": {
+        "pgp_import": "The file contains no readable OpenPGP key.",
+        "pgp_wrong_passphrase": "The passphrase does not match this key.",
+        "pgp_passphrase_short": "The passphrase must have at least 12 characters.",
+        "pgp_key_not_found": "No key was found for this address.",
+        "pgp_lookup_failed": "The key directory could not be reached.",
+        "pgp_key_changed": "The key has changed in the meantime. Please check again.",
+        "pgp_unlock_throttled": "Too many wrong passphrases. Please wait a few minutes."
+      },
+      "status": {
+        "decrypted": "Decrypted (OpenPGP).",
+        "cannotDecrypt": "Encrypted with OpenPGP, but no matching private key is available.",
+        "unsigned": "Not signed: the sender is not proven.",
+        "subject": "Encrypted subject: {subject}",
+        "partial": "Parts outside the protected area were hidden.",
+        "sig": {
+          "valid": "Signature valid, fingerprint confirmed.",
+          "invalid": "Invalid signature: the content may have been changed.",
+          "unknown_key": "Signed, but the key is unknown: cannot be checked.",
+          "expired_key": "Signed with an expired key.",
+          "revoked_key": "Signed with a revoked key.",
+          "mismatch": "Valid signature, but the key does not belong to the sender address.",
+          "validUnconfirmed": "The signature matches the key, but the key is not confirmed: who wrote this mail is not proven.",
+          "conflict": "Warning, possibly forged: signed with another key than the one known for this address."
+        },
+        "locked": "Encrypted with OpenPGP. The key {email} is locked: passphrase needed."
+      },
+      "unlock": "Unlock",
+      "unlockTitle": "Unlock key",
+      "unlockIntro": "Passphrase of the key {email}. It stays in the service's memory for 15 minutes and is forgotten after that, on \"Lock\" and on logout.",
+      "lockAll": "Lock",
+      "lockedAll": "All keys locked.",
+      "changePassphrase": "Passphrase",
+      "currentPassphrase": "Current passphrase",
+      "newPassphraseOptional": "Passphrase (recommended, at least 12 characters)",
+      "newPassphraseEmpty": "New passphrase (empty: remove)",
+      "savePassphrase": "Save",
+      "importPassphrase": "Passphrase (checks a protected key, otherwise sets a new one)",
+      "passphraseHint": "An own passphrase protects the key on top of the vault. It cannot be recovered; without it the key and mail encrypted to it can no longer be used. Without a passphrase, anyone with your account or with the server and its master key can read.",
+      "passphraseSet": "Passphrase saved.",
+      "passphraseRemoved": "Passphrase removed.",
+      "stateLocked": "Locked: passphrase needed to decrypt and sign.",
+      "stateUnlocked": "Unlocked until {time}.",
+      "stateNoPassphrase": "No own passphrase, protected by the vault only."
     }
   },
   "sync": {

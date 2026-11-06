@@ -13,7 +13,8 @@
   import { app, comfort } from '../../state';
   import { i18n, t } from '../../i18n/index.svelte';
   import type { Address } from '../../types';
-  import type { MeetingProvider, Misspelling, OutgoingCrypto, SmimeStatus } from '../../api/comfort';
+  import PgpUnlockDialog from './PgpUnlockDialog.svelte';
+  import type { MeetingProvider, Misspelling, OutgoingCrypto, PgpStatus, SmimeStatus } from '../../api/comfort';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
   import MergeWizard from './MergeWizard.svelte';
 
@@ -201,15 +202,46 @@
 
   // ---- S/MIME / OpenPGP ---------------------------------------------------------
   let status = $state<SmimeStatus | null>(null);
+  let pgp = $state<PgpStatus | null>(null);
   $effect(() => {
     const from = fromEmail;
     const rc = recipients.map((r) => r.email);
     if (!from) return;
-    const h = setTimeout(() => void comfort.api.smimeStatus(from, rc).then((s) => (status = s)).catch(() => (status = null)), 300);
+    const h = setTimeout(() => {
+      void comfort.api.smimeStatus(from, rc).then((s) => (status = s)).catch(() => (status = null));
+      void refreshPgp(from, rc);
+    }, 300);
     return () => clearTimeout(h);
   });
 
-  type CryptoChoice = 'auto' | 'smime-sign' | 'smime-encrypt' | 'pgp-encrypt' | 'none';
+  function refreshPgp(from: string, rc: string[]) {
+    return comfort.api.pgpStatus(from, rc).then((s) => (pgp = s)).catch(() => (pgp = null));
+  }
+
+  // A key directory only hears about a recipient after this click.
+  let unlockOpen = $state(false);
+  async function acceptKey(address: string, fingerprint: string) {
+    if (!confirm(t('comfort.crypto.pgpAcceptConfirm', { address, fingerprint: fingerprint.replace(/(.{4})/g, '$1 ').trim() }))) return;
+    await comfort.api.acceptPgpPeer(address, fingerprint).catch(() => {});
+    await refreshPgp(fromEmail, recipients.map((r) => r.email));
+  }
+  let lookupBusy = $state(false);
+  let lookupNone = $state<string[]>([]);
+  async function lookupMissing() {
+    const missing = pgp?.missing ?? [];
+    if (!missing.length || !confirm(t('comfort.crypto.pgpLookupConfirm', { recipients: missing.join(', ') }))) return;
+    lookupBusy = true;
+    const none: string[] = [];
+    for (const email of missing) {
+      const k = await comfort.api.lookupPgpKey(email, 'wkd').catch(() => comfort.api.lookupPgpKey(email, 'keyserver').catch(() => null));
+      if (!k) none.push(email);
+    }
+    lookupNone = none;
+    lookupBusy = false;
+    await refreshPgp(fromEmail, recipients.map((r) => r.email));
+  }
+
+  type CryptoChoice = 'auto' | 'smime-sign' | 'smime-encrypt' | 'pgp-sign' | 'pgp-encrypt' | 'none';
   let choice = $state<CryptoChoice>('auto');
   function onCrypto() {
     switch (choice) {
@@ -218,6 +250,9 @@
         break;
       case 'smime-encrypt':
         crypto = { method: 'smime', sign: true, encrypt: true };
+        break;
+      case 'pgp-sign':
+        crypto = { method: 'pgp', sign: true, encrypt: false };
         break;
       case 'pgp-encrypt':
         crypto = { method: 'pgp', sign: true, encrypt: true };
@@ -262,10 +297,36 @@
     <option value="auto">{t('comfort.crypto.auto')}</option>
     <option value="smime-sign" disabled={status ? !status.canSign : false}>{t('comfort.crypto.smimeSign')}</option>
     <option value="smime-encrypt" disabled={status ? !status.canEncrypt : false}>{t('comfort.crypto.smimeEncrypt')}</option>
-    <option value="pgp-encrypt">{t('comfort.crypto.pgpEncrypt')}</option>
+    <option value="pgp-sign" disabled={pgp ? !pgp.canSign : false}>{t('comfort.crypto.pgpSign')}</option>
+    <option value="pgp-encrypt" disabled={pgp ? !pgp.canSign : false}>{t('comfort.crypto.pgpEncrypt')}</option>
     <option value="none">{t('comfort.crypto.none')}</option>
   </select>
+  {#if choice.startsWith('pgp-') && pgp?.ownLocked && pgp.ownKeyId}
+    <span class="missing" role="alert">{t('comfort.crypto.pgpLocked')}</span>
+    <button type="button" class="btn btn-ghost mini" onclick={() => (unlockOpen = true)}>{t('comfort.pgp.unlock')}</button>
+  {/if}
+  {#if choice === 'pgp-encrypt'}
+    <span class="note">{t('comfort.crypto.pgpVisibleNote')}</span>
+    {#each pgp?.recipients ?? [] as r (r.address)}
+      {#if r.keyChanged && r.pendingKey && !r.fingerprint}
+        <span class="missing" role="alert">{t('comfort.crypto.pgpKeyChanged', { address: r.address })}</span>
+        <button type="button" class="btn btn-ghost mini" onclick={() => acceptKey(r.address, r.pendingKey ?? '')}>{t('comfort.crypto.pgpAccept')}</button>
+      {:else if r.pendingKey}
+        <span class="missing" role="alert">{t('comfort.crypto.pgpKeyDiffers', { address: r.address })}</span>
+      {:else if r.fingerprint && r.trust !== 'verified'}
+        <span class="note">{t('comfort.crypto.pgpUnconfirmed', { address: r.address })}</span>
+      {/if}
+    {/each}
+  {/if}
+  {#if choice === 'pgp-encrypt' && pgp?.missing?.length}
+    <span class="missing" role="alert">{t('comfort.crypto.pgpMissing', { recipients: pgp.missing.join(', ') })}</span>
+    <button type="button" class="btn btn-ghost mini" disabled={lookupBusy} onclick={lookupMissing}>{t('comfort.crypto.pgpLookup')}</button>
+    {#if lookupNone.length}<span class="missing">{t('comfort.crypto.pgpLookupNone', { recipients: lookupNone.join(', ') })}</span>{/if}
+  {/if}
 </span>
+{#if unlockOpen && pgp?.ownKeyId}
+  <PgpUnlockDialog id={pgp.ownKeyId} email={fromEmail} onclose={() => (unlockOpen = false)} ondone={() => { unlockOpen = false; void refreshPgp(fromEmail, recipients.map((r) => r.email)); }} />
+{/if}
 <button class="icon-btn" title={t('comfort.merge.open')} aria-label={t('comfort.merge.open')} onclick={() => (mergeOpen = true)}><Mails size={16} /></button>
 
 {#if menu}
@@ -341,9 +402,17 @@
   .crypto {
     display: inline-flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 4px;
     margin-left: 4px;
     color: var(--tm-muted);
+  }
+  .note {
+    font-size: 12px;
+  }
+  .missing {
+    color: #dc2626;
+    font-size: 12px;
   }
   :global(::highlight(tm-spell)) {
     text-decoration: underline wavy #dc2626;

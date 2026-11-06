@@ -168,3 +168,9 @@ func (s *Store) PurgeDoneOps(ctx context.Context, before time.Time) (int64, erro
 	}
 	return res.RowsAffected()
 }
+
+// DeleteOp removes an operation.
+func (s *Store) DeleteOp(ctx context.Context, id int64) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM ops WHERE id = ?`, id)
+	return err
+}

@@ -121,6 +121,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   {
     id: 'security',
     sections: [
+      sec('pgp', ['comfort.pgp.title', 'comfort.pgp.generate', 'comfort.pgp.importNow', 'comfort.pgp.peersTitle', 'comfort.pgp.lookupTitle']),
       sec('smime', ['comfort.smime.title', 'comfort.smime.importNow', 'comfort.smime.signByDefault', 'comfort.smime.encryptAuto', 'comfort.smime.preferPgp']),
       sec('signin', ['cloud.services.title', 'cloud.services.clientId', 'cloud.services.tenant']),
       sec('vault', ['vault.password', 'vault.unlockTitle'], { only: 'vault' }),
@@ -212,6 +213,7 @@ export const LEGACY_SETTINGS: Readonly<Record<string, [SettingsCategoryId, strin
   'set-remote': ['mail', 'remote'],
   'set-ai': ['ai', 'assistant'],
   'set-signin': ['security', 'signin'],
+  'set-pgp': ['security', 'pgp'],
   'set-smime': ['security', 'smime'],
   'set-tags': ['automation', 'tags'],
   'set-workflows': ['automation', 'workflows'],

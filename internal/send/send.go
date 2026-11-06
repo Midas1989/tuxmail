@@ -51,6 +51,7 @@ var (
 	ErrNotCancellable   = errors.New("send: message is no longer cancellable")
 	ErrPGPUnavailable   = errors.New("send: OpenPGP is not configured")
 	ErrNoSigningKey     = errors.New("send: no secret key for the sender identity")
+	ErrPGPKeyLocked     = errors.New("send: the OpenPGP key of the sender is locked, its passphrase is needed")
 	ErrCannotEncrypt    = errors.New("send: not all recipients have a usable OpenPGP key")
 	ErrNoCloudUploader  = errors.New("send: cloud links requested but no uploader configured")
 	ErrNoMessenger      = errors.New("send: password delivery by messenger requested but no messenger configured")
@@ -148,6 +149,8 @@ type PGPOptions struct {
 
 // Request is a send request.
 type Request struct {
+	// PreferPGP keeps S/MIME out when OpenPGP would sign or encrypt anyway.
+	PreferPGP bool `json:"preferPgp,omitempty"`
 	// IdentityID selects the sender identity; if 0, Draft.Identity must be
 	// complete (ID, AccountID, Email).
 	IdentityID int64         `json:"identityId,omitempty"`
@@ -251,6 +254,8 @@ type Config struct {
 	Blobs      BlobResolver
 	// PGP enables OpenPGP (Planner.Ring must hold the own secret keys).
 	PGP *pgp.Planner
+	// PGPPrefs returns the user's current OpenPGP preferences (optional).
+	PGPPrefs func() PGPPrefs
 	// SMIME provides S/MIME identities and recipient certificates (optional).
 	SMIME SMIMEKeys
 	// Locale for generated texts (cloud link block, password mail) when
@@ -312,6 +317,12 @@ func (s *Service) send(ctx context.Context, req Request, checked bool) (*Result,
 			return res, blocked
 		}
 	}
+	// Also when a scheduled send falls due: the keys may be gone by then.
+	if blocked := s.checkDecryptedInPlain(ctx, &req); blocked != nil {
+		res.Blocked = true
+		res.Findings = append(res.Findings, blocked.Findings...)
+		return res, blocked
+	}
 
 	now := s.cfg.Now()
 	due := req.SendAt
@@ -319,6 +330,10 @@ func (s *Service) send(ctx context.Context, req Request, checked bool) (*Result,
 		due = now.Add(req.UndoDelay)
 	}
 	if !checked && due.After(now) {
+		// What cannot work now is refused now, not at the due time.
+		if err := s.checkPlannable(ctx, &req); err != nil {
+			return res, err
+		}
 		return s.schedule(ctx, req, due, res)
 	}
 	return s.deliver(ctx, req, res)
@@ -555,6 +570,15 @@ func (s *Service) HandleOp(ctx context.Context, kind, payload string) error {
 	return err
 }
 
+// ScheduledSubject returns the subject of a scheduled request.
+func ScheduledSubject(payload string) string {
+	var p scheduledPayload
+	if json.Unmarshal([]byte(payload), &p) != nil {
+		return ""
+	}
+	return p.Request.Draft.Subject
+}
+
 // deliver performs the actual send (after checks and scheduling).
 func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Result, error) {
 	d := &req.Draft
@@ -587,13 +611,9 @@ func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Resul
 		insertLinkBlock(d, shares, req.Cloud.Delivery, locale)
 	}
 
-	// S/MIME plan (takes precedence over OpenPGP when active).
-	smPlan, err := s.planSMIME(ctx, &req)
+	smPlan, err := s.chooseCrypto(ctx, &req)
 	if err != nil {
 		return res, err
-	}
-	if smPlan.active() {
-		req.PGP.Sign, req.PGP.Encrypt = PGPOff, PGPOff
 	}
 
 	// PGP plan and Autocrypt.
@@ -601,8 +621,8 @@ func (s *Service) deliver(ctx context.Context, req Request, res *Result) (*Resul
 	if err != nil {
 		return res, err
 	}
-	if plan.ownKey != nil && !req.PGP.NoAutocrypt {
-		if ac, err := pgp.NewAutocryptHeader(ident.Email, plan.ownKey, s.ownPrefer(), s.cfg.Now()); err == nil {
+	if plan.publicKey() != nil && !req.PGP.NoAutocrypt && !s.pgpPrefs().NoAutocrypt {
+		if ac, err := pgp.NewAutocryptHeader(ident.Email, plan.publicKey(), s.ownPrefer(), s.cfg.Now()); err == nil {
 			d.Autocrypt = ac
 		}
 	}

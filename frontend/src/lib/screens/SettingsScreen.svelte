@@ -79,6 +79,7 @@
   import NotificationSettings from '../components/settings/NotificationSettings.svelte';
   import AiSettingsCard from '../components/settings/AiSettingsCard.svelte';
   import SmimeSettingsCard from '../components/comfort/SmimeSettingsCard.svelte';
+  import PgpSettingsCard from '../components/comfort/PgpSettingsCard.svelte';
   import SecuritySettings from '../components/settings/SecuritySettings.svelte';
   import ImportExportSettings from '../components/settings/ImportExportSettings.svelte';
   import BackupSettings from '../components/settings/BackupSettings.svelte';
@@ -369,6 +370,7 @@
   {:else if k === 'automation/tags'}<TagSettings />
   {:else if k === 'notifications/notifications'}<NotificationSettings />
   {:else if k === 'ai/assistant'}<AiSettingsCard />
+  {:else if k === 'security/pgp'}<PgpSettingsCard />
   {:else if k === 'security/smime'}<SmimeSettingsCard />
   {:else if k === 'security/signin'}<CloudAccountsSettings part="services" />
   {:else if k === 'security/vault'}<SecuritySettings part="vault" />
