@@ -1,0 +1,17 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Paketliste zusammenstellen
+  ansible.builtin.set_fact:
+    tuxmail_buildenv_packages: >-
+      {{ tuxmail_buildenv_packages_base
+         + tuxmail_buildenv_packages_frontend
+         + (tuxmail_buildenv_packages_android if 'android' in tuxmail_buildenv_targets else [])
+         + (tuxmail_buildenv_packages_linux_desktop if 'linux-desktop' in tuxmail_buildenv_targets else [])
+         + (tuxmail_buildenv_packages_docker if 'docker' in tuxmail_buildenv_targets else []) }}
+
+- name: Pakete installieren
+  ansible.builtin.apt:
+    name: "{{ tuxmail_buildenv_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600

@@ -1,0 +1,14 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+galaxy_info:
+  role_name: tuxmail_buildenv
+  author: TuxMail contributors
+  description: Build-Umgebung für build/build-all.sh (Go, Node, JDK, Android SDK, Swap)
+  license: AGPL-3.0-or-later
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+      versions: [trixie]
+    - name: Ubuntu
+      versions: [resolute]
+dependencies: []
