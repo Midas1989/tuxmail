@@ -81,6 +81,7 @@ type Auth struct {
 	Registration          string   `yaml:"registration"` // disabled | invite
 	TOTPRequiredForAdmins bool     `yaml:"totp_required_for_admins"`
 	OIDC                  OIDC     `yaml:"oidc"`
+	Passkeys              Passkeys `yaml:"passkeys"` // passkeys.go
 }
 
 // OIDC configures login through an external OpenID Connect provider.
@@ -251,6 +252,7 @@ func (c *Config) Validate() error {
 			add("auth.oidc.client_secret_file: must be an absolute path")
 		}
 	}
+	errs = append(errs, c.validatePasskeys()...)
 	if c.Limits.MaxUploadMB < 1 {
 		add("limits.max_upload_mb: must be at least 1")
 	}
