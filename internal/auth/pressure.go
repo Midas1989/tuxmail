@@ -57,8 +57,15 @@ func (s *Service) underPressure(ctx context.Context, userKey string) (bool, time
 	if err := s.db.QueryRowContext(ctx, `SELECT failures, first_failure FROM login_throttle WHERE key = ?`, userKey).Scan(&fails, &last); err != nil {
 		return false, time.Time{}
 	}
+	return pressureWindow(fails, last, s.now())
+}
+
+// pressureWindow evaluates a user-wide counter (failures, time of the latest
+// failure): active while throttlePressureFails were reached and no quiet
+// throttleWindow has passed; end is when the signal drops without new failures.
+func pressureWindow(fails int, last int64, now time.Time) (bool, time.Time) {
 	end := time.Unix(last, 0).Add(throttleWindow)
-	if fails >= throttlePressureFails && s.now().Before(end) {
+	if fails >= throttlePressureFails && now.Before(end) {
 		return true, end.UTC()
 	}
 	return false, time.Time{}

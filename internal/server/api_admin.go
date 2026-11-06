@@ -13,16 +13,48 @@ import (
 	"github.com/Midas1989/Mailclient/internal/auth"
 )
 
+// adminUserView is the user as the administration sees it: the account plus
+// its login throttling state, so that an administrator can tell a locked
+// account from a disabled one and unlock it. The lock concerns attacking
+// networks only (the owner on another network can still sign in); the
+// "under pressure" signal means distributed guessing is going on and logins
+// from networks the user has never used before wait (see internal/auth/login.go).
+type adminUserView struct {
+	*auth.User
+	Locked        bool      `json:"locked"`
+	LockedUntil   time.Time `json:"lockedUntil,omitzero"`
+	UnderPressure bool      `json:"underPressure"`
+	PressureUntil time.Time `json:"pressureUntil,omitzero"`
+}
+
+func adminUserViews(users []*auth.User, locks map[string]auth.LockState) []adminUserView {
+	out := make([]adminUserView, 0, len(users))
+	for _, u := range users {
+		l := locks[u.Username]
+		out = append(out, adminUserView{User: u, Locked: l.Locked, LockedUntil: l.LockedUntil, UnderPressure: l.UnderPressure, PressureUntil: l.PressureUntil})
+	}
+	return out
+}
+
+// adminUserView loads the lock state of one user; a failure to read it only
+// hides the flags (the account data itself is authoritative).
+func (s *Server) adminUserView(r *http.Request, u *auth.User) adminUserView {
+	l, _ := s.auth.LockStateOf(r.Context(), u.Username)
+	return adminUserViews([]*auth.User{u}, map[string]auth.LockState{u.Username: l})[0]
+}
+
 func (s *Server) handleAdminListUsers(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	users, err := s.auth.ListUsers(r.Context())
 	if err != nil {
 		s.writeAuthError(w, err)
 		return
 	}
-	if users == nil {
-		users = []*auth.User{}
+	names := make([]string, len(users))
+	for i, u := range users {
+		names[i] = u.Username
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"users": users})
+	locks, _ := s.auth.LockStates(r.Context(), names)
+	writeJSON(w, http.StatusOK, map[string]any{"users": adminUserViews(users, locks)})
 }
 
 func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request, a *authInfo) {
@@ -48,7 +80,7 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request, a
 		s.writeAuthError(w, err)
 		return
 	}
-	resp := map[string]any{"user": u}
+	resp := map[string]any{"user": s.adminUserView(r, u)}
 	if generated != "" {
 		resp["password"] = generated
 	}
@@ -82,7 +114,7 @@ func (s *Server) handleAdminGetUser(w http.ResponseWriter, r *http.Request, a *a
 	if groups == nil {
 		groups = []int64{}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": u, "groups": groups, "storageBytes": dirSize(s.auth.UserDir(id))})
+	writeJSON(w, http.StatusOK, map[string]any{"user": s.adminUserView(r, u), "groups": groups, "storageBytes": dirSize(s.auth.UserDir(id))})
 }
 
 func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request, a *authInfo) {
@@ -125,7 +157,7 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request, a
 		s.writeAuthError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": u})
+	writeJSON(w, http.StatusOK, map[string]any{"user": s.adminUserView(r, u)})
 }
 
 func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request, a *authInfo) {
@@ -361,9 +393,15 @@ func (s *Server) handleAdminDeleteInvite(w http.ResponseWriter, r *http.Request,
 }
 
 func (s *Server) handleAdminAudit(w http.ResponseWriter, r *http.Request, a *authInfo) {
-	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-	before, _ := strconv.ParseInt(r.URL.Query().Get("before"), 10, 64)
-	list, err := s.auth.ListAudit(r.Context(), limit, before)
+	// limit (1-1000, default 100) and before (entry id, pages backwards) page
+	// the log; action and actor filter by prefix, result=failed lists only
+	// unsuccessful actions.
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	before, _ := strconv.ParseInt(q.Get("before"), 10, 64)
+	list, err := s.auth.QueryAudit(r.Context(), auth.AuditFilter{
+		Limit: limit, BeforeID: before, Action: q.Get("action"), Actor: q.Get("actor"), OnlyFailed: q.Get("result") == "failed",
+	})
 	if err != nil {
 		s.writeAuthError(w, err)
 		return
