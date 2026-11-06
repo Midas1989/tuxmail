@@ -10,6 +10,7 @@
 import type { HttpTransportOptions } from './api/http';
 import { nativeHttpOptions } from './native/session';
 import { isNativeShell } from './platform';
+import { notifyMfaSetupRequired } from './mfaGate';
 
 export const STORAGE_PREFIX = 'tuxmail.';
 
@@ -89,7 +90,7 @@ export function sessionLost(reload: () => void = () => location.reload(), clear:
   return true;
 }
 
-/** HttpTransport options of this platform: native bearer session, or the web cookie session with session-loss handling. */
+/** HttpTransport options of this platform: native bearer session, or the web cookie session with session-loss handling and the forced two-factor set-up (403 mfa_setup_required). */
 export function platformHttpOptions(): HttpTransportOptions {
-  return isNativeShell() ? nativeHttpOptions() : { onUnauthorized: () => void sessionLost() };
+  return isNativeShell() ? nativeHttpOptions() : { onUnauthorized: () => void sessionLost(), onMfaSetupRequired: notifyMfaSetupRequired };
 }

@@ -28,3 +28,7 @@ export const team = new TeamState(rootApi, workspace, app, platformHttpOptions()
 // Per user, so it uses the root transport (not the team mailbox switch).
 import { ComfortState } from './comfort.svelte';
 export const comfort = new ComfortState(rootApi);
+
+// --- Account security (web client): forced two-factor set-up ---
+import { SecurityState } from './security.svelte';
+export const security = new SecurityState(rootApi);
