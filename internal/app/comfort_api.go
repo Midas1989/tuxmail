@@ -159,3 +159,10 @@ func (x *Api) ComfortLockPGPKeys() error {
 	x.app.LockPGPKeys()
 	return nil
 }
+func (x *Api) ComfortAcceptPGPPeer(in PGPPeerInput) error {
+	return werr(x.app.AcceptPGPPeer(x.ctx, in))
+}
+func (x *Api) ComfortFailedSends() ([]FailedSend, error) { return r1(x.app.FailedSends(x.ctx)) }
+func (x *Api) ComfortDismissFailedSend(id int64) error {
+	return werr(x.app.DismissFailedSend(x.ctx, id))
+}

@@ -66,7 +66,7 @@ func (p *parser) applyPGP(raw []byte) {
 	m.PGP.DecryptionKey = res.DecryptionKey
 	m.PGP.EncryptedTo = res.EncryptedTo
 	m.PGP.ProtectedHeaders = res.HasProtectedHeaders
-	m.PGP.PartiallyProtected = res.InlineHasUnprotectedText
+	m.PGP.PartiallyProtected = res.InlineHasUnprotectedText || res.ForeignParts
 	if !m.PGP.Decrypted {
 		m.PGP.LockedKeys = res.LockedKeys
 	}
@@ -82,7 +82,9 @@ func (p *parser) applyPGP(raw []byte) {
 		m.AutocryptGossip = res.InnerHeader.Values("Autocrypt-Gossip")
 	}
 	// Replace the body with the decrypted (or inline-unarmored) content.
-	if res.Content != nil && (m.PGP.Decrypted || res.Format == pgp.FormatInline) {
+	// Foreign parts of a signed message go as well: only what the signature
+	// covers may stand under its status.
+	if res.Content != nil && (m.PGP.Decrypted || res.Format == pgp.FormatInline || res.ForeignParts) {
 		p.texts, p.htmls = nil, nil
 		m.Attachments = nil
 		m.InlineByCID = map[string]int{}

@@ -634,3 +634,164 @@ func TestPGPLockedKeySendAndRestart(t *testing.T) {
 		t.Fatalf("byte search: %d files, %v", files, err)
 	}
 }
+
+func autocryptMail(t *testing.T, from string, key *pgp.Key, date, id string) string {
+	t.Helper()
+	h, err := pgp.NewAutocryptHeader(from, key, pgp.PreferMutual, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "From: " + from + "\r\nSubject: hallo\r\nDate: " + date + "\r\nMessage-ID: <" + id + "@test.example>\r\nAutocrypt: " + h.Value() + "\r\nContent-Type: text/plain\r\n\r\nHallo\r\n"
+}
+
+// A foreign header must not redirect encryption: the imported key stays, a
+// changed Autocrypt key waits for the user, who sees both in the composer.
+func TestPGPForeignHeaderDoesNotTakeOver(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	collect := func(name, raw string) {
+		t.Helper()
+		if _, err := f.a.MessageInsights(ctx, addRaw(t, f, name, raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const bob = "bob@example.org"
+	real := generate(t, bob, "")
+	evil := generate(t, bob, "")
+	if _, err := f.a.ImportPGPKeys(ctx, app.PGPImportInput{Data: armoredBase64(t, real, false)}); err != nil {
+		t.Fatal(err)
+	}
+	collect("evil1", autocryptMail(t, bob, evil, "Tue, 03 Nov 2026 10:00:00 +0000", "evil1"))
+	st, err := f.a.PGPStatusFor(ctx, "alex@berger-kanzlei.example", []string{bob})
+	if err != nil || st.Recipients[0].Fingerprint != real.Fingerprint() || st.Recipients[0].PendingKey != evil.Fingerprint() {
+		t.Fatalf("imported key lost: %+v %v", st, err)
+	}
+
+	// No imported key: first contact is usable, a replacement is not.
+	const dora = "dora@example.org"
+	first := generate(t, dora, "")
+	second := generate(t, dora, "")
+	collect("d1", autocryptMail(t, dora, first, "Mon, 02 Nov 2026 10:00:00 +0000", "d1"))
+	if st, _ := f.a.PGPStatusFor(ctx, "alex@berger-kanzlei.example", []string{dora}); st.Recipients[0].Fingerprint != first.Fingerprint() || st.Recipients[0].Trust != "tofu" {
+		t.Fatalf("first contact: %+v", st)
+	}
+	collect("d2", autocryptMail(t, dora, second, "Tue, 03 Nov 2026 10:00:00 +0000", "d2"))
+	st, err = f.a.PGPStatusFor(ctx, "alex@berger-kanzlei.example", []string{dora})
+	if err != nil || len(st.Missing) != 1 || !st.Recipients[0].KeyChanged || st.Recipients[0].PendingKey != second.Fingerprint() || st.Recipients[0].Fingerprint != "" {
+		t.Fatalf("changed key used: %+v %v", st, err)
+	}
+	var appErr *app.Error
+	if err := f.a.AcceptPGPPeer(ctx, app.PGPPeerInput{Address: dora, Fingerprint: first.Fingerprint()}); !errors.As(err, &appErr) || appErr.Code != "pgp_key_changed" {
+		t.Fatalf("stale accept: %v", err)
+	}
+	if err := f.a.AcceptPGPPeer(ctx, app.PGPPeerInput{Address: dora, Fingerprint: second.Fingerprint()}); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := f.a.PGPStatusFor(ctx, "alex@berger-kanzlei.example", []string{dora}); len(st.Missing) != 0 || st.Recipients[0].Fingerprint != second.Fingerprint() || st.Recipients[0].Trust != "tofu" {
+		t.Fatalf("after accepting: %+v", st)
+	}
+}
+
+// A forged mail that brings its own key and signature is a conflict when a key
+// is confirmed for the address, and never "confirmed" without one.
+func TestPGPForgedSignatureWithOwnKey(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	forged := func(name, from string, key *pgp.Key) *app.PGPMessageStatus {
+		t.Helper()
+		h, err := pgp.NewAutocryptHeader(from, key, pgp.PreferMutual, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ent, err := pgp.SignMIME([]byte("Content-Type: text/plain\r\n\r\nBitte zahlen\r\n"), key, pgp.SignOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw := "From: " + from + "\r\nSubject: s\r\nDate: Tue, 03 Nov 2026 10:00:00 +0000\r\nMessage-ID: <" + name + "@test.example>\r\nAutocrypt: " + h.Value() + "\r\nMIME-Version: 1.0\r\n" + string(ent.Bytes())
+		ins, err := f.a.MessageInsights(ctx, addRaw(t, f, name, raw))
+		if err != nil || ins.PGP == nil {
+			t.Fatalf("%s: %+v %v", name, ins.PGP, err)
+		}
+		return ins.PGP
+	}
+	// Unknown sender: technically valid, seen in mail, not more.
+	if s := forged("tofu", "neu@example.org", generate(t, "neu@example.org", "")); s.Signature != "valid" || s.SignerTrust != "tofu" {
+		t.Fatalf("first contact: %+v", s)
+	}
+	// Confirmed key for the address: conflict.
+	const bob = "bob@example.org"
+	keys, err := f.a.ImportPGPKeys(ctx, app.PGPImportInput{Data: armoredBase64(t, generate(t, bob, ""), false)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.a.SetPGPKeyVerified(ctx, keys[0].ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if s := forged("conflict", bob, generate(t, bob, "")); s.Signature != "conflict" || s.SignerTrust != "" {
+		t.Fatalf("conflict: %+v", s)
+	}
+	// Imported but unconfirmed key for the address: conflict as well.
+	const carl = "carl@example.org"
+	if _, err := f.a.ImportPGPKeys(ctx, app.PGPImportInput{Data: armoredBase64(t, generate(t, carl, ""), false)}); err != nil {
+		t.Fatal(err)
+	}
+	if s := forged("conflict2", carl, generate(t, carl, "")); s.Signature != "conflict" {
+		t.Fatalf("conflict with imported key: %+v", s)
+	}
+	// The user's own address: its header is not collected, so the key is unknown.
+	if _, err := f.a.GeneratePGPKey(ctx, app.PGPGenerateInput{Email: "alex@berger-kanzlei.example"}); err != nil {
+		t.Fatal(err)
+	}
+	ids := must[[]app.Identity](t)(f.a.ListIdentities(ctx))
+	if s := forged("own", ids[0].Email, generate(t, ids[0].Email, "")); s.Signature != "unknown_key" {
+		t.Fatalf("own address: %+v", s)
+	}
+}
+
+// Answering or forwarding an encrypted mail without encryption stops at a send
+// check on the server, so that every way of sending is covered.
+func TestPGPPlainReplyToEncryptedIsBlocked(t *testing.T) {
+	ctx := context.Background()
+	l := newPGPLive(t)
+	l.wait(t, "Mittagessen morgen?")
+	if _, err := l.a.GeneratePGPKey(ctx, app.PGPGenerateInput{Email: devserver.AnnaAddr}); err != nil {
+		t.Fatal(err)
+	}
+	ids := must[[]app.Identity](t)(l.a.ListIdentities(ctx))
+	if res, err := l.a.Send(ctx, app.OutgoingMessage{Channel: "email", IdentityID: ids[0].ID, To: []app.Address{{Email: devserver.AnnaAddr}},
+		Subject: pgpSubject, Text: pgpMarker, Crypto: &app.OutgoingCrypto{Method: "pgp", Sign: true, Encrypt: true}}); err != nil || res.Blocked {
+		t.Fatalf("send: %+v %v", res, err)
+	}
+	m := l.wait(t, pgpSubject)
+	before := len(l.srv.Deliveries())
+	for name, msg := range map[string]app.OutgoingMessage{
+		"reply":   {InReplyToMessageID: m.ID},
+		"forward": {ForwardOfMessageID: m.ID},
+	} {
+		msg.Channel, msg.IdentityID, msg.To, msg.Subject, msg.Text = "email", ids[0].ID, []app.Address{{Email: devserver.BenAddr}}, "Weiter", "Zitat: "+pgpMarker
+		res, err := l.a.Send(ctx, msg)
+		if err != nil || !res.Blocked || len(res.Findings) != 1 || res.Findings[0].Check != "decrypted_in_plain" || res.Findings[0].Localized["de"] == "" {
+			t.Fatalf("%s: %+v %v", name, res, err)
+		}
+		// The explicit "none" of the composer is no way around it.
+		msg.Crypto = &app.OutgoingCrypto{Method: "none"}
+		if res, err := l.a.Send(ctx, msg); err != nil || !res.Blocked {
+			t.Fatalf("%s none: %+v %v", name, res, err)
+		}
+	}
+	if n := len(l.srv.Deliveries()); n != before {
+		t.Fatalf("%d mails left in plain text", n-before)
+	}
+	// Confirmed by the user it goes out.
+	res, err := l.a.Send(ctx, app.OutgoingMessage{Channel: "email", IdentityID: ids[0].ID, To: []app.Address{{Email: devserver.BenAddr}}, Subject: "Weiter", Text: "ohne Zitat",
+		InReplyToMessageID: m.ID, ConfirmChecks: []string{"decrypted_in_plain"}})
+	if err != nil || res.Blocked {
+		t.Fatalf("confirmed: %+v %v", res, err)
+	}
+	// With a key for the recipient nothing stops: the reply goes encrypted.
+	res, err = l.a.Send(ctx, app.OutgoingMessage{Channel: "email", IdentityID: ids[0].ID, To: []app.Address{{Email: devserver.AnnaAddr}}, Subject: "Weiter 2", Text: "Antwort",
+		InReplyToMessageID: m.ID})
+	if err != nil || res.Blocked {
+		t.Fatalf("encrypted reply: %+v %v", res, err)
+	}
+}

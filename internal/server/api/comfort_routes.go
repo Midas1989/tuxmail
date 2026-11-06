@@ -174,6 +174,9 @@ func comfortRoutes() []Route {
 		{"DELETE /api/comfort/pgp/keys/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DeletePGPKey(r.Context(), id)) })},
 		{"GET /api/comfort/pgp/peers", func(w w, r r, a A) { send(w)(a.ListPGPPeers(r.Context())) }},
 		{"POST /api/comfort/pgp/peers/verify", jsonHandler(func(w w, r r, a A, in app.PGPPeerInput) { send(w)(a.VerifyPGPPeer(r.Context(), in)) })},
+		{"POST /api/comfort/pgp/peers/accept", jsonHandler(func(w w, r r, a A, in app.PGPPeerInput) { done(w, a.AcceptPGPPeer(r.Context(), in)) })},
+		{"GET /api/comfort/send-failures", func(w w, r r, a A) { send(w)(a.FailedSends(r.Context())) }},
+		{"DELETE /api/comfort/send-failures/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DismissFailedSend(r.Context(), id)) })},
 		{"POST /api/comfort/pgp/peers/delete", jsonHandler(func(w w, r r, a A, in app.PGPPeerInput) { done(w, a.DeletePGPPeer(r.Context(), in.Address)) })},
 		{"GET /api/comfort/pgp/status", func(w w, r r, a A) {
 			q := r.URL.Query()

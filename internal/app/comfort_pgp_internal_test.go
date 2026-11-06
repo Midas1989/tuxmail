@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"mime"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/backup"
 	"github.com/Midas1989/Mailclient/internal/crypto/pgp"
 	"github.com/Midas1989/Mailclient/internal/mime/parse"
+	"github.com/Midas1989/Mailclient/internal/send"
 	"github.com/Midas1989/Mailclient/internal/store"
 	"github.com/Midas1989/Mailclient/internal/store/blob"
 )
@@ -612,4 +614,136 @@ func TestPGPProtectedKeyBackup(t *testing.T) {
 		t.Fatal(err)
 	}
 	check("merge", other)
+}
+
+// Parts outside what RFC 3156 allows never stand under a status (reviewer probe
+// "UNSIGNIERT-EVIL").
+func TestPGPForeignPartsAreDropped(t *testing.T) {
+	a := pgpTestApp(t)
+	ctx := context.Background()
+	info, err := a.GeneratePGPKey(ctx, PGPGenerateInput{Email: "bob@example.org"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	k, _ := a.pgpRing().Get(ctx, info.Fingerprint)
+	ent, err := pgp.SignMIME([]byte("Content-Type: text/plain\r\n\r\nSIGNIERTER TEXT\r\n"), k, pgp.SignOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed := string(ent.Bytes())
+	_, params, _ := mime.ParseMediaType(ent.ContentType())
+	closing := "--" + params["boundary"] + "--"
+	if !strings.Contains(signed, closing) {
+		t.Fatalf("no closing boundary:\n%s", signed)
+	}
+	for name, extra := range map[string]string{
+		"text": "Content-Type: text/plain\r\n\r\nUNSIGNIERT-EVIL\r\n",
+		"html": "Content-Type: text/html\r\n\r\n<p>UNSIGNIERT-EVIL</p>\r\n",
+		"file": "Content-Type: application/pdf\r\nContent-Disposition: attachment; filename=\"UNSIGNIERT-EVIL.pdf\"\r\n\r\nx\r\n",
+	} {
+		raw := []byte("From: bob@example.org\r\nSubject: s\r\nMIME-Version: 1.0\r\n" + strings.Replace(signed, closing, "--"+params["boundary"]+"\r\n"+extra+closing, 1))
+		r, err := a.render.Render(ctx, raw)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if strings.Contains(r.Text+r.HTML, "UNSIGNIERT-EVIL") || !strings.Contains(r.Text, "SIGNIERTER TEXT") {
+			t.Errorf("%s: shown: text=%q html=%q", name, r.Text, r.HTML)
+		}
+		for _, at := range r.Attachments {
+			if strings.Contains(at.Filename, "EVIL") {
+				t.Errorf("%s: attachment %q shown", name, at.Filename)
+			}
+		}
+		pm, err := parse.Parse(raw, parse.Options{KeyRing: a.pgpRing()})
+		if err != nil || !pm.PGP.PartiallyProtected || !pm.PGP.Verified {
+			t.Errorf("%s: no warning: %+v %v", name, pm.PGP, err)
+		}
+	}
+
+	// Encrypted part with a clear part next to it (EFAIL-like).
+	enc, err := pgp.EncryptMIME([]byte("Content-Type: text/plain\r\n\r\nGEHEIMER TEXT\r\n"), []*pgp.Key{k.Public()}, pgp.EncryptOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, params, _ = mime.ParseMediaType(enc.ContentType())
+	closing = "--" + params["boundary"] + "--"
+	raw := []byte("From: bob@example.org\r\nSubject: s\r\nMIME-Version: 1.0\r\n" + strings.Replace(string(enc.Bytes()), closing,
+		"--"+params["boundary"]+"\r\nContent-Type: text/html\r\n\r\n<img src=\"http://evil.example/UNSIGNIERT-EVIL\">\r\n"+closing, 1))
+	r, err := a.render.Render(ctx, raw)
+	if err != nil || strings.Contains(r.Text+r.HTML, "UNSIGNIERT-EVIL") || !strings.Contains(r.Text, "GEHEIMER TEXT") {
+		t.Fatalf("encrypted mixture: %+v %v", r, err)
+	}
+	if pm, err := parse.Parse(raw, parse.Options{KeyRing: a.pgpRing()}); err != nil || !pm.PGP.PartiallyProtected {
+		t.Fatalf("encrypted mixture without warning: %+v %v", pm.PGP, err)
+	}
+}
+
+// A directory's answer and a mail header vouch for the asked address only.
+func TestPGPExtraUserIDsAreNotTaken(t *testing.T) {
+	a := pgpTestApp(t)
+	ctx := context.Background()
+	k, err := pgp.GenerateKey(pgp.GenerateOptions{UserIDs: []pgp.UserIDSpec{{Email: "bob@example.org"}, {Email: "chef@bank.example"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.comfort.pgp.lookup = func(string) pgp.KeyLookup { return &countingLookup{keys: []*pgp.Key{k}} }
+	info, err := a.LookupPGPKey(ctx, PGPLookupInput{Email: "bob@example.org", Source: "wkd"})
+	if err != nil || len(info.Emails) != 1 || info.Emails[0] != "bob@example.org" {
+		t.Fatalf("lookup: %+v %v", info, err)
+	}
+	st, err := a.PGPStatusFor(ctx, "me@example.org", []string{"chef@bank.example", "bob@example.org"})
+	if err != nil || !slices.Equal(st.Missing, []string{"chef@bank.example"}) {
+		t.Fatalf("status: %+v %v", st, err)
+	}
+}
+
+// Failed delayed sends stay visible until dismissed; S/MIME keys survive a merge.
+func TestFailedSendsAndSMIMEMerge(t *testing.T) {
+	a := pgpTestApp(t)
+	ctx := context.Background()
+	id, err := a.st.EnqueueOp(ctx, 0, send.OpKind, `{"request":{"draft":{"subject":"Termin"}}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.st.MarkOpFailed(ctx, id, send.ErrCannotEncrypt, a.now(), 5, true); err != nil {
+		t.Fatal(err)
+	}
+	list, err := a.FailedSends(ctx)
+	if err != nil || len(list) != 1 || !strings.Contains(list[0].Error, "OpenPGP") {
+		t.Fatalf("failed sends: %+v %v", list, err)
+	}
+	if err := a.DismissFailedSend(ctx, id); err != nil {
+		t.Fatal(err)
+	}
+	if list, _ := a.FailedSends(ctx); len(list) != 0 {
+		t.Fatalf("after dismiss: %+v", list)
+	}
+
+	if _, err := a.st.PutSMIMECert(ctx, store.SMIMECert{Fingerprint: "FP", Email: "m@example.org", DER: []byte{1}, Own: true, Source: "own", SecretRef: "smime:FP"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.opts.Secrets.Set("smime:FP", []byte("k")); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if _, err := backup.Create(ctx, &buf, backup.Options{Store: a.st, Blobs: a.blobs, Secrets: a.opts.Secrets, SecretRefs: a.secretRefs(),
+		Scope: backup.Scope{Mode: backup.ModeFull, Secrets: true}, Passphrase: "correct horse", TempDir: t.TempDir()}); err != nil {
+		t.Fatal(err)
+	}
+	ex, err := backup.Extract(ctx, backup.Source{Name: "a", Open: func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(buf.Bytes())), nil }}, "correct horse", nil, t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ex.Close()
+	other := pgpTestApp(t)
+	if _, err := backup.Restore(ctx, ex, backup.RestoreOptions{Mode: backup.Merge, Store: other.st, Blobs: other.blobs, Secrets: true, SecretStore: other.opts.Secrets}); err != nil {
+		t.Fatal(err)
+	}
+	certs, err := other.st.ListSMIMECerts(ctx, "m@example.org")
+	if err != nil || len(certs) != 1 || !certs[0].Own {
+		t.Fatalf("merged certs: %+v %v", certs, err)
+	}
+	if v, err := other.opts.Secrets.Get("smime:FP"); err != nil || string(v) != "k" {
+		t.Fatalf("merged key: %q %v", v, err)
+	}
 }

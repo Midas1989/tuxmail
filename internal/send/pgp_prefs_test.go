@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
+	"errors"
 	"testing"
 	"time"
 
@@ -62,5 +63,16 @@ func TestPreferAndPrefs(t *testing.T) {
 	ms := e.smtp.messages()
 	if bytes.Contains(ms[len(ms)-1].data, []byte("Autocrypt:")) {
 		t.Fatal("Autocrypt header despite the setting")
+	}
+}
+
+// A scheduled send that cannot work is refused when it is planned.
+func TestScheduleChecksKeys(t *testing.T) {
+	e := newEnv(t, nil, nil, 0)
+	ctx := context.Background()
+	_, err := e.svc.Send(ctx, Request{IdentityID: e.ident.ID, SendAt: now.Add(time.Hour), PGP: PGPOptions{Encrypt: PGPOn},
+		Draft: compose.Draft{To: []domain.Address{{Email: "anna@example.net"}}, Subject: "Vertrag", TextBody: "Inhalt"}})
+	if !errors.Is(err, ErrCannotEncrypt) {
+		t.Fatalf("got %v", err)
 	}
 }

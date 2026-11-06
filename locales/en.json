@@ -3728,7 +3728,14 @@
       "pgpLookup": "Search for keys online",
       "pgpLookupConfirm": "Search online for a key for {recipients}? The mail provider of the addresses and possibly keys.openpgp.org will know about it.",
       "pgpLookupNone": "Not found: {recipients}",
-      "pgpLocked": "Your key is locked. Without the passphrase the mail will not be sent."
+      "pgpLocked": "Your key is locked. Without the passphrase the mail will not be sent.",
+      "pgpVisibleNote": "Subject and recipients stay visible. Drafts are stored unencrypted in the drafts folder.",
+      "pgpKeyChanged": "The key of {address} was replaced by a mail, which may be forged. Nothing is encrypted to it until you confirm.",
+      "pgpKeyDiffers": "A mail from {address} brings another key. Encryption stays with the imported one.",
+      "pgpUnconfirmed": "The key of {address} is not confirmed.",
+      "pgpAccept": "Accept new key",
+      "pgpAcceptConfirm": "Accept the new key of {address}? Please compare the fingerprint through another channel:\n\n{fingerprint}",
+      "sendFailed": "Scheduled send of \"{subject}\" failed, nothing was sent: {error}"
     },
     "merge": {
       "open": "Mail merge",
@@ -3804,7 +3811,7 @@
     },
     "pgp": {
       "title": "OpenPGP keys",
-      "intro": "An own key signs and decrypts mail. Private keys are stored encrypted in TuxMail's vault.",
+      "intro": "An own key signs and decrypts mail. Private keys are stored encrypted in TuxMail's vault. Subject and recipients stay visible when encrypting, drafts are stored unencrypted in the drafts folder.",
       "import": "Import",
       "importNow": "Import key",
       "generate": "Create key",
@@ -3868,14 +3875,16 @@
         "cannotDecrypt": "Encrypted with OpenPGP, but no matching private key is available.",
         "unsigned": "Not signed: the sender is not proven.",
         "subject": "Encrypted subject: {subject}",
-        "partial": "Text outside the protected part was hidden.",
+        "partial": "Parts outside the protected area were hidden.",
         "sig": {
-          "valid": "Signature valid.",
+          "valid": "Signature valid, fingerprint confirmed.",
           "invalid": "Invalid signature: the content may have been changed.",
           "unknown_key": "Signed, but the key is unknown: cannot be checked.",
           "expired_key": "Signed with an expired key.",
           "revoked_key": "Signed with a revoked key.",
-          "mismatch": "Valid signature, but the key does not belong to the sender address."
+          "mismatch": "Valid signature, but the key does not belong to the sender address.",
+          "validUnconfirmed": "The signature matches the key, but the key is not confirmed: who wrote this mail is not proven.",
+          "conflict": "Warning, possibly forged: signed with another key than the one known for this address."
         },
         "locked": "Encrypted with OpenPGP. The key {email} is locked: passphrase needed."
       },

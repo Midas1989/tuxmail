@@ -316,6 +316,11 @@ func (s *Service) send(ctx context.Context, req Request, checked bool) (*Result,
 		if blocked != nil {
 			return res, blocked
 		}
+		if blocked := s.checkDecryptedInPlain(ctx, &req); blocked != nil {
+			res.Blocked = true
+			res.Findings = append(res.Findings, blocked.Findings...)
+			return res, blocked
+		}
 	}
 
 	now := s.cfg.Now()
@@ -324,6 +329,10 @@ func (s *Service) send(ctx context.Context, req Request, checked bool) (*Result,
 		due = now.Add(req.UndoDelay)
 	}
 	if !checked && due.After(now) {
+		// What cannot work now is refused now, not at the due time.
+		if err := s.checkPlannable(ctx, &req); err != nil {
+			return res, err
+		}
 		return s.schedule(ctx, req, due, res)
 	}
 	return s.deliver(ctx, req, res)
@@ -558,6 +567,15 @@ func (s *Service) HandleOp(ctx context.Context, kind, payload string) error {
 	}
 	_, err := s.send(ctx, p.Request, true)
 	return err
+}
+
+// ScheduledSubject returns the subject of a scheduled request.
+func ScheduledSubject(payload string) string {
+	var p scheduledPayload
+	if json.Unmarshal([]byte(payload), &p) != nil {
+		return ""
+	}
+	return p.Request.Draft.Subject
 }
 
 // deliver performs the actual send (after checks and scheduling).

@@ -3727,7 +3727,14 @@
       "pgpLookup": "Schlüssel online suchen",
       "pgpLookupConfirm": "Für {recipients} einen Schlüssel online suchen? Der Mailanbieter der Adressen und gegebenenfalls keys.openpgp.org erfahren davon.",
       "pgpLookupNone": "Nicht gefunden: {recipients}",
-      "pgpLocked": "Ihr Schlüssel ist gesperrt. Ohne Passphrase wird die Mail nicht versendet."
+      "pgpLocked": "Ihr Schlüssel ist gesperrt. Ohne Passphrase wird die Mail nicht versendet.",
+      "pgpVisibleNote": "Betreff und Empfänger bleiben sichtbar. Entwürfe liegen unverschlüsselt im Entwurfsordner.",
+      "pgpKeyChanged": "Der Schlüssel von {address} wurde durch eine Mail ersetzt, möglicherweise gefälscht. Bis zur Bestätigung wird nicht an ihn verschlüsselt.",
+      "pgpKeyDiffers": "Eine Mail von {address} bringt einen anderen Schlüssel mit. Verschlüsselt wird weiter an den importierten.",
+      "pgpUnconfirmed": "Schlüssel von {address} ist nicht bestätigt.",
+      "pgpAccept": "Neuen Schlüssel annehmen",
+      "pgpAcceptConfirm": "Neuen Schlüssel für {address} annehmen? Bitte den Fingerabdruck auf anderem Weg vergleichen:\n\n{fingerprint}",
+      "sendFailed": "Zeitversand von „{subject}“ fehlgeschlagen, nichts wurde versendet: {error}"
     },
     "merge": {
       "open": "Serienmail",
@@ -3803,7 +3810,7 @@
     },
     "pgp": {
       "title": "OpenPGP-Schlüssel",
-      "intro": "Mit einem eigenen Schlüssel signieren und entschlüsseln Sie Mails. Private Schlüssel liegen verschlüsselt im Tresor von TuxMail.",
+      "intro": "Mit einem eigenen Schlüssel signieren und entschlüsseln Sie Mails. Private Schlüssel liegen verschlüsselt im Tresor von TuxMail. Betreff und Empfänger bleiben beim Verschlüsseln sichtbar, Entwürfe liegen unverschlüsselt im Entwurfsordner.",
       "import": "Importieren",
       "importNow": "Schlüssel importieren",
       "generate": "Schlüssel erzeugen",
@@ -3867,14 +3874,16 @@
         "cannotDecrypt": "Mit OpenPGP verschlüsselt, aber kein passender privater Schlüssel vorhanden.",
         "unsigned": "Nicht signiert: Der Absender ist nicht belegt.",
         "subject": "Verschlüsselter Betreff: {subject}",
-        "partial": "Text außerhalb des geschützten Bereichs wurde ausgeblendet.",
+        "partial": "Teile außerhalb des geschützten Bereichs wurden ausgeblendet.",
         "sig": {
-          "valid": "Signatur gültig.",
+          "valid": "Signatur gültig, Fingerabdruck bestätigt.",
           "invalid": "Ungültige Signatur: Der Inhalt wurde möglicherweise verändert.",
           "unknown_key": "Signiert, aber der Schlüssel ist unbekannt: nicht prüfbar.",
           "expired_key": "Signiert mit abgelaufenem Schlüssel.",
           "revoked_key": "Signiert mit widerrufenem Schlüssel.",
-          "mismatch": "Gültige Signatur, der Schlüssel gehört aber nicht zur Absenderadresse."
+          "mismatch": "Gültige Signatur, der Schlüssel gehört aber nicht zur Absenderadresse.",
+          "validUnconfirmed": "Signatur passt zum Schlüssel, der Schlüssel ist aber nicht bestätigt: Wer die Mail geschrieben hat, ist nicht belegt.",
+          "conflict": "Achtung, möglicherweise gefälscht: Signiert mit einem anderen Schlüssel als dem, der für diese Adresse bekannt ist."
         },
         "locked": "Mit OpenPGP verschlüsselt. Der Schlüssel {email} ist gesperrt: Passphrase nötig."
       },

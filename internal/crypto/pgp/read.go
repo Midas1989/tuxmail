@@ -17,6 +17,7 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
 	"github.com/ProtonMail/go-crypto/openpgp/clearsign"
 	pgperrors "github.com/ProtonMail/go-crypto/openpgp/errors"
+	"github.com/ProtonMail/go-crypto/openpgp/packet"
 	openpgp "github.com/ProtonMail/go-crypto/openpgp/v2"
 )
 
@@ -99,6 +100,10 @@ type ReadResult struct {
 	// InnerHeader is the parsed header of Content (e.g. for
 	// Autocrypt-Gossip processing).
 	InnerHeader textproto.MIMEHeader
+	// ForeignParts is true when a PGP/MIME message had parts besides the ones
+	// RFC 3156 allows. They are unprotected whatever the signature says and are
+	// not part of Content (EFAIL-like mixtures, added text).
+	ForeignParts bool
 	// LockedKeys are the fingerprints of keys that could decrypt the message,
 	// but whose passphrase the PassphraseFunc refused with ErrKeyLocked.
 	LockedKeys []string
@@ -226,6 +231,9 @@ func (r *KeyRing) decryptPGPMIME(ctx context.Context, op *opKeyRing, body []byte
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("%w: multipart/encrypted needs two parts", ErrMalformedMIME)
 	}
+	if len(parts) > 2 {
+		res.ForeignParts = true
+	}
 	// Part 1: application/pgp-encrypted with "Version: 1" (not checked
 	// strictly). Part 2: application/octet-stream with the message.
 	ph, pb := splitEntity(parts[1])
@@ -304,7 +312,7 @@ func (r *KeyRing) decryptMessage(ctx context.Context, op *opKeyRing, data []byte
 		}
 		return nil, promptErr
 	}
-	md, err := openpgp.ReadMessage(in, op, prompt, configAt(opts.Now))
+	md, err := openpgp.ReadMessage(in, op, prompt, verifyConfig(opts.Now))
 	if err != nil {
 		if promptErr != nil {
 			return nil, promptErr
@@ -335,6 +343,18 @@ func (r *KeyRing) decryptMessage(ctx context.Context, op *opKeyRing, data []byte
 	return plain, nil
 }
 
+// signatureClockSkew is what a sender's clock may be ahead: a signature from
+// "the future" is refused by go-crypto, and a clock a few seconds off is no
+// sign of a changed message.
+const signatureClockSkew = 5 * time.Minute
+
+func verifyConfig(now time.Time) *packet.Config {
+	if now.IsZero() {
+		now = time.Now().Add(signatureClockSkew)
+	}
+	return configAt(now)
+}
+
 func verifyPGPMIME(op *opKeyRing, body []byte, boundary string, opts ReadOptions, res *ReadResult) ([]byte, error) {
 	parts, err := splitMultipart(body, boundary)
 	if err != nil {
@@ -342,6 +362,9 @@ func verifyPGPMIME(op *opKeyRing, body []byte, boundary string, opts ReadOptions
 	}
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("%w: multipart/signed needs two parts", ErrMalformedMIME)
+	}
+	if len(parts) > 2 {
+		res.ForeignParts = true
 	}
 	signed := parts[0]
 	sh, sb := splitEntity(parts[1])
@@ -375,7 +398,7 @@ func verifyDetached(op *opKeyRing, signed, sig []byte, opts ReadOptions, res *Re
 
 func verifyDetachedReader(op *opKeyRing, signed []byte, sigReader io.Reader, opts ReadOptions, res *ReadResult) {
 	res.Signed = true
-	md, err := openpgp.VerifyDetachedSignatureReader(op, bytes.NewReader(signed), sigReader, configAt(opts.Now))
+	md, err := openpgp.VerifyDetachedSignatureReader(op, bytes.NewReader(signed), sigReader, verifyConfig(opts.Now))
 	if err != nil {
 		res.Signature, res.SignatureError = SigInvalid, err
 		if errors.Is(err, pgperrors.ErrUnknownIssuer) {

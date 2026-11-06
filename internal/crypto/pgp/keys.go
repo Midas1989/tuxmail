@@ -657,6 +657,30 @@ func (k *Key) Public() *Key {
 	return &Key{entity: el[0]}
 }
 
+// RestrictToEmail returns a public copy of the key with the user IDs of that
+// address only. A directory answers for one address: further user IDs in its
+// answer must not make the key usable for other people.
+func (k *Key) RestrictToEmail(addr string) (*Key, error) {
+	c, err := k.Public().Clone()
+	if err != nil {
+		return nil, err
+	}
+	want := NormalizeEmail(addr)
+	for name, id := range c.entity.Identities {
+		email := name
+		if id.UserId != nil && id.UserId.Email != "" {
+			email = id.UserId.Email
+		}
+		if NormalizeEmail(email) != want {
+			delete(c.entity.Identities, name)
+		}
+	}
+	if len(c.entity.Identities) == 0 {
+		return nil, ErrKeyNotFound
+	}
+	return c.Clone()
+}
+
 // Clone returns a deep copy of the key.
 func (k *Key) Clone() (*Key, error) {
 	b, err := k.Bytes()

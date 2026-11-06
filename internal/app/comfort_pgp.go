@@ -123,6 +123,10 @@ type PGPRecipientStatus struct {
 	Fingerprint string `json:"fingerprint,omitempty"`
 	Source      string `json:"source,omitempty"`
 	Trust       string `json:"trust"`
+	// PendingKey was seen in mail but is not used; with KeyChanged it replaced
+	// an earlier key and waits for the user to accept it.
+	PendingKey string `json:"pendingKey,omitempty"`
+	KeyChanged bool   `json:"keyChanged,omitempty"`
 }
 
 // PGPStatus tells the composer what OpenPGP can do for a draft.
@@ -370,8 +374,7 @@ func (s pgpTrustStore) Delete(ctx context.Context, address, fingerprint string) 
 	return s.st.DeletePGPTrust(ctx, pgp.NormalizeEmail(address), pgp.NormalizeFingerprint(fingerprint))
 }
 
-// pgpPeerStore implements pgp.PeerStore. A key that replaces a different one
-// is remembered, so that the key manager can warn about it.
+// pgpPeerStore implements pgp.PeerStore.
 type pgpPeerStore struct{ st *store.Store }
 
 // Get implements pgp.PeerStore.
@@ -384,30 +387,13 @@ func (s pgpPeerStore) Get(ctx context.Context, addr string) (pgp.PeerState, erro
 		return pgp.PeerState{}, err
 	}
 	return pgp.PeerState{Addr: p.Addr, LastSeen: p.LastSeen, AutocryptTimestamp: p.AutocryptTS, PublicKey: p.PublicKey,
-		PreferEncrypt: pgp.PreferEncrypt(p.PreferEncrypt), GossipTimestamp: p.GossipTS, GossipKey: p.GossipKey}, nil
+		PreferEncrypt: pgp.PreferEncrypt(p.PreferEncrypt), GossipTimestamp: p.GossipTS, GossipKey: p.GossipKey, KeyChanged: p.KeyChanged}, nil
 }
 
 // Put implements pgp.PeerStore.
 func (s pgpPeerStore) Put(ctx context.Context, p pgp.PeerState) error {
-	row := store.PGPPeer{Addr: pgp.NormalizeEmail(p.Addr), LastSeen: p.LastSeen, AutocryptTS: p.AutocryptTimestamp, PublicKey: p.PublicKey,
-		PreferEncrypt: string(p.PreferEncrypt), GossipTS: p.GossipTimestamp, GossipKey: p.GossipKey}
-	if prev, err := s.st.GetPGPPeer(ctx, row.Addr); err == nil {
-		row.KeyChanged = prev.KeyChanged || (len(prev.PublicKey) > 0 && len(row.PublicKey) > 0 && pgpFingerprintDiffers(prev.PublicKey, row.PublicKey))
-	}
-	return s.st.PutPGPPeer(ctx, row)
-}
-
-// pgpFingerprintDiffers compares keys, not bytes: re-signing is not a change.
-func pgpFingerprintDiffers(a, b []byte) bool {
-	ka, err := pgp.ReadKey(a)
-	if err != nil {
-		return true
-	}
-	kb, err := pgp.ReadKey(b)
-	if err != nil {
-		return true
-	}
-	return ka.Fingerprint() != kb.Fingerprint()
+	return s.st.PutPGPPeer(ctx, store.PGPPeer{Addr: pgp.NormalizeEmail(p.Addr), LastSeen: p.LastSeen, AutocryptTS: p.AutocryptTimestamp, PublicKey: p.PublicKey,
+		PreferEncrypt: string(p.PreferEncrypt), GossipTS: p.GossipTimestamp, GossipKey: p.GossipKey, KeyChanged: p.KeyChanged})
 }
 
 // ==== key manager ================================================================
@@ -699,7 +685,11 @@ func (a *App) LookupPGPKey(ctx context.Context, in PGPLookupInput) (PGPKeyInfo, 
 	now := a.now()
 	for _, k := range keys {
 		if k.HasEmail(email) && k.CanEncrypt(now) {
-			return a.putPGPKey(ctx, k.Public(), l.Source())
+			only, err := k.RestrictToEmail(email)
+			if err != nil {
+				return PGPKeyInfo{}, err
+			}
+			return a.putPGPKey(ctx, only, l.Source())
 		}
 	}
 	return PGPKeyInfo{}, &Error{Code: "pgp_key_not_found", Status: http.StatusNotFound, Message: "no usable key was found for this address"}
@@ -733,7 +723,7 @@ func (a *App) PGPStatusFor(ctx context.Context, from string, recipients []string
 	}
 	st.Missing, st.Recommendation = plan.MissingKeys, string(plan.Recommendation)
 	for _, r := range plan.Recipients {
-		st.Recipients = append(st.Recipients, PGPRecipientStatus{Address: r.Address, Fingerprint: r.Fingerprint, Source: string(r.Source), Trust: string(r.Trust)})
+		st.Recipients = append(st.Recipients, PGPRecipientStatus{Address: r.Address, Fingerprint: r.Fingerprint, Source: string(r.Source), Trust: string(r.Trust), PendingKey: r.PendingKey, KeyChanged: r.KeyChanged})
 	}
 	// Without an own key the copy in Sent would be unreadable.
 	st.CanEncrypt = st.CanSign && plan.CanEncrypt
@@ -801,7 +791,12 @@ func (a *App) VerifyPGPPeer(ctx context.Context, in PGPPeerInput) (PGPKeyInfo, e
 	if pgp.NormalizeFingerprint(in.Fingerprint) != k.Fingerprint() {
 		return PGPKeyInfo{}, &Error{Code: "pgp_key_changed", Status: http.StatusConflict, Message: "the key has changed in the meantime"}
 	}
-	info, err := a.putPGPKey(ctx, k.Public(), pgp.SourceAutocrypt)
+	// Only for this address: the header vouches for nothing else.
+	only, err := k.RestrictToEmail(addr)
+	if err != nil {
+		return PGPKeyInfo{}, &Error{Code: "pgp_key_not_found", Status: http.StatusNotFound, Message: "the key has no user ID for this address"}
+	}
+	info, err := a.putPGPKey(ctx, only, pgp.SourceAutocrypt)
 	if err != nil {
 		return info, err
 	}
@@ -817,6 +812,29 @@ func (a *App) VerifyPGPPeer(ctx context.Context, in PGPPeerInput) (PGPKeyInfo, e
 	a.pgpChanged()
 	info.Trust = string(pgp.TrustVerified)
 	return info, nil
+}
+
+// AcceptPGPPeer accepts a changed Autocrypt key for encrypting (still only
+// "seen in mail"), bound to the fingerprint the user saw.
+func (a *App) AcceptPGPPeer(ctx context.Context, in PGPPeerInput) error {
+	s := a.comfort.pgp
+	addr := pgp.NormalizeEmail(in.Address)
+	ps, err := s.peers.Get(ctx, addr)
+	if errors.Is(err, pgp.ErrKeyNotFound) {
+		return errNotFound
+	}
+	if err != nil {
+		return err
+	}
+	k, _, err := ps.TargetKey()
+	if err != nil || k == nil {
+		return errNotFound
+	}
+	if pgp.NormalizeFingerprint(in.Fingerprint) != k.Fingerprint() {
+		return &Error{Code: "pgp_key_changed", Status: http.StatusConflict, Message: "the key has changed in the meantime"}
+	}
+	ps.KeyChanged = false
+	return s.peers.Put(ctx, ps)
 }
 
 // DeletePGPPeer forgets a collected key.
@@ -952,6 +970,10 @@ func (a *App) pgpJudgeSigner(ctx context.Context, pm *parse.Message, out *PGPMes
 		out.SignerTrust = string(pgp.TrustVerified)
 		return
 	}
+	if a.pgpSignerConflict(ctx, from, k) {
+		out.Signature = pgpSigConflict
+		return
+	}
 	trust := pgp.TrustTOFU
 	if r, err := a.comfort.pgp.trust.Get(ctx, from, k.Fingerprint()); err == nil {
 		trust = r.Level
@@ -959,4 +981,33 @@ func (a *App) pgpJudgeSigner(ctx context.Context, pm *parse.Message, out *PGPMes
 		trust = pgp.TrustUnknown
 	}
 	out.SignerTrust = string(trust)
+}
+
+// pgpSigConflict: the signature is fine, but by another key than the one known
+// for this address. A forged mail can bring its own key and signature.
+const pgpSigConflict = "conflict"
+
+func (a *App) pgpSignerConflict(ctx context.Context, from string, signer *pgp.Key) bool {
+	s := a.comfort.pgp
+	fpr := signer.Fingerprint()
+	if a.isOwnAddress(ctx, from) {
+		return true // signer.IsSecret() was handled: not one of our keys
+	}
+	if recs, err := s.trust.ListByAddress(ctx, from); err == nil {
+		for _, r := range recs {
+			if r.Level == pgp.TrustVerified && r.Fingerprint != fpr {
+				return true
+			}
+		}
+	}
+	_, ringErr := a.pgpRing().Get(ctx, fpr)
+	if ringErr == nil {
+		return false
+	}
+	// Only known from a mail: another key in the ring, or an unaccepted change.
+	if keys, err := a.pgpRing().FindByEmail(ctx, from); err == nil && len(keys) > 0 {
+		return true
+	}
+	ps, err := s.peers.Get(ctx, from)
+	return err == nil && ps.KeyChanged
 }

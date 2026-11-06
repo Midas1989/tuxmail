@@ -745,7 +745,8 @@ Eigene Passphrase optional (S2K des Schlüssels, zusätzlich zum Tresor), Abfrag
 Entschlüsselter Text wird nicht indexiert, also keine Suche in verschlüsselten
 Mails; die Analyse (Spam, Kategorien, Rechnungen) und PDF-Archiv entschlüsseln OpenPGP nicht, die Druckansicht schon.
 Betreff wird beim Versand nicht verborgen, nur zusätzlich geschützt. **Noch nicht gebaut:** verschlüsselte Ablage von
-Entwürfen (sie liegen wie jeder Entwurf im Klartext im Entwurfsordner), Schloss-Symbol in Liste und Chat-Blase. Empfänger
+Entwürfen (sie liegen wie jeder Entwurf im Klartext im Entwurfsordner), Schloss-Symbol in Liste und Chat-Blase. Ein importierter Schlüssel schlägt einen per Autocrypt gesehenen; ein geänderter Autocrypt-Schlüssel wird erst nach Bestätigung
+genutzt. Grün zeigt das Lesefenster nur bei bestätigtem Schlüssel. Empfänger
 in Bcc sind an den Schlüssel-IDs im Geheimtext erkennbar.
 
 - Bibliothek: `ProtonMail/go-crypto` (unterstützt v4- und v6-Schlüssel nach RFC 9580), Paket `internal/crypto/pgp`.

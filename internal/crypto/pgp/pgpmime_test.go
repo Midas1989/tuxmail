@@ -544,3 +544,31 @@ func TestVerifyDetached(t *testing.T) {
 		t.Fatalf("%v %s %v", err, res.Signature, res.SignatureError)
 	}
 }
+
+// A sender's clock a little ahead does not make a signature invalid; a long way
+// ahead it still does.
+func TestSignatureClockSkew(t *testing.T) {
+	ctx := context.Background()
+	created := time.Now().Add(-time.Hour)
+	k, err := GenerateKey(GenerateOptions{UserIDs: []UserIDSpec{{Email: "a@example.org"}}, Now: created})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ring := NewKeyRing(NewMemoryKeyStore(), nil)
+	if _, err := ring.ImportKey(ctx, k.Public()); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct {
+		ahead time.Duration
+		want  SignatureStatus
+	}{"seconds": {30 * time.Second, SigValid}, "day": {24 * time.Hour, SigInvalid}} {
+		ent, err := SignMIME([]byte("Content-Type: text/plain\r\n\r\nx\r\n"), k, SignOptions{Now: time.Now().Add(c.ahead)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		res, err := ring.ReadMessage(ctx, ent.Bytes(), ReadOptions{})
+		if err != nil || res.Signature != c.want {
+			t.Errorf("%s: %s %v (%v)", name, res.Signature, err, res.SignatureError)
+		}
+	}
+}

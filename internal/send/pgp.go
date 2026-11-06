@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/crypto/pgp"
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/mime/compose"
 	"github.com/Midas1989/Mailclient/internal/mime/parse"
 )
@@ -102,11 +104,40 @@ func allRecipients(d *compose.Draft) []string {
 // ciphertext is recognised without any key.
 func repliesToEncrypted(d *compose.Draft) bool {
 	raw := originalRaw(d)
-	if d.Kind == compose.KindNew || len(raw) == 0 {
+	if len(raw) == 0 {
 		return false
 	}
 	m, err := parse.Parse(raw, parse.Options{SkipAttachmentData: true})
-	return err == nil && m.PGP.Encrypted
+	return err == nil && (m.PGP.Encrypted || m.SMIME.Encrypted)
+}
+
+// CheckDecryptedInPlain is the send check for answering or forwarding an
+// encrypted mail without encryption: the quote carries the decrypted text.
+const CheckDecryptedInPlain = "decrypted_in_plain"
+
+func (s *Service) checkDecryptedInPlain(ctx context.Context, req *Request) *BlockedError {
+	if !repliesToEncrypted(&req.Draft) || (req.Override && slices.Contains(req.Confirm, CheckDecryptedInPlain)) {
+		return nil
+	}
+	// A plan that fails refuses the send later on: no plain text either.
+	if p, err := s.planPGP(ctx, req, false); err != nil || p.encrypt {
+		return nil
+	}
+	if p, err := s.planSMIME(ctx, req); err != nil || p.encrypt {
+		return nil
+	}
+	return &BlockedError{Findings: []events.Finding{{Check: CheckDecryptedInPlain, Severity: events.SeverityBlock, Key: "send.decrypted_in_plain",
+		DE: "Sie antworten auf eine verschlüsselte Mail oder leiten sie weiter, diese Mail ginge aber unverschlüsselt hinaus. Der zitierte Text wäre lesbar.",
+		EN: "You are answering or forwarding an encrypted mail, but this mail would leave unencrypted. The quoted text would be readable."}}}
+}
+
+// checkPlannable refuses a scheduled send whose keys are missing right now.
+func (s *Service) checkPlannable(ctx context.Context, req *Request) error {
+	if _, err := s.planPGP(ctx, req, true); err != nil {
+		return err
+	}
+	_, err := s.planSMIME(ctx, req)
+	return err
 }
 
 // planPGP decides whether to sign and encrypt.

@@ -311,7 +311,12 @@ func (a *App) runSendOps(ctx context.Context) {
 		}
 		if err := ms.Service.HandleOp(ctx, op.Kind, op.Payload); err != nil {
 			a.log.Warn("app: delayed send failed", "op", op.ID, "err", err)
-			_, _ = a.st.MarkOpFailed(ctx, op.ID, err, a.now(), 5, errors.Is(err, send.ErrBlockedByChecks))
+			// Keys do not come back by retrying within minutes.
+			permanent := errors.Is(err, send.ErrBlockedByChecks) || errors.Is(err, send.ErrCannotEncrypt) || errors.Is(err, send.ErrPGPKeyLocked) ||
+				errors.Is(err, send.ErrNoSigningKey) || errors.Is(err, send.ErrSMIMECannotEncrypt) || errors.Is(err, send.ErrNoSMIMECertificate)
+			if state, ferr := a.st.MarkOpFailed(ctx, op.ID, err, a.now(), 5, permanent); ferr == nil && state == store.OpFailed {
+				a.hub.Publish(Event{Type: EventSendFailed})
+			}
 			continue
 		}
 		_ = a.st.MarkOpDone(ctx, op.ID)
@@ -384,4 +389,42 @@ func (a *App) identityFor(ctx context.Context, accountID int64, rcpts []Address)
 		}
 	}
 	return ids[0].ID, nil
+}
+
+// FailedSend is a delayed send that failed for good: nothing left, the user has
+// to know.
+type FailedSend struct {
+	ID      int64  `json:"id"`
+	Subject string `json:"subject"`
+	Error   string `json:"error"`
+}
+
+// FailedSends lists delayed sends that failed for good.
+func (a *App) FailedSends(ctx context.Context) ([]FailedSend, error) {
+	ops, err := a.st.ListOps(ctx, store.OpFailed)
+	if err != nil {
+		return nil, err
+	}
+	out := []FailedSend{}
+	for _, op := range ops {
+		if op.Kind == send.OpKind {
+			out = append(out, FailedSend{ID: op.ID, Subject: send.ScheduledSubject(op.Payload), Error: strings.TrimPrefix(op.LastError, "send: ")})
+		}
+	}
+	return out, nil
+}
+
+// DismissFailedSend removes a failed send after it was shown; the request in it
+// holds the text of the mail.
+func (a *App) DismissFailedSend(ctx context.Context, id int64) error {
+	ops, err := a.st.ListOps(ctx, store.OpFailed)
+	if err != nil {
+		return err
+	}
+	for _, op := range ops {
+		if op.ID == id && op.Kind == send.OpKind {
+			return a.st.DeleteOp(ctx, id)
+		}
+	}
+	return errNotFound
 }

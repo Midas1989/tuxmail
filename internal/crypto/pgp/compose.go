@@ -30,6 +30,11 @@ type RecipientPlan struct {
 	Source         KeySource      `json:"source,omitempty"`
 	Trust          TrustLevel     `json:"trust"`
 	Recommendation Recommendation `json:"recommendation"`
+	// PendingKey is a key seen in mail for this address that is not used: it
+	// differs from the key ring's key, or it replaced an earlier Autocrypt key
+	// (KeyChanged) and the user has not accepted that yet.
+	PendingKey string `json:"pendingKey,omitempty"`
+	KeyChanged bool   `json:"keyChanged,omitempty"`
 }
 
 // EncryptionPlan is the result of Planner.Plan.
@@ -128,6 +133,7 @@ func (p *Planner) planRecipient(ctx context.Context, addr string, replyToEncrypt
 			peer = &ps
 			if k, g, err := ps.TargetKey(); err == nil && k.CanEncrypt(now) {
 				peerKey, peerGossip = k, g
+				rp.KeyChanged = ps.KeyChanged
 			}
 		case !errors.Is(err, ErrKeyNotFound):
 			return rp, err
@@ -144,19 +150,26 @@ func (p *Planner) planRecipient(ctx context.Context, addr string, replyToEncrypt
 		return p.trustOf(ctx, addr, ringKey, now)
 	}()
 
-	// 3. Select the key: own or verified key-ring keys win, then the
-	// Autocrypt key (most recent evidence), then any key-ring key.
+	// 3. Select the key: a key the user put into the ring wins over anything
+	// a mail brought along, otherwise a forged header would redirect the
+	// encryption. An Autocrypt key that replaced an earlier one waits until
+	// the user accepts the change.
 	switch {
-	case ringKey != nil && ringTrust == TrustVerified:
+	case ringKey != nil:
 		rp.Key, rp.Source = ringKey, ringSource
+		if peerKey != nil && peerKey.Fingerprint() != ringKey.Fingerprint() {
+			rp.PendingKey = peerKey.Fingerprint()
+		} else {
+			rp.KeyChanged = false
+		}
+	case peerKey != nil && rp.KeyChanged:
+		rp.PendingKey = peerKey.Fingerprint()
 	case peerKey != nil:
 		rp.Key = peerKey
 		rp.Source = SourceAutocrypt
 		if peerGossip {
 			rp.Source = SourceGossip
 		}
-	case ringKey != nil:
-		rp.Key, rp.Source = ringKey, ringSource
 	}
 	if rp.Key == nil {
 		return rp, nil

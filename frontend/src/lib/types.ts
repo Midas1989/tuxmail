@@ -539,6 +539,7 @@ export type ApiEvent =
   | { type: 'workflow.run'; workflowId: string; run: WorkflowRunSummary }
   /** Desktop portable mode: the secret vault needs the master password (Api.unlockVault). */
   | { type: 'vault.locked' }
+  | { type: 'mail.send_failed' }
   | PimEvent
   /** Import/export/backup job changed (poll Api.getIOJob). */
   | { type: 'io.job'; itemId: string; state: string }

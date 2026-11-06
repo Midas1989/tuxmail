@@ -57,6 +57,9 @@
 //   GET /api/comfort/pgp/peers                      -> PgpPeer[]
 //   POST /api/comfort/pgp/peers/verify              {address, fingerprint} -> PgpKey
 //   POST /api/comfort/pgp/peers/delete              {address}
+//   POST /api/comfort/pgp/peers/accept              {address, fingerprint}
+//   GET /api/comfort/send-failures                  -> FailedSend[]
+//   DELETE /api/comfort/send-failures/{id}
 //   GET /api/comfort/pgp/status                     ?from=&recipients=a,b -> PgpStatus
 
 import type { Api } from './api';
@@ -132,7 +135,7 @@ export interface PgpMessageStatus {
   encrypted: boolean;
   decrypted: boolean;
   signed: boolean;
-  signature?: 'valid' | 'invalid' | 'unknown_key' | 'expired_key' | 'revoked_key' | 'mismatch';
+  signature?: 'valid' | 'invalid' | 'unknown_key' | 'expired_key' | 'revoked_key' | 'mismatch' | 'conflict';
   signerFingerprint?: string;
   signerKeyId?: string;
   signerTrust?: 'unknown' | 'tofu' | 'verified';
@@ -329,10 +332,16 @@ export interface PgpStatus {
   canSign: boolean;
   canEncrypt: boolean;
   missing?: string[];
-  recipients?: { address: string; fingerprint?: string; source?: string; trust: string }[];
+  recipients?: { address: string; fingerprint?: string; source?: string; trust: string; pendingKey?: string; keyChanged?: boolean }[];
   recommendation?: string;
   ownLocked?: boolean;
   ownKeyId?: number;
+}
+
+export interface FailedSend {
+  id: number;
+  subject: string;
+  error: string;
 }
 
 export interface OutgoingCrypto {
@@ -401,6 +410,9 @@ export interface ComfortApi {
   listPgpPeers(): Promise<PgpPeer[]>;
   verifyPgpPeer(address: string, fingerprint: string): Promise<PgpKey>;
   deletePgpPeer(address: string): Promise<void>;
+  acceptPgpPeer(address: string, fingerprint: string): Promise<void>;
+  failedSends(): Promise<FailedSend[]>;
+  dismissFailedSend(id: number): Promise<void>;
   pgpStatus(from: string, recipients: string[]): Promise<PgpStatus>;
 }
 
@@ -534,6 +546,9 @@ export class ComfortHttp implements ComfortApi {
   listPgpPeers = () => this.req<PgpPeer[]>('GET', '/api/comfort/pgp/peers');
   verifyPgpPeer = (address: string, fingerprint: string) => this.req<PgpKey>('POST', '/api/comfort/pgp/peers/verify', { address, fingerprint });
   deletePgpPeer = (address: string) => this.req<void>('POST', '/api/comfort/pgp/peers/delete', { address });
+  acceptPgpPeer = (address: string, fingerprint: string) => this.req<void>('POST', '/api/comfort/pgp/peers/accept', { address, fingerprint });
+  failedSends = () => this.req<FailedSend[]>('GET', '/api/comfort/send-failures');
+  dismissFailedSend = (id: number) => this.req<void>('DELETE', `/api/comfort/send-failures/${id}`);
   pgpStatus = (from: string, recipients: string[]) =>
     this.req<PgpStatus>('GET', `/api/comfort/pgp/status${query({ from, recipients: recipients.join(',') })}`);
 }
@@ -615,6 +630,9 @@ export class ComfortWails implements ComfortApi {
   listPgpPeers = () => this.call<PgpPeer[]>('ComfortListPGPPeers');
   verifyPgpPeer = (address: string, fingerprint: string) => this.call<PgpKey>('ComfortVerifyPGPPeer', { address, fingerprint });
   deletePgpPeer = (address: string) => this.call<void>('ComfortDeletePGPPeer', address);
+  acceptPgpPeer = (address: string, fingerprint: string) => this.call<void>('ComfortAcceptPGPPeer', { address, fingerprint });
+  failedSends = () => this.call<FailedSend[]>('ComfortFailedSends');
+  dismissFailedSend = (id: number) => this.call<void>('ComfortDismissFailedSend', id);
   pgpStatus = (from: string, recipients: string[]) => this.call<PgpStatus>('ComfortPGPStatus', from, recipients);
 }
 

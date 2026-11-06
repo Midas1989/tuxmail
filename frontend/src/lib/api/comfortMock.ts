@@ -366,6 +366,9 @@ export function comfortMock(): ComfortApi {
       throw new ApiError('not found', 404, 'not_found');
     },
     deletePgpPeer: async () => {},
+    acceptPgpPeer: async () => {},
+    failedSends: async () => [],
+    dismissFailedSend: async () => {},
     pgpStatus: async (from, recipients) => {
       const canSign = pgpKeys.some((k) => k.own && k.email === from.toLowerCase());
       const missing = recipients.filter((r) => !pgpKeys.some((k) => k.email === r.toLowerCase()));

@@ -220,6 +220,11 @@
 
   // A key directory only hears about a recipient after this click.
   let unlockOpen = $state(false);
+  async function acceptKey(address: string, fingerprint: string) {
+    if (!confirm(t('comfort.crypto.pgpAcceptConfirm', { address, fingerprint: fingerprint.replace(/(.{4})/g, '$1 ').trim() }))) return;
+    await comfort.api.acceptPgpPeer(address, fingerprint).catch(() => {});
+    await refreshPgp(fromEmail, recipients.map((r) => r.email));
+  }
   let lookupBusy = $state(false);
   let lookupNone = $state<string[]>([]);
   async function lookupMissing() {
@@ -299,6 +304,19 @@
   {#if choice.startsWith('pgp-') && pgp?.ownLocked && pgp.ownKeyId}
     <span class="missing" role="alert">{t('comfort.crypto.pgpLocked')}</span>
     <button type="button" class="btn btn-ghost mini" onclick={() => (unlockOpen = true)}>{t('comfort.pgp.unlock')}</button>
+  {/if}
+  {#if choice === 'pgp-encrypt'}
+    <span class="note">{t('comfort.crypto.pgpVisibleNote')}</span>
+    {#each pgp?.recipients ?? [] as r (r.address)}
+      {#if r.keyChanged && r.pendingKey && !r.fingerprint}
+        <span class="missing" role="alert">{t('comfort.crypto.pgpKeyChanged', { address: r.address })}</span>
+        <button type="button" class="btn btn-ghost mini" onclick={() => acceptKey(r.address, r.pendingKey ?? '')}>{t('comfort.crypto.pgpAccept')}</button>
+      {:else if r.pendingKey}
+        <span class="missing" role="alert">{t('comfort.crypto.pgpKeyDiffers', { address: r.address })}</span>
+      {:else if r.fingerprint && r.trust !== 'verified'}
+        <span class="note">{t('comfort.crypto.pgpUnconfirmed', { address: r.address })}</span>
+      {/if}
+    {/each}
   {/if}
   {#if choice === 'pgp-encrypt' && pgp?.missing?.length}
     <span class="missing" role="alert">{t('comfort.crypto.pgpMissing', { recipients: pgp.missing.join(', ') })}</span>
@@ -388,6 +406,9 @@
     gap: 4px;
     margin-left: 4px;
     color: var(--tm-muted);
+  }
+  .note {
+    font-size: 12px;
   }
   .missing {
     color: #dc2626;

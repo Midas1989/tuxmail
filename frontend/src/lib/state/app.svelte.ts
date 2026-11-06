@@ -46,6 +46,7 @@ import {
 } from '../types';
 import { prefs } from './prefs.svelte';
 import { ApiError } from '../api/api';
+import { comfortFor } from '../api/comfort';
 import { isFocusActive } from '../chatfeatures';
 import { folderViews, type FolderView } from '../folders';
 import type { AccountSyncStatus } from '../types';
@@ -485,6 +486,7 @@ export class AppState {
     try {
       await prefs.connect(this.api);
       void this.initChatFeatures();
+      void this.showFailedSends();
       const [accounts, identities, signatures, persons] = await Promise.all([
         this.api.listAccounts(),
         this.api.listIdentities(),
@@ -531,6 +533,9 @@ export class AppState {
         break;
       case 'vault.locked':
         void this.refreshVault();
+        break;
+      case 'mail.send_failed':
+        void this.showFailedSends();
         break;
       case 'tags.changed':
         void this.loadTags();
@@ -1085,6 +1090,16 @@ export class AppState {
 
   openCompose(init: ComposerInit = { mode: 'new' }): void {
     this.composer = init;
+  }
+
+  /** Delayed sends that failed for good: shown once, also after being away. */
+  async showFailedSends(): Promise<void> {
+    const c = comfortFor(this.api);
+    const failed = await c.failedSends().catch(() => []);
+    for (const f of failed) {
+      this.toast(t('comfort.crypto.sendFailed', { subject: f.subject, error: f.error }), undefined, 'error');
+      await c.dismissFailedSend(f.id).catch(() => {});
+    }
   }
 
   replyInit(m: MessageDetail, mode: Exclude<ComposeMode, 'new'>, bodyHtml = ''): ComposerInit {
