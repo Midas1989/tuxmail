@@ -55,7 +55,7 @@ mit allen Varianten: **[docs/INSTALLATION.md](docs/INSTALLATION.md)**.
 | **iPhone / jedes Smartphone** | Server-Adresse im Browser öffnen und zum Home-Bildschirm hinzufügen (PWA) |
 | **eigener Server (Linux)** | Ansible-Playbook in [deploy/](deploy/README.md), alternativ Docker |
 
-`<v>` ist die Versionsnummer, z. B. `1.0.0`. Auf ARM-Geräten (`arm64`, Raspberry Pi 4/5, Snapdragon-Notebooks)
+`<v>` ist die Versionsnummer, z. B. `1.0.1`. Auf ARM-Geräten (`arm64`, Raspberry Pi 4/5, Snapdragon-Notebooks)
 dieselben Dateien mit `arm64` bzw. `aarch64` nehmen.
 
 Die Windows-Programme sind noch nicht digital signiert. Windows zeigt deshalb einmalig „Unbekannter Herausgeber“; die

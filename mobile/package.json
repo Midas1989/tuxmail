@@ -1,7 +1,7 @@
 {
   "name": "tuxmail-mobile",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "license": "AGPL-3.0-or-later",
   "description": "TuxMail Android app (Capacitor thin client for any TuxMail server, KONZEPT 15.9 stage A)",
   "scripts": {
