@@ -60,6 +60,29 @@
     if (!phone.current) moreOpen = false;
   });
 
+  let moreBtn = $state<HTMLButtonElement>();
+  let sheet = $state<HTMLDivElement>();
+  // Focus moves into the sheet when it opens and back to "Mehr" when it closes (like the shared dialogs).
+  $effect(() => {
+    if (!moreOpen || !sheet) return;
+    sheet.querySelector<HTMLElement>('button')?.focus();
+    return () => moreBtn?.focus();
+  });
+  function sheetKey(e: KeyboardEvent) {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      moreOpen = false;
+    } else if (e.key === 'Tab' && sheet) {
+      // Tab stays inside the sheet.
+      const f = [...sheet.querySelectorAll<HTMLElement>('button')];
+      if (!f.length) return;
+      const first = f[0];
+      const last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) (e.preventDefault(), last.focus());
+      else if (!e.shiftKey && document.activeElement === last) (e.preventDefault(), first.focus());
+    }
+  }
+
   function openFromMore(target: Item['id'] | 'settings') {
     moreOpen = false;
     if (target === 'settings') app.navigate('settings');
@@ -93,7 +116,7 @@
   </ul>
   <div class="spacer"></div>
   {#if phone.current}
-    <button class="item more" aria-current={moreActive ? 'page' : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} onclick={() => (moreOpen = !moreOpen)} title={t('nav.more')}>
+    <button bind:this={moreBtn} class="item more" aria-current={moreActive ? 'page' : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} onclick={() => (moreOpen = !moreOpen)} title={t('nav.more')}>
       <Ellipsis size={21} strokeWidth={1.8} aria-hidden="true" />
       <span class="lbl">{t('nav.more')}</span>
     </button>
@@ -108,7 +131,7 @@
 {#if phone.current && moreOpen}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="more-backdrop" role="presentation" onclick={() => (moreOpen = false)} onkeydown={(e) => e.key === 'Escape' && (moreOpen = false)}></div>
-  <div class="more-sheet" role="dialog" aria-modal="true" aria-label={t('nav.more')} tabindex="-1" onkeydown={(e) => e.key === 'Escape' && (moreOpen = false)}>
+  <div class="more-sheet" role="dialog" aria-modal="true" aria-label={t('nav.more')} tabindex="-1" bind:this={sheet} onkeydown={sheetKey}>
     <ul>
       {#each moreItems as item (item.id)}
         {@const Icon = item.icon}
@@ -229,7 +252,7 @@
   }
 
   /* Phones: bottom navigation bar. Height = content + bottom inset (never squeezed by it). */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .rail {
       position: fixed;
       left: 0;

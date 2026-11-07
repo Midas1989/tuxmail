@@ -108,7 +108,7 @@
     gap: 6px;
     margin-top: 6px;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .rem {
       bottom: 72px;
     }

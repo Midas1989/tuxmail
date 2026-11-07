@@ -63,4 +63,23 @@ describe('ActivityBar on phones', () => {
     expect(nav.calls).toEqual(['settings']);
     expect(root.querySelector('[role="dialog"]')).toBeNull();
   });
+
+  it('moves focus into the sheet, keeps Tab inside and returns focus to "More" on close', () => {
+    const root = render(ActivityBar, {});
+    const more = root.querySelector<HTMLButtonElement>('button.more')!;
+    more.focus();
+    more.click();
+    flushSync();
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>('[role="dialog"] button')];
+    expect(document.activeElement).toBe(buttons[0]);
+    // Tab on the last entry wraps to the first, Shift+Tab on the first wraps to the last.
+    buttons[buttons.length - 1].focus();
+    buttons[buttons.length - 1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(buttons[0]);
+    buttons[0].dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true }));
+    expect(document.activeElement).toBe(buttons[buttons.length - 1]);
+    root.querySelector('[role="dialog"]')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    flushSync();
+    expect(document.activeElement).toBe(more);
+  });
 });

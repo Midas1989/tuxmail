@@ -26,6 +26,9 @@
   import { formatListDate, t } from '../../i18n/index.svelte';
   import Avatar from '../common/Avatar.svelte';
   import ListSyncState from './ListSyncState.svelte';
+  import { phone, textScale } from '../../phone.svelte';
+  import SquarePen from '@lucide/svelte/icons/square-pen';
+  import Ellipsis from '@lucide/svelte/icons/ellipsis';
 
   const OVERSCAN = 6;
 
@@ -39,7 +42,7 @@
     void prefs.density;
     if (!viewport) return;
     const v = parseFloat(getComputedStyle(viewport).getPropertyValue('--tm-row-h'));
-    if (v > 0) rowH = v;
+    if (v > 0) rowH = Math.round(v * textScale());
   });
 
   const showRecipients = $derived.by(() => {
@@ -77,7 +80,50 @@
   let menu = $state<{ x: number; y: number; m: MessageSummary } | null>(null);
   let anchor: number | null = null;
 
+  // Phones: long press starts a selection, a tap then adds or removes rows; swiping a row deletes (left) or toggles read (right).
+  let sw = $state<{ id: number; dx: number } | null>(null);
+  let swStart: { x: number; y: number; id: number; active: boolean } | null = null;
+  let justSwiped = false;
+  let bulkMore = $state<{ x: number; y: number } | null>(null);
+
+  function startSelect(m: MessageSummary) {
+    app.toggleChecked(m.id, true);
+    anchor = m.id;
+    navigator.vibrate?.(10);
+  }
+  function swDown(e: PointerEvent, m: MessageSummary) {
+    swStart = phone.current && e.pointerType !== 'mouse' && !app.checked.length ? { x: e.clientX, y: e.clientY, id: m.id, active: false } : null;
+  }
+  function swMove(e: PointerEvent) {
+    const s = swStart;
+    if (!s) return;
+    const dx = e.clientX - s.x;
+    const dy = e.clientY - s.y;
+    if (!s.active && Math.abs(dx) > 14 && Math.abs(dx) > 2 * Math.abs(dy)) {
+      s.active = true;
+      (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    }
+    if (s.active) sw = { id: s.id, dx: Math.max(-140, Math.min(140, dx)) };
+  }
+  function swUp(m: MessageSummary) {
+    const s = swStart;
+    const dx = sw?.dx ?? 0;
+    swStart = null;
+    sw = null;
+    if (!s?.active) return;
+    justSwiped = true;
+    setTimeout(() => (justSwiped = false), 350);
+    if (dx <= -90) void app.moveToRole(m.id, 'trash');
+    else if (dx >= 90) void app.toggleRead(m.id);
+  }
+
   function rowClick(e: MouseEvent, m: MessageSummary, index: number) {
+    if (justSwiped) return;
+    if (phone.current && app.checked.length) {
+      app.toggleChecked(m.id);
+      anchor = m.id;
+      return;
+    }
     if (e.shiftKey && anchor != null) {
       const a = list.findIndex((x) => x.id === anchor);
       const [from, to] = a < index ? [a, index] : [index, a];
@@ -162,11 +208,12 @@
       <button class="icon-btn" aria-label={t('organize.bulk.clear')} onclick={() => (app.checked = [])}><X size={16} /></button>
       <span class="bulk-n">{t('organize.bulk.selected', { count: app.checked.length })}</span>
       <span class="grow"></span>
-      <button use:needsOnline={notOffline} class="icon-btn" title={t('organize.tags.menu')} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker(refs(app.checked))}><Tags size={16} /></button>
-      <button use:needsOnline={notOffline} class="icon-btn" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker(refs(app.checked))}><FolderKanban size={16} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn bulk-rare" title={t('organize.tags.menu')} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker(refs(app.checked))}><Tags size={16} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn bulk-rare" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker(refs(app.checked))}><FolderKanban size={16} /></button>
       <button class="icon-btn" title={t('common.action.markRead')} aria-label={t('common.action.markRead')} onclick={() => app.bulk('read')}><MailOpen size={16} /></button>
       <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.bulk('archive')}><Archive size={16} /></button>
       <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.bulk('trash')}><Trash size={16} /></button>
+      <button class="icon-btn bulk-more" title={t('nav.more')} aria-label={t('nav.more')} aria-haspopup="menu" onclick={(e) => (bulkMore = { x: e.clientX, y: e.clientY })}><Ellipsis size={16} /></button>
     </header>
   {:else}
     <header class="list-head">
@@ -220,12 +267,17 @@
           aria-selected={selected}
           aria-posinset={index + 1}
           aria-setsize={total}
-          style:transform="translateY({index * rowH}px)"
+          style:transform="translate({sw?.id === m.id ? sw.dx : 0}px, {index * rowH}px)"
           style:height="{rowH}px"
           onclick={(e) => rowClick(e, m, index)}
+          onpointerdown={(e) => swDown(e, m)}
+          onpointermove={swMove}
+          onpointerup={() => swUp(m)}
+          onpointercancel={() => ((swStart = null), (sw = null))}
           oncontextmenu={(e) => {
             e.preventDefault();
-            menu = { x: e.clientX, y: e.clientY, m };
+            if (phone.current) startSelect(m);
+            else menu = { x: e.clientX, y: e.clientY, m };
           }}
           onkeydown={() => {}}
           tabindex="-1"
@@ -280,6 +332,21 @@
     </div>
   </div>
 </section>
+{#if bulkMore}
+  <ContextMenu
+    x={bulkMore.x}
+    y={bulkMore.y}
+    label={t('organize.bulk.label')}
+    onclose={() => (bulkMore = null)}
+    items={[
+      { id: 'tags', label: t('organize.tags.menu'), icon: Tags, run: () => app.openTagPicker(refs(app.checked)) },
+      { id: 'project', label: t('organize.project.menu'), icon: FolderKanban, run: () => app.openProjectPicker(refs(app.checked)) },
+    ]}
+  />
+{/if}
+{#if phone.current && !app.checked.length}
+  <button class="fab" aria-label={t('common.action.compose')} title={t('common.action.compose')} onclick={() => app.openCompose()}><SquarePen size={24} /></button>
+{/if}
 {#if menu}
   {@const m = menu.m}
   <ContextMenu x={menu.x} y={menu.y} items={menuItems(m)} label={t('mail.list.menu')} onclose={() => (menu = null)} />
@@ -533,5 +600,69 @@
   .e2 {
     margin: 0;
     font-size: 12.5px;
+  }
+  .bulk-more {
+    display: none;
+  }
+  .fab {
+    display: none;
+  }
+  /* Phones: tags/project move behind "more" so the bar fits; rows take touch (tap adds, swipe acts); compose is a floating button. */
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
+    .bulk-rare {
+      display: none;
+    }
+    .bulk-more {
+      display: inline-flex;
+    }
+    .bulk {
+      padding-left: 4px;
+      padding-right: 4px;
+    }
+    /* one line of subject and tags; with a large system font the tags clip instead of wrapping into the next row */
+    .l2 {
+      overflow: hidden;
+    }
+    .l2 :global(.chips) {
+      flex-wrap: nowrap;
+      flex: 0 1 auto;
+      overflow: hidden;
+    }
+    .row {
+      touch-action: pan-y;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+    .check {
+      opacity: 0;
+    }
+    .check.show {
+      left: 8px;
+      width: 22px;
+      height: 22px;
+    }
+    .fab {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      position: fixed;
+      right: calc(16px + var(--tm-safe-right));
+      bottom: calc(var(--tm-bar-h) + var(--tm-safe-bottom) + 16px);
+      z-index: 25;
+      width: 56px;
+      height: 56px;
+      border: none;
+      border-radius: 50%;
+      background: var(--tm-accent);
+      color: var(--tm-accent-fg);
+      box-shadow: var(--tm-shadow-lg);
+    }
+  }
+
+  /* Phone held sideways: keep the height for the rows. */
+  @media (pointer: coarse) and (max-height: 500px) {
+    .list-head:not(.bulk) {
+      display: none;
+    }
   }
 </style>

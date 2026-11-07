@@ -64,7 +64,9 @@
     error = null;
     try {
       config = await app.api.getSieveConfig(id).catch(() => null);
-      status = await app.api.getSieveStatus(id);
+      const st = await app.api.getSieveStatus(id);
+      // A server or an offline stand-in may leave the script list out: treat that as "no scripts".
+      status = { ...st, scripts: Array.isArray(st?.scripts) ? st.scripts : [] };
       const first = status.scripts.find((s) => s.active) ?? status.scripts[0];
       if (first) await open(first.name);
       else {
@@ -72,7 +74,8 @@
         script = '';
       }
     } catch (err) {
-      error = msg(err);
+      // Programming-error texts ("Cannot read properties of undefined") never reach the user.
+      error = err instanceof TypeError ? t('connection.notAvailableOffline') : msg(err);
     } finally {
       loading = false;
     }
@@ -154,7 +157,7 @@
     busy = true;
     try {
       status = await app.api.setSieveWorkflowSync(accountId, on);
-      const cur = status.scripts.find((s) => s.name === name) ?? status.scripts.find((s) => s.active);
+      const cur = (status.scripts ?? []).find((s) => s.name === name) ?? (status.scripts ?? []).find((s) => s.active);
       if (cur && !dirty) await open(cur.name);
     } catch (err) {
       error = msg(err);
@@ -233,7 +236,7 @@
             <button class="icon-btn" aria-label={t('settings.sieve.new')} title={t('settings.sieve.new')} onclick={newScript}><Plus size={15} /></button>
           </div>
           <ul>
-            {#each status.scripts as s (s.name)}
+            {#each (status.scripts ?? []) as s (s.name)}
               <li class:sel={s.name === name}>
                 <button class="name" onclick={() => open(s.name)}>{s.name}</button>
                 {#if s.active}<span class="badge">{t('settings.sieve.active')}</span>{:else}
@@ -478,7 +481,7 @@
     }
   }
 
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .name {
       min-height: 44px;
       font-size: 14px;

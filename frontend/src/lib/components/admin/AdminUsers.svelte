@@ -406,7 +406,7 @@
     color: var(--tm-muted);
   }
   /* Phones: e-mail, 2FA and last sign-in move to the edit dialog's reach; the row keeps what the actions need. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .tbl {
       min-width: 0;
     }

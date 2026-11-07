@@ -20,7 +20,7 @@
   <span class="chips {size}" title={t('organize.tags.label')}>
     {#each shown as tg (tg.id)}
       {#if onclick}
-        <button class="chip" style:--c={tg.color} title={tg.path} onclick={(e) => (e.stopPropagation(), onclick(tg.id))}>
+        <button class="chip" data-touch-compact style:--c={tg.color} title={tg.path} onclick={(e) => (e.stopPropagation(), onclick(tg.id))}>
           {#if tg.icon}<TagIcon icon={tg.icon} size={size === 'xs' ? 10 : 11} />{:else}<span class="dot"></span>{/if}{tg.name}
         </button>
       {:else}

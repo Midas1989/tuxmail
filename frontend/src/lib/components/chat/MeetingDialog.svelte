@@ -127,7 +127,7 @@
     font-size: 12px;
     color: var(--tm-muted);
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .row {
       grid-template-columns: 1fr;
     }

@@ -352,7 +352,7 @@
    Unlayered with an "html" prefix so it also wins over the scoped sizes of single components;
    only min-* is set, nothing gets smaller. Desktop (>= 640 px) is untouched.
    --------------------------------------------------------------------------- */
-@media (max-width: 639px) {
+@media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
   html:root:root .btn,
   html:root:root .icon-btn,
   html:root:root .input,
@@ -410,7 +410,7 @@
     min-height: 20px;
   }
   /* Scrolling tab rows fade out on the right so a cut-off tab ("Rechnungen &") reads as scrollable. */
-  html:root:root [role='tablist'] {
+  html:root:root [role='tablist']:not(.seg) {
     -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
     mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
     padding-inline-end: 32px;

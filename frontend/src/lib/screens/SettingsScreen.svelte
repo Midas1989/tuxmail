@@ -107,7 +107,7 @@
     about: Info,
   };
 
-  const phone = new MediaQuery('(max-width: 639px)');
+  const phone = new MediaQuery('(max-width: 639px), (pointer: coarse) and (max-height: 500px)');
 
   // ----- which categories apply ------------------------------------------------------------
   let teamAdmin = $state(false);
@@ -673,7 +673,7 @@
   }
 
   /* ----- phones: list → full-screen page ----- */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .nav-col {
       width: 100%;
       border-right: none;

@@ -103,7 +103,7 @@
     color: var(--tm-muted);
   }
   /* Phones reach this through the settings list; the bottom bar is full. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .account {
       display: none;
     }

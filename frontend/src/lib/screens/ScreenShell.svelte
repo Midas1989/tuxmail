@@ -63,7 +63,7 @@
     overflow: auto;
     padding: 20px 28px 32px;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     header {
       padding: 14px 16px 10px;
     }

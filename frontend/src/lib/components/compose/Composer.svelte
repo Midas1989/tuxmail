@@ -40,7 +40,7 @@
 <script lang="ts">
   import { connection } from '../../state/connection.svelte';
   import { lastUnclearOutboxId } from '../../desktop/bridge';
-  import { untrack } from 'svelte';
+  import { tick, untrack } from 'svelte';
   import Bold from '@lucide/svelte/icons/letter-b';
   import Italic from '@lucide/svelte/icons/italic';
   import Underline from '@lucide/svelte/icons/underline';
@@ -191,8 +191,10 @@
     if (url) exec('createLink', url);
   }
 
+  let attsEl = $state<HTMLElement>();
   function addFiles(files: FileList | File[] | null) {
     if (!files) return;
+    const before = attachments.length;
     for (const f of files) {
       attachments.push({
         key: `${f.name}-${f.size}-${Math.random().toString(36).slice(2, 6)}`,
@@ -202,6 +204,11 @@
         delivery: f.size > LARGE_ATTACHMENT ? suggestedCloudDelivery() : 'attach',
         file: f,
       });
+    }
+    if (attachments.length > before) {
+      // Feedback that is visible wherever the attach button sits: toast plus the list scrolled into view.
+      app.toast(t('compose.attachmentsCount', { count: attachments.length }));
+      void tick().then(() => attsEl?.scrollIntoView({ block: 'nearest' }));
     }
   }
 
@@ -505,7 +512,7 @@
     ></div>
 
     {#if attachments.length}
-      <div class="atts" aria-label={t('compose.attachments')}>
+      <div class="atts" bind:this={attsEl} aria-label={t('compose.attachments')}>
         <div class="atts-head">
           <span>{t('compose.attachmentsCount', { count: attachments.length })}</span>
           {#if totalAttachSize > 0}<span class="muted">· {formatSize(totalAttachSize)} {t('compose.direct')}</span>{/if}
@@ -757,7 +764,7 @@
   .error + .hint {
     display: none;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .att {
       flex-wrap: wrap;
     }

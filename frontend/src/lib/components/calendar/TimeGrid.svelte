@@ -4,6 +4,7 @@
   import Video from '@lucide/svelte/icons/video';
   import Cake from '@lucide/svelte/icons/cake';
   import { fmt, t } from '../../i18n/index.svelte';
+  import { phone } from '../../phone.svelte';
   import type { CalendarEvent } from '../../types';
   import { addDays, dayKeyIn, diffDays, eventDays, isAllDayRow, layoutDay, minutesIn, moveTo, segmentOn, shiftEvent, snap, zonedInstant, type DayKey } from '../../calendar/datemath';
 
@@ -34,7 +35,7 @@
   $effect(() => {
     // Scroll to 7:00 (or one hour before now) when the view opens.
     const now = minutesIn(new Date(), tz);
-    if (scroller) scroller.scrollTop = Math.max(0, (now >= 8 * 60 && now <= 20 * 60 ? now - 90 : 7 * 60) * (HOUR / 60) - 10); // 10 px so the first hour label is not cut off
+    if (scroller) scroller.scrollTop = Math.max(0, (now >= 8 * 60 && now <= 20 * 60 ? now - 90 : 7 * 60) * (HOUR / 60) - (phone.current ? 10 : 0)); // phones: 10 px so the first hour label is not cut off
   });
 
   const allDay = $derived(events.filter((e) => isAllDayRow(e, tz)));
@@ -85,8 +86,48 @@
     | { kind: 'create'; day: number; startMin: number; endMin: number };
   let drag = $state<Drag | null>(null);
 
+  // Touch: moving or creating needs a long press, a normal swipe scrolls the grid (and never changes an event).
+  let arm: { timer: ReturnType<typeof setTimeout>; x: number; y: number } | null = null;
+  function clearArm() {
+    if (arm) clearTimeout(arm.timer);
+    arm = null;
+  }
+  function blockScroll(e: TouchEvent) {
+    if (e.cancelable) e.preventDefault();
+  }
+  function whenPressed(ev: PointerEvent, start: () => void): boolean {
+    if (ev.pointerType !== 'touch') return false;
+    const el = ev.currentTarget as HTMLElement;
+    const id = ev.pointerId;
+    clearArm();
+    arm = {
+      x: ev.clientX,
+      y: ev.clientY,
+      timer: setTimeout(() => {
+        arm = null;
+        window.addEventListener('touchmove', blockScroll, { passive: false });
+        try {
+          el.setPointerCapture(id);
+        } catch {
+          /* pointer already gone */
+        }
+        navigator.vibrate?.(10);
+        start();
+      }, 450),
+    };
+    return true;
+  }
+  function armMoved(ev: PointerEvent) {
+    if (arm && Math.hypot(ev.clientX - arm.x, ev.clientY - arm.y) > 8) clearArm();
+  }
+  function cancelDrag() {
+    clearArm();
+    drag = null;
+    window.removeEventListener('touchmove', blockScroll);
+  }
+
   function colWidth(): number {
-    return cols ? cols.clientWidth / days.length : 100;
+    return cols?.clientWidth ? cols.clientWidth / days.length : 100;
   }
 
   function minuteAt(ev: PointerEvent, col: HTMLElement): number {
@@ -97,6 +138,7 @@
   function startEventDrag(ev: PointerEvent, e: CalendarEvent, di: number, kind: 'move' | 'resize') {
     if (ev.button !== 0) return;
     ev.stopPropagation();
+    if (whenPressed(ev, () => (drag = { kind: e.readOnly ? 'move' : kind, e, day: di, x: ev.clientX, y: ev.clientY, dMin: 0, dDay: 0, moved: false }))) return;
     if (e.readOnly) {
       (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
       drag = { kind: 'move', e, day: di, x: ev.clientX, y: ev.clientY, dMin: 0, dDay: 0, moved: false };
@@ -107,6 +149,7 @@
   }
 
   function onEventMove(ev: PointerEvent) {
+    armMoved(ev);
     if (!drag || drag.kind === 'create') return;
     const dy = ev.clientY - drag.y;
     const dx = ev.clientX - drag.x;
@@ -118,6 +161,13 @@
   }
 
   function onEventUp(e: CalendarEvent) {
+    window.removeEventListener('touchmove', blockScroll);
+    if (arm) {
+      // Touch tap (no long press, no scroll): open the event.
+      clearArm();
+      onopen(e);
+      return;
+    }
     const d = drag;
     drag = null;
     if (!d || d.kind === 'create') return;
@@ -138,16 +188,20 @@
   function startCreate(ev: PointerEvent, di: number) {
     if (ev.button !== 0) return;
     const col = ev.currentTarget as HTMLElement;
-    col.setPointerCapture(ev.pointerId);
     const m = Math.floor(minuteAt(ev, col) / 30) * 30;
+    if (whenPressed(ev, () => (drag = { kind: 'create', day: di, startMin: m, endMin: m + 30 }))) return;
+    col.setPointerCapture(ev.pointerId);
     drag = { kind: 'create', day: di, startMin: m, endMin: m + 30 };
   }
   function moveCreate(ev: PointerEvent) {
+    armMoved(ev);
     if (drag?.kind !== 'create') return;
     const m = snap(minuteAt(ev, ev.currentTarget as HTMLElement), 15);
     drag.endMin = Math.max(drag.startMin + 15, m);
   }
   function endCreate() {
+    window.removeEventListener('touchmove', blockScroll);
+    clearArm();
     if (drag?.kind !== 'create') return;
     const d = drag;
     drag = null;
@@ -163,6 +217,11 @@
   }
 
   function allDayDrop(ev: PointerEvent, e: CalendarEvent) {
+    window.removeEventListener('touchmove', blockScroll);
+    if (arm) {
+      clearArm();
+      return onopen(e);
+    }
     const d = drag;
     drag = null;
     if (!d || d.kind === 'create') return;
@@ -175,6 +234,7 @@
   }
 
   function onAllDayMove(ev: PointerEvent) {
+    armMoved(ev);
     if (!drag || drag.kind === 'create' || drag.e.readOnly) return;
     const dx = ev.clientX - drag.x;
     if (!drag.moved && Math.abs(dx) < 4) return;
@@ -218,6 +278,7 @@
           onpointerdown={(ev) => startEventDrag(ev, l.e, l.from, 'move')}
           onpointermove={onAllDayMove}
           onpointerup={(ev) => allDayDrop(ev, l.e)}
+          onpointercancel={cancelDrag}
         >
           {#if l.e.kind === 'birthday'}<Cake size={12} />{/if}
           <span>{l.e.title}{#if l.e.birthYear}&nbsp;({Number(today.slice(0, 4)) - l.e.birthYear}){/if}</span>
@@ -244,6 +305,7 @@
           onpointerdown={(ev) => startCreate(ev, di)}
           onpointermove={moveCreate}
           onpointerup={endCreate}
+          onpointercancel={cancelDrag}
         >
           {#each hours as h (h)}<div class="slot"></div>{/each}
           {#if drag?.kind === 'create' && drag.day === di}
@@ -274,6 +336,7 @@
               onpointerdown={(ev) => startEventDrag(ev, e, di, 'move')}
               onpointermove={onEventMove}
               onpointerup={() => onEventUp(e)}
+              onpointercancel={cancelDrag}
               onkeydown={(ev) => (ev.key === 'Enter' || ev.key === ' ') && onopen(e)}
             >
               <span class="et">{e.title}</span>
@@ -468,7 +531,7 @@
     cursor: pointer;
     display: flex;
     flex-direction: column;
-    touch-action: none;
+    touch-action: manipulation;
   }
   .ev:hover {
     background: color-mix(in srgb, var(--c) 26%, var(--tm-surface));
@@ -556,7 +619,7 @@
     border-radius: 99px;
     background: var(--tm-danger);
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .tg {
       --gutter: 44px;
       border-radius: var(--tm-radius);
@@ -577,7 +640,7 @@
   }
 
   /* Phones: no scrollbar to reserve room for, so the header columns sit above the grid columns. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .head,
     .allday {
       padding-right: 0;

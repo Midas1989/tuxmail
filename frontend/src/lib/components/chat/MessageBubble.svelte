@@ -928,7 +928,7 @@
   }
 
   /* Phones: no always-visible small buttons on the bubble; tap or long-press opens the action sheet. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .menu-btn,
     .mail-tools {
       display: none;

@@ -650,7 +650,7 @@
   }
 
   /* Phones (the folder drawer): rows and section buttons are real touch targets. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .row,
     .account {
       height: auto;

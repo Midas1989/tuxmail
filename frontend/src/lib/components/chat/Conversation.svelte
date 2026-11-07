@@ -329,6 +329,22 @@
     ];
   });
 
+  // Phones: swipe left/right for the next/previous image, swipe down to close.
+  let lbTouch: { x: number; y: number } | null = null;
+  function lbStart(e: TouchEvent) {
+    lbTouch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+  }
+  function lbEnd(e: TouchEvent) {
+    const s = lbTouch;
+    lbTouch = null;
+    if (!s || !lightbox) return;
+    const dx = e.changedTouches[0].clientX - s.x;
+    const dy = e.changedTouches[0].clientY - s.y;
+    const n = lightbox.images.length;
+    if (dy > 90 && dy > 2 * Math.abs(dx)) lightbox = null;
+    else if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy) && n > 1) lightbox.index = (lightbox.index + (dx < 0 ? 1 : -1) + n) % n;
+  }
+
   function onKeydownLightbox(e: KeyboardEvent) {
     if (!lightbox) return;
     if (e.key === 'Escape') lightbox = null;
@@ -556,7 +572,7 @@
 {/if}
 {#if lightbox}
   {@const img = lightbox.images[lightbox.index]}
-  <div class="lightbox" role="dialog" aria-modal="true" aria-label={img.filename}>
+  <div class="lightbox" role="dialog" aria-modal="true" aria-label={img.filename} tabindex="-1" ontouchstart={lbStart} ontouchend={lbEnd}>
     <button class="lb-close icon-btn" aria-label={t('common.action.close')} onclick={() => (lightbox = null)}><X size={22} /></button>
     <img src={img.previewUrl} alt={img.filename} />
     <span class="lb-name">{img.filename} · {lightbox.index + 1}/{lightbox.images.length}</span>
@@ -917,8 +933,8 @@
   }
   .lb-close {
     position: absolute;
-    top: 14px;
-    right: 14px;
+    top: calc(14px + var(--tm-safe-top));
+    right: calc(14px + var(--tm-safe-right));
     color: #fff;
   }
   .lb-name {
@@ -958,7 +974,7 @@
   }
 
   /* Phones: the title keeps its room; tags and the info button (tap the title instead) leave the header. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .hd-tags,
     .hd-info,
     .hd-rare {

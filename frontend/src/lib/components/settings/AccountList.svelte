@@ -155,7 +155,7 @@
     background: color-mix(in srgb, var(--tm-success) 16%, var(--tm-surface));
     color: var(--tm-success);
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .kind {
       display: none;
     }

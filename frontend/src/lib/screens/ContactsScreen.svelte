@@ -658,7 +658,7 @@
       grid-template-columns: 1fr;
     }
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .cs {
       display: flex;
       flex-direction: column;

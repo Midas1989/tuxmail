@@ -76,9 +76,9 @@
   {#if m}
     <div class="toolbar" role="toolbar" aria-label={t('mail.reader.actions')}>
       <button class="icon-btn back" aria-label={t('common.action.back')} onclick={() => app.selectMessage(null)}><ArrowLeft size={18} /></button>
-      <button class="btn btn-ghost" onclick={() => app.replyTo('reply')} title="R"><Reply size={16} /> <span class="hide-sm">{t('common.action.reply')}</span></button>
-      <button class="btn btn-ghost" onclick={() => app.replyTo('replyAll')} title="Shift+R"><ReplyAll size={16} /> <span class="hide-sm">{t('common.action.replyAll')}</span></button>
-      <button class="btn btn-ghost" onclick={() => app.replyTo('forward')} title="F"><Forward size={16} /> <span class="hide-sm">{t('common.action.forward')}</span></button>
+      <button class="btn btn-ghost" onclick={() => app.replyTo('reply')} title="R" aria-label={t('common.action.reply')}><Reply size={16} /> <span class="hide-sm">{t('common.action.reply')}</span></button>
+      <button class="btn btn-ghost" onclick={() => app.replyTo('replyAll')} title="Shift+R" aria-label={t('common.action.replyAll')}><ReplyAll size={16} /> <span class="hide-sm">{t('common.action.replyAll')}</span></button>
+      <button class="btn btn-ghost" onclick={() => app.replyTo('forward')} title="F" aria-label={t('common.action.forward')}><Forward size={16} /> <span class="hide-sm">{t('common.action.forward')}</span></button>
       <span class="sep"></span>
       <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.moveToRole(m.id, 'archive')}><Archive size={17} /></button>
       <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.moveToRole(m.id, 'trash')}><Trash size={17} /></button>
@@ -364,5 +364,32 @@
     font-weight: 600;
     line-height: 16px;
     cursor: pointer;
+  }
+
+  /* Phones (also with a large system font): the action bar wraps, name and date never overlap. */
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
+    .toolbar {
+      flex-wrap: wrap;
+      row-gap: 2px;
+    }
+    .sep {
+      display: none;
+    }
+    .sender {
+      flex-wrap: wrap;
+    }
+    .who {
+      flex: 1 1 calc(100% - 60px);
+    }
+    .meta {
+      flex: 1 1 100%;
+      flex-direction: row;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      white-space: normal;
+    }
+    .l1 {
+      overflow-wrap: anywhere;
+    }
   }
 </style>

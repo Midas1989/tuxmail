@@ -186,7 +186,7 @@
     justify-content: flex-end;
   }
 
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .grid {
       grid-template-columns: minmax(0, 1fr);
     }

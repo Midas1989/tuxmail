@@ -349,7 +349,7 @@
   .danger {
     color: var(--tm-danger);
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .more {
       opacity: 1;
     }

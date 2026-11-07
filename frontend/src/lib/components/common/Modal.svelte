@@ -178,7 +178,7 @@
   }
 
   /* Phones: dialogs are bottom sheets that use the full width and clear the system bars. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .backdrop:not(.top) {
       align-items: flex-end;
       padding: var(--tm-safe-top) 0 0;

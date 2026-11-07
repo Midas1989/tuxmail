@@ -812,4 +812,16 @@
     white-space: nowrap;
     flex: none;
   }
+
+  /* Phone held sideways: the header rows would use the whole height, so the list scrolls as one piece. */
+  @media (pointer: coarse) and (max-height: 500px) {
+    .clist {
+      overflow-y: auto;
+    }
+    .items {
+      flex: none;
+      overflow: visible;
+      min-height: 220px;
+    }
+  }
 </style>

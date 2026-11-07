@@ -27,7 +27,7 @@
   type Mode = CalendarView | 'tasks';
   const MODES: Mode[] = ['day', 'workweek', 'week', 'month', 'agenda', 'tasks'];
   const STORE = 'tuxmail.calendar.view';
-  const narrow = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches;
+  const narrow = typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px), (pointer: coarse) and (max-height: 500px)').matches;
 
   function initialMode(): Mode {
     try {
@@ -417,7 +417,7 @@
       width: 100%;
     }
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     header {
       padding: 10px 12px;
       gap: 6px;

@@ -49,7 +49,12 @@
       top: y + r.height > vh - 8 ? Math.max(8, y - r.height) : y,
     };
     (menu.querySelector<HTMLElement>('[data-first], [role="menuitem"]:not([disabled])') ?? menu).focus();
-    return () => opener?.focus?.();
+    const m = menu;
+    return () => {
+      // Give focus back to the opener, unless the chosen action already moved it (e.g. reply -> message field).
+      const a = document.activeElement;
+      if (!a || a === document.body || m.contains(a)) opener?.focus?.();
+    };
   });
 
   function close() {
@@ -150,13 +155,13 @@
   }
   /* Hover only where a pointer exists, focus only for the keyboard: no sticky highlight after a tap. */
   @media (hover: hover) {
-    .item:hover {
+    .item:hover,
+    .item:focus {
       background: var(--tm-surface-2);
     }
   }
   .item:focus-visible {
     background: var(--tm-surface-2);
-    outline: none;
   }
   .item:focus {
     outline: none;
@@ -170,7 +175,7 @@
   }
 
   /* Phones: the menu is a bottom sheet (full width, 48 px rows, clear of the navigation bar). */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .backdrop {
       background: rgb(10 14 22 / 0.4);
     }

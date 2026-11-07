@@ -522,7 +522,7 @@
   }
 
   /* Phones: name and switch on the first line, last run and actions wrap below. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .main {
       flex-wrap: wrap;
       row-gap: 4px;

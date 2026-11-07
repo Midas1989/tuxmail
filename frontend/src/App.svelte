@@ -173,7 +173,7 @@
   .fatal p {
     color: var(--tm-muted);
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .app {
       padding-bottom: calc(var(--tm-bar-h) + var(--tm-safe-bottom));
     }

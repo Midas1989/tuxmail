@@ -252,7 +252,7 @@
     font-size: 12.5px;
   }
 
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .new {
       flex-wrap: wrap;
     }

@@ -674,13 +674,13 @@
   .pre {
     white-space: pre-wrap;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .grid2 {
       grid-template-columns: 1fr;
     }
   }
 
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .with-btn {
       flex-wrap: wrap;
     }

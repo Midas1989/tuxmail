@@ -1118,7 +1118,7 @@
     }
   }
   /* Phones: icon, title and the status selector share the first lines, the tabs scroll. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .dhead {
       flex-wrap: wrap;
       padding: 10px 12px;

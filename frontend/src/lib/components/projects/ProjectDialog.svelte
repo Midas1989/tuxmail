@@ -256,7 +256,7 @@
     color: var(--tm-danger);
     font-size: 12.5px;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .grid,
     .cf {
       grid-template-columns: 1fr;

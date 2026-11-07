@@ -339,7 +339,7 @@ export async function startNative(): Promise<void> {
 }
 
 function phoneLayout(): boolean {
-  return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px)').matches;
+  return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px), (pointer: coarse) and (max-height: 500px)').matches;
 }
 
 async function installBackButton(): Promise<void> {

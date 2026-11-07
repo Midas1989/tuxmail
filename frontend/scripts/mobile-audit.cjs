@@ -6,6 +6,7 @@
 //   - touch targets below 44x44 CSS px, icon-only buttons with icons below 20 px
 //   - text fields below 16 px, operating text (buttons, links) below 14 px
 //   - fixed/sticky controls inside the status-bar or navigation-bar area
+//   - overlapping sibling texts (large system font: --scale=130)
 //   npm run build && npx vite preview --port 4176 &
 //   TUXMAIL_URL=http://127.0.0.1:4176 node scripts/mobile-audit.cjs [outDir] [--shots] [--screens=a,b]
 // Exit code 1 when something is found. Screenshots (with --shots) go to outDir.
@@ -31,13 +32,16 @@ const shots = args.includes('--shots');
 const only = (args.find((a) => a.startsWith('--screens=')) ?? '').slice(10).split(',').filter(Boolean);
 const nativeCss = fs.readFileSync(path.join(__dirname, '../src/lib/native/native.css'), 'utf8');
 const INSET = { top: 32, bottom: 24 };
+const scale = Number((args.find((a) => a.startsWith('--scale=')) ?? '').slice(8)) || 100; // 130 = system font size at 130 %
 const SIZES = [
   { n: '360', w: 360, h: 800 },
   { n: '412', w: 412, h: 915 },
+  { n: '800x360', w: 800, h: 360 }, // phone held sideways
 ];
 
 const SCREENS = [
   ['mail-list', '#/mail'],
+  ['mail-select', '#/mail', async (p) => { await p.locator('[role=option]').first().dispatchEvent('contextmenu'); }],
   ['mail-read', '#/mail', async (p) => { await p.locator('[data-testid="message-row"], .row, li button').first().click().catch(() => {}); }],
   ['compose', '#/mail', async (p) => { await p.keyboard.press('c').catch(() => {}); }],
   ['drawer', '#/mail', async (p) => { await p.locator('button.menu').first().click(); }],
@@ -85,7 +89,7 @@ function measure({ top, bottom }) {
     const cls = typeof el.className === 'string' ? el.className.trim().split(/\s+/).filter((c) => !c.startsWith('svelte-')).slice(0, 2).join('.') : '';
     return `${el.tagName.toLowerCase()}${el.id ? '#' + el.id : ''}${cls ? '.' + cls : ''} "${txt}"`;
   };
-  const res = { overflow: [], target: [], icon: [], field: [], text: [], bars: [] };
+  const res = { overflow: [], target: [], icon: [], field: [], text: [], bars: [], overlap: [] };
   const dw = Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - vw;
   if (dw > 1) res.overflow.push(`document scrolls horizontally by ${dw}px`);
   const interactive = 'button, a[href], [role=button], [role=tab], [role=menuitem], [role=radio], input:not([type=hidden]), select, textarea, summary';
@@ -144,6 +148,27 @@ function measure({ top, bottom }) {
     if (pinned && vb > vt && vt < top - 0.5 && vb > 0.5) res.bars.push(`${label(el)} top ${Math.round(vt)}`);
     if (pinned && vb > vt && vb > vh - bottom + 0.5 && vt < vh) res.bars.push(`${label(el)} bottom ${Math.round(vb)}/${vh - bottom}`);
   }
+  // sibling texts must not run into each other (long names next to dates, large system fonts)
+  for (const parent of document.querySelectorAll('body *')) {
+    if (parent.children.length < 2 || !vis(parent)) continue;
+    const kids = [...parent.children].filter((k) => {
+      if (!vis(k) || k.tagName === 'svg' || k.matches('script, style')) return false;
+      const cs = getComputedStyle(k);
+      const pos = cs.position;
+      if (cs.display === 'inline') return false; // inline text flows over several lines; its box is not a column
+      // bubble time stamps float into the last text line and sticky day pills cover each other: both by design
+      return pos !== 'absolute' && pos !== 'fixed' && (k.textContent || '').trim().length > 0 && !k.matches('.meta, .day');
+    });
+    for (let i = 0; i < kids.length; i++) {
+      for (let j = i + 1; j < kids.length; j++) {
+        const a = kids[i].getBoundingClientRect();
+        const b = kids[j].getBoundingClientRect();
+        const w = Math.min(a.right, b.right) - Math.max(a.left, b.left);
+        const h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+        if (w > 6 && h > 6 && (w * h) / Math.min(a.width * a.height, b.width * b.height) > 0.3 && !kids[i].contains(kids[j]) && !kids[j].contains(kids[i])) res.overlap.push(`${label(kids[i])} / ${label(kids[j])}`);
+      }
+    }
+  }
   for (const k of Object.keys(res)) res[k] = [...new Set(res[k])].slice(0, 30);
   return res;
 }
@@ -167,13 +192,14 @@ function measure({ top, bottom }) {
         await page.goto(`${base}/?api=mock${hash}`);
         await page.addStyleTag({ content: `${nativeCss}\nhtml{--safe-area-inset-top:${INSET.top}px;--safe-area-inset-bottom:${INSET.bottom}px;--safe-area-inset-left:0px;--safe-area-inset-right:0px}` });
         await page.evaluate(() => document.documentElement.classList.add('tm-native'));
+        if (scale !== 100) await page.addStyleTag({ content: `html{-webkit-text-size-adjust:${scale}% !important;text-size-adjust:${scale}% !important}` });
         await page.waitForTimeout(900);
         let actError = '';
         if (act) { try { await act(page); } catch (e) { actError = `screen "${name}" could not be opened: ${String(e).split('\n')[0]}`; } await page.waitForTimeout(500); }
         const res = await page.evaluate(measure, INSET);
         if (actError) res.overflow.push(actError);
         if (errors.length) res.overflow.push(...errors.map((e) => 'page error: ' + e));
-        if (shots) await page.screenshot({ path: path.join(out, `${theme}-${sz.n}-${name}.png`) });
+        if (shots) await page.screenshot({ path: path.join(out, `${scale !== 100 ? 's' + scale + '-' : ''}${theme}-${sz.n}-${name}.png`) });
         const bad = Object.entries(res).filter(([, v]) => v.length);
         if (bad.length) {
           failures += bad.reduce((n, [, v]) => n + v.length, 0);

@@ -448,7 +448,7 @@
   }
 
   /* Phones: header button, plugin rows and account rows wrap instead of running out of the card. */
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .head,
     .row,
     .accounts li {

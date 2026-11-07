@@ -262,9 +262,55 @@
   .error {
     color: var(--tm-danger);
   }
-  @media (max-width: 639px) {
+  /* Phones: table rows become cards; the name gets the full width, size and actions wrap below. */
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .date {
       display: none;
+    }
+    .list,
+    .list tbody {
+      display: block;
+      width: 100%;
+    }
+    .list thead {
+      display: none;
+    }
+    .list tr {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      column-gap: 8px;
+      padding: 2px 0;
+      border-bottom: 1px solid var(--tm-line);
+    }
+    .list td {
+      display: block;
+      height: auto;
+      border: none;
+    }
+    .list td.chk {
+      flex: none;
+      width: auto;
+    }
+    .list td.name {
+      flex: 1 1 0;
+      min-width: 60%;
+      max-width: none;
+      width: auto;
+    }
+    .list td.num {
+      flex: 1 1 auto;
+      width: auto;
+      text-align: left;
+      padding-left: 38px;
+    }
+    .list td.act {
+      width: auto;
+      margin-left: auto;
+    }
+    .label {
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
   }
 </style>

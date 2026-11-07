@@ -72,9 +72,18 @@
     padding: 4px;
     border-radius: 6px;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .toasts {
       bottom: 72px;
+    }
+  }
+
+  /* Phones: toasts sit at the top so they never cover the message field, the bottom bar or the keyboard. */
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
+    .toasts {
+      bottom: auto;
+      top: calc(12px + var(--tm-safe-top));
+      max-width: calc(100vw - 24px);
     }
   }
 </style>

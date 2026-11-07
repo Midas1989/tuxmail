@@ -196,7 +196,7 @@
   .rel {
     color: var(--tm-muted);
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .grid {
       grid-template-columns: 1fr;
     }

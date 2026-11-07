@@ -279,7 +279,7 @@
     touch-action: none;
     background: linear-gradient(135deg, transparent 50%, var(--tm-line) 50%, var(--tm-line) 60%, transparent 60%, transparent 70%, var(--tm-line) 70%, var(--tm-line) 80%, transparent 80%);
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .mw {
       left: 0 !important;
       top: 0 !important;

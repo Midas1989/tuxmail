@@ -246,7 +246,7 @@
     padding: 0 5px;
     cursor: pointer;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .wk {
       display: none;
     }

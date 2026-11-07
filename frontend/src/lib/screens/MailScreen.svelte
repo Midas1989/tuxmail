@@ -298,7 +298,7 @@
       display: none;
     }
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .hide-xs {
       display: none;
     }

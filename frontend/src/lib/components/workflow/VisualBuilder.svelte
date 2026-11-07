@@ -559,7 +559,7 @@
   .add {
     align-self: flex-start;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .row {
       grid-template-columns: 1fr 1fr;
     }

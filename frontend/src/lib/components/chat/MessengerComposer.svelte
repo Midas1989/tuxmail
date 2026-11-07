@@ -984,7 +984,7 @@
     color: var(--tm-muted);
     font-size: 13px;
   }
-  @media (max-width: 639px) {
+  @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .sig-line,
     .sig-full {
       margin-left: 8px;
