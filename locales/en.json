@@ -2634,12 +2634,15 @@
       "lockRecommended": "Recommended: turn on the app lock below. The kept content lies unencrypted in the app's protected storage; the lock keeps it from other people using the device.",
       "foreignWaiting": "{count} items of another account are still waiting on this device.",
       "foreignWaiting_one": "{count} item of another account is still waiting on this device.",
-      "foreignTitle": "{count} items of another account are still waiting:",
-      "foreignTitle_one": "{count} item of another account is still waiting:",
       "foreignHint": "They are sent as soon as you sign in with that account again. Everything else of that account is already deleted.",
       "foreignConfirm": "Tap again: these items are then deleted for good and not sent.",
       "foreignDiscard": "Delete waiting items",
-      "lockRecommendedShort": "Tip: turn on the app lock. Mails are kept on this device for reading offline."
+      "lockRecommendedShort": "Tip: turn on the app lock. Mails are kept on this device for reading offline.",
+      "foreignCount": "{count} unsent mails of {account}.",
+      "foreignCount_one": "{count} unsent mail of {account}.",
+      "foreignActions": "Plus {count} noted actions.",
+      "foreignActions_one": "Plus {count} noted action.",
+      "foreignUnknown": "another account"
     }
   },
   "cloud": {
@@ -4244,7 +4247,7 @@
       "understood": "OK",
       "sentLater": "A waiting mail was sent.",
       "blockedToast": "A waiting mail was not sent: the send checks want you to look at it.",
-      "discardedSent": "The discarded mail was already on its way and has been sent.",
+      "discardedSent": "The mail was sent although you discarded it: it was already on its way.",
       "discardedUnclear": "Discarded, but perhaps already sent: the mail was on its way when you discarded it. Check \"Sent\".",
       "discardedNotSent": "Discarded. The mail was not sent."
     },

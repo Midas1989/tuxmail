@@ -671,7 +671,8 @@ func TestIdempotencyKeyOnSend(t *testing.T) {
 		json.NewDecoder(res.Body).Decode(&out)
 		return res.StatusCode, out.State
 	}
-	for key, want := range map[string]string{"key-00000001": "done", "key-00000003": "pending", "key-99999999": "unknown"} {
+	// A run that died midway (older than 10 min) is what a POST meets too: doubt, not pending.
+	for key, want := range map[string]string{"key-00000001": "done", "key-00000002": "doubt", "key-00000003": "pending", "key-99999999": "unknown"} {
 		if code, got := status(key); code != 200 || got != want {
 			t.Fatalf("status %s: %d %q, want %q", key, code, got, want)
 		}
@@ -684,6 +685,21 @@ func TestIdempotencyKeyOnSend(t *testing.T) {
 	}
 	if code, _ := status("bad%20key"); code != 400 {
 		t.Fatalf("bad key: %d", code)
+	}
+	// Same answer as the POST: the stale key is refused as in doubt there as well.
+	if r, raw := send("key-00000002", "D"); r.StatusCode != 409 || !strings.Contains(string(raw), "idempotency_in_doubt") {
+		t.Fatalf("stale post: %d %s", r.StatusCode, raw)
+	}
+	// Limited like other status queries.
+	limited := false
+	for range 40 {
+		if code, _ := status("key-00000001"); code == 429 {
+			limited = true
+			break
+		}
+	}
+	if !limited {
+		t.Fatal("status queries are not limited")
 	}
 	// Another user cannot see the keys (they live with the user's data): without a token nothing.
 	req, _ := http.NewRequest("GET", c.url+"/api/idempotency/key-00000001", nil)

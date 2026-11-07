@@ -77,6 +77,8 @@ export interface CoreDeps {
 }
 
 export const HEADER_OFFLINE = 'X-Tuxmail-Offline';
+/** Error of an outbox entry whose key the server reported as "in doubt". */
+const SERVER_DOUBT = 'the server may have sent this mail already';
 const MAX_ENTRY = 20 * 1024 * 1024;
 const MAX_INDEXED = 20000;
 const AHEAD_LISTS = ['/api/messages?scope=unified&role=inbox&offset=0&limit=100', '/api/messages?scope=unified&role=sent&offset=0&limit=50'];
@@ -148,6 +150,7 @@ export class OfflineCore {
   /** The outbox entry on its way to the server, and entries discarded meanwhile. */
   private sending: string | null = null;
   private readonly discarded = new Set<string>();
+  private readonly discardSettled = new Set<string>();
   private syncing: Promise<void> | null = null;
   private seq = 0;
   private written = 0;
@@ -708,7 +711,28 @@ export class OfflineCore {
     return this.flushing;
   }
 
+  private async watchDiscarded(id: string): Promise<void> {
+    const list = (await this.d.db.getMeta<string[]>('discardedWatch')) ?? [];
+    if (!list.includes(id)) await this.d.db.setMeta('discardedWatch', [...list, id]);
+  }
+
+  /** Mails discarded while on their way without an answer: what the server made of them, told once. */
+  private async checkDiscarded(): Promise<void> {
+    const list = (await this.d.db.getMeta<string[]>('discardedWatch')) ?? [];
+    if (!list.length) return;
+    const keep: string[] = [];
+    for (const id of list) {
+      const st = await this.keyStatus(id);
+      if (st === 'done') this.d.onEvent?.({ type: 'discarded', id, outcome: 'sent' });
+      else if (st === 'doubt') this.d.onEvent?.({ type: 'discarded', id, outcome: 'unclear' });
+      else if (st === 'unknown') this.d.onEvent?.({ type: 'discarded', id, outcome: 'not_sent' });
+      else if (st !== 'unsupported') keep.push(id); // still running, or no answer yet
+    }
+    await this.d.db.setMeta('discardedWatch', keep);
+  }
+
   private async flushAll(): Promise<void> {
+    await this.checkDiscarded();
     const items = await this.outbox();
     // Attachments of mails that were never finished do not stay for ever.
     const inUse = new Set(items.flatMap((it) => outboxUploads(it.body)));
@@ -774,6 +798,8 @@ export class OfflineCore {
       if (this.discarded.has(it.id)) {
         this.discarded.delete(it.id);
         await this.d.db.deleteOutbox(it.id).catch(() => {});
+        // No answer came (network): the server may have taken it. Asked again once connected.
+        if (it.kind === 'send' && !this.discardSettled.delete(it.id)) await this.watchDiscarded(it.id);
       }
     }
   }
@@ -821,6 +847,7 @@ export class OfflineCore {
     this.seen();
     it.attempts++;
     if (this.discarded.has(it.id)) {
+      this.discardSettled.add(it.id);
       // Discarded while it was on its way: say what became of it, keep nothing.
       const sent = r.status >= 200 && r.status < 300 && !(typeof r.body === 'string' && /"blocked"\s*:\s*true/.test(r.body));
       const unclear = it.kind === 'send' && (r.status >= 500 || idemConflict(r.body) !== null);
@@ -848,7 +875,8 @@ export class OfflineCore {
     }
     const idem = r.status === 409 ? idemConflict(r.body) : null;
     if (idem === 'idempotency_in_doubt') {
-      await this.keepState(it, 'in_doubt', 'the server may have sent this mail already');
+      // The server itself holds the key in doubt (failed or died midway): the same key can never send it.
+      await this.keepState(it, 'in_doubt', SERVER_DOUBT);
       return true;
     }
     if (idem) {
@@ -926,6 +954,10 @@ export class OfflineCore {
       const doc = JSON.parse(withLocalUploads(body)) as Record<string, unknown>;
       doc.confirmChecks = checks;
       body = JSON.stringify(doc);
+      key = newOutboxId();
+    } else if (it.kind === 'send' && it.state === 'in_doubt' && it.error === SERVER_DOUBT) {
+      // The server already said it holds this key in doubt: the user decided after checking "Sent".
+      body = withLocalUploads(body);
       key = newOutboxId();
     } else if (it.kind === 'send' && it.state === 'in_doubt') {
       const st = await this.keyStatus(it.id);

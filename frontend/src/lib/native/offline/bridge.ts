@@ -78,12 +78,14 @@ export async function startOffline(o: StartOptions): Promise<OfflineHandle | nul
     console.warn('offline store unavailable', err);
     return null;
   }
+  // Whose store this is, for the warning another user may get later (no content).
+  void db.setMeta('account', `${o.profile.username ?? ''}@${o.profile.label}`).catch(() => {});
   let foreign: ForeignStore[] = [];
   void dropOfflineStores(o.profile.id).then((f) => {
     foreign = f;
     if (f.length) {
       // Waiting items of another account: said once at the start, decided in the settings.
-      const n = f.reduce((a, x) => a + x.waiting.length, 0);
+      const n = f.reduce((a, x) => a + x.mails + x.actions, 0);
       const wait = () => (app.ready ? app.toast(t('native.offline.foreignWaiting', { count: n }), { label: t('connection.attentionOpen'), run: () => (location.hash = '#/native-settings') }) : setTimeout(wait, 500));
       wait();
     }

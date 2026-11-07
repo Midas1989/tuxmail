@@ -216,11 +216,17 @@ export async function openIdb(profileId: string, factory: IDBFactory = indexedDB
   return new IdbDb(await req(open));
 }
 
-/** A store of another profile that still holds waiting mails or actions. */
+/**
+ * A store of another profile/user that still holds waiting mails or actions.
+ * Only how many and whose: subjects and recipients are not shown to another user.
+ */
 export interface ForeignStore {
   name: string;
   profileId: string;
-  waiting: { id: string; kind: string; title?: string; recipients?: string; state?: string }[];
+  /** "anna@mail.example.org" as stored by that profile; empty if unknown. */
+  account: string;
+  mails: number;
+  actions: number;
 }
 
 /**
@@ -239,14 +245,15 @@ export async function sweepOtherStores(keep: string | null, factory: IDBFactory 
     let db: IdbDb | null = null;
     try {
       db = await openIdb(profileId, factory);
-      const waiting = await db.listOutbox<OutboxRecord & ForeignStore['waiting'][number]>();
+      const waiting = await db.listOutbox<OutboxRecord & { kind?: string }>();
       if (!waiting.length) {
         db.db.close();
         await deleteStore(d.name, factory);
         continue;
       }
       await db.clearReading();
-      out.push({ name: d.name, profileId, waiting: waiting.map(({ id, kind, title, recipients, state }) => ({ id, kind, title, recipients, state })) });
+      const mails = waiting.filter((w) => w.kind === 'send').length;
+      out.push({ name: d.name, profileId, account: (await db.getMeta<string>('account')) ?? '', mails, actions: waiting.length - mails });
     } catch {
       /* unreadable: leave it */
     } finally {
@@ -365,8 +372,10 @@ export class IdbDb implements OfflineDb {
   }
   /** Everything kept for reading goes; waiting items and their attachments stay. */
   async clearReading() {
+    const account = await this.getMeta<string>('account');
     const tx = this.tx(['entries', 'bodies', 'messages', 'meta'], 'readwrite');
     for (const s of ['entries', 'bodies', 'messages', 'meta'] as const) tx.objectStore(s).clear();
+    if (account) tx.objectStore('meta').put(account, 'account'); // whose waiting items these are
     await done(tx);
   }
   async clear() {

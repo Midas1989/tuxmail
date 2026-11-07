@@ -7,10 +7,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"regexp"
+	"strconv"
+	"sync"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/app"
@@ -132,19 +136,72 @@ func idempotent(route string, next AppHandler) AppHandler {
 }
 
 // idempotencyStatus answers GET /api/idempotency/{key}: what became of a key
-// (done, pending, doubt, unknown). A client whose mail ended unclear asks this
-// before it decides between repeating the same key and a new one; the answer
-// carries no content of the request or response.
+// (done, pending, doubt, unknown) - the same state a POST with this key would
+// meet, a run that died midway included (doubt). A client whose mail ended
+// unclear asks this before it decides between repeating the same key and a
+// new one; the answer carries no content. Limited per user like other status
+// queries.
 func idempotencyStatus(w http.ResponseWriter, r *http.Request, a *app.App) {
+	if wait, ok := idemStatusLimit.allow(fmt.Sprintf("%p", a.Store())); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		writeJSON(w, http.StatusTooManyRequests, errorBody{Error: "rate_limited", Message: "too many status queries, try again later"})
+		return
+	}
 	key := r.PathValue("key")
 	if !idempotencyKeyRe.MatchString(key) {
 		badRequest(w, "invalid Idempotency-Key")
 		return
 	}
-	state, err := a.Store().IdempotencyStatus(r.Context(), key)
+	state, err := a.Store().IdempotencyStatus(r.Context(), key, time.Now(), idempotencyStale)
 	if err != nil {
 		writeErr(w, err)
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"state": state})
+}
+
+// idemStatusPerMinute: an outbox asks once per unclear mail and decision; 30 a minute is plenty.
+const (
+	idemStatusPerMinute = 30
+	idemStatusBurst     = 10
+)
+
+var idemStatusLimit = &statusLimiter{rate: idemStatusPerMinute / 60.0, burst: idemStatusBurst, buckets: map[string]*statusBucket{}}
+
+type statusBucket struct {
+	tokens float64
+	last   time.Time
+}
+
+// statusLimiter is a token bucket per user (key: the user's store).
+type statusLimiter struct {
+	mu      sync.Mutex
+	rate    float64
+	burst   float64
+	buckets map[string]*statusBucket
+	now     func() time.Time
+}
+
+func (l *statusLimiter) allow(key string) (time.Duration, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	if l.now != nil {
+		now = l.now()
+	}
+	b, ok := l.buckets[key]
+	if !ok {
+		if len(l.buckets) > 10000 {
+			l.buckets = map[string]*statusBucket{}
+		}
+		b = &statusBucket{tokens: l.burst, last: now}
+		l.buckets[key] = b
+	}
+	b.tokens = min(l.burst, b.tokens+now.Sub(b.last).Seconds()*l.rate)
+	b.last = now
+	if b.tokens >= 1 {
+		b.tokens--
+		return 0, true
+	}
+	return time.Duration((1 - b.tokens) / l.rate * float64(time.Second)), false
 }

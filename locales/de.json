@@ -2633,12 +2633,15 @@
       "lockRecommended": "Empfehlung: Schalte unten die App-Sperre ein. Die gespeicherten Inhalte liegen unverschlüsselt im geschützten Speicher der App; die Sperre hält sie von anderen Personen am Gerät fern.",
       "foreignWaiting": "Von einem anderen Konto warten noch {count} Elemente auf dem Gerät.",
       "foreignWaiting_one": "Von einem anderen Konto wartet noch {count} Element auf dem Gerät.",
-      "foreignTitle": "Von einem anderen Konto warten noch {count} Elemente:",
-      "foreignTitle_one": "Von einem anderen Konto wartet noch {count} Element:",
       "foreignHint": "Sie werden gesendet, sobald du dich wieder mit diesem Konto anmeldest. Alles andere dieses Kontos ist bereits gelöscht.",
       "foreignConfirm": "Tippe noch einmal: Diese Elemente werden dann endgültig gelöscht und nicht gesendet.",
       "foreignDiscard": "Wartende Elemente löschen",
-      "lockRecommendedShort": "Tipp: Schalte die App-Sperre ein. Mails liegen zum Offline-Lesen auf diesem Gerät."
+      "lockRecommendedShort": "Tipp: Schalte die App-Sperre ein. Mails liegen zum Offline-Lesen auf diesem Gerät.",
+      "foreignCount": "{count} nicht gesendete Mails von {account}.",
+      "foreignCount_one": "{count} nicht gesendete Mail von {account}.",
+      "foreignActions": "Dazu {count} vorgemerkte Aktionen.",
+      "foreignActions_one": "Dazu {count} vorgemerkte Aktion.",
+      "foreignUnknown": "einem anderen Konto"
     }
   },
   "cloud": {
@@ -4243,7 +4246,7 @@
       "understood": "Verstanden",
       "sentLater": "Eine wartende Mail wurde gesendet.",
       "blockedToast": "Eine wartende Mail wurde nicht gesendet: Die Versandprüfung möchte, dass du sie dir ansiehst.",
-      "discardedSent": "Die verworfene Mail war schon unterwegs und wurde gesendet.",
+      "discardedSent": "Die Mail wurde trotz Verwerfen gesendet: Sie war schon unterwegs.",
       "discardedUnclear": "Verworfen, aber vielleicht schon gesendet: Die Mail war unterwegs, als du sie verworfen hast. Schau unter „Gesendet“ nach.",
       "discardedNotSent": "Verworfen. Die Mail wurde nicht gesendet."
     },

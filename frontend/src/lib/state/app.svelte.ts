@@ -137,6 +137,10 @@ export interface Toast {
 
 const PAGE = 200;
 
+function toastPhone(): boolean {
+  return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px), (pointer: coarse) and (max-height: 500px)').matches;
+}
+
 /**
  * Trailing debounce with an upper bound: a steady stream of calls (e.g. the
  * events of a large initial sync) still runs fn at least every maxWait ms.
@@ -1060,7 +1064,8 @@ export class AppState {
   toast(text: string, action?: { label: string; run: () => void }, kind: 'info' | 'error' = 'info'): void {
     const id = ++this.toastSeq;
     this.toasts = [...this.toasts, { id, text, actionLabel: action?.label, action: action?.run, kind }];
-    setTimeout(() => this.dismissToast(id), 6000);
+    // Phones: plain notes go after a few seconds; with an action (undo, open) they stay as long as before.
+    setTimeout(() => this.dismissToast(id), action || kind === 'error' || !toastPhone() ? 6000 : 3000);
   }
 
   dismissToast(id: number): void {

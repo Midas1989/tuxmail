@@ -486,6 +486,50 @@ it('revoked by the server: what is readable can be wiped, waiting mails stay for
   expect((await t.core.outbox()).map((i) => i.title)).toEqual(['Bleibt']);
 });
 
+describe('outbox: second review', () => {
+  it('the server holds the key in doubt (e.g. a run that died): "send anyway" takes a new key, no endless loop', async () => {
+    const t = setup();
+    t.s.fail500 = true;
+    const doc = await (await t.post('/api/send', mail('Abgestürzt'))).json();
+    // A status that (wrongly) still says "pending": the POST's in_doubt answer decides from then on.
+    const net = (t.core as unknown as { net: (...a: unknown[]) => Promise<unknown> }).net.bind(t.core);
+    (t.core as unknown as { net: unknown }).net = async (m: string, p: string, ...rest: unknown[]) =>
+      p.startsWith('/api/idempotency/') ? { status: 200, body: '{"state":"pending"}', headers: new Headers() } : net(m, p, ...rest);
+    await t.core.outboxRetry(doc.outboxId);
+    await t.core.flush();
+    expect((await t.core.outbox())[0]).toMatchObject({ id: doc.outboxId, state: 'in_doubt' });
+    await t.core.outboxRetry(doc.outboxId);
+    await t.core.flush();
+    expect(t.s.delivered).toHaveLength(2);
+    expect(await t.core.outbox()).toEqual([]);
+  });
+
+  it('discarded on its way and the answer got lost: once connected the server is asked and the user told it went out', async () => {
+    const t = setup();
+    t.goOffline();
+    await t.post('/api/send', mail('Trotzdem raus'));
+    let release!: () => void;
+    t.s.hold = new Promise((r) => (release = r));
+    t.s.loseNextAnswer = true;
+    t.s.offline = false;
+    await t.core.probe();
+    const flushing = t.core.flush();
+    await new Promise((r) => setTimeout(r, 10));
+    const [it] = await t.core.outbox();
+    await t.core.outboxDiscard(it.id);
+    release();
+    await flushing;
+    expect(t.s.delivered).toHaveLength(1);
+    expect(t.events.some((e) => e.type === 'discarded')).toBe(false); // nothing known yet
+    await t.goOnline();
+    await t.core.flush();
+    expect(t.events).toContainEqual({ type: 'discarded', id: it.id, outcome: 'sent' });
+    expect(await t.core.outbox()).toEqual([]);
+    await t.core.flush();
+    expect(t.events.filter((e) => e.type === 'discarded')).toHaveLength(1); // told once
+  });
+});
+
 describe('headers-only rule (mail.headersOnlyOlderThanDays)', () => {
   it('decides by the date of the mail; empty or 0 means everything in full', () => {
     expect(fullContentAllowed(new Date(NOW - 10 * DAY).toISOString(), 30, NOW)).toBe(true);

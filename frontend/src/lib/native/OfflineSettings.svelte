@@ -85,11 +85,9 @@
   {#if !lockOn}<p class="hint" data-testid="lock-recommended">{t('native.offline.lockRecommended')}</p>{/if}
 
   {#each foreign as f (f.name)}
+    <!-- Another account's waiting items: how many and whose, never subjects or recipients. -->
     <div class="foreign" role="alert" data-testid="foreign-waiting">
-      <p>{t('native.offline.foreignTitle', { count: f.waiting.length })}</p>
-      <ul>
-        {#each f.waiting as w (w.id)}<li>{w.kind === 'send' ? w.title || t('connection.outbox.noSubject') : t('connection.outbox.mark') + (w.title ? ': ' + w.title : '')}{#if w.recipients}<small> · {w.recipients}</small>{/if}</li>{/each}
-      </ul>
+      <p>{t('native.offline.foreignCount', { count: f.mails, account: f.account || t('native.offline.foreignUnknown') })}{#if f.actions}{' '}{t('native.offline.foreignActions', { count: f.actions })}{/if}</p>
       <p class="hint">{confirmForeign === f.name ? t('native.offline.foreignConfirm') : t('native.offline.foreignHint')}</p>
       <button class="btn danger" disabled={busy} onclick={() => discardForeign(f.name)}>{t('native.offline.foreignDiscard')}</button>
     </div>
@@ -174,12 +172,8 @@
     gap: 6px;
     font-size: 14px;
   }
-  .foreign p,
-  .foreign ul {
+  .foreign p {
     margin: 0;
-  }
-  .foreign ul {
-    padding-left: 18px;
     overflow-wrap: anywhere;
   }
   .danger {

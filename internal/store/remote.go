@@ -92,21 +92,26 @@ func (s *Store) DoubtIdempotency(ctx context.Context, key string) error {
 }
 
 // IdempotencyStatus tells a client what became of a key, without running
-// anything: "done" (the stored answer replays), "pending" (an attempt runs or
-// died midway), "doubt" (failed in a way that may have had an effect) or
-// "unknown" (never seen, refused and freed, or older than the retention).
-func (s *Store) IdempotencyStatus(ctx context.Context, key string) (string, error) {
+// anything: "done" (the stored answer replays), "pending" (an attempt runs),
+// "doubt" (failed in a way that may have had an effect, or a run that died
+// midway: older than stale) or "unknown" (never seen, refused and freed, or
+// older than the retention). It answers exactly what a POST with this key
+// would meet (BeginIdempotency + the stale rule of internal/server/api).
+func (s *Store) IdempotencyStatus(ctx context.Context, key string, now time.Time, stale time.Duration) (string, error) {
 	var state string
-	err := s.db.QueryRowContext(ctx, `SELECT state FROM idempotency_keys WHERE idem_key = ?`, key).Scan(&state)
+	var created int64
+	err := s.db.QueryRowContext(ctx, `SELECT state, created_at FROM idempotency_keys WHERE idem_key = ?`, key).Scan(&state, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "unknown", nil
 	}
 	if err != nil {
 		return "", fmt.Errorf("store: idempotency status: %w", err)
 	}
-	switch state {
-	case "done", "doubt":
+	switch {
+	case state == "done", state == "doubt":
 		return state, nil
+	case now.Sub(time.Unix(created, 0)) > stale:
+		return "doubt", nil
 	}
 	return "pending", nil
 }
