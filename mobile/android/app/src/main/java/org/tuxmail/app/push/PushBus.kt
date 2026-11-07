@@ -75,6 +75,11 @@ object PushBus {
         sink?.invoke("pushError", JSObject().put("reason", reason).put("message", message))
     }
 
+    /** A push message arrived; the web layer (if alive) starts a synchronisation. */
+    fun received(type: String?) {
+        sink?.invoke("pushReceived", JSObject().put("type", type ?: ""))
+    }
+
     fun unregistered(provider: String) {
         sink?.invoke("pushUnregistered", JSObject().put("provider", provider))
     }

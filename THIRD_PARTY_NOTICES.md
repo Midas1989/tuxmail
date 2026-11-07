@@ -93,3 +93,13 @@ because libsignal-client ships no native Windows ARM64 library. The complete
 corresponding source of signal-cli and Temurin is available from the
 upstream projects at the pinned versions; on request the TuxMail project
 provides it as well (GPL-3.0 §6, GPL-2.0 §3).
+
+## Android app: background synchronisation (`mobile/android`)
+
+The offline store of the Android app loads in the background with Android
+WorkManager. Linked into the APK (Google Maven, same for the `foss` and `play`
+flavors):
+
+| Library | Version | License |
+|---|---|---|
+| `androidx.work:work-runtime` (with its androidx dependencies, e.g. `androidx.room:room-runtime`, `androidx.startup:startup-runtime`) | 2.11.2 (`variables.gradle`) | Apache-2.0 (compatible with AGPL-3.0) |

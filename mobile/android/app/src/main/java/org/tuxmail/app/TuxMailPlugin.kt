@@ -22,6 +22,7 @@ import com.getcapacitor.annotation.PermissionCallback
 import org.tuxmail.app.net.ActiveSession
 import org.tuxmail.app.notify.Channels
 import org.tuxmail.app.notify.PushRenderer
+import org.tuxmail.app.offline.OfflineSync
 import org.tuxmail.app.push.FlavorPush
 import org.tuxmail.app.push.PushBus
 import org.tuxmail.app.security.SecureStore
@@ -108,6 +109,7 @@ class TuxMailPlugin : Plugin() {
     @PluginMethod
     fun clearActiveSession(call: PluginCall) {
         ActiveSession.clear(context)
+        OfflineSync.stop(context)
         NotificationManagerCompat.from(context).cancelAll()
         call.resolve()
     }
@@ -226,6 +228,42 @@ class TuxMailPlugin : Plugin() {
     @PermissionCallback
     private fun onNotificationPermission(call: PluginCall) {
         checkPermissions(call)
+    }
+
+    // ---- offline store (frontend/src/lib/native/offline) ------------------------------------
+
+    @PluginMethod
+    fun networkStatus(call: PluginCall) {
+        call.resolve(JSObject.fromJSONObject(OfflineSync.networkStatus(context)))
+    }
+
+    @PluginMethod
+    fun configureOfflineSync(call: PluginCall) {
+        val id = call.getString("profileId")
+        if (id.isNullOrEmpty()) return call.reject("profileId required", "invalid_config")
+        OfflineSync.configure(
+            context,
+            OfflineSync.Config(id, call.getInt("intervalMinutes") ?: 0, call.getBoolean("wifiOnly") ?: false, call.getInt("headersOnlyOlderThanDays") ?: 0),
+        )
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun takeOfflineStaging(call: PluginCall) {
+        val id = call.getString("profileId")
+        if (id.isNullOrEmpty()) return call.reject("profileId required", "invalid_config")
+        val limit = (call.getInt("limit") ?: 50).coerceIn(1, 200)
+        // File work off the main thread; Capacitor resolves from any thread.
+        Thread {
+            val (entries, more) = OfflineSync.take(context, id, limit)
+            call.resolve(JSObject().put("entries", entries).put("more", more))
+        }.start()
+    }
+
+    @PluginMethod
+    fun clearOfflineStaging(call: PluginCall) {
+        OfflineSync.clearStaging(context)
+        call.resolve()
     }
 
     @PluginMethod

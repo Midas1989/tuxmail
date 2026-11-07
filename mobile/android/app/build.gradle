@@ -136,6 +136,8 @@ dependencies {
     implementation "androidx.core:core-ktx:$androidxCoreVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.biometric:biometric:$androidxBiometricVersion"
+    // Offline store: periodic/push-triggered background loading with network and battery conditions.
+    implementation "androidx.work:work-runtime:$androidxWorkVersion"
     implementation project(':capacitor-android')
     implementation project(':capacitor-cordova-android-plugins')
 
