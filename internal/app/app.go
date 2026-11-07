@@ -106,9 +106,9 @@ type Options struct {
 	RemoteCacheMax int64
 	// ConnTiming overrides the intervals of the server connection (tests).
 	ConnTiming *ConnTiming
-	Now            func() time.Time
-	Logger         *slog.Logger
-	Location       *time.Location
+	Now        func() time.Time
+	Logger     *slog.Logger
+	Location   *time.Location
 }
 
 // App is the application layer of one user: it implements the frontend API

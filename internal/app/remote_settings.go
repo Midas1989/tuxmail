@@ -78,10 +78,10 @@ type settingsKind struct {
 	listLocal  func(ctx context.Context) (map[string]syncObj, error)
 	listRemote func(ctx context.Context) (map[string]syncObj, error)
 	// put writes the other side's data; id "" creates. They return the id.
-	putLocal   func(ctx context.Context, id string, from syncObj) (string, error)
-	putRemote  func(ctx context.Context, id string, from syncObj) (string, error)
-	delLocal   func(ctx context.Context, id string) error
-	delRemote  func(ctx context.Context, id string) error
+	putLocal  func(ctx context.Context, id string, from syncObj) (string, error)
+	putRemote func(ctx context.Context, id string, from syncObj) (string, error)
+	delLocal  func(ctx context.Context, id string) error
+	delRemote func(ctx context.Context, id string) error
 }
 
 func hashJSON(v any) string {

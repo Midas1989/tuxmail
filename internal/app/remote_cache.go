@@ -59,7 +59,7 @@ func (a *App) remoteCacheMax() int64 {
 }
 
 func (a *App) cacheResponse(ctx context.Context, u *url.URL, res *connResponse) {
-	if len(res.Body) > remoteCacheMaxEntry {
+	if len(res.Body) > remoteCacheMaxEntry || a.connCurrent() == nil {
 		return
 	}
 	now := a.now()
@@ -453,11 +453,16 @@ func (a *App) refreshRemoteCacheBG(ctx context.Context) {
 	if a.cr.dataRunning.Swap(true) {
 		return
 	}
+	rctx, cancel := context.WithCancel(ctx)
+	a.cr.mu.Lock()
+	a.cr.dataStop = cancel
+	a.cr.mu.Unlock()
 	a.wg.Add(1)
 	go func() {
 		defer a.wg.Done()
 		defer a.cr.dataRunning.Store(false)
-		a.refreshRemoteCache(ctx)
+		defer cancel()
+		a.refreshRemoteCache(rctx)
 	}()
 }
 
@@ -473,7 +478,7 @@ func (a *App) refreshRemoteCache(ctx context.Context) {
 		return
 	}
 	get := func(pq string) []byte {
-		if a.connState() != ConnStateOnline {
+		if a.connState() != ConnStateOnline || ctx.Err() != nil {
 			return nil
 		}
 		u, err := url.ParseRequestURI(pq)

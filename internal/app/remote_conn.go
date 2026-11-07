@@ -99,15 +99,17 @@ type connRuntime struct {
 	lastErr  string
 	lastSeen int64
 
-	timing   ConnTiming
-	kick     chan struct{}
-	sink     func(string) // live events of the server, as JSON (desktop.go)
-	flushMu  sync.Mutex
-	rotateMu sync.Mutex // never two rotations: reusing a replaced token ends the whole device
-	rotateAt time.Time  // last failed attempt
-	syncMu   sync.Mutex
-	stream   context.CancelFunc
-	startCtx context.Context
+	timing    ConnTiming
+	kick      chan struct{}
+	sink      func(string) // live events of the server, as JSON (desktop.go)
+	persistMu sync.Mutex   // stored state: no write may overtake disconnecting
+	flushMu   sync.Mutex
+	dataStop  context.CancelFunc // ends a running refresh of the read cache
+	rotateMu  sync.Mutex         // never two rotations: reusing a replaced token ends the whole device
+	rotateAt  time.Time          // last failed attempt
+	syncMu    sync.Mutex
+	stream    context.CancelFunc
+	startCtx  context.Context
 
 	localPaused  atomic.Bool
 	dataRunning  atomic.Bool
@@ -166,6 +168,8 @@ func (a *App) connCurrent() *serverConnection {
 }
 
 func (a *App) connUpdate(ctx context.Context, fn func(*serverConnection)) error {
+	a.cr.persistMu.Lock()
+	defer a.cr.persistMu.Unlock()
 	a.cr.mu.Lock()
 	if a.cr.conn == nil {
 		a.cr.mu.Unlock()
@@ -186,6 +190,10 @@ func (a *App) connState() string {
 // connSetState changes the state and tells the UI when it really changed.
 func (a *App) connSetState(state, detail string) {
 	a.cr.mu.Lock()
+	if a.cr.conn == nil { // disconnected meanwhile: a late answer changes nothing
+		a.cr.mu.Unlock()
+		return
+	}
 	changed := a.cr.state != state
 	a.cr.state = state
 	if detail != "" || state == ConnStateOnline {
@@ -660,14 +668,19 @@ func (a *App) connCommit(ctx context.Context, base string, s *remoteSession, mod
 			return err
 		}
 	}
-	if err := a.st.SetAppSetting(ctx, keyConnection, c); err != nil {
+	a.cr.persistMu.Lock()
+	err := a.st.SetAppSetting(ctx, keyConnection, c)
+	if err == nil {
+		a.cr.mu.Lock()
+		a.cr.conn = &c
+		a.cr.state = ConnStateOnline
+		a.cr.retry = 0
+		a.cr.mu.Unlock()
+	}
+	a.cr.persistMu.Unlock()
+	if err != nil {
 		return err
 	}
-	a.cr.mu.Lock()
-	a.cr.conn = &c
-	a.cr.state = ConnStateOnline
-	a.cr.retry = 0
-	a.cr.mu.Unlock()
 	switch mode {
 	case ConnModeThin:
 		a.connPauseLocal()
@@ -707,7 +720,11 @@ func (a *App) ServerReauthComplete(ctx context.Context, serverURL string) error 
 	if err := a.connStoreSecrets(base, s.token, s.priv); err != nil {
 		return Errorf(http.StatusConflict, "secret_store", "the sign-in could not be stored in the secret store: %v", err)
 	}
-	if err := a.connUpdate(ctx, func(c *serverConnection) { c.Expired = false; c.LastSeenAt = a.now().Unix(); c.TokenAt = a.now().Unix() }); err != nil {
+	if err := a.connUpdate(ctx, func(c *serverConnection) {
+		c.Expired = false
+		c.LastSeenAt = a.now().Unix()
+		c.TokenAt = a.now().Unix()
+	}); err != nil {
 		return err
 	}
 	a.dropSession(base)
@@ -800,9 +817,30 @@ func (a *App) ServerDisconnect(ctx context.Context, in DisconnectInput) (Disconn
 		res.Revoked = true
 	}
 	a.connStopStream()
+	// First forget it in memory, under the lock of the stored state: work still
+	// under way (a check, a refresh) must not write the connection back.
+	a.cr.persistMu.Lock()
+	a.cr.mu.Lock()
+	a.cr.conn = nil
+	a.cr.state = ConnStateNone
+	stopData := a.cr.dataStop
+	a.cr.mu.Unlock()
+	err = a.st.DeleteAppSetting(ctx, keyConnection)
+	a.cr.persistMu.Unlock()
+	if err != nil {
+		return res, err
+	}
+	a.connStopStream() // one may have started just before
+	// "Delete" must hold: nothing may write into the cache after it is cleared.
+	if stopData != nil {
+		stopData()
+	}
+	for i := 0; i < 300 && a.cr.dataRunning.Load(); i++ {
+		time.Sleep(10 * time.Millisecond)
+	}
 	a.connDeleteSecrets(c.URL)
 	a.dropSession(c.URL)
-	for _, key := range []string{keyConnection, keySettingsMap, keySettingsLog} {
+	for _, key := range []string{keySettingsMap, keySettingsLog} {
 		if err := a.st.DeleteAppSetting(ctx, key); err != nil {
 			return res, err
 		}
@@ -818,10 +856,6 @@ func (a *App) ServerDisconnect(ctx context.Context, in DisconnectInput) (Disconn
 			return res, err
 		}
 	}
-	a.cr.mu.Lock()
-	a.cr.conn = nil
-	a.cr.state = ConnStateNone
-	a.cr.mu.Unlock()
 	a.connResumeLocal()
 	a.connNotify()
 	return res, nil

@@ -102,9 +102,9 @@ type discardResponse struct {
 	h http.Header
 }
 
-func (d *discardResponse) Header() http.Header       { return d.h }
+func (d *discardResponse) Header() http.Header         { return d.h }
 func (d *discardResponse) Write(b []byte) (int, error) { return len(b), nil }
-func (d *discardResponse) WriteHeader(int)           {}
+func (d *discardResponse) WriteHeader(int)             {}
 
 func (g *gate) handler() http.Handler {
 	g.mu.RLock()
