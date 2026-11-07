@@ -127,7 +127,7 @@
     z-index: 900;
     overflow-y: auto;
     background: var(--tm-bg);
-    padding: calc(12px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+    padding: calc(12px + var(--tm-safe-top)) 16px calc(24px + var(--tm-safe-bottom));
     display: flex;
     flex-direction: column;
     gap: 18px;

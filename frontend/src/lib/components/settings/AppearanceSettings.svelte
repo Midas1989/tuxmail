@@ -7,6 +7,7 @@
   import { app, prefs } from '../../state';
   import type { Density, Theme } from '../../state/prefs.svelte';
   import { t } from '../../i18n/index.svelte';
+  import { phone } from '../../phone.svelte';
 
   const themes: { id: Theme; icon: typeof Sun }[] = [
     { id: 'light', icon: Sun },
@@ -42,7 +43,7 @@
       <button role="radio" aria-checked={prefs.viewMode === 'classic'} onclick={() => app.setViewMode('classic')}>{t('mail.view.classic')}</button>
       <button role="radio" aria-checked={prefs.viewMode === 'hybrid'} onclick={() => app.setViewMode('hybrid')}>{t('mail.view.hybrid')}</button>
       <button role="radio" aria-checked={prefs.viewMode === 'chat'} onclick={() => app.setViewMode('chat')}>{t('mail.view.chat')}</button>
-      <button role="radio" aria-checked={prefs.viewMode === 'terminal'} onclick={() => app.setViewMode('terminal')}>{t('mail.view.terminal')}</button>
+      {#if !phone.current}<button role="radio" aria-checked={prefs.viewMode === 'terminal'} onclick={() => app.setViewMode('terminal')}>{t('mail.view.terminal')}</button>{/if}
     </div>
   </div>
 </section>

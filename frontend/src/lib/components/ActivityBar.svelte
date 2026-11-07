@@ -9,6 +9,8 @@
   import Search from '@lucide/svelte/icons/search';
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import AccountMenu from './AccountMenu.svelte';
+  import Ellipsis from '@lucide/svelte/icons/ellipsis';
+  import { phone } from '../phone.svelte';
   import { app, prefs } from '../state';
   import { t, i18n } from '../i18n/index.svelte';
 
@@ -26,6 +28,11 @@
       if (el.scrollWidth > el.clientWidth + 1) el.hidden = true;
     }
   });
+
+  // Phones: four destinations plus "Mehr" (search, projects, files, settings in a sheet), so every
+  // target is at least 44 px wide and the labels fit.
+  let moreOpen = $state(false);
+  const PHONE_MAIN: readonly string[] = ['mail', 'chats', 'calendar', 'contacts'];
 
   type Item = { id: 'mail' | 'chats' | 'search' | 'projects' | 'calendar' | 'contacts' | 'files'; icon: typeof Mail; label: string; badge?: number };
 
@@ -45,6 +52,20 @@
     return app.route === id;
   }
 
+  const mainItems = $derived(phone.current ? items.filter((i) => PHONE_MAIN.includes(i.id)) : items);
+  const moreItems = $derived(items.filter((i) => !PHONE_MAIN.includes(i.id)));
+  const moreActive = $derived(app.route === 'settings' || moreItems.some((i) => isActive(i.id)));
+  // Leaving the phone layout (rotation, resize) closes the sheet.
+  $effect(() => {
+    if (!phone.current) moreOpen = false;
+  });
+
+  function openFromMore(target: Item['id'] | 'settings') {
+    moreOpen = false;
+    if (target === 'settings') app.navigate('settings');
+    else void go(target);
+  }
+
   async function go(id: Item['id']) {
     if (id === 'mail' || id === 'chats') {
       app.navigate('mail');
@@ -59,7 +80,7 @@
 <nav class="rail" aria-label={t('nav.label')} bind:this={rail} lang={i18n.locale}>
   <div class="logo"><img src="./icons/icon-64.png" alt="TuxMail" width="34" height="34" /></div>
   <ul>
-    {#each items as item (item.id)}
+    {#each mainItems as item (item.id)}
       {@const Icon = item.icon}
       <li>
         <button class="item" aria-current={isActive(item.id) ? 'page' : undefined} onclick={() => go(item.id)} title={item.label}>
@@ -71,11 +92,42 @@
     {/each}
   </ul>
   <div class="spacer"></div>
-  <button class="item settings" aria-current={app.route === 'settings' ? 'page' : undefined} onclick={() => app.navigate('settings')} title={t('nav.settings')} aria-label={t('nav.settings')}>
-    <Settings size={22} strokeWidth={1.8} aria-hidden="true" />
-  </button>
-  <AccountMenu />
+  {#if phone.current}
+    <button class="item more" aria-current={moreActive ? 'page' : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} onclick={() => (moreOpen = !moreOpen)} title={t('nav.more')}>
+      <Ellipsis size={21} strokeWidth={1.8} aria-hidden="true" />
+      <span class="lbl">{t('nav.more')}</span>
+    </button>
+  {:else}
+    <button class="item settings" aria-current={app.route === 'settings' ? 'page' : undefined} onclick={() => app.navigate('settings')} title={t('nav.settings')} aria-label={t('nav.settings')}>
+      <Settings size={22} strokeWidth={1.8} aria-hidden="true" />
+    </button>
+    <AccountMenu />
+  {/if}
 </nav>
+
+{#if phone.current && moreOpen}
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="more-backdrop" role="presentation" onclick={() => (moreOpen = false)} onkeydown={(e) => e.key === 'Escape' && (moreOpen = false)}></div>
+  <div class="more-sheet" role="dialog" aria-modal="true" aria-label={t('nav.more')} tabindex="-1" onkeydown={(e) => e.key === 'Escape' && (moreOpen = false)}>
+    <ul>
+      {#each moreItems as item (item.id)}
+        {@const Icon = item.icon}
+        <li>
+          <button class="more-item" aria-current={isActive(item.id) ? 'page' : undefined} onclick={() => openFromMore(item.id)}>
+            <Icon size={24} strokeWidth={1.8} aria-hidden="true" />
+            <span>{item.label}</span>
+          </button>
+        </li>
+      {/each}
+      <li>
+        <button class="more-item" aria-current={app.route === 'settings' ? 'page' : undefined} onclick={() => openFromMore('settings')}>
+          <Settings size={24} strokeWidth={1.8} aria-hidden="true" />
+          <span>{t('nav.settings')}</span>
+        </button>
+      </li>
+    </ul>
+  </div>
+{/if}
 
 <style>
   .rail {
@@ -157,6 +209,7 @@
   .item.settings {
     min-height: 44px;
   }
+
   .dot {
     position: absolute;
     top: 3px;
@@ -175,7 +228,7 @@
     border: 2px solid var(--tm-rail);
   }
 
-  /* Phones: bottom navigation bar. */
+  /* Phones: bottom navigation bar. Height = content + bottom inset (never squeezed by it). */
   @media (max-width: 639px) {
     .rail {
       position: fixed;
@@ -183,13 +236,14 @@
       right: 0;
       bottom: 0;
       z-index: 30;
+      box-sizing: border-box;
       flex-direction: row;
+      align-items: stretch;
       width: auto;
-      height: 60px;
-      padding: 4px 8px calc(4px + env(safe-area-inset-bottom));
+      height: calc(var(--tm-bar-h) + var(--tm-safe-bottom));
+      padding: 0 calc(4px + var(--tm-safe-right)) var(--tm-safe-bottom) calc(4px + var(--tm-safe-left));
       border-right: none;
       border-top: 1px solid var(--tm-line);
-      justify-content: space-around;
     }
     .logo,
     .spacer {
@@ -197,9 +251,8 @@
     }
     ul {
       flex-direction: row;
-      flex: 8;
+      flex: 4;
       min-width: 0;
-      justify-content: space-around;
       gap: 0;
     }
     li {
@@ -207,25 +260,74 @@
       min-width: 0;
       display: flex;
       justify-content: center;
+      align-items: stretch;
     }
-    /* Eight destinations share the width; labels stay on one line (hidden if too long). */
+    /* Five destinations share the width; every target is at least 44 px. */
     .item {
       width: 100%;
-      max-width: 64px;
-      min-height: 50px;
-      padding: 3px 0;
-      gap: 1px;
+      max-width: none;
+      min-height: 44px;
+      align-self: center;
+      height: 48px;
+      padding: 2px 0;
+      gap: 2px;
     }
-    .item.settings {
+    .item.more {
       flex: 1 1 0;
       min-width: 0;
     }
     .lbl {
-      font-size: 9.5px;
+      font-size: 11px;
       max-width: 100%;
     }
     .item[aria-current='page']::before {
       display: none;
+    }
+    .more-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 31;
+      background: rgb(10 14 22 / 0.4);
+    }
+    .more-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: calc(var(--tm-bar-h) + var(--tm-safe-bottom));
+      z-index: 32;
+      box-sizing: border-box;
+      padding: 8px calc(8px + var(--tm-safe-right)) 8px calc(8px + var(--tm-safe-left));
+      background: var(--tm-surface);
+      color: var(--tm-fg);
+      border-top: 1px solid var(--tm-line);
+      border-radius: 14px 14px 0 0;
+      box-shadow: var(--tm-shadow-lg);
+    }
+    .more-sheet ul {
+      flex-direction: column;
+      gap: 2px;
+    }
+    .more-sheet li {
+      display: block;
+    }
+    .more-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      width: 100%;
+      min-height: 48px;
+      padding: 0 12px;
+      border: none;
+      border-radius: 10px;
+      background: transparent;
+      color: inherit;
+      font-size: 15px;
+      text-align: left;
+    }
+    .more-item[aria-current='page'] {
+      background: var(--tm-accent-soft);
+      color: var(--tm-accent-text);
+      font-weight: 600;
     }
   }
 </style>

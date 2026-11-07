@@ -185,4 +185,10 @@
     display: flex;
     justify-content: flex-end;
   }
+
+  @media (max-width: 639px) {
+    .grid {
+      grid-template-columns: minmax(0, 1fr);
+    }
+  }
 </style>

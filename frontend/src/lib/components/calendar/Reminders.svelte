@@ -63,8 +63,8 @@
 <style>
   .rem {
     position: fixed;
-    right: 16px;
-    bottom: 16px;
+    right: calc(16px + var(--tm-safe-right));
+    bottom: calc(16px + var(--tm-safe-bottom));
     z-index: 200;
     display: flex;
     flex-direction: column;

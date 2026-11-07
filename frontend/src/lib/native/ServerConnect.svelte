@@ -67,6 +67,16 @@
 
   onDestroy(() => abort?.abort());
 
+  // The "https://" prefix is fixed in front of the field, so the field takes the host only.
+  // A pasted full address loses its own https:// (once typed or pasted); http:// stays and is
+  // rejected by normalizeServerUrl, so plain HTTP is never silently upgraded.
+  function onUrlInput(e: Event) {
+    const el = e.currentTarget as HTMLInputElement;
+    const v = el.value.replace(/^\s*https:\/\//i, '');
+    if (v !== el.value) el.value = v;
+    urlInput = v;
+  }
+
   function message(err: unknown): string {
     if (err instanceof ServerError) {
       const key = `native.error.${err.code}` as MessageKey;
@@ -197,13 +207,14 @@
           <input
             id="server-url"
             class="input"
-            type="url"
+            type="text"
             inputmode="url"
             autocapitalize="off"
             autocomplete="url"
             spellcheck="false"
             placeholder={t('native.connect.placeholder')}
-            bind:value={urlInput}
+            value={urlInput}
+            oninput={onUrlInput}
             required
           />
         </div>
@@ -289,7 +300,7 @@
     z-index: 9000; /* above a running app (connect-link overlay), below the app lock (10000) */
     overflow-y: auto;
     background: var(--tm-bg);
-    padding: calc(24px + env(safe-area-inset-top)) 16px calc(24px + env(safe-area-inset-bottom));
+    padding: calc(24px + var(--tm-safe-top)) 16px calc(24px + var(--tm-safe-bottom));
     display: flex;
     justify-content: center;
     align-items: flex-start;

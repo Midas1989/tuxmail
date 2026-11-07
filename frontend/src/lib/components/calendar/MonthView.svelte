@@ -2,6 +2,7 @@
 <script lang="ts">
   import Cake from '@lucide/svelte/icons/cake';
   import { fmt, t } from '../../i18n/index.svelte';
+  import { phone } from '../../phone.svelte';
   import type { CalendarEvent } from '../../types';
   import { diffDays, isoWeek, onDay, shiftEvent, zonedInstant, type DayKey } from '../../calendar/datemath';
 
@@ -25,6 +26,10 @@
 
   let dragged = $state<{ e: CalendarEvent; from: DayKey } | null>(null);
   let over = $state<DayKey | null>(null);
+  // Phones: the grid shows dots; the tapped day lists its events underneath.
+  let picked = $state<DayKey | null>(null);
+  const selected = $derived(picked && days.includes(picked) ? picked : days.includes(today) ? today : (days.find((d) => Number(d.slice(5, 7)) === month) ?? days[0]));
+  const selList = $derived(byDay[selected] ?? []);
 
   function drop(d: DayKey) {
     const g = dragged;
@@ -65,6 +70,12 @@
             drop(d);
           }}
         >
+          {#if phone.current}
+            <button class="cell" class:sel={d === selected} aria-pressed={d === selected} aria-label="{fmt().dateLong(zonedInstant(d, 720, tz))}{list.length ? ', ' + list.length : ''}" onclick={() => (picked = d)}>
+              <span class="num">{Number(d.slice(8, 10))}</span>
+              <span class="dots" aria-hidden="true">{#each list.slice(0, 4) as e (e.id)}<i style:--c={e.color || colors[e.calendarId] || '#64748b'}></i>{/each}</span>
+            </button>
+          {:else}
           <button class="num" onclick={() => onday(d)}>{Number(d.slice(8, 10))}</button>
           {#each list.slice(0, list.length > MAX ? MAX - 1 : MAX) as e (e.id)}
             <button
@@ -86,10 +97,28 @@
           {#if list.length > MAX}
             <button class="more" onclick={() => onday(d)}>{t('calendar.more', { n: list.length - MAX + 1 })}</button>
           {/if}
+          {/if}
         </div>
       {/each}
     </div>
   {/each}
+  {#if phone.current}
+    <section class="dl" aria-label={fmt().dateLong(zonedInstant(selected, 720, tz))}>
+      <header>
+        <h3>{fmt().dateLong(zonedInstant(selected, 720, tz))}</h3>
+        <button class="btn btn-ghost" onclick={() => onday(selected)}>{t('calendar.view.day')}</button>
+        <button class="btn btn-primary" onclick={() => oncreate(selected)}>{t('calendar.newEvent')}</button>
+      </header>
+      {#each selList as e (e.id)}
+        <button class="li" style:--c={e.color || colors[e.calendarId] || '#64748b'} onclick={() => onopen(e)}>
+          <span class="when">{e.allDay ? t('calendar.allDay') : fmt().time(e.start)}</span>
+          <span class="ti">{e.title}</span>
+        </button>
+      {:else}
+        <p class="none">{t('calendar.noEvents')}</p>
+      {/each}
+    </section>
+  {/if}
 </div>
 
 <style>
@@ -239,6 +268,106 @@
     .item.timed::before {
       width: 6px;
       height: 6px;
+    }
+    .mv {
+      overflow-y: auto;
+    }
+    .week {
+      flex: none;
+      min-height: 52px;
+    }
+    .day {
+      padding: 0;
+    }
+    .cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      width: 100%;
+      height: 100%;
+      min-height: 52px;
+      padding: 4px 0;
+      border: none;
+      background: none;
+      font: inherit;
+      color: inherit;
+    }
+    .cell.sel {
+      background: var(--tm-accent-soft);
+    }
+    .cell .num {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 28px;
+      height: 28px;
+      font-size: 14px;
+    }
+    .day.today .cell .num {
+      background: var(--tm-accent);
+      color: var(--tm-accent-fg);
+    }
+    .day.other .cell .num {
+      color: var(--tm-faint);
+    }
+    .dots {
+      display: flex;
+      gap: 3px;
+      height: 6px;
+    }
+    .dots i {
+      width: 6px;
+      height: 6px;
+      border-radius: 99px;
+      background: var(--c);
+    }
+    .dl {
+      border-top: 1px solid var(--tm-line);
+      padding: 8px 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dl header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .dl h3 {
+      flex: 1 1 100%;
+      margin: 0;
+      font-size: 14px;
+    }
+    .li {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 48px;
+      padding: 0 10px;
+      border: none;
+      border-left: 4px solid var(--c);
+      border-radius: 6px;
+      background: color-mix(in srgb, var(--c) 12%, var(--tm-surface));
+      color: var(--tm-fg);
+      font: inherit;
+      text-align: left;
+    }
+    .when {
+      flex: none;
+      min-width: 48px;
+      color: var(--tm-muted);
+    }
+    .ti {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .none {
+      margin: 4px 0;
+      color: var(--tm-muted);
     }
   }
 </style>

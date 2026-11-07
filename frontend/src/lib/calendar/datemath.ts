@@ -10,7 +10,7 @@ import { zonedParts } from '../format';
 import type { CalendarEvent } from '../types';
 
 export type DayKey = string;
-export type CalendarView = 'day' | 'workweek' | 'week' | 'month' | 'agenda';
+export type CalendarView = 'day' | 'threeday' | 'workweek' | 'week' | 'month' | 'agenda';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -85,6 +85,8 @@ export function viewDays(view: CalendarView, anchor: DayKey, weekStart: number):
   switch (view) {
     case 'day':
       return [anchor];
+    case 'threeday':
+      return [anchor, addDays(anchor, 1), addDays(anchor, 2)];
     case 'workweek': {
       const mon = startOfWeek(anchor, 1);
       return Array.from({ length: 5 }, (_, i) => addDays(mon, i));
@@ -112,6 +114,8 @@ export function stepAnchor(view: CalendarView, anchor: DayKey, dir: number): Day
   switch (view) {
     case 'day':
       return addDays(anchor, dir);
+    case 'threeday':
+      return addDays(anchor, 3 * dir);
     case 'workweek':
     case 'week':
       return addDays(anchor, 7 * dir);

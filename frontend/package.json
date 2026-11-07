@@ -11,7 +11,8 @@
     "build:capacitor": "vite build --mode capacitor",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json --fail-on-warnings && tsc -p tsconfig.node.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "audit:mobile": "node scripts/mobile-audit.cjs"
   },
   "dependencies": {
     "@capacitor/core": "8.6.0",

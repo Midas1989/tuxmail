@@ -42,6 +42,7 @@
   import type { AiSummary } from '../../types';
   import { ApiError } from '../../api/api';
   import { app } from '../../state';
+  import { phone } from '../../phone.svelte';
   import { buildTimeline } from '../../conversation';
   import type { Attachment, ConversationItem } from '../../types';
   import { fmt, formatDay, t } from '../../i18n/index.svelte';
@@ -317,6 +318,7 @@
     if (!conv) return [];
     return [
       { id: 'search', label: t('chat.searchInChat'), icon: Search, run: openSearch },
+      ...(phone.current && app.items.some((i) => i.channel === 'email') ? [{ id: 'fullmail', label: t('chat.full.all'), icon: FileText, run: toggleFullMail }] : []),
       { id: 'summary', label: t('chat.ai.summarize'), icon: Sparkles, run: summarize },
       { id: 'snooze', label: t('chat.snooze.menu'), icon: AlarmClock, run: () => void (app.chatDialog = { kind: 'snooze', conversation: conv }) },
       { id: 'pin', label: conv.pinned ? t('chat.action.unpin') : t('chat.action.pin'), icon: conv.pinned ? PinOff : Pin, run: () => app.updateConversation(conv.id, { pinned: !conv.pinned }) },
@@ -347,7 +349,7 @@
           <span class="title">{conv.title}</span>
           <span class="sub">{#if hybrid}{t('mail.hybrid.inFolder', { count: inScopeCount, total: app.items.length }) + ' · '}{/if}{subtitle}</span>
         </span>
-        {#if convTags.length}<TagChips ids={convTags} size="xs" max={2} />{/if}
+        {#if convTags.length}<span class="hd-tags"><TagChips ids={convTags} size="xs" max={2} /></span>{/if}
       </button>
       {#if hybrid}
         <button class="only" aria-pressed={prefs.hybridOnlyFolder} onclick={toggleOnlyFolder} title={t('mail.hybrid.onlyFolder')}>
@@ -355,13 +357,13 @@
         </button>
       {/if}
       {#if longChat}
-        <button class="icon-btn" class:busy={summarizing} aria-label={t('chat.ai.summarize')} title={t('chat.ai.summarize')} onclick={summarize}><Sparkles size={18} /></button>
+        <button class="icon-btn hd-rare" class:busy={summarizing} aria-label={t('chat.ai.summarize')} title={t('chat.ai.summarize')} onclick={summarize}><Sparkles size={18} /></button>
       {/if}
       {#if app.items.some((i) => i.channel === 'email')}
-        <button class="icon-btn" aria-label={t('chat.full.all')} title={t('chat.full.all')} aria-pressed={fullMail} onclick={toggleFullMail} data-testid="full-mail-toggle"><FileText size={18} /></button>
+        <button class="icon-btn hd-rare" aria-label={t('chat.full.all')} title={t('chat.full.all')} aria-pressed={fullMail} onclick={toggleFullMail} data-testid="full-mail-toggle"><FileText size={18} /></button>
       {/if}
-      <button class="icon-btn" aria-label={t('chat.searchInChat')} title={t('chat.searchInChat')} aria-pressed={searchOpen} onclick={() => (searchOpen ? (searchOpen = false) : openSearch())}><Search size={18} /></button>
-      {#if !hybrid}<button class="icon-btn" aria-label={t('chat.info.toggle')} title={t('chat.info.toggle')} aria-pressed={app.infoOpen} onclick={() => (app.infoOpen = !app.infoOpen)}><Info size={18} /></button>{/if}
+      <button class="icon-btn hd-rare" aria-label={t('chat.searchInChat')} title={t('chat.searchInChat')} aria-pressed={searchOpen} onclick={() => (searchOpen ? (searchOpen = false) : openSearch())}><Search size={18} /></button>
+      {#if !hybrid}<button class="icon-btn hd-info" aria-label={t('chat.info.toggle')} title={t('chat.info.toggle')} aria-pressed={app.infoOpen} onclick={() => (app.infoOpen = !app.infoOpen)}><Info size={18} /></button>{/if}
       <button class="icon-btn" aria-label={t('chat.moreActions')} title={t('chat.moreActions')} aria-haspopup="menu" onclick={(e) => (headerMenu = { x: e.clientX - 220, y: e.clientY + 12 })}><EllipsisVertical size={18} /></button>
     </header>
     {#if team.activeId != null}<TeamPanel conversationId={conv.id} />{/if}
@@ -952,6 +954,15 @@
     }
     .unread-marker {
       margin: 14px -10px;
+    }
+  }
+
+  /* Phones: the title keeps its room; tags and the info button (tap the title instead) leave the header. */
+  @media (max-width: 639px) {
+    .hd-tags,
+    .hd-info,
+    .hd-rare {
+      display: none;
     }
   }
 </style>

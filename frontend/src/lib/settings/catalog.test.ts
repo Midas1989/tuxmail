@@ -70,7 +70,26 @@ describe('settings catalog', () => {
     expect(web.find((c) => c.id === 'security')!.sections.map((s) => s.id)).not.toContain('vault');
     const all = visibleCategories(ALL_ENV);
     expect(all.map((c) => c.id)).toContain('team');
+    expect(all.find((c) => c.id === 'accounts')!.sections.map((s) => s.id)).toContain('server');
     expect(all.find((c) => c.id === 'general')!.sections.map((s) => s.id)).toContain('window');
+  });
+});
+
+describe('server connect card', () => {
+  const ids = (env: SettingsEnv) => visibleCategories(env).find((c) => c.id === 'accounts')!.sections.map((s) => s.id);
+  const NATIVE: SettingsEnv = { ...WEB, native: true };
+
+  it('is offered on the desktop app only (not in the web client on the server, not on Android)', () => {
+    expect(ids({ ...WEB, desktop: true })).toContain('server');
+    expect(ids(WEB)).not.toContain('server');
+    expect(ids(NATIVE)).not.toContain('server');
+  });
+
+  it('is not found by the settings search where it is hidden', () => {
+    const hit = (env: SettingsEnv) => searchSettings('TuxMail-Server', env, [tDe, tEn]).some((h) => h.section === 'server');
+    expect(hit({ ...WEB, desktop: true })).toBe(true);
+    expect(hit(WEB)).toBe(false);
+    expect(hit(NATIVE)).toBe(false);
   });
 });
 

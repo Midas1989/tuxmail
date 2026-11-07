@@ -15,15 +15,18 @@
   import { app, prefs } from '../state';
   import type { ViewMode } from '../state/app.svelte';
   import { t } from '../i18n/index.svelte';
+  import { phone } from '../phone.svelte';
 
   let { variant = 'auto' }: { variant?: 'auto' | 'menu' } = $props();
 
-  const MODES: { id: ViewMode; icon: typeof Rows3 }[] = [
+  // The terminal view is a desktop keyboard tool; phones do not offer it.
+  const ALL_MODES: { id: ViewMode; icon: typeof Rows3 }[] = [
     { id: 'classic', icon: Rows3 },
     { id: 'hybrid', icon: MessageSquareText },
     { id: 'chat', icon: MessagesSquare },
     { id: 'terminal', icon: SquareTerminal },
   ];
+  const MODES = $derived(phone.current ? ALL_MODES.filter((m) => m.id !== 'terminal') : ALL_MODES);
   const current = $derived(MODES.find((m) => m.id === prefs.viewMode) ?? MODES[0]);
   let open = $state(false);
   let btn = $state<HTMLButtonElement>();

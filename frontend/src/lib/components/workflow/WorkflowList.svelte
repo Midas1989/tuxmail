@@ -520,4 +520,24 @@
   .steps li.st-skipped {
     opacity: 0.55;
   }
+
+  /* Phones: name and switch on the first line, last run and actions wrap below. */
+  @media (max-width: 639px) {
+    .main {
+      flex-wrap: wrap;
+      row-gap: 4px;
+    }
+    .txt {
+      flex: 1 1 calc(100% - 60px);
+    }
+    .name {
+      flex-wrap: wrap;
+    }
+    .last {
+      flex: 1 1 auto;
+    }
+    .acts {
+      margin-left: auto;
+    }
+  }
 </style>

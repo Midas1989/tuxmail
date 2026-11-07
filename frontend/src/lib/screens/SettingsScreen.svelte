@@ -690,6 +690,10 @@
     .nav-item :global(.chev) {
       display: block;
     }
+    .nav-item :global(svg:not(.chev)) {
+      min-width: 20px;
+      min-height: 20px;
+    }
     .nav-item[aria-current='page'] {
       background: none;
       color: var(--tm-fg);
@@ -700,6 +704,11 @@
     }
     .back {
       display: inline-flex;
+      min-height: 44px;
+    }
+    .back :global(svg) {
+      min-width: 20px;
+      min-height: 20px;
     }
     .page-title {
       font-size: 20px;

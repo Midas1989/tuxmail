@@ -5,15 +5,25 @@
  * edge-to-edge (Android 15+), Capacitor's SystemBars plugin provides the
  * safe-area insets as env() and --safe-area-inset-* variables.
  */
+html.tm-native {
+  --tm-safe-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --tm-safe-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --tm-safe-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --tm-safe-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
 html.tm-native #app {
   box-sizing: border-box;
-  padding-top: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
-  padding-left: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
-  padding-right: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+  padding-top: var(--tm-safe-top);
+  padding-left: var(--tm-safe-left);
+  padding-right: var(--tm-safe-right);
 }
+/*
+ * Everything position:fixed ignores the padding of #app, so it takes the insets itself
+ * (drawers, sheets, toasts, dialogs). Desktop and the browser have no insets (0).
+ */
 /* An open chat hides the bottom bar; keep the composer above the gesture bar. */
 html.tm-native #app:has(.app.chat-open) {
-  padding-bottom: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  padding-bottom: var(--tm-safe-bottom);
 }
 /* No text selection callouts / tap highlights on UI chrome. */
 html.tm-native {

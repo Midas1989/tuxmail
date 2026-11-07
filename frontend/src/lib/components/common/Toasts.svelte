@@ -28,7 +28,7 @@
   .toasts {
     position: fixed;
     left: 50%;
-    bottom: 20px;
+    bottom: calc(20px + var(--tm-safe-bottom));
     transform: translateX(-50%);
     z-index: 60;
     display: flex;

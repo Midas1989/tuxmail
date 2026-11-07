@@ -123,7 +123,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 16px;
+    padding: calc(16px + var(--tm-safe-top)) calc(16px + var(--tm-safe-right)) calc(16px + var(--tm-safe-bottom)) calc(16px + var(--tm-safe-left));
     background: rgb(10 14 22 / 0.45);
     backdrop-filter: blur(2px);
   }
@@ -133,7 +133,7 @@
   }
   .dialog {
     width: 100%;
-    max-height: calc(100vh - 32px);
+    max-height: calc(100vh - 32px - var(--tm-safe-top) - var(--tm-safe-bottom));
     display: flex;
     flex-direction: column;
     background: var(--tm-surface);
@@ -175,5 +175,29 @@
     padding: 12px 16px;
     border-top: 1px solid var(--tm-line);
     background: var(--tm-surface-2);
+  }
+
+  /* Phones: dialogs are bottom sheets that use the full width and clear the system bars. */
+  @media (max-width: 639px) {
+    .backdrop:not(.top) {
+      align-items: flex-end;
+      padding: var(--tm-safe-top) 0 0;
+    }
+    .backdrop.top {
+      padding-top: calc(8px + var(--tm-safe-top));
+    }
+    .backdrop:not(.top) .dialog {
+      max-width: none !important;
+      max-height: calc(100dvh - var(--tm-safe-top) - 8px);
+      border-radius: 16px 16px 0 0;
+      border-bottom: none;
+    }
+    .dialog:not(:has(footer)) .content {
+      padding-bottom: var(--tm-safe-bottom);
+    }
+    footer {
+      padding-bottom: calc(12px + var(--tm-safe-bottom));
+      flex-wrap: wrap;
+    }
   }
 </style>

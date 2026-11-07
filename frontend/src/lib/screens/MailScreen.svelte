@@ -12,6 +12,7 @@
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import { app, prefs, search } from '../state';
   import { t } from '../i18n/index.svelte';
+  import { phone } from '../phone.svelte';
   import Sidebar from '../components/Sidebar.svelte';
   import MessageList from '../components/mail/MessageList.svelte';
   import ReadingPane from '../components/mail/ReadingPane.svelte';
@@ -125,7 +126,7 @@
     </header>
 
     <div class="panes" class:has-selection={hasSelection} data-mode={prefs.viewMode}>
-      {#if prefs.viewMode === 'terminal'}
+      {#if prefs.viewMode === 'terminal' && !phone.current}
         <TerminalView />
       {:else if hybrid}
         <div class="pane-list"><HybridList title={scopeTitle} subtitle={scopeSub} /></div>
@@ -269,6 +270,10 @@
     left: 0;
     z-index: 41;
     display: flex;
+    /* Keep the content clear of the status bar and the navigation buttons (the panel colour runs behind them). */
+    padding: var(--tm-safe-top) 0 var(--tm-safe-bottom) var(--tm-safe-left);
+    box-sizing: border-box;
+    background: var(--tm-sidebar);
     box-shadow: var(--tm-shadow-lg);
   }
 
@@ -306,6 +311,7 @@
     }
     .search {
       flex: 1 1 auto;
+      height: 44px;
       padding: 0 4px 0 10px;
     }
     .grow {

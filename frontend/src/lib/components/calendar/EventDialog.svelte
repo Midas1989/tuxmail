@@ -678,4 +678,13 @@
       grid-template-columns: 1fr;
     }
   }
+
+  @media (max-width: 639px) {
+    .with-btn {
+      flex-wrap: wrap;
+    }
+    .with-btn .input {
+      flex: 1 1 100%;
+    }
+  }
 </style>

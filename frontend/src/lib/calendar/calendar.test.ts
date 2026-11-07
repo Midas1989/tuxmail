@@ -28,6 +28,9 @@ describe('datemath', () => {
     expect(addMonths('2026-01-31', 1)).toBe('2026-02-28');
     expect(startOfWeek('2026-11-05', 1)).toBe('2026-11-02');
     expect(startOfWeek('2026-11-05', 0)).toBe('2026-11-01');
+    expect(viewDays('threeday', '2026-11-07', 1)).toEqual(['2026-11-07', '2026-11-08', '2026-11-09']);
+    expect(stepAnchor('threeday', '2026-11-07', 1)).toBe('2026-11-10');
+    expect(stepAnchor('threeday', '2026-11-07', -1)).toBe('2026-11-04');
     expect(viewDays('workweek', '2026-11-08', 0)).toEqual(['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06']);
     const grid = monthGrid('2026-11-15', 1);
     expect(grid).toHaveLength(42);

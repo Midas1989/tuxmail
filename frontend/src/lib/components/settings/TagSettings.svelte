@@ -251,4 +251,13 @@
     color: var(--tm-danger);
     font-size: 12.5px;
   }
+
+  @media (max-width: 639px) {
+    .new {
+      flex-wrap: wrap;
+    }
+    .new :global(.input) {
+      flex: 1 1 100%;
+    }
+  }
 </style>

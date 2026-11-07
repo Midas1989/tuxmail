@@ -22,6 +22,7 @@
 <script lang="ts">
   import Search from '@lucide/svelte/icons/search';
   import CornerDownLeft from '@lucide/svelte/icons/corner-down-left';
+  import { phone } from '../phone.svelte';
   import { app, prefs, search } from '../state';
   import { i18n, t } from '../i18n/index.svelte';
   import Modal from './common/Modal.svelte';
@@ -52,7 +53,7 @@
       { id: 'view.classic', label: t('common.palette.toClassic'), section: view, run: () => (app.navigate('mail'), app.setViewMode('classic')) },
       { id: 'view.hybrid', label: t('common.palette.toHybrid'), section: view, run: () => (app.navigate('mail'), app.setViewMode('hybrid')) },
       { id: 'view.chat', label: t('common.palette.toChat'), section: view, run: () => (app.navigate('mail'), app.setViewMode('chat')) },
-      { id: 'view.terminal', label: t('common.palette.toTerminal'), section: view, run: () => (app.navigate('mail'), app.setViewMode('terminal')) },
+      ...(phone.current ? [] : [{ id: 'view.terminal', label: t('common.palette.toTerminal'), section: view, run: () => (app.navigate('mail'), app.setViewMode('terminal')) }]),
       { id: 'nav.projects', label: t('nav.projects'), section: nav, run: () => app.openProject(null) },
       { id: 'project.new', label: t('projects.new'), section: act, run: () => void (app.organizeDialog = { kind: 'newProject' }) },
       { id: 'nav.workflows', label: t('settings.workflows.title'), section: nav, run: () => app.openSettings('automation', 'workflows') },

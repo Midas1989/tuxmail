@@ -69,6 +69,9 @@
       bottom: 0;
       z-index: 40;
       width: min(360px, 100vw);
+      padding: var(--tm-safe-top) var(--tm-safe-right) var(--tm-safe-bottom) 0;
+      box-sizing: border-box;
+      background: var(--tm-bg);
       box-shadow: var(--tm-shadow-lg);
     }
   }
