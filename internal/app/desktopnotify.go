@@ -5,6 +5,8 @@ package app
 import (
 	"context"
 	"errors"
+	"html"
+	"log/slog"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -30,13 +32,16 @@ func osNotify(ctx context.Context, title, body string) error {
 		if err != nil {
 			return errNotifyUnavailable
 		}
-		cmd = exec.CommandContext(ctx, p, "--app-name=TuxMail", "--", title, body)
+		// notify-send renders simple HTML markup: escape what may come from mail.
+		cmd = exec.CommandContext(ctx, p, "--app-name=TuxMail", "--", html.EscapeString(title), html.EscapeString(body))
 	case "darwin":
 		p, err := exec.LookPath("osascript")
 		if err != nil {
 			return errNotifyUnavailable
 		}
-		cmd = exec.CommandContext(ctx, p, "-e", `on run argv`+"\n"+`display notification (item 2 of argv) with title (item 1 of argv)`+"\n"+`end run`, title, body)
+		// Values travel in the environment, never as osascript arguments.
+		cmd = exec.CommandContext(ctx, p, "-e", `display notification (system attribute "TUXMAIL_NB") with title (system attribute "TUXMAIL_NT")`)
+		cmd.Env = append(cmd.Environ(), "TUXMAIL_NT="+title, "TUXMAIL_NB="+body)
 	case "windows":
 		p, err := exec.LookPath("powershell.exe")
 		if err != nil {
@@ -53,7 +58,9 @@ func osNotify(ctx context.Context, title, body string) error {
 		return errNotifyUnavailable
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return errors.Join(errNotifyUnavailable, errors.New(strings.TrimSpace(string(out))))
+		// The tool output stays out of the error (it reaches the UI); debug log only.
+		slog.Debug("desktop notification failed", "err", err, "output", strings.TrimSpace(string(out)))
+		return errNotifyUnavailable
 	}
 	return nil
 }

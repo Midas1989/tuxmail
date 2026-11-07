@@ -2192,6 +2192,7 @@
     "deviceTokenForbidden": "Geht aus Sicherheitsgründen nur im Browser.",
     "passwordRequired": "Für einen anderen Server, Port oder Benutzer das Passwort eingeben; das gespeicherte wird dort nicht verwendet. Konten mit Anbieter-Anmeldung (OAuth) neu anlegen.",
     "cloudNotApi": "Unter dieser Adresse antwortet kein Vaultwarden/Bitwarden-Server, sondern eine Webseite. Prüfe die Server-Adresse (ohne Pfad) und ob ein vorgeschalteter Proxy oder eine Anmeldeseite die Pfade /identity und /api abfängt.",
+    "cloudRedirect": "Der Server leitet auf eine andere Adresse um. Aus Sicherheitsgründen folgt TuxMail dem nicht. Trage die endgültige Adresse (meist mit https://) direkt ein.",
     "cloudAuth": "Der Cloud-Server hat die Anmeldedaten abgelehnt. Prüfe E-Mail-Adresse und Passwort und melde dich gegebenenfalls neu an.",
     "cloudForbidden": "Der Cloud-Server verweigert diese Aktion.",
     "cloudQuota": "Auf dem Cloud-Server ist nicht genug Speicherplatz frei.",

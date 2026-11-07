@@ -2193,6 +2193,7 @@
     "deviceTokenForbidden": "For security reasons this is possible only in the browser.",
     "passwordRequired": "For another server, port or user, enter its password; the stored one is not used there. Accounts that sign in through a provider (OAuth) must be added again.",
     "cloudNotApi": "No Vaultwarden/Bitwarden server answers at this address, a web page does. Check the server address (without a path) and whether a proxy or login page intercepts /identity and /api.",
+    "cloudRedirect": "The server redirects to another address. For security TuxMail does not follow it. Enter the final address (usually with https://) directly.",
     "cloudAuth": "The cloud server rejected the credentials. Check e-mail address and password and sign in again if needed.",
     "cloudForbidden": "The cloud server refuses this action.",
     "cloudQuota": "The cloud server has not enough free storage.",

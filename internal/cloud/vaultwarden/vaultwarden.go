@@ -123,10 +123,7 @@ func New(vault string, hc *http.Client) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	if hc == nil {
-		hc = http.DefaultClient
-	}
-	c := &Client{Vault: v, API: v + "/api", Identity: v + "/identity", HTTP: hc}
+	c := &Client{Vault: v, API: v + "/api", Identity: v + "/identity", HTTP: cloud.NoRedirect(hc)}
 	if u, _ := url.Parse(v); u != nil && (u.Host == "vault.bitwarden.com" || u.Host == "vault.bitwarden.eu") {
 		dom := strings.TrimPrefix(u.Host, "vault.")
 		c.API, c.Identity = "https://api."+dom, "https://identity."+dom

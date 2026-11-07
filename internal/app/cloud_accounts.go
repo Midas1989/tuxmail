@@ -136,6 +136,8 @@ func cloudErr(err error) error {
 		return &Error{Code: CodeNotSupported, Status: http.StatusNotImplemented, Message: err.Error(), Err: err}
 	case errors.Is(err, cloud.ErrInsufficient):
 		return &Error{Code: "cloud_quota", Status: http.StatusInsufficientStorage, Message: "not enough storage on the cloud server", Err: err}
+	case errors.Is(err, cloud.ErrRedirect):
+		return &Error{Code: "cloud_redirect", Status: http.StatusBadGateway, Message: "the cloud server redirects to another address", Err: err}
 	case errors.Is(err, vaultwarden.ErrNotAPI):
 		return &Error{Code: "cloud_not_api", Status: http.StatusBadGateway, Message: "the server did not answer with the expected API (got a web page)", Err: err}
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):

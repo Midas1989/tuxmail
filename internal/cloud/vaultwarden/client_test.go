@@ -206,3 +206,27 @@ func TestPreloginFallsBackAfterHTML(t *testing.T) {
 		t.Fatalf("%v %+v", k, err)
 	}
 }
+
+// A redirect on /connect/token must not carry the password hash to another host.
+func TestNoRedirectWithCredentials(t *testing.T) {
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "token") {
+			leaked = true
+		}
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "prelogin") {
+			_, _ = w.Write([]byte(`{"kdf":0,"kdfIterations":600000}`))
+			return
+		}
+		http.Redirect(w, r, other.URL+"/identity/connect/token", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	c, _ := vaultwarden.New(srv.URL, srv.Client())
+	_, err := c.Login(context.Background(), "a@example.de", "pw", vaultwarden.LoginOptions{})
+	if !errors.Is(err, cloud.ErrRedirect) || leaked {
+		t.Fatalf("err %v leaked %v", err, leaked)
+	}
+}

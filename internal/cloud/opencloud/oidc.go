@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/Midas1989/Mailclient/internal/cloud"
 	"sync"
 	"time"
 
@@ -88,10 +90,7 @@ func DetectProduct(ctx context.Context, hc *http.Client, server string) (Product
 }
 
 func httpClient(hc *http.Client) *http.Client {
-	if hc == nil {
-		return http.DefaultClient
-	}
-	return hc
+	return cloud.NoRedirect(hc)
 }
 
 // Discovery is the subset of the OpenID provider metadata TuxMail needs.

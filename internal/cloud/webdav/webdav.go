@@ -51,10 +51,7 @@ func New(base, user, password string, hc *http.Client) (*Client, error) {
 }
 
 func (c *Client) hc() *http.Client {
-	if c.HTTP != nil {
-		return c.HTTP
-	}
-	return http.DefaultClient
+	return cloud.NoRedirect(c.HTTP)
 }
 
 // URL returns the absolute URL of a path below the base. A trailing slash

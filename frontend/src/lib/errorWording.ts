@@ -12,6 +12,8 @@ export function errorWording(code: string): string | undefined {
       return t('errors.passwordRequired');
     case 'cloud_not_api':
       return t('errors.cloudNotApi');
+    case 'cloud_redirect':
+      return t('errors.cloudRedirect');
     case 'cloud_auth':
       return t('errors.cloudAuth');
     case 'cloud_forbidden':
