@@ -1493,6 +1493,7 @@
       "noResults": "No settings match “{query}”.",
       "back": "All settings",
       "clearSearch": "Clear search",
+      "profile": "My account",
       "general": "General",
       "accounts": "Accounts",
       "mail": "Mail",
@@ -1509,6 +1510,27 @@
       "about": "About"
     },
     "pages": {
+      "profile": {
+        "title": "My account",
+        "desc": "Your name and your sign-in on this server.",
+        "sections": {
+          "profile": "Profile",
+          "signin": "Sign-in & security",
+          "session": "Session"
+        },
+        "displayName": "Display name",
+        "displayNameHint": "How you appear on this server, for example in team mailboxes. At most {max} characters.",
+        "username": "Username",
+        "email": "Email",
+        "noEmail": "None on file",
+        "loginHint": "You sign in with your username and email. Only the administration can change them.",
+        "oidcHint": "Your identity provider manages your name, username and email. Change them there.",
+        "saved": "Profile saved.",
+        "required": "Please enter a name.",
+        "invalid": "The name is too long or contains characters that are not allowed. At most {max} characters are allowed.",
+        "menu": "Account",
+        "edit": "Edit profile"
+      },
       "general": {
         "title": "General",
         "desc": "Language, formats, appearance and how TuxMail behaves.",

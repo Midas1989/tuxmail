@@ -8,7 +8,7 @@
 // both end in the blocking dialog (MfaSetupDialog.svelte).
 
 import type { Api } from '../api/api';
-import type { AuthMe } from '../api/security';
+import type { AuthMe, AuthProfileUpdate } from '../api/security';
 import { onMfaSetupRequired } from '../mfaGate';
 import { isNativeShell } from '../platform';
 
@@ -63,6 +63,13 @@ export class SecurityState {
     } catch {
       return null;
     }
+  }
+
+  /** Save the own display name and show it everywhere at once. Errors go to the caller (they belong next to the field). */
+  async updateProfile(update: AuthProfileUpdate): Promise<void> {
+    const user = await this.api.updateAuthMe(update);
+    if (this.me) this.me = { ...this.me, user };
+    else await this.refresh();
   }
 
   /** Show the dialog (server answered 403 mfa_setup_required). */

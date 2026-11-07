@@ -12,7 +12,7 @@
 // codes are random.
 
 import { ApiError } from './api';
-import type { AuthConfigInfo, AuthMe, AuthSession, PasswordChange, Reauth, TotpEnrollment } from './security';
+import type { AuthConfigInfo, AuthMe, AuthProfileUpdate, AuthSession, AuthUser, PasswordChange, Reauth, TotpEnrollment } from './security';
 
 export const MOCK_PASSWORD = 'demo-password';
 export const MOCK_TOTP_CODE = '123456';
@@ -63,6 +63,15 @@ export class MockSecurity {
       { id: 2, kind: 'web', deviceName: '', ip: '198.51.100.7', userAgent: 'Mozilla/5.0 (Macintosh) Safari/605.1.15', mfa: false, loginMethod: 'password', createdAt: iso(60 * 30), expiresAt: later(5), lastSeenAt: iso(60 * 5) },
       { id: 3, kind: 'device', deviceName: 'Pixel 9', ip: '203.0.113.21', userAgent: 'TuxMail-Android/1.0', mfa: false, loginMethod: 'password', createdAt: iso(60 * 24 * 12), expiresAt: later(40), lastSeenAt: iso(45) },
     ];
+  }
+
+  /** Same rules as the server: an identity provider keeps its name, a name is 1-100 characters. */
+  updateProfile(update: AuthProfileUpdate): AuthUser {
+    if (this.user.oidc) throw new ApiError('this value is managed by the identity provider', 409, 'managed_by_idp');
+    const name = update.displayName.trim();
+    if (!name || [...name].length > 100) throw new ApiError('invalid display name', 400, 'invalid_input');
+    this.user = { ...this.user, displayName: name };
+    return { ...this.user };
   }
 
   me(): AuthMe {

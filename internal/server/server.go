@@ -281,8 +281,9 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET "+auth.OIDCCallbackPath, s.handleOIDCCallback)
 
 	// Authentication (logged in)
-	mux.HandleFunc("POST /api/auth/logout", s.signedIn(s.handleLogout))
+mux.HandleFunc("POST /api/auth/logout", s.signedIn(s.handleLogout))
 	mux.HandleFunc("GET /api/auth/me", s.signedIn(s.handleMe))
+	mux.HandleFunc("PATCH /api/auth/me", s.user(s.handleUpdateMe))
 	mux.HandleFunc("POST /api/auth/password", s.session(s.handleChangePassword))
 	mux.HandleFunc("GET /api/auth/sessions", s.user(s.handleListSessions))
 	mux.HandleFunc("DELETE /api/auth/sessions/{id}", s.session(s.handleRevokeSession))

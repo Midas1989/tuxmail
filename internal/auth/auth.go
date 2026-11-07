@@ -54,6 +54,7 @@ var (
 	ErrRegistration       = errors.New("auth: registration is disabled")
 	ErrReauthRequired     = errors.New("auth: re-authentication required")
 	ErrQuota              = errors.New("auth: quota exceeded")
+	ErrManagedByIdP       = errors.New("auth: this value is managed by the identity provider")
 )
 
 // Role is a user role.

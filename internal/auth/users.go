@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -290,6 +291,79 @@ func (s *Service) UpdateUser(ctx context.Context, id int64, up UserUpdate) (*Use
 		return nil, err
 	}
 	s.Audit(ctx, "user.update", u.Username, true, "")
+	return s.GetUser(ctx, id)
+}
+
+// MaxDisplayNameLength is the longest display name a user can give themselves, in characters.
+const MaxDisplayNameLength = 100
+
+// NormalizeDisplayName trims a self-chosen display name and rejects what must
+// not end up in lists, mail templates or the audit view: an overlong name,
+// control characters, line separators, invisible format characters (direction
+// overrides, U+200B, U+00AD, U+2060, ...) and a name nobody can see or tell
+// from an empty one. Only what a script or emoji needs stays allowed inside a
+// name, without counting as visible: joiners (U+200C, U+200D) and variation
+// selectors.
+func NormalizeDisplayName(name string) (string, error) {
+	if !utf8.ValidString(name) {
+		return "", fmt.Errorf("%w: display name is not valid text", ErrInvalidInput)
+	}
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "", fmt.Errorf("%w: display name must not be empty", ErrInvalidInput)
+	}
+	if utf8.RuneCountInString(name) > MaxDisplayNameLength {
+		return "", fmt.Errorf("%w: display name must be at most %d characters", ErrInvalidInput, MaxDisplayNameLength)
+	}
+	visible := false
+	for _, r := range name {
+		if !allowedInDisplayName(r) {
+			return "", fmt.Errorf("%w: display name contains characters that are not allowed", ErrInvalidInput)
+		}
+		// U+2800 is a symbol by category, but renders as a blank.
+		visible = visible || (r != '\u2800' && unicode.In(r, unicode.L, unicode.N, unicode.P, unicode.S))
+	}
+	if !visible {
+		return "", fmt.Errorf("%w: display name must contain a visible character", ErrInvalidInput)
+	}
+	return name, nil
+}
+
+func allowedInDisplayName(r rune) bool {
+	if r == '\u200C' || r == '\u200D' {
+		return true
+	}
+	// Cf covers the direction controls; the second table is the rest of
+	// Default_Ignorable_Code_Point except variation selectors (Hangul fillers, U+034F).
+	return !unicode.IsControl(r) && !unicode.In(r, unicode.Zl, unicode.Zp, unicode.Cf, unicode.Other_Default_Ignorable_Code_Point)
+}
+
+// UpdateOwnProfile changes what a signed-in user may change about themselves:
+// only the display name. Deliberately not UpdateUser: that marks an address as
+// verified, which links accounts on OIDC login, so the e-mail address (also a
+// login name) stays with administrators and the identity provider. Accounts
+// linked to an identity provider keep its name, because every OIDC login
+// overwrites display_name anyway (provisionOIDCUser).
+func (s *Service) UpdateOwnProfile(ctx context.Context, id int64, displayName string) (*User, error) {
+	name, err := NormalizeDisplayName(displayName)
+	if err != nil {
+		return nil, err
+	}
+	u, err := s.GetUser(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if u.OIDC {
+		return nil, ErrManagedByIdP
+	}
+	if name == u.DisplayName {
+		return u, nil // nothing changed: nothing to write or to audit
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE users SET display_name = ?, updated_at = ? WHERE id = ?`, name, s.now().Unix(), id); err != nil {
+		return nil, err
+	}
+	// Names the field, not the value: the audit log records that, not what.
+	s.Audit(ctx, "user.update", u.Username, true, "displayName")
 	return s.GetUser(ctx, id)
 }
 

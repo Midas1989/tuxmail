@@ -110,3 +110,24 @@ describe('forced two-factor set-up trigger', () => {
     expect(s.mfaSetupRequired).toBe(true);
   });
 });
+
+describe('own profile', () => {
+  it('a saved name replaces the known account data, the session data stays', async () => {
+    const saved = me().user;
+    const api = { ...fakeApi(async () => me({ recoveryCodesLeft: 3 })), updateAuthMe: vi.fn(async () => ({ ...saved, displayName: 'Neu' })) } as unknown as Api;
+    const s = new SecurityState(api, { web: true, subscribe: () => () => {} });
+    await s.refresh();
+    await s.updateProfile({ displayName: 'Neu' });
+    expect(api.updateAuthMe).toHaveBeenCalledWith({ displayName: 'Neu' });
+    expect(s.me?.user.displayName).toBe('Neu');
+    expect(s.me?.recoveryCodesLeft).toBe(3);
+  });
+
+  it('a rejected name reaches the caller and changes nothing', async () => {
+    const api = { ...fakeApi(async () => me()), updateAuthMe: vi.fn(async () => Promise.reject(new Error('invalid_input'))) } as unknown as Api;
+    const s = new SecurityState(api, { web: true, subscribe: () => () => {} });
+    await s.refresh();
+    await expect(s.updateProfile({ displayName: 'x' })).rejects.toThrow('invalid_input');
+    expect(s.me?.user.displayName).toBe('Root');
+  });
+});

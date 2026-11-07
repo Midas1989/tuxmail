@@ -10,10 +10,10 @@
 
 import type { MessageKey } from '../i18n/index.svelte';
 
-export type SettingsCategoryId = 'general' | 'accounts' | 'mail' | 'chats' | 'pim' | 'cloud' | 'automation' | 'notifications' | 'ai' | 'security' | 'data' | 'team' | 'admin' | 'about';
+export type SettingsCategoryId = 'profile' | 'general' | 'accounts' | 'mail' | 'chats' | 'pim' | 'cloud' | 'automation' | 'notifications' | 'ai' | 'security' | 'data' | 'team' | 'admin' | 'about';
 
 /** Where a category or section applies; anything else is hidden, not disabled. */
-export type SettingsAvailability = 'desktop' | 'native' | 'team' | 'vault' | 'admin';
+export type SettingsAvailability = 'desktop' | 'native' | 'team' | 'vault' | 'admin' | 'web';
 
 export interface SettingsEnv {
   /** Wails desktop shell (window settings). */
@@ -26,9 +26,11 @@ export interface SettingsEnv {
   vault: boolean;
   /** Web client against `tuxmail serve`, signed in as administrator (role from /api/auth/me). */
   admin?: boolean;
+  /** Web client against `tuxmail serve`, whatever the role: the server account the user signed in with. */
+  web?: boolean;
 }
 
-export const ALL_ENV: SettingsEnv = { desktop: true, native: true, team: true, vault: true, admin: true };
+export const ALL_ENV: SettingsEnv = { desktop: true, native: true, team: true, vault: true, admin: true, web: true };
 
 export interface SettingsSection {
   id: string;
@@ -48,6 +50,16 @@ export interface SettingsCategory {
 const sec = (id: string, keywords: MessageKey[], extra: Partial<SettingsSection> = {}): SettingsSection => ({ id, keywords, ...extra });
 
 export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
+  {
+    id: 'profile',
+    only: 'web',
+    sections: [
+      sec('profile', ['settings.pages.profile.displayName', 'settings.pages.profile.username', 'settings.pages.profile.email']),
+      // No keywords: a search for "password" belongs to the cards under Security, this only points there.
+      sec('signin', []),
+      sec('session', ['settings.pages.session.signOut']),
+    ],
+  },
   {
     id: 'general',
     sections: [

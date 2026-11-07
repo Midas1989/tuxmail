@@ -9,6 +9,7 @@
 <script lang="ts">
   import { tick } from 'svelte';
   import { MediaQuery } from 'svelte/reactivity';
+  import CircleUser from '@lucide/svelte/icons/circle-user';
   import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
   import AtSign from '@lucide/svelte/icons/at-sign';
   import Mail from '@lucide/svelte/icons/mail';
@@ -30,7 +31,7 @@
   import Server from '@lucide/svelte/icons/server';
   import en from '$locales/en.json';
   import de from '$locales/de.json';
-  import { admin, app, team } from '../state';
+  import { admin, app, security, team } from '../state';
   import { t, type MessageKey } from '../i18n/index.svelte';
   import { flatten, type Dict } from '../i18n/core';
   import { isNativeShell } from '../platform';
@@ -54,6 +55,7 @@
     type Translate,
   } from '../settings/catalog';
   // Sections
+  import ProfileSettings from '../components/settings/ProfileSettings.svelte';
   import RegionSettings from '../components/settings/RegionSettings.svelte';
   import AppearanceSettings from '../components/settings/AppearanceSettings.svelte';
   import WindowSettings from '../components/settings/WindowSettings.svelte';
@@ -89,6 +91,7 @@
   import DiagnosticsSettings from '../components/settings/DiagnosticsSettings.svelte';
 
   const ICONS: Record<SettingsCategoryId, typeof Mail> = {
+    profile: CircleUser,
     general: SlidersHorizontal,
     accounts: AtSign,
     mail: Mail,
@@ -127,6 +130,7 @@
     team: !!team.client && (teamAdmin || team.mailboxes.some((m) => m.role === 'manage')),
     vault: !!app.vault?.portable,
     admin: admin.isAdmin,
+    web: security.available,
   });
   const categories = $derived(visibleCategories(env));
 
@@ -331,7 +335,10 @@
 
 {#snippet body(c: SettingsCategoryId, s: string)}
   {@const k = `${c}/${s}`}
-  {#if k === 'general/language'}<RegionSettings />
+  {#if k === 'profile/profile'}<ProfileSettings part="profile" />
+  {:else if k === 'profile/signin'}<ProfileSettings part="signin" />
+  {:else if k === 'profile/session'}<ProfileSettings part="session" />
+  {:else if k === 'general/language'}<RegionSettings />
   {:else if k === 'general/appearance'}<AppearanceSettings />
   {:else if k === 'general/window'}<WindowSettings />
   {:else if k === 'general/shortcuts'}<ShortcutSettings />
