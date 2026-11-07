@@ -1,5 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import { needsOnline } from '../state/connection.svelte';
+  import { t as tOffline } from '../i18n/index.svelte';
+  const notOffline = () => tOffline('connection.notAvailableOffline');
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Plus from '@lucide/svelte/icons/plus';
@@ -270,7 +273,7 @@
       {/each}
     </div>
     {#if mode !== 'tasks'}
-      <button class="btn btn-primary" onclick={() => openNew()}><Plus size={15} /> <span class="lbl">{t('calendar.newEvent')}</span></button>
+      <button use:needsOnline={notOffline} class="btn btn-primary" onclick={() => openNew()}><Plus size={15} /> <span class="lbl">{t('calendar.newEvent')}</span></button>
     {/if}
   </header>
   <div class="layout">

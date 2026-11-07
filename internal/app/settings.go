@@ -34,11 +34,15 @@ func (a *App) GetPreferences(ctx context.Context) (UserPreferences, error) {
 	if len(p.Region.WeekStart) == 0 {
 		p.Region.WeekStart = json.RawMessage(`"locale"`)
 	}
+	if at, err := a.st.AppSettingTime(ctx, keyPreferences); err == nil && !at.IsZero() {
+		p.UpdatedAt = at.Unix()
+	}
 	return p, nil
 }
 
 // SetPreferences stores the user preferences.
 func (a *App) SetPreferences(ctx context.Context, p UserPreferences) (UserPreferences, error) {
+	p.UpdatedAt = 0 // computed from the stored document
 	if p.Locale == "" {
 		p.Locale = "system"
 	}
@@ -60,6 +64,13 @@ func (a *App) SetPreferences(ctx context.Context, p UserPreferences) (UserPrefer
 		}
 	default:
 		return UserPreferences{}, invalid("invalid weekStart")
+	}
+	if len(p.View) == 0 { // web and Android do not know the desktop's view settings: keep them
+		old := UserPreferences{}
+		if _, err := a.st.GetAppSetting(ctx, keyPreferences, &old); err != nil {
+			return UserPreferences{}, err
+		}
+		p.View = old.View
 	}
 	if err := a.st.SetAppSetting(ctx, keyPreferences, p); err != nil {
 		return UserPreferences{}, err

@@ -235,7 +235,7 @@ func Routes(opts Options) []Route {
 		})},
 
 		// Sending
-		{"POST /api/send", jsonHandler(func(w w, r r, a A, in app.OutgoingMessage) { send(w)(a.Send(r.Context(), in)) })},
+		{"POST /api/send", idempotent("send", jsonHandler(func(w w, r r, a A, in app.OutgoingMessage) { send(w)(a.Send(r.Context(), in)) }))},
 		{"POST /api/uploads", func(w w, r r, a A) {
 			name, err := url.QueryUnescape(r.Header.Get("X-Filename"))
 			if err != nil || name == "" {
@@ -394,6 +394,9 @@ func Routes(opts Options) []Route {
 			}
 		})},
 		{"DELETE /api/search-folders/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DeleteSearchFolder(r.Context(), id)) })},
+
+		// Settings synchronisation of the desktop app: deletions on purpose.
+		{"GET /api/settings-sync/tombstones", func(w w, r r, a A) { send(w)(a.Store().ListSettingsTombstones(r.Context())) }},
 
 		// Workflows
 		{"GET /api/workflows/schema", func(w w, r r, a A) { send(w)(a.DescribeWorkflows(r.Context())) }},

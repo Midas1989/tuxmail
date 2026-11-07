@@ -210,6 +210,14 @@ func (s *Service) Start() {
 	}
 }
 
+// StopPlugins stops the running plugins; Start connects them again. The
+// desktop app does this while it works through a TuxMail server.
+func (s *Service) StopPlugins() {
+	for _, st := range s.host.Statuses() {
+		s.host.Stop(st.Name)
+	}
+}
+
 // Close stops all plugins.
 func (s *Service) Close() {
 	s.cancel()

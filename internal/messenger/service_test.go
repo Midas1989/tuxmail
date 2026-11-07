@@ -382,3 +382,15 @@ func TestPairingError(t *testing.T) {
 		t.Fatalf("plugins: %+v %v", ps, err)
 	}
 }
+
+// The desktop app stops its plugins while it works through a server and starts
+// them again without a restart when it disconnects.
+func TestStopPluginsAndStartAgain(t *testing.T) {
+	e := newEnv(t)
+	e.pair()
+	waitUntil(t, "plugin running", func() bool { return e.svc.Host().Running("whatsapp") })
+	e.svc.StopPlugins()
+	waitUntil(t, "plugin stopped", func() bool { return !e.svc.Host().Running("whatsapp") })
+	e.svc.Start()
+	waitUntil(t, "plugin running again", func() bool { return e.svc.Host().Running("whatsapp") })
+}

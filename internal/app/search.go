@@ -269,7 +269,7 @@ func profileDTO(p store.SearchProfile) SearchProfile {
 	if !p.Query.To.IsZero() {
 		q.To = p.Query.To.AddDate(0, 0, -1).Format("2006-01-02")
 	}
-	return SearchProfile{ID: strconv.FormatInt(p.ID, 10), Name: p.Name, Query: q, Pinned: p.Pinned}
+	return SearchProfile{ID: strconv.FormatInt(p.ID, 10), Name: p.Name, Query: q, Pinned: p.Pinned, UpdatedAt: p.UpdatedAt.Unix()}
 }
 
 // ListSearchProfiles returns the saved searches.
@@ -316,6 +316,7 @@ func (a *App) SaveSearchProfile(ctx context.Context, in SearchProfile) (SearchPr
 			return SearchProfile{}, AsConflict(err)
 		}
 	}
+	a.noteSaved(ctx, settingsKindProfile, strconv.FormatInt(p.ID, 10))
 	got, err := a.st.GetSearchProfile(ctx, p.ID)
 	if err != nil {
 		return SearchProfile{}, err
@@ -337,7 +338,11 @@ func (a *App) DeleteSearchProfile(ctx context.Context, id string) error {
 	if err != nil {
 		return errNotFound
 	}
-	return a.st.DeleteSearchProfile(ctx, n)
+	if err := a.st.DeleteSearchProfile(ctx, n); err != nil {
+		return err
+	}
+	a.noteDeleted(ctx, settingsKindProfile, id)
+	return nil
 }
 
 const (

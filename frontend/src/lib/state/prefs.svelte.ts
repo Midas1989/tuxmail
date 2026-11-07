@@ -8,6 +8,7 @@
 
 import { i18n } from '../i18n/index.svelte';
 import { DEFAULT_REGION } from '../format';
+import { isWails } from '../platform';
 import type { Api } from '../api/api';
 import type { ConversationGrouping, RegionSettings, UserPreferences } from '../types';
 
@@ -108,11 +109,22 @@ class Prefs {
       const p = await api.getPreferences();
       this.locale = p.locale || 'system';
       this.region = { ...DEFAULT_REGION, ...p.region };
+      if (isWails() && p.view) this.applyView(p.view);
       this.applyI18n();
       this.save(false);
     } catch {
       /* keep local values */
     }
+  }
+
+  /** View settings from the settings synchronisation of the desktop app. */
+  private applyView(v: NonNullable<UserPreferences['view']>) {
+    if (v.density) this.density = v.density as Density;
+    if (v.viewMode) this.viewMode = v.viewMode as ViewMode;
+    if (v.grouping) this.grouping = v.grouping as ConversationGrouping;
+    if (v.hybridOnlyFolder !== undefined) this.hybridOnlyFolder = v.hybridOnlyFolder;
+    if (v.chatEnterSends !== undefined) this.chatEnterSends = v.chatEnterSends;
+    if (v.chatSignatures) this.chatSignatures = v.chatSignatures as 'collapsed' | 'shown';
   }
 
   setLocale(code: string) {
@@ -149,6 +161,9 @@ class Prefs {
       if (this.syncTimer) clearTimeout(this.syncTimer);
       const api = this.api;
       const payload: UserPreferences = { locale: this.locale, region: $state.snapshot(this.region) as RegionSettings };
+      if (isWails()) {
+        payload.view = { density: this.density, viewMode: this.viewMode, grouping: this.grouping, hybridOnlyFolder: this.hybridOnlyFolder, chatEnterSends: this.chatEnterSends, chatSignatures: this.chatSignatures };
+      }
       this.syncTimer = setTimeout(() => void api.setPreferences(payload).catch(() => {}), 400);
     }
   }

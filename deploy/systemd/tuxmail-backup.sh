@@ -146,6 +146,13 @@ fi
 ts=$(date +%Y%m%d-%H%M%S)
 name="tuxmail-${label}-${ts}${tag:+-$tag}.${EXT}"
 target="${BACKUP_DIR}/${name}"
+# Zwei Läufe in derselben Sekunde (oder eine zurückgestellte Uhr) dürfen kein Archiv überschreiben.
+n=1
+while [ -e "$target" ]; do
+    n=$((n + 1))
+    name="tuxmail-${label}-${ts}-${n}${tag:+-$tag}.${EXT}"
+    target="${BACKUP_DIR}/${name}"
+done
 tmp="${BACKUP_DIR}/.${name}.partial"
 
 if [ "$stop" -eq 1 ] && systemctl is-active --quiet "$SERVICE"; then

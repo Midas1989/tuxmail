@@ -243,8 +243,12 @@
       background var(--tm-dur),
       color var(--tm-dur);
   }
+.icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
   @media (hover: hover) {
-    .icon-btn:hover {
+    .icon-btn:hover:not(:disabled) {
       background: var(--tm-surface-2);
       color: var(--tm-fg);
     }

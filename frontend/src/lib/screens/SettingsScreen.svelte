@@ -28,10 +28,9 @@
   import X from '@lucide/svelte/icons/x';
   import ChevronLeft from '@lucide/svelte/icons/chevron-left';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
-  import Server from '@lucide/svelte/icons/server';
   import en from '$locales/en.json';
   import de from '$locales/de.json';
-  import { admin, app, security, team } from '../state';
+  import { admin, app, security, team, connection } from '../state';
   import { t, type MessageKey } from '../i18n/index.svelte';
   import { flatten, type Dict } from '../i18n/core';
   import { isNativeShell } from '../platform';
@@ -64,7 +63,7 @@
   import SignatureSettings from '../components/settings/SignatureSettings.svelte';
   import CloudAccountsSettings from '../components/settings/CloudAccountsSettings.svelte';
   import FolderSettings from '../components/settings/FolderSettings.svelte';
-  import ServerConnectWizard from '../components/settings/ServerConnectWizard.svelte';
+  import ServerConnectionCard from '../components/settings/ServerConnectionCard.svelte';
   import SieveSettings from '../components/settings/SieveSettings.svelte';
   import ComfortSettingsCard from '../components/comfort/ComfortSettingsCard.svelte';
   import RemoteContentSettings from '../components/settings/RemoteContentSettings.svelte';
@@ -249,7 +248,9 @@
     else items[next]?.focus();
   }
 
-  let connectOpen = $state(false);
+  // Offline (desktop app in server mode) the settings live on the unreachable
+  // server: visible, but switched off. These work anyway: they belong to this device.
+  const WORKS_OFFLINE = new Set(['accounts/server', 'general/appearance', 'general/window', 'general/shortcuts', 'general/app']);
 </script>
 
 <section class="settings" class:paged={!!loc.category} aria-labelledby="settings-title">
@@ -318,13 +319,16 @@
           <h2 class="page-title" tabindex="-1" bind:this={titleEl}>{t(pageTitleKey(page.id))}</h2>
           <p class="page-desc">{t(pageDescKey(page.id))}</p>
         </header>
+        {#if connection.offline}<p class="offline-note" role="status">{t('connection.settingsOffline')}</p>{/if}
         <div class="sections">
           {#each page.sections as s, i (s.id)}
             {#if s.group && s.group !== page.sections[i - 1]?.group}
               <h3 class="group">{t(groupKey(s.group))}</h3>
             {/if}
             <div class="sec" id={sectionDomId(page.id, s.id)} data-section={s.id} tabindex="-1" class:solo={page.sections.length === 1} class:flash={flash === sectionDomId(page.id, s.id)}>
-              {@render body(page.id, s.id)}
+              <fieldset class="sec-lock" disabled={connection.offline && !WORKS_OFFLINE.has(`${page.id}/${s.id}`)}>
+                {@render body(page.id, s.id)}
+              </fieldset>
             </div>
           {/each}
         </div>
@@ -347,12 +351,7 @@
   {:else if k === 'accounts/signatures'}<SignatureSettings />
   {:else if k === 'accounts/shared'}<CloudAccountsSettings part="mailboxes" />
   {:else if k === 'accounts/folders'}<FolderSettings />
-  {:else if k === 'accounts/server'}
-    <section class="card" id="set-server" aria-labelledby="set-server-h">
-      <h2 id="set-server-h">{t('onboarding.connect.cardTitle')}</h2>
-      <p class="intro">{t('onboarding.connect.cardText')}</p>
-      <button class="btn btn-primary" onclick={() => (connectOpen = true)}><Server size={15} /> {t('onboarding.connect.title')}</button>
-    </section>
+  {:else if k === 'accounts/server'}<ServerConnectionCard />
   {:else if k === 'accounts/sieve'}<SieveSettings />
   {:else if k === 'mail/reading'}<ComfortSettingsCard part="reading" />
   {:else if k === 'mail/remote'}<RemoteContentSettings />
@@ -393,13 +392,21 @@
   {/if}
 {/snippet}
 
-{#if connectOpen}
-  <ServerConnectWizard onclose={() => (connectOpen = false)} />
-{/if}
 <!-- Editors of chat folders and focus mode (Chats & Messenger). -->
 <ChatDialogs />
 
 <style>
+  .sec-lock {
+    display: contents;
+    border: 0;
+  }
+  .offline-note {
+    margin: 0 0 12px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: var(--tm-warning-soft, var(--tm-accent-soft));
+    font-size: 13px;
+  }
   .settings {
     flex: 1;
     min-width: 0;

@@ -45,6 +45,7 @@ import {
   type Tag,
 } from '../types';
 import { prefs } from './prefs.svelte';
+import { connection } from './connection.svelte';
 import { ApiError } from '../api/api';
 import { comfortFor } from '../api/comfort';
 import { isFocusActive } from '../chatfeatures';
@@ -105,6 +106,13 @@ export interface ComposerInit {
   inReplyToMessageId?: number;
   forwardOfMessageId?: number;
   forwardAttachments?: Attachment[];
+  /** A mail from the outbox of the desktop app, continued as a draft. */
+  outbox?: {
+    id: string;
+    reasons: string[];
+    bcc?: Address[];
+    attachments?: { uploadToken: string; filename: string; mimeType: string; size?: number; delivery?: string }[];
+  };
 }
 
 /** An in-app mail window (MailWindows.svelte). */
@@ -532,11 +540,31 @@ export class AppState {
   // Sync creates persons for new senders/recipients (KONZEPT 10.2).
   private reloadPersonsDebounced = debounce(() => void this.api.listPersons().then((p) => (this.persons = p)), 700);
 
+  /** Loads again what is shown, keeping the selection. Never fails loudly: the connection may be gone again. */
+  async reloadAfterReconnect(): Promise<void> {
+    try {
+      const [accounts, identities, signatures] = await Promise.all([this.api.listAccounts(), this.api.listIdentities(), this.api.listSignatures()]);
+      this.accounts = accounts.sort((a, b) => a.sortOrder - b.sortOrder);
+      this.identities = identities;
+      this.signatures = signatures;
+      await Promise.all(this.mailAccounts.map((a) => this.reloadFolders(a.id)));
+      this.reloadPersonsDebounced();
+      this.reloadListDebounced();
+      if (this.selectedConversationId != null) this.reloadItemsDebounced();
+    } catch {
+      /* the next event tries again */
+    }
+  }
+
   private onEvent(e: ApiEvent): void {
     switch (e.type) {
-      case 'connection':
+      case 'connection': {
+        const was = this.connection;
         this.connection = e.state;
+        // Back from offline (desktop app in server mode): what is on screen came from the read cache.
+        if (was !== 'online' && e.state === 'online') void this.reloadAfterReconnect();
         break;
+      }
       case 'vault.locked':
         void this.refreshVault();
         break;
@@ -1069,6 +1097,7 @@ export class AppState {
   }
 
   async moveToRole(id: number, role: FolderRole): Promise<void> {
+    if (connection.offline) return this.toast(t('connection.notAvailableOffline')); // keyboard: the buttons are switched off
     const m = this.messages.find((x) => x.id === id) ?? this.message;
     if (!m) return;
     const f = (this.folders[m.accountId] ?? []).find((x) => x.role === role);
@@ -1559,6 +1588,7 @@ export class AppState {
   }
 
   async bulk(action: 'archive' | 'trash' | 'read' | 'unread' | 'flag'): Promise<void> {
+    if (connection.offline && (action === 'archive' || action === 'trash')) return this.toast(t('connection.notAvailableOffline'));
     const ids = [...this.checked];
     if (!ids.length) return;
     if (action === 'read' || action === 'unread') await this.api.setFlags(ids, action === 'read' ? [FLAG_SEEN] : [], action === 'unread' ? [FLAG_SEEN] : []);

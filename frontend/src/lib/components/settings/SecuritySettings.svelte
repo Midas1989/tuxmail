@@ -14,6 +14,7 @@
   import { isNativeShell } from '../../platform';
   import BrowserOnlyHint from '../common/BrowserOnlyHint.svelte';
   import { signOut } from '../../accountActions';
+  import { isDesktopServerMode } from '../../desktop/bridge';
   import PasskeyCard from './PasskeyCard.svelte';
   import { t, type MessageKey } from '../../i18n/index.svelte';
   import type { SettingsCategoryId } from '../../settings/catalog';
@@ -33,7 +34,7 @@
 
   // Web client served by `tuxmail serve` (cookie session): sign-out here, in the account menu and under My account (NG-07).
   // The native app has its own sign-out (#/native-settings); the desktop shell has no server session.
-  const canSignOut = app.api.kind === 'http' && !isNativeShell();
+  const canSignOut = app.api.kind === 'http' && !isNativeShell() && !isDesktopServerMode();
 
   function openNative() {
     location.hash = '#/native-settings';

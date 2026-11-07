@@ -1,5 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import { connection, needsOnline } from '../../state/connection.svelte';
+  import { t as tOffline } from '../../i18n/index.svelte';
+  const notOffline = () => tOffline('connection.notAvailableOffline');
   import Plus from '@lucide/svelte/icons/plus';
   import Flag from '@lucide/svelte/icons/flag';
   import Repeat from '@lucide/svelte/icons/repeat';
@@ -159,7 +162,7 @@
       {#each lists as l (l.id)}<option value={l.id}>{l.name}</option>{/each}
     </select>
     <input class="input search" type="search" bind:value={search} placeholder={t('tasks.search')} aria-label={t('tasks.search')} />
-    <button class="btn btn-primary" onclick={() => open('new')}><Plus size={15} /> {t('tasks.new')}</button>
+    <button use:needsOnline={notOffline} class="btn btn-primary" onclick={() => open('new')}><Plus size={15} /> {t('tasks.new')}</button>
   </div>
   <form
     class="quick"
@@ -250,7 +253,7 @@
       {#if editing !== 'new'}<button class="btn btn-ghost danger" onclick={remove}><Trash size={15} /> {t('common.action.delete')}</button>{/if}
       <span class="sp"></span>
       <button class="btn" onclick={() => (editing = null)}>{t('common.action.cancel')}</button>
-      <button class="btn btn-primary" disabled={!fTitle.trim()} onclick={saveEdit}>{t('common.action.save')}</button>
+      <button class="btn btn-primary" disabled={!fTitle.trim() || connection.offline} onclick={saveEdit}>{t('common.action.save')}</button>
     {/snippet}
   </Modal>
 {/if}

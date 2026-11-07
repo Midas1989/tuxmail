@@ -1,5 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import { connection, needsOnline } from '../../state/connection.svelte';
+  import { t as tOffline } from '../../i18n/index.svelte';
+  const notOffline = () => tOffline('connection.notAvailableOffline');
   import TeamPanel from '../team/TeamPanel.svelte';
   import { team } from '../../state';
   import Reply from '@lucide/svelte/icons/reply';
@@ -77,13 +80,13 @@
       <button class="btn btn-ghost" onclick={() => app.replyTo('replyAll')} title="Shift+R"><ReplyAll size={16} /> <span class="hide-sm">{t('common.action.replyAll')}</span></button>
       <button class="btn btn-ghost" onclick={() => app.replyTo('forward')} title="F"><Forward size={16} /> <span class="hide-sm">{t('common.action.forward')}</span></button>
       <span class="sep"></span>
-      <button class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.moveToRole(m.id, 'archive')}><Archive size={17} /></button>
-      <button class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.moveToRole(m.id, 'trash')}><Trash size={17} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.moveToRole(m.id, 'archive')}><Archive size={17} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.moveToRole(m.id, 'trash')}><Trash size={17} /></button>
       <MoveMenu messageId={m.id} accountId={m.accountId} currentFolderIds={m.folderIds} />
       <button class="icon-btn" title={t('common.action.flag')} aria-label={t('common.action.flag')} aria-pressed={flagged} onclick={() => app.toggleFlag(m.id)}><Star size={17} class={flagged ? 'starred' : ''} /></button>
       <button class="icon-btn" title={t('common.action.markUnread')} aria-label={t('common.action.markUnread')} onclick={() => app.toggleRead(m.id)}><Mail size={17} /></button>
-      <button class="icon-btn" title={t('organize.tags.menu') + ' (T)'} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker([{ kind: 'message', id: m.id }], m.tagIds ?? [])}><Tags size={17} /></button>
-      <button class="icon-btn" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker([{ kind: 'message', id: m.id }])}><FolderKanban size={17} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn" title={t('organize.tags.menu') + ' (T)'} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker([{ kind: 'message', id: m.id }], m.tagIds ?? [])}><Tags size={17} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker([{ kind: 'message', id: m.id }])}><FolderKanban size={17} /></button>
       <ComfortToolbar messageId={m.id} conversationId={m.conversationId} />
       <span class="grow"></span>
       <button class="btn btn-ghost conv" onclick={() => app.setViewMode('chat')} title={t('mail.view.showAsConversation') + ' (Ctrl+Shift+V)'}>
@@ -131,7 +134,7 @@
         <div class="notice" role="note">
           <ImageOff size={16} aria-hidden="true" />
           <span>{t('mail.reader.remoteBlocked')}</span>
-          <button class="btn" disabled={remoteBusy} onclick={() => loadRemote()}>{t('mail.reader.loadRemote')}</button>
+          <button class="btn" disabled={remoteBusy || connection.offline} onclick={() => loadRemote()}>{t('mail.reader.loadRemote')}</button>
           {#if senderEmail}
             <button class="btn btn-ghost" disabled={remoteBusy} onclick={() => loadRemote('sender')} title={senderEmail}>{t('mail.reader.loadRemoteSender')}</button>
             <button class="btn btn-ghost hide-sm" disabled={remoteBusy} onclick={() => loadRemote('domain')}>{t('mail.reader.loadRemoteDomain', { domain: senderEmail.split('@')[1] ?? '' })}</button>

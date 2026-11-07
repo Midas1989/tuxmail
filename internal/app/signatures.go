@@ -9,6 +9,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
@@ -72,6 +73,7 @@ func (a *App) SaveSignature(ctx context.Context, sig Signature) (Signature, erro
 		return Signature{}, err
 	}
 	a.dropUnreferencedBlobs(ctx, old)
+	a.noteSaved(ctx, settingsKindSignature, strconv.FormatInt(sig.ID, 10))
 	a.hub.Publish(Event{Type: EventAccountUpdated})
 	got, err := a.st.GetSignature(ctx, sig.ID)
 	return a.signatureForUI(got), err
@@ -88,6 +90,7 @@ func (a *App) DeleteSignature(ctx context.Context, id int64) error {
 	if err := a.st.DeleteSignature(ctx, id); err != nil {
 		return err
 	}
+	a.noteDeleted(ctx, settingsKindSignature, strconv.FormatInt(id, 10))
 	a.dropUnreferencedBlobs(ctx, hashes)
 	a.hub.Publish(Event{Type: EventAccountUpdated})
 	return nil

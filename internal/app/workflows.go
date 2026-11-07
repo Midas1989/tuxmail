@@ -388,6 +388,7 @@ func (a *App) SaveWorkflow(ctx context.Context, in Workflow) (Workflow, error) {
 		}
 		return Workflow{}, err
 	}
+	a.noteSaved(ctx, settingsKindWorkflow, w.ID)
 	if err := a.st.PutWorkflowMeta(ctx, store.WorkflowMeta{WorkflowID: w.ID, ProjectID: in.ProjectID, TemplateID: in.TemplateID}); err != nil {
 		return Workflow{}, err
 	}
@@ -404,6 +405,7 @@ func (a *App) DeleteWorkflow(ctx context.Context, id string) error {
 	if err := a.wf.Delete(ctx, id); err != nil {
 		return err
 	}
+	a.noteDeleted(ctx, settingsKindWorkflow, id)
 	a.workflowChanged(ctx, id, "delete", nil)
 	a.sieveSyncSoon() // mailproto.go
 	return nil

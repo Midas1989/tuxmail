@@ -97,10 +97,15 @@ type Options struct {
 	// ReadOnly: the store is opened read-only and the App is never started
 	// (terminal commands next to the service); reads skip their repairs.
 	ReadOnly bool
-	Version string
+	Version  string
 
 	// HTTPClient is used for remote calls (provisioning, AI).
 	HTTPClient *http.Client
+	// RemoteCacheMax bounds the read cache of the server mode in bytes
+	// (default 512 MiB, remote_cache.go).
+	RemoteCacheMax int64
+	// ConnTiming overrides the intervals of the server connection (tests).
+	ConnTiming *ConnTiming
 	Now        func() time.Time
 	Logger     *slog.Logger
 	Location   *time.Location
@@ -137,7 +142,8 @@ type App struct {
 	wg      sync.WaitGroup
 
 	remoteMu sync.Mutex
-	remote   map[string]*remoteSession // provisioning sessions by server URL
+	remote   map[string]*remoteSession // sign-ins in progress by server URL
+	cr       connRuntime               // lasting server connection, remote_conn.go
 
 	syncCreds tsync.Credentials // credentials of the sync engine (EAS PIM, OOF)
 	easPIM    easPIM            // EAS calendar/contacts scheduling (eas.go)
@@ -199,6 +205,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 	if a.opts.Secrets == nil {
 		a.opts.Secrets = newMemorySecrets()
 	}
+	a.connInit(ctx)
 	a.oauth = newOAuthState(a)
 	a.render = opts.Renderer
 	if a.render == nil {
@@ -290,7 +297,8 @@ func (a *App) Start() {
 		} else if n > 0 {
 			a.log.Info("app: removed tags made from system keywords", "count", n)
 		}
-		if a.mgr != nil {
+		// Server mode: the server fetches the mail, this device's own sync pauses.
+		if a.mgr != nil && !a.cr.localPaused.Load() {
 			if err := a.mgr.Start(ctx); err != nil {
 				a.log.Warn("app: starting sync failed", "err", err)
 			}
@@ -312,8 +320,15 @@ func (a *App) Start() {
 			a.wg.Add(1)
 			go func() { defer a.wg.Done(); a.runPIM(ctx) }()
 		}
-		if a.msgr != nil {
+		if a.msgr != nil && !a.cr.localPaused.Load() {
 			a.msgr.Start()
+		}
+		if a.opts.Mode == ModeDesktop && !a.opts.ReadOnly {
+			a.cr.mu.Lock()
+			a.cr.startCtx = ctx
+			a.cr.mu.Unlock()
+			a.wg.Add(1)
+			go func() { defer a.wg.Done(); a.connLoop(ctx) }()
 		}
 	})
 }
@@ -406,10 +421,12 @@ func (a *App) tick(ctx context.Context) {
 			a.hub.Publish(Event{Type: EventConversationUpdated, ConversationID: id})
 		}
 	}
-	a.sendDueScheduled(ctx)
-	a.runSendOps(ctx)
+	if !a.cr.localPaused.Load() { // server mode: this device sends and fetches nothing itself
+		a.sendDueScheduled(ctx)
+		a.runSendOps(ctx)
+		a.syncEASPIMDue(ctx)
+	}
 	a.RunDueBackups(ctx)
-	a.syncEASPIMDue(ctx)
 	if hashes, err := a.st.PurgeUploads(ctx, a.now().Add(-24*time.Hour)); err == nil && a.blobs != nil {
 		for _, h := range hashes {
 			_ = a.blobs.Delete(h)

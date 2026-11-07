@@ -643,10 +643,10 @@ export class ComfortWails implements ComfortApi {
 const cache = new WeakMap<Api, ComfortApi>();
 
 /** The comfort API matching the main transport. */
-export function comfortFor(api: Api, opts: { baseUrl?: string; bearer?: () => string | undefined } = {}): ComfortApi {
+export function comfortFor(api: Api, opts: { baseUrl?: string; bearer?: () => string | undefined; fetchImpl?: typeof fetch } = {}): ComfortApi {
   let c = cache.get(api);
   if (!c) {
-    c = api.kind === 'wails' ? new ComfortWails() : api.kind === 'http' ? new ComfortHttp(opts.baseUrl ?? '', undefined, opts.bearer) : comfortMock();
+    c = api.kind === 'wails' ? new ComfortWails() : api.kind === 'http' ? new ComfortHttp(opts.baseUrl ?? '', opts.fetchImpl, opts.bearer) : comfortMock();
     cache.set(api, c);
   }
   return c;

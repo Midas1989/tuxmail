@@ -432,6 +432,8 @@ export interface SendResult {
   sharePasswords?: { filename: string; password: string }[];
   /** Set when the message was scheduled (sendAt). */
   scheduledId?: string;
+  /** Desktop app without a connection: waits in the outbox, goes out on reconnecting. */
+  offline?: boolean;
   /** Send checks (KONZEPT 8.13) blocked the message; nothing was sent. */
   blocked?: boolean;
   /** Send-check results (blocking findings or warnings). */
@@ -626,8 +628,97 @@ export interface ServerLoginInput {
   totp?: string;
 }
 
-/** thin = server syncs, desktop is a thin client; local = accounts sync on this device. */
+/** thin ("Über den Server"): the server syncs, the app works through it. local ("Auf diesem Gerät"): accounts sync on this device. */
 export type ClientMode = 'thin' | 'local';
+
+/** online: server reachable; offline: not reachable; expired: device rejected, sign in again; locked: unlock the secret store. */
+export type ConnectionStateName = 'none' | 'online' | 'offline' | 'expired' | 'locked';
+
+export interface OutboxEntry {
+  id: string;
+  kind: 'send' | 'action';
+  title?: string;
+  recipients?: string;
+  /** pending: goes out by itself; failed: the server refused; in_doubt: the server may have sent it; blocked: the send checks want a decision. */
+  state: 'pending' | 'failed' | 'in_doubt' | 'blocked';
+  error?: string;
+  findings?: SendFinding[];
+  createdAt: string;
+}
+
+export interface SettingsLogEntry {
+  at: string;
+  kind: 'signature' | 'workflow' | 'searchProfile' | 'view';
+  name?: string;
+  action: 'toServer' | 'fromServer' | 'deletedOnServer' | 'deletedHere' | 'skipped' | 'error';
+  conflict?: boolean;
+  detail?: string;
+}
+
+/** The desktop app's connection to a server. Never contains token or key. */
+export interface ConnectionStatus {
+  connected: boolean;
+  serverUrl?: string;
+  serverName?: string;
+  mode?: ClientMode;
+  username?: string;
+  email?: string;
+  displayName?: string;
+  deviceName?: string;
+  serverVersion?: string;
+  state: ConnectionStateName;
+  connectedAt?: string;
+  lastConnectedAt?: string;
+  lastSettingsSyncAt?: string;
+  lastDataSyncAt?: string;
+  cacheBytes: number;
+  outbox: OutboxEntry[];
+  settingsLog: SettingsLogEntry[];
+  /** Absent while not connected. */
+  attention?: SettingsAttention;
+}
+
+/** A rule from the server: switched off here until the user has seen it. */
+export interface PendingWorkflow {
+  id: string;
+  name: string;
+  isNew: boolean;
+  wasEnabled?: boolean;
+  trigger?: string;
+  before?: string[];
+  after: string[];
+  external?: boolean;
+  /** Identifies this version: releasing a newer one needs a new look. */
+  hash: string;
+}
+
+export interface WorkflowConflict {
+  id: string;
+  name: string;
+  local: string[];
+  server: string[];
+}
+
+export interface DeleteDecision {
+  kind: SettingsLogEntry['kind'];
+  names: string[];
+  decided?: 'approve' | 'reject';
+}
+
+export interface SettingsAttention {
+  pendingWorkflows: PendingWorkflow[];
+  conflicts: WorkflowConflict[];
+  deletes: DeleteDecision[];
+}
+
+export interface DisconnectInput {
+  deleteCache: boolean;
+  discardOutbox: boolean;
+}
+
+export interface DisconnectResult {
+  revoked: boolean;
+}
 
 export interface ProvisioningImport {
   serverUrl: string;
@@ -764,6 +855,10 @@ export interface UserPreferences {
   /** UI language code or 'system' (navigator.languages). */
   locale: string;
   region: RegionSettings;
+  /** View settings of the desktop app, synchronised with the server (mode "Auf diesem Gerät"). */
+  view?: { density?: string; viewMode?: string; grouping?: string; hybridOnlyFolder?: boolean; chatEnterSends?: boolean; chatSignatures?: string };
+  /** Output only (Unix seconds). */
+  updatedAt?: number;
 }
 
 export interface LocaleInfo {

@@ -85,6 +85,16 @@ var userStoreTables = map[string]TableClass{
 	"app_settings":         TableKeep,
 	"comfort_kv":           TableKeep,
 
+	// Server connection of the desktop app: a read cache, an outbox of one
+	// device, and the record of finished sends (migration 0060).
+	"remote_cache":                 TablePurge,
+	"remote_cache_messages":        TablePurge,
+	"remote_cache_message_folders": TablePurge,
+	"remote_outbox":                TablePurge,
+	"remote_outbox_uploads":        TablePurge,
+	"idempotency_keys":             TablePurge,
+	"settings_tombstones":          TablePurge,
+
 	// Mail.
 	"messages":               TablePurge,
 	"pgp_peers":              TablePurge, // Autocrypt: collected again from mail
@@ -482,7 +492,7 @@ var resetSyncState = []string{
 	`UPDATE messenger_accounts SET state = NULL, last_error = NULL, synced_at = NULL`,
 	`UPDATE search_folders SET cached_total = NULL, cached_unread = NULL, cached_at = NULL`,
 	`DELETE FROM comfort_kv WHERE key LIKE 'spam.%' OR key LIKE 'category.%'`,
-	`DELETE FROM app_settings WHERE key = 'search.history' OR key LIKE 'eas.state.%'`,
+	`DELETE FROM app_settings WHERE key = 'search.history' OR key LIKE 'eas.state.%' OR key LIKE 'server.%'`,
 }
 
 func quoteIdent(name string) string { return `"` + strings.ReplaceAll(name, `"`, `""`) + `"` }

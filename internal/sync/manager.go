@@ -176,6 +176,9 @@ func (m *Manager) Stop() {
 	m.wg.Wait()
 	m.mu.Lock()
 	m.workers = map[int64]*Worker{}
+	// Allows a later Start: the desktop pauses its own sync while it works
+	// through a TuxMail server (internal/app/remote_conn.go).
+	m.ctx, m.cancel = nil, nil
 	m.mu.Unlock()
 }
 

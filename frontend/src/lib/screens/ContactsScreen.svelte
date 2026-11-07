@@ -1,5 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import { needsOnline } from '../state/connection.svelte';
+  import { t as tOffline } from '../i18n/index.svelte';
+  const notOffline = () => tOffline('connection.notAvailableOffline');
   import Mail from '@lucide/svelte/icons/mail';
   import Phone from '@lucide/svelte/icons/phone';
   import UserPlus from '@lucide/svelte/icons/user-plus';
@@ -158,7 +161,7 @@
 <section class="cs" aria-labelledby="ct-title">
   <aside class="side" class:hidden-narrow={selectedId !== null}>
     <h1 id="ct-title">{t('nav.contacts')}</h1>
-    <button class="btn btn-primary wide" onclick={startNew}><UserPlus size={15} /> {t('contacts.add')}</button>
+    <button use:needsOnline={notOffline} class="btn btn-primary wide" onclick={startNew}><UserPlus size={15} /> {t('contacts.add')}</button>
     <nav aria-label={t('contacts.books')}>
       <button class="nav-item" aria-current={bookId === 0 && !group} onclick={() => ((bookId = 0), (group = ''))}>
         <Users size={15} /> <span>{t('contacts.all')}</span>

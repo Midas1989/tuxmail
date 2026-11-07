@@ -159,6 +159,9 @@ func (a *App) runPIM(ctx context.Context) {
 }
 
 func (a *App) syncPIMLogged(ctx context.Context) {
+	if a.cr.localPaused.Load() {
+		return // server mode: the server syncs calendars and contacts
+	}
 	if err := a.SyncPIM(ctx); err != nil && !errors.Is(err, context.Canceled) {
 		a.log.Warn("app: PIM sync failed", "err", err)
 	}
