@@ -396,29 +396,6 @@ func (a *App) connDo(ctx context.Context, base, method, pathQuery string, hdr ht
 	return &connResponse{Status: res.StatusCode, Header: res.Header, Body: data}, nil
 }
 
-// connJSON is connDo with JSON in and out.
-func (a *App) connJSON(ctx context.Context, base, method, pathQuery string, in, out any) (int, error) {
-	var body []byte
-	hdr := http.Header{"Accept": {"application/json"}}
-	if in != nil {
-		var err error
-		if body, err = json.Marshal(in); err != nil {
-			return 0, err
-		}
-		hdr.Set("Content-Type", "application/json")
-	}
-	res, err := a.connDo(ctx, base, method, pathQuery, hdr, body, a.cr.timing.WriteTimeout)
-	if err != nil {
-		return 0, err
-	}
-	if out != nil && len(res.Body) > 0 && res.Status/100 == 2 {
-		if err := json.Unmarshal(res.Body, out); err != nil {
-			return res.Status, fmt.Errorf("invalid server response: %w", err)
-		}
-	}
-	return res.Status, nil
-}
-
 // connGatewayDown: a reverse proxy answers, the server behind it does not.
 func connGatewayDown(status int) bool {
 	return status == http.StatusBadGateway || status == http.StatusServiceUnavailable || status == http.StatusGatewayTimeout

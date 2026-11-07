@@ -236,6 +236,7 @@
     font-weight: 600;
   }
   .badge {
+    background: transparent;
     padding: 1px 10px;
     border-radius: 99px;
     font-size: 12px;
@@ -286,6 +287,11 @@
   }
   .danger {
     color: var(--tm-danger);
+  }
+  .btn-danger {
+    background: var(--tm-danger);
+    border-color: var(--tm-danger);
+    color: #fff;
   }
   .notice {
     display: flex;
@@ -363,6 +369,7 @@
     margin: 0 0 8px;
   }
   .leave ul {
+    list-style: disc;
     margin: 0 0 10px;
     padding-left: 18px;
     font-size: 13.5px;

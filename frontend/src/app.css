@@ -229,6 +229,13 @@
       background var(--tm-dur),
       color var(--tm-dur);
   }
+  .icon-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  .icon-btn:disabled:hover {
+    background: transparent;
+  }
   .icon-btn:hover {
     background: var(--tm-surface-2);
     color: var(--tm-fg);

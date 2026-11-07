@@ -82,7 +82,6 @@ type settingsKind struct {
 	putRemote  func(ctx context.Context, id string, from syncObj) (string, error)
 	delLocal   func(ctx context.Context, id string) error
 	delRemote  func(ctx context.Context, id string) error
-	noteRemote func() // called when a thing changed locally (UI refresh)
 }
 
 func hashJSON(v any) string {

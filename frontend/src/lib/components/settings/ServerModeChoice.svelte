@@ -82,6 +82,7 @@
     font-size: 13.5px;
   }
   ul {
+    list-style: disc;
     margin: 4px 0 0;
     padding-left: 16px;
     font-size: 12.5px;

@@ -92,8 +92,8 @@ type gate struct {
 	next http.Handler
 	down atomic.Bool
 	// loseSend lets this many POST /api/send reach the server and then loses
-	// their answers. (Go's transport itself repeats a request once if it
-	// carries an Idempotency-Key: two lost answers reach the outbox.)
+	// their answers. (Go's transport itself repeats a request with an
+	// Idempotency-Key while it has reused connections to try.)
 	loseSend atomic.Int32
 }
 
@@ -557,8 +557,9 @@ func TestConnectionLostAnswerDoesNotSendTwice(t *testing.T) {
 	d.connect(c.url, "anna", app.ConnModeThin)
 	d.waitState(app.ConnStateOnline)
 	c.identity(t) // load before the path is cut
-	c.g.loseSend.Store(2)
+	c.g.loseSend.Store(1000)
 	status, raw, _ := d.request("POST", "/api/send", c.mail(t, "Antwort verloren"))
+	c.g.loseSend.Store(0)
 	if status != 200 || !strings.Contains(string(raw), `"queued":true`) {
 		t.Fatalf("lost answer: %d %s", status, raw)
 	}

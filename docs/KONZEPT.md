@@ -1157,11 +1157,13 @@ Ein Desktop-Client (Windows/Linux, portabel oder installiert) kann sich am eigen
 4. Der Client lädt das **Einrichtungsprofil**: Konten (Mail, Kalender, Kontakte, Cloud, Messenger-Bridge), Identitäten/Aliase, Signaturen, Workflows, Suchprofile, Ansichtseinstellungen. Der Benutzer wählt per Häkchen aus, was übernommen wird.
 5. **Zugangsdaten** werden nur auf ausdrücklichen Wunsch übertragen – **Ende-zu-Ende-verschlüsselt** an einen Schlüssel, den der Client bei der Anmeldung erzeugt hat.
 
-**Zwei Betriebsarten nach der Einrichtung**
+**Zwei Betriebsarten nach der Einrichtung** (in der Oberfläche in einfachen Worten; intern `thin` und `local`)
 | Modus | Beschreibung | Geeignet für |
 |---|---|---|
-| **Thin Client** | Der Server synchronisiert alle Konten; der Client zeigt nur an und arbeitet über die Server-API (mit lokalem Cache für Offline-Lesen). | Firmen, viele Geräte, Messenger über Bridge, schwache Rechner |
-| **Lokal (provisioniert)** | Der Client synchronisiert die Konten selbst; vom Server kommen nur Konfiguration und laufende **Einstellungs-Synchronisation** (Signaturen, Workflows, Regeln bleiben auf allen Geräten gleich). | Laptops mit viel Offline-Arbeit, maximale Unabhängigkeit |
+| **Über den Server** (empfohlen) | Der Server synchronisiert alle Konten. Die App nutzt dieselben Aufrufe wie Web und Android; sie laufen über den Go-Kern (Wails-Bindung), der das Geräte-Token hält, sodass es nie ins JavaScript kommt und kein CORS nötig ist. Live-Ereignisse ebenso. Ohne Netz: zuletzt geladene Inhalte lesen und durchsuchen, Mails schreiben (Postausgang), Markierungen vormerken. | Firmen, viele Geräte, Messenger über Bridge, schwache Rechner |
+| **Auf diesem Gerät** | Der Client synchronisiert die Konten selbst; vom Server kommen nur Konfiguration und laufende **Einstellungs-Synchronisation** (Signaturen, Regeln, gespeicherte Suchen, Ansicht; bei Konflikten gilt der neuere Stand, mit Protokoll). Regeln werden ausgeschaltet übertragen: Einschalten bleibt je Gerät eine bewusste Entscheidung. | Laptops mit viel Offline-Arbeit, maximale Unabhängigkeit |
+
+**Verbindung als dauerhafter Zustand** (`internal/app/remote_*.go`): Server, Modus, Benutzer und Zeitpunkte liegen im Store, Geräte-Token und Client-Schlüssel nur im Secret-Store. Der lokale Kern ist immer da, die App startet auch ohne Netz. Widerruf am Server zeigt „Anmeldung abgelaufen“ ohne lokale Daten zu löschen. Der Kern erneuert das Token, wenn es älter als 30 Tage ist. Im Modus „Über den Server“ pausiert die eigene Synchronisation lokaler Konten; sie laufen beim Trennen wieder. Der Versand aus dem Postausgang trägt einen `Idempotency-Key`, den der Server samt Antwort speichert: Eine verlorene Antwort führt nie zu doppeltem Versand; einen im Versand abgestürzten Versuch sendet nur der Benutzer erneut.
 
 **Für Administratoren**
 - **Einrichtungsvorlagen** (z. B. Firmen-IMAP/SMTP/CalDAV/CardDAV, Nextcloud, Signaturvorlage mit `%NAME%`, `%EMAIL%`, `%TELEFON%`) je Benutzer oder Gruppe – neue Mitarbeiter melden sich an und haben alles fertig eingerichtet.

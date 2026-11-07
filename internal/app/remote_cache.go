@@ -487,7 +487,7 @@ func (a *App) refreshRemoteCache(ctx context.Context) {
 		return res.body
 	}
 	for _, p := range []string{"/api/identities", "/api/signatures", "/api/persons", "/api/preferences", "/api/tags", "/api/projects", "/api/search-folders",
-		"/api/search/profiles", "/api/calendars", "/api/tasks", "/api/addressbooks", "/api/contacts", "/api/contact-groups", "/api/snippets", "/api/auth/me"} {
+		"/api/search/profiles", "/api/calendars", "/api/tasks", "/api/addressbooks", "/api/contacts", "/api/contact-groups", "/api/snippets", "/api/focus", "/api/chat-folders", "/api/auth/me"} {
 		get(p)
 	}
 	var accounts []struct {
