@@ -12,6 +12,7 @@
   import LogOut from '@lucide/svelte/icons/log-out';
   import { app, security } from '../../state';
   import { isNativeShell } from '../../platform';
+  import { isDesktopServerMode } from '../../desktop/bridge';
   import { signOutWeb } from '../../session';
   import PasskeyCard from './PasskeyCard.svelte';
   import { t, type MessageKey } from '../../i18n/index.svelte';
@@ -32,7 +33,7 @@
 
   // Web client served by `tuxmail serve` (cookie session): the only place to end the session from the SPA (NG-07).
   // The native app has its own sign-out (#/native-settings); the desktop shell has no server session.
-  const canSignOut = app.api.kind === 'http' && !isNativeShell();
+  const canSignOut = app.api.kind === 'http' && !isNativeShell() && !isDesktopServerMode();
 
   async function signOut() {
     try {

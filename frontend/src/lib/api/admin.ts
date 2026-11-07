@@ -30,6 +30,7 @@ import { ApiError } from './api';
 import type { HttpTransportOptions } from './http';
 import type { Reauth } from './security';
 import { isNativeShell } from '../platform';
+import { isDesktopServerMode } from '../desktop/bridge';
 
 export type AdminRole = 'admin' | 'user' | 'readonly';
 export const ADMIN_ROLES: readonly AdminRole[] = ['admin', 'user', 'readonly'];
@@ -712,7 +713,7 @@ export class MockAdminClient implements AdminClient {
  * No client in the desktop shell (Wails) and in the native app, which manage
  * the server from its web UI.
  */
-export function createAdminClient(root: Api, opts: HttpTransportOptions = {}, native: boolean = isNativeShell()): AdminClient | null {
+export function createAdminClient(root: Api, opts: HttpTransportOptions = {}, native: boolean = isNativeShell() || isDesktopServerMode()): AdminClient | null {
   if (native) return null;
   if (root.kind === 'http') return new HttpAdminClient(opts);
   if (root.kind === 'mock') return new MockAdminClient();

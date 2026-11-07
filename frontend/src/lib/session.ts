@@ -10,6 +10,7 @@
 import type { HttpTransportOptions } from './api/http';
 import { nativeHttpOptions } from './native/session';
 import { isNativeShell } from './platform';
+import { desktopHttpOptions, isDesktopServerMode } from './desktop/bridge';
 import { notifyMfaSetupRequired } from './mfaGate';
 
 export const STORAGE_PREFIX = 'tuxmail.';
@@ -65,6 +66,11 @@ export interface SignOutDeps {
  * instead of reloading so the caller can tell the user the session may still be active.
  */
 export async function signOutWeb({ api, reload = () => location.replace(location.pathname), clear = () => void clearTuxmailStorage() }: SignOutDeps): Promise<void> {
+  // Desktop app: leaving the server is "Trennen" (with its choices), in the settings.
+  if (isDesktopServerMode()) {
+    location.hash = '#/settings/accounts/server';
+    return;
+  }
   let failure: unknown;
   try {
     await api.logout();
@@ -92,5 +98,6 @@ export function sessionLost(reload: () => void = () => location.reload(), clear:
 
 /** HttpTransport options of this platform: native bearer session, or the web cookie session with session-loss handling and the forced two-factor set-up (403 mfa_setup_required). */
 export function platformHttpOptions(): HttpTransportOptions {
+  if (isDesktopServerMode()) return desktopHttpOptions();
   return isNativeShell() ? nativeHttpOptions() : { onUnauthorized: () => void sessionLost(), onMfaSetupRequired: notifyMfaSetupRequired };
 }

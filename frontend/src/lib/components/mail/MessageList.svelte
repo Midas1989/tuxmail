@@ -1,5 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import { needsOnline } from '../../state/connection.svelte';
+  import { t as tOffline } from '../../i18n/index.svelte';
+  const notOffline = () => tOffline('connection.notAvailableOffline');
   import Paperclip from '@lucide/svelte/icons/paperclip';
   import Star from '@lucide/svelte/icons/star';
   import Reply from '@lucide/svelte/icons/reply';
@@ -159,11 +162,11 @@
       <button class="icon-btn" aria-label={t('organize.bulk.clear')} onclick={() => (app.checked = [])}><X size={16} /></button>
       <span class="bulk-n">{t('organize.bulk.selected', { count: app.checked.length })}</span>
       <span class="grow"></span>
-      <button class="icon-btn" title={t('organize.tags.menu')} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker(refs(app.checked))}><Tags size={16} /></button>
-      <button class="icon-btn" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker(refs(app.checked))}><FolderKanban size={16} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn" title={t('organize.tags.menu')} aria-label={t('organize.tags.menu')} onclick={() => app.openTagPicker(refs(app.checked))}><Tags size={16} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn" title={t('organize.project.menu')} aria-label={t('organize.project.menu')} onclick={() => app.openProjectPicker(refs(app.checked))}><FolderKanban size={16} /></button>
       <button class="icon-btn" title={t('common.action.markRead')} aria-label={t('common.action.markRead')} onclick={() => app.bulk('read')}><MailOpen size={16} /></button>
-      <button class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.bulk('archive')}><Archive size={16} /></button>
-      <button class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.bulk('trash')}><Trash size={16} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.bulk('archive')}><Archive size={16} /></button>
+      <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.bulk('trash')}><Trash size={16} /></button>
     </header>
   {:else}
     <header class="list-head">
@@ -265,8 +268,8 @@
             {/if}
           </div>
           <div class="hover-actions">
-            <button class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={(e) => (e.stopPropagation(), app.moveToRole(m.id, 'archive'))}><Archive size={15} /></button>
-            <button class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={(e) => (e.stopPropagation(), app.moveToRole(m.id, 'trash'))}><Trash size={15} /></button>
+            <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={(e) => (e.stopPropagation(), app.moveToRole(m.id, 'archive'))}><Archive size={15} /></button>
+            <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={(e) => (e.stopPropagation(), app.moveToRole(m.id, 'trash'))}><Trash size={15} /></button>
             <button class="icon-btn" title={unread ? t('common.action.markRead') : t('common.action.markUnread')} aria-label={unread ? t('common.action.markRead') : t('common.action.markUnread')} onclick={(e) => (e.stopPropagation(), app.toggleRead(m.id))}>
               {#if unread}<MailOpen size={15} />{:else}<Mail size={15} />{/if}
             </button>

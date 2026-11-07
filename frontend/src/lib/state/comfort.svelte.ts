@@ -6,6 +6,7 @@
 import type { Api } from '../api';
 import { comfortFor, type CategoryId, type CategoryInfo, type ComfortApi, type ComfortSettings, type MessageInsights } from '../api/comfort';
 import { hasNativeSession, nativeHttpOptions } from '../native/session';
+import { bridgeFetch, isDesktopServerMode } from '../desktop/bridge';
 import { isNativeShell } from '../platform';
 import type { Conversation, MessageSummary } from '../types';
 
@@ -28,7 +29,7 @@ export class ComfortState {
 
   constructor(main: Api) {
     const native = isNativeShell() && hasNativeSession() ? nativeHttpOptions() : undefined;
-    this.api = comfortFor(main, native ? { baseUrl: native.baseUrl, bearer: native.authToken } : {});
+    this.api = comfortFor(main, native ? { baseUrl: native.baseUrl, bearer: native.authToken } : isDesktopServerMode() ? { fetchImpl: bridgeFetch() } : {});
   }
 
   async loadSettings(): Promise<ComfortSettings | null> {

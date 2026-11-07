@@ -1,5 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
+  import { needsOnline } from '../../state/connection.svelte';
+  import { t as tOffline } from '../../i18n/index.svelte';
+  const notOffline = () => tOffline('connection.notAvailableOffline');
   import Plus from '@lucide/svelte/icons/plus';
   import Rss from '@lucide/svelte/icons/rss';
   import Server from '@lucide/svelte/icons/server';
@@ -124,7 +127,7 @@
 <div class="cl">
   <div class="hd">
     <span class="label">{t('calendar.calendars')}</span>
-    <button class="icon-btn sm" title={t('calendar.sync')} aria-label={t('calendar.sync')} onclick={sync} class:spin={syncing}><RefreshCw size={14} /></button>
+    <button use:needsOnline={notOffline} class="icon-btn sm" title={t('calendar.sync')} aria-label={t('calendar.sync')} onclick={sync} class:spin={syncing}><RefreshCw size={14} /></button>
   </div>
   {#each groups as [group, list] (group)}
     <div class="grp">{group}</div>
@@ -146,9 +149,9 @@
     </ul>
   {/each}
   <div class="adds">
-    <button class="btn btn-ghost" onclick={() => openNew('local')}><Plus size={14} /> {t('calendar.addCalendar')}</button>
-    <button class="btn btn-ghost" onclick={() => openNew('subscription')}><Rss size={14} /> {t('calendar.subscribe')}</button>
-    <button class="btn btn-ghost" onclick={() => openNew('dav')}><Server size={14} /> {t('calendar.dav.title')}</button>
+    <button use:needsOnline={notOffline} class="btn btn-ghost" onclick={() => openNew('local')}><Plus size={14} /> {t('calendar.addCalendar')}</button>
+    <button use:needsOnline={notOffline} class="btn btn-ghost" onclick={() => openNew('subscription')}><Rss size={14} /> {t('calendar.subscribe')}</button>
+    <button use:needsOnline={notOffline} class="btn btn-ghost" onclick={() => openNew('dav')}><Server size={14} /> {t('calendar.dav.title')}</button>
   </div>
 </div>
 

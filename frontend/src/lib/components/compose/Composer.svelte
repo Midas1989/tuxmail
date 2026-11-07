@@ -362,7 +362,7 @@
           app.toast(t('compose.passwordCopyFailed'), undefined, 'error');
         }
       }
-      app.toast(res.queued ? t('compose.queued') : t('compose.sent'));
+      app.toast(res.offline ? t('connection.sendLater') : res.queued ? t('compose.queued') : t('compose.sent'));
       onclose();
     } catch (err) {
       // A locked OpenPGP key: nothing was sent; ask, then the user sends again.

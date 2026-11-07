@@ -64,6 +64,8 @@ type serverConnection struct {
 	LastSettingsSync int64  `json:"lastSettingsSync,omitempty"`
 	LastDataSync     int64  `json:"lastDataSync,omitempty"`
 	Expired          bool   `json:"expired,omitempty"`
+	// TokenAt is when the current device token was issued (rotation below).
+	TokenAt int64 `json:"tokenAt,omitempty"`
 }
 
 func (c *serverConnection) owner() string { return c.URL + "|" + c.Username }
@@ -78,11 +80,14 @@ type ConnTiming struct {
 	WriteTimeout time.Duration // until the headers of an action's answer arrive
 	DataEvery    time.Duration // refreshing the read cache
 	SettingsSync time.Duration // settings synchronisation in "local" mode
+	RotateAfter  time.Duration // age at which the device token is replaced
+	RotateRetry  time.Duration // pause after a failed rotation
 }
 
 func defaultConnTiming() ConnTiming {
 	return ConnTiming{Heartbeat: 60 * time.Second, RetryMin: 5 * time.Second, RetryMax: time.Minute, ProbeTimeout: 5 * time.Second,
-		ReadTimeout: 15 * time.Second, WriteTimeout: 2 * time.Minute, DataEvery: 15 * time.Minute, SettingsSync: 5 * time.Minute}
+		ReadTimeout: 15 * time.Second, WriteTimeout: 2 * time.Minute, DataEvery: 15 * time.Minute, SettingsSync: 5 * time.Minute,
+		RotateAfter: 30 * 24 * time.Hour, RotateRetry: 24 * time.Hour}
 }
 
 // connRuntime is the in-memory state of the connection.
@@ -98,6 +103,8 @@ type connRuntime struct {
 	kick     chan struct{}
 	sink     func(string) // live events of the server, as JSON (desktop.go)
 	flushMu  sync.Mutex
+	rotateMu sync.Mutex // never two rotations: reusing a replaced token ends the whole device
+	rotateAt time.Time  // last failed attempt
 	syncMu   sync.Mutex
 	stream   context.CancelFunc
 	startCtx context.Context
@@ -257,6 +264,51 @@ func (a *App) connSetAuthorization(h http.Header, base string) error {
 	}
 	h.Set("Authorization", "Bearer "+tok)
 	return nil
+}
+
+// connRotateDue replaces the device token when it has grown old (they expire
+// after 90 days, spec/PARAMETER.md). The server keeps the old token valid for
+// 60 seconds, so requests already under way are safe; a second use after that
+// revokes the device. Hence: one at a time, the new token stored before anything
+// else happens, and never a retry after 409.
+func (a *App) connRotateDue(ctx context.Context, c *serverConnection) {
+	if !a.cr.rotateMu.TryLock() {
+		return
+	}
+	defer a.cr.rotateMu.Unlock()
+	t := a.cr.timing
+	now := a.now()
+	if now.Sub(time.Unix(max(c.TokenAt, c.ConnectedAt), 0)) < t.RotateAfter || now.Sub(a.cr.rotateAt) < t.RotateRetry {
+		return
+	}
+	a.cr.rotateAt = now
+	res, err := a.connDo(ctx, c.URL, http.MethodPost, "/api/device/rotate", http.Header{"Accept": {"application/json"}}, nil, t.ProbeTimeout)
+	if err != nil {
+		a.log.Info("app: renewing the device token failed, trying again later", "err", err)
+		return
+	}
+	switch {
+	case res.Status == http.StatusConflict:
+		a.log.Warn("app: the server says the device token was already replaced")
+		a.connMarkExpired(ctx)
+	case res.Status == http.StatusOK:
+		var tok tokenResponse
+		if err := json.Unmarshal(res.Body, &tok); err != nil || tok.AccessToken == "" {
+			a.log.Warn("app: invalid answer when renewing the device token")
+			return
+		}
+		if err := a.opts.Secrets.Set(connTokenRef(c.URL), []byte(tok.AccessToken)); err != nil {
+			a.log.Error("app: storing the renewed device token failed", "err", err)
+			return
+		}
+		if err := a.connUpdate(ctx, func(c *serverConnection) { c.TokenAt = now.Unix() }); err != nil {
+			a.log.Warn("app: storing the connection state failed", "err", err)
+		}
+		a.cr.rotateAt = time.Time{}
+	default:
+		// A rejected token shows at the next check. Older servers have no such route.
+		a.log.Info("app: the server did not renew the device token", "status", res.Status)
+	}
 }
 
 func (a *App) connStoreSecrets(base, token string, key *ecdh.PrivateKey) error {
@@ -478,6 +530,7 @@ func (a *App) connTick(ctx context.Context, c *serverConnection) time.Duration {
 		a.log.Warn("app: storing the connection state failed", "err", err)
 	}
 	a.connSetState(ConnStateOnline, "")
+	a.connRotateDue(ctx, c)
 	a.connDueWork(ctx)
 	return t.Heartbeat
 }
@@ -613,7 +666,7 @@ func (a *App) connCommit(ctx context.Context, base string, s *remoteSession, mod
 		return Errorf(http.StatusConflict, "secret_store", "the sign-in could not be stored in the secret store: %v", err)
 	}
 	c := serverConnection{URL: base, Mode: mode, Username: user.Username, Email: user.Email, DisplayName: user.DisplayName,
-		DeviceName: connDeviceName(), ServerVersion: s.profile.Server.Version, ConnectedAt: a.now().Unix(), LastSeenAt: a.now().Unix()}
+		DeviceName: connDeviceName(), ServerVersion: s.profile.Server.Version, ConnectedAt: a.now().Unix(), LastSeenAt: a.now().Unix(), TokenAt: a.now().Unix()}
 	if cur != nil {
 		c.ConnectedAt, c.LastSettingsSync, c.LastDataSync, c.DeviceName = cur.ConnectedAt, cur.LastSettingsSync, cur.LastDataSync, cur.DeviceName
 	}
@@ -677,7 +730,7 @@ func (a *App) ServerReauthComplete(ctx context.Context, serverURL string) error 
 	if err := a.connStoreSecrets(base, s.token, s.priv); err != nil {
 		return Errorf(http.StatusConflict, "secret_store", "the sign-in could not be stored in the secret store: %v", err)
 	}
-	if err := a.connUpdate(ctx, func(c *serverConnection) { c.Expired = false; c.LastSeenAt = a.now().Unix() }); err != nil {
+	if err := a.connUpdate(ctx, func(c *serverConnection) { c.Expired = false; c.LastSeenAt = a.now().Unix(); c.TokenAt = a.now().Unix() }); err != nil {
 		return err
 	}
 	a.dropSession(base)

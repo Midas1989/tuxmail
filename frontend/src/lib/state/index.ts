@@ -17,6 +17,7 @@ export const app = new AppState(workspace.api);
 export const search = new SearchState(app.api);
 
 export { prefs } from './prefs.svelte';
+export { connection, needsOnline } from './connection.svelte';
 export type { Route, ViewMode, SidebarSel, ComposerInit, ChannelOption } from './app.svelte';
 
 // --- Cloud ---

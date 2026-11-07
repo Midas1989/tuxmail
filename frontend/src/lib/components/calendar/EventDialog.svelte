@@ -25,6 +25,7 @@
 </script>
 
 <script lang="ts">
+  import { connection } from '../../state/connection.svelte';
   import MeetingLinkButton from '../comfort/MeetingLinkButton.svelte'; // Jitsi / Nextcloud Talk / Teams
   import Trash from '@lucide/svelte/icons/trash-2';
   import Video from '@lucide/svelte/icons/video';
@@ -450,7 +451,7 @@
     <span class="sp"></span>
     <button class="btn" onclick={onclose}>{readOnly || event?.kind === 'invitation' ? t('common.action.close') : t('common.action.cancel')}</button>
     {#if !readOnly && event?.kind !== 'invitation'}
-      <button class="btn btn-primary" disabled={saving || !writable.length} onclick={() => save()}><Plus size={15} /> {t('common.action.save')}</button>
+      <button class="btn btn-primary" disabled={saving || !writable.length || connection.offline} onclick={() => save()}><Plus size={15} /> {t('common.action.save')}</button>
     {/if}
   {/snippet}
 </Modal>

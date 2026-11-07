@@ -5,6 +5,7 @@
   "My shares" with expiry and revoke.
 -->
 <script lang="ts">
+  import { connection } from '../state/connection.svelte';
   import Upload from '@lucide/svelte/icons/upload';
   import FolderPlus from '@lucide/svelte/icons/folder-plus';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
@@ -189,7 +190,9 @@
     <button class="btn" onclick={() => (connecting = 'nextcloud')}><Plus size={15} /> {t('files.addAccount')}</button>
   {/snippet}
 
-  {#if cloud.loaded && cloud.accounts.length === 0}
+  {#if connection.offline}
+    <p class="offline-note" role="status" data-testid="files-offline">{t('connection.filesOffline')}</p>
+  {:else if cloud.loaded && cloud.accounts.length === 0}
     <p class="lead">{t('files.noAccounts')}</p>
     <div class="grid">
       {#each CLOUD_PROVIDERS as p (p)}
@@ -343,6 +346,10 @@
 {/if}
 
 <style>
+  .offline-note {
+    margin: 16px;
+    color: var(--tm-muted);
+  }
   .lead {
     margin: 0 0 14px;
     color: var(--tm-muted);

@@ -4,10 +4,12 @@
   Device flow (RFC 8628): POST /api/device/authorize -> user confirms in the
   browser -> poll POST /api/device/token. Alternative: direct login with
   username, password and TOTP. The core keeps all tokens; the UI only sees
-  the provisioning profile and decides what to import and in which mode.
+  the provisioning profile and decides the mode and what to set up.
+  Also used for "sign in again" (purpose reauth) and for changing to the mode
+  "Auf diesem Gerät" (purpose switchLocal). It always talks to the local core.
 -->
 <script lang="ts">
-  import { onDestroy } from 'svelte';
+  import { onDestroy, onMount } from 'svelte';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import Copy from '@lucide/svelte/icons/copy';
@@ -15,21 +17,31 @@
   import Server from '@lucide/svelte/icons/server';
   import KeyRound from '@lucide/svelte/icons/key-round';
   import { app } from '../../state';
+  import { connection, type ConnectionWizard } from '../../state/connection.svelte';
   import { t } from '../../i18n/index.svelte';
   import { normalizeServerUrl, openExternal } from '../../platform';
   import type { ClientMode, DeviceAuthorization, ProvisioningProfile } from '../../types';
   import Modal from '../common/Modal.svelte';
+  import ServerModeChoice from './ServerModeChoice.svelte';
   import logoUrl from '$branding/tuxmail-logo.png';
 
   interface Props {
+    purpose?: ConnectionWizard;
     onclose: () => void;
   }
-  let { onclose }: Props = $props();
+  let { purpose = { purpose: 'connect' }, onclose }: Props = $props();
+  // Fixed for the life of the wizard: it is opened anew for another purpose.
+  // svelte-ignore state_referenced_locally
+  const start = purpose;
+  const reauth = start.purpose === 'reauth';
+  const switching = start.purpose === 'switchLocal';
+  // The sign-in belongs to this device, also while the interface uses the server.
+  const core = connection.available ? connection.localCore() : app.api;
 
-  type Step = 'url' | 'device' | 'login' | 'profile' | 'importing' | 'done';
+  type Step = 'url' | 'device' | 'login' | 'mode' | 'profile' | 'importing' | 'done';
   let step = $state<Step>('url');
   let urlInput = $state('https://');
-  let serverUrl = $state('');
+  let serverUrl = $state(start.purpose === 'connect' ? '' : start.serverUrl);
   let error = $state<string | null>(null);
   let busy = $state(false);
 
@@ -50,11 +62,32 @@
   let selIdentities = $state<number[]>([]);
   let selSignatures = $state<number[]>([]);
   let selWorkflows = $state<string[]>([]);
-  let mode = $state<ClientMode>('thin');
+  let mode = $state<ClientMode>(switching ? 'local' : 'thin');
+  const pop3 = $derived(!!profile?.accounts.some((a) => a.kind === 'pop3'));
+  let finished = false;
 
   onDestroy(() => {
     cancelled = true;
     if (pollTimer) clearTimeout(pollTimer);
+    // Left in the middle: the new device entry at the server must not stay behind.
+    if (!finished && !switching && serverUrl && connection.available) void connection.abortConnect(serverUrl).catch(() => {});
+  });
+
+  onMount(() => {
+    if (reauth) void startDevice();
+    if (switching) {
+      busy = true;
+      connection.serverProfile().then(
+        (p) => {
+          busy = false;
+          gotProfile(p);
+        },
+        (err) => {
+          busy = false;
+          error = err instanceof Error ? err.message : String(err);
+        },
+      );
+    }
   });
 
   function validUrl(): boolean {
@@ -69,10 +102,10 @@
   }
 
   async function startDevice() {
-    if (!validUrl()) return;
+    if (!reauth && !validUrl()) return;
     busy = true;
     try {
-      auth = await app.api.deviceAuthorize(serverUrl);
+      auth = await core.deviceAuthorize(serverUrl);
       expiresAt = Date.now() + auth.expiresIn * 1000;
       step = 'device';
       schedulePoll(auth.interval);
@@ -95,7 +128,7 @@
       return;
     }
     try {
-      const r = await app.api.deviceToken(serverUrl, auth.deviceCode);
+      const r = await core.deviceToken(serverUrl, auth.deviceCode);
       if (cancelled || step !== 'device') return;
       switch (r.status) {
         case 'approved':
@@ -125,7 +158,7 @@
     busy = true;
     error = null;
     try {
-      const r = await app.api.serverLogin(serverUrl, { username, password, totp: totp || undefined });
+      const r = await core.serverLogin(serverUrl, { username, password, totp: totp || undefined });
       if (r.status === 'approved' && r.profile) gotProfile(r.profile);
       else error = r.error ?? t('onboarding.connect.denied');
     } catch (err) {
@@ -136,7 +169,7 @@
   }
 
   function toLogin() {
-    if (!serverUrl && !validUrl()) return;
+    if (!reauth && !validUrl()) return;
     if (pollTimer) clearTimeout(pollTimer);
     error = null;
     step = 'login';
@@ -150,7 +183,30 @@
     selSignatures = p.signatures.map((s) => s.id);
     selWorkflows = p.workflows.map((w) => w.id);
     error = null;
-    step = 'profile';
+    if (reauth) {
+      void finishReauth();
+      return;
+    }
+    step = switching ? 'profile' : 'mode';
+  }
+
+  async function finishReauth() {
+    step = 'importing';
+    try {
+      await connection.reauthComplete(serverUrl);
+      finished = true;
+      await connection.refresh();
+      onclose();
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+      step = 'login';
+    }
+  }
+
+  function chooseMode() {
+    error = null;
+    if (mode === 'thin') void doImport();
+    else step = 'profile';
   }
 
   async function doImport() {
@@ -158,19 +214,28 @@
     step = 'importing';
     error = null;
     try {
-      await app.api.importProvisioning({
+      await core.importProvisioning({
         serverUrl,
         mode,
-        accountIds: selAccounts,
+        // "Über den Server": nothing is copied to this device.
+        accountIds: mode === 'thin' ? [] : selAccounts,
         identityIds: selIdentities.filter((id) => selAccounts.includes(profile!.identities.find((i) => i.id === id)?.accountId ?? -1)),
         signatureIds: selSignatures,
         workflowIds: selWorkflows,
       });
+      finished = true;
+      void connection.refresh();
       step = 'done';
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
-      step = 'profile';
+      step = mode === 'thin' ? 'mode' : 'profile';
     }
+  }
+
+  /** The interface picks its way to the data when it starts. */
+  function closeDone() {
+    if (connection.available) connection.reloadApp();
+    else onclose();
   }
 
   async function copyCode() {
@@ -184,8 +249,10 @@
   }
 </script>
 
-<Modal title={t('onboarding.connect.title')} {onclose} width="620px">
-  {#if step === 'url'}
+<Modal title={reauth ? t('connection.reauth') : switching ? t('connection.changeMode') : t('onboarding.connect.title')} {onclose} width="620px">
+  {#if switching && busy}
+    <p class="waiting" role="status"><LoaderCircle size={15} class="spin" /> {t('connection.connecting')}</p>
+  {:else if step === 'url' && !reauth && !switching}
     <form
       class="form"
       onsubmit={(e) => {
@@ -246,13 +313,25 @@
       </label>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
-        <button type="button" class="btn btn-ghost" onclick={() => ((step = 'url'), (error = null))}>{t('common.action.back')}</button>
+        {#if !reauth}<button type="button" class="btn btn-ghost" onclick={() => ((step = 'url'), (error = null))}>{t('common.action.back')}</button>{/if}
         <button type="submit" class="btn btn-primary" disabled={busy}>
           {#if busy}<LoaderCircle size={15} class="spin" />{/if}
           {t('onboarding.connect.signIn')}
         </button>
       </div>
     </form>
+  {:else if step === 'mode' && profile}
+    <div class="profile">
+      <p class="ok"><CircleCheck size={18} /> {t('onboarding.connect.connected', { name: profile.server.name, user: profile.user.email || profile.user.name })}</p>
+      <ServerModeChoice bind:mode {pop3} />
+      {#if error}<p class="error" role="alert">{error}</p>{/if}
+      <div class="row-actions">
+        <button class="btn" onclick={onclose}>{t('common.action.cancel')}</button>
+        <button class="btn btn-primary" onclick={chooseMode} data-autofocus>{mode === 'thin' ? t('connection.connectNow') : t('onboarding.account.next')}</button>
+      </div>
+    </div>
+  {:else if step === 'importing' && (mode === 'thin' || reauth)}
+    <p class="waiting" role="status"><LoaderCircle size={15} class="spin" /> {t('connection.connecting')}</p>
   {:else if (step === 'profile' || step === 'importing') && profile}
     <div class="profile">
       <p class="ok"><CircleCheck size={18} /> {t('onboarding.connect.connected', { name: profile.server.name, user: profile.user.email })}</p>
@@ -286,17 +365,8 @@
         {/each}
       </fieldset>
 
-      <fieldset class="modes">
-        <legend>{t('onboarding.connect.mode')}</legend>
-        <label class="mode">
-          <input type="radio" name="mode" value="thin" bind:group={mode} />
-          <span><b>{t('onboarding.connect.modeThin')}</b><small>{t('onboarding.connect.modeThinHint')}</small></span>
-        </label>
-        <label class="mode">
-          <input type="radio" name="mode" value="local" bind:group={mode} />
-          <span><b>{t('onboarding.connect.modeLocal')}</b><small>{t('onboarding.connect.modeLocalHint')}</small></span>
-        </label>
-      </fieldset>
+      {#if pop3}<p class="warn" role="alert" data-testid="pop3-warning">{t('connection.mode.pop3')}</p>{/if}
+      <p class="hint">{t('connection.passwordsNote')}</p>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
         <button class="btn" onclick={onclose}>{t('common.action.cancel')}</button>
@@ -306,11 +376,14 @@
         </button>
       </div>
     </div>
+  {:else if switching && error}
+    <p class="error" role="alert">{error}</p>
+    <div class="row-actions"><button class="btn" onclick={onclose}>{t('common.action.close')}</button></div>
   {:else if step === 'done'}
     <div class="done">
       <CircleCheck size={40} />
       <p>{mode === 'thin' ? t('onboarding.connect.doneThin') : t('onboarding.connect.doneLocal')}</p>
-      <button class="btn btn-primary" onclick={onclose} data-autofocus>{t('common.action.close')}</button>
+      <button class="btn btn-primary" onclick={closeDone} data-autofocus>{t('common.action.close')}</button>
     </div>
   {/if}
 </Modal>
@@ -419,8 +492,7 @@
   .check.disabled {
     opacity: 0.5;
   }
-  .check input,
-  .mode input {
+  .check input {
     accent-color: var(--tm-accent);
   }
   .dot {
@@ -428,32 +500,13 @@
     height: 8px;
     border-radius: 9px;
   }
-  .modes {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-  .mode {
-    display: flex;
-    gap: 10px;
-    align-items: flex-start;
+  .warn {
+    margin: 0;
     padding: 8px 10px;
-    border: 1px solid var(--tm-line);
     border-radius: 10px;
-    cursor: pointer;
-  }
-  .mode:has(input:checked) {
-    border-color: var(--tm-accent);
-    background: var(--tm-accent-soft);
-  }
-  .mode span {
-    display: flex;
-    flex-direction: column;
-    font-size: 13.5px;
-  }
-  .mode small {
-    color: var(--tm-muted);
-    font-size: 12px;
+    font-size: 12.5px;
+    background: color-mix(in srgb, var(--tm-warn) 16%, transparent);
+    border: 1px solid var(--tm-warn);
   }
   .done {
     display: flex;

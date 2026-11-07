@@ -144,7 +144,7 @@ func (s *syncBuffer) String() string {
 
 func fastTiming() *app.ConnTiming {
 	return &app.ConnTiming{Heartbeat: 30 * time.Millisecond, RetryMin: 20 * time.Millisecond, RetryMax: 50 * time.Millisecond,
-		ProbeTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 5 * time.Second, DataEvery: time.Hour, SettingsSync: time.Hour}
+		ProbeTimeout: 2 * time.Second, ReadTimeout: 2 * time.Second, WriteTimeout: 5 * time.Second, DataEvery: time.Hour, SettingsSync: time.Hour, RotateAfter: 90 * 24 * time.Hour, RotateRetry: time.Hour}
 }
 
 func newDesktop(t *testing.T) *desktop {
@@ -1116,4 +1116,99 @@ func TestConnectionCacheStaysWithinItsLimit(t *testing.T) {
 	if s := d.status(); s.CacheBytes > 64<<10 {
 		t.Fatalf("cache %d bytes over its limit", s.CacheBytes)
 	}
+}
+
+// Rotation against a stub of POST /api/device/rotate (basis/t-sicherheit brings
+// the real route): the old token is replaced, 409 ends the sign-in without a
+// retry, other failures keep the old token, and two at once never happens.
+func TestConnectionTokenRotation(t *testing.T) {
+	c := newConnEnv(t)
+	d := newDesktop(t)
+	d.connect(c.url, "anna", app.ConnModeThin)
+	d.waitState(app.ConnStateOnline)
+	ref := "server:" + c.url + ":token"
+	tokenNow := func() string { b, _ := d.secrets.Get(ref); return string(b) }
+	oldToken := tokenNow()
+	var calls, status atomic.Int32
+	var seen atomic.Value
+	next := c.g.next
+	c.g.next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/device/rotate" {
+			// The stub server: the new token stands for the old one.
+			if r.Header.Get("Authorization") == "Bearer renewed-token-0123456789" {
+				r.Header.Set("Authorization", "Bearer "+oldToken)
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		calls.Add(1)
+		seen.Store(r.Header.Get("Authorization"))
+		switch status.Load() {
+		case 200:
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`{"access_token":"renewed-token-0123456789","token_type":"Bearer"}`))
+		default:
+			w.WriteHeader(int(status.Load()))
+		}
+	})
+	// Grown old: same data directory, shorter limit.
+	restartWith := func(tm *app.ConnTiming) {
+		t.Helper()
+		d.stop()
+		st, err := store.Open(context.Background(), filepath.Join(d.dir, "tuxmail.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		a, err := app.New(context.Background(), app.Options{Store: st, DataDir: d.dir, Secrets: d.secrets, Mode: app.ModeDesktop,
+			HTTPClient: &http.Client{Transport: testTransport}, ConnTiming: tm, Logger: slog.New(slog.NewTextHandler(d.logs, nil))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		a.Start()
+		d.a, d.st = a, st
+	}
+	due := fastTiming()
+	due.RotateAfter, due.RotateRetry = 0, time.Hour
+
+	// Another failure: the old token stays, one attempt until the pause is over.
+	status.Store(500)
+	restartWith(due)
+	d.waitState(app.ConnStateOnline)
+	time.Sleep(150 * time.Millisecond) // several checks
+	if calls.Load() != 1 || tokenNow() != oldToken {
+		t.Fatalf("after 500: %d calls, token changed: %v", calls.Load(), tokenNow() != oldToken)
+	}
+	// Success: the new token is stored and used; not due again.
+	calls.Store(0)
+	status.Store(200)
+	again := fastTiming()
+	again.RotateAfter, again.RotateRetry = 0, 0
+	restartWith(again)
+	deadline := time.Now().Add(5 * time.Second)
+	for tokenNow() == oldToken && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := tokenNow(); got != "renewed-token-0123456789" {
+		t.Fatal("token not replaced")
+	}
+	if seen.Load() != "Bearer "+oldToken {
+		t.Fatalf("rotation used %v", seen.Load())
+	}
+	d.waitState(app.ConnStateOnline)
+	// 409: already replaced. The sign-in is over, no second attempt, data stays.
+	calls.Store(0)
+	status.Store(409)
+	deadline = time.Now().Add(5 * time.Second)
+	for d.status().State != app.ConnStateExpired && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if d.status().State != app.ConnStateExpired {
+		t.Fatalf("state %s after 409", d.status().State)
+	}
+	n := calls.Load()
+	time.Sleep(100 * time.Millisecond)
+	if calls.Load() != n || n != 1 {
+		t.Fatalf("rotation repeated after 409: %d -> %d", n, calls.Load())
+	}
+	assertNoSecret(t, d, []byte("renewed-token-0123456789"))
 }

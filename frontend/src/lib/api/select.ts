@@ -3,6 +3,8 @@ import type { Api, TransportKind } from './api';
 import { HttpTransport } from './http';
 import { MockTransport } from './mock';
 import { WailsTransport, type WailsWindow } from './wails';
+import { DesktopServerTransport } from './desktopServer';
+import { isDesktopServerMode } from '../desktop/bridge';
 import { hasNativeSession } from '../native/session';
 import { platformHttpOptions } from '../session';
 import { isNativeShell } from '../platform';
@@ -44,7 +46,8 @@ export function selectTransportKind(env: TransportEnv): TransportKind {
 export function createApi(kind: TransportKind, win?: WailsWindow): Api {
   switch (kind) {
     case 'wails':
-      return new WailsTransport(win);
+      // Desktop app connected "Über den Server": the web client's calls, through the local core.
+      return isDesktopServerMode() ? new DesktopServerTransport(win ?? (globalThis as unknown as WailsWindow)) : new WailsTransport(win);
     case 'http':
       return new HttpTransport(platformHttpOptions());
     case 'mock':

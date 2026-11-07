@@ -13,12 +13,13 @@
   import Plus from '@lucide/svelte/icons/plus';
   import { app } from '../../state';
   import { isNativeShell } from '../../platform';
+  import { isDesktopServerMode } from '../../desktop/bridge';
   import { t, formatFullDate, type MessageKey } from '../../i18n/index.svelte';
   import { createPasskeyClient, type PasskeyEntry, type PasskeyListing } from '../../passkeys/client';
   import { PasskeyManager, MAX_PASSKEY_NAME } from '../../passkeys/manager';
   import type { PasskeyErrorKind, WebAuthnEnv } from '../../passkeys/webauthn';
 
-  const client = isNativeShell() ? null : createPasskeyClient(app.api);
+  const client = isNativeShell() || isDesktopServerMode() ? null : createPasskeyClient(app.api);
   const manager = client
     ? new PasskeyManager({ client, credentials: typeof navigator === 'undefined' ? undefined : navigator.credentials, env: window as unknown as WebAuthnEnv })
     : null;

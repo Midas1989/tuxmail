@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { app, prefs, security, team } from './lib/state';
+  import { app, connection, prefs, security, team } from './lib/state';
   import { startRouter } from './lib/router';
   import { parseSettingsHash } from './lib/settings/catalog';
   import { installShortcuts } from './lib/keyboard';
@@ -27,6 +27,8 @@
   import TitleBar from './lib/components/TitleBar.svelte';
   import MailWindows from './lib/components/mail/MailWindows.svelte';
   import { desktopWindow } from './lib/native/window.svelte';
+  import ConnectionBar from './lib/components/common/ConnectionBar.svelte';
+  import ServerConnectWizard from './lib/components/settings/ServerConnectWizard.svelte';
 
   // Theme + density tokens on <html>.
   $effect(() => {
@@ -41,6 +43,11 @@
     const stopKeys = installShortcuts(app);
     void desktopWindow.init();
     const stopSecurity = security.start(); // web client: forced two-factor set-up for administrators
+    const stopConnection = connection.start(); // desktop app: connection to a TuxMail server
+    connection.onSettingsSynced = () => {
+      void prefs.connect(app.api);
+      void app.reloadAfterReconnect();
+    };
     void app.init().then(() => {
       // PWA shortcuts: #/mail?compose=1, #/mail?view=chat
       const q = new URLSearchParams(location.hash.split('?')[1] ?? '');
@@ -58,6 +65,7 @@
       stopRouter();
       stopKeys();
       stopSecurity();
+      stopConnection();
       app.destroy();
     };
   });
@@ -67,7 +75,8 @@
 {#if desktopWindow.custom}
   <TitleBar />
 {/if}
-<div class="app" class:framed={desktopWindow.custom} class:chat-open={app.route === 'mail' && !app.messageListView && app.selectedConversationId != null}>
+<ConnectionBar />
+<div class="app" class:barred={connection.unreachable} class:framed={desktopWindow.custom} class:chat-open={app.route === 'mail' && !app.messageListView && app.selectedConversationId != null}>
   <ActivityBar />
   <main id="main" class="main" tabindex="-1">
     {#if app.loadError}
@@ -94,6 +103,9 @@
   </main>
 </div>
 
+{#if connection.wizard}
+  <ServerConnectWizard purpose={connection.wizard} onclose={() => (connection.wizard = null)} />
+{/if}
 {#if app.vault?.locked}
   <VaultUnlock />
 {/if}
@@ -121,7 +133,13 @@
     overflow: hidden;
   }
   /* Below the custom title bar of the frameless desktop window (34 px). */
-  .app.framed {
+  .app.barred {
+    height: calc(100% - 34px);
+  }
+  .app.framed.barred {
+    height: calc(100% - 68px);
+  }
+  .app.framed:not(.barred) {
     height: calc(100% - 34px);
   }
   .main {
