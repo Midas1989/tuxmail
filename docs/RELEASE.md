@@ -33,19 +33,9 @@ git tag -a v0.2.0 -m "TuxMail 0.2.0"
 git push origin v0.2.0
 ```
 
-Der Tag startet `release.yml` und `android.yml`. Nach etwa 20–30 Minuten liegt unter
+Der Text für GitHub steht bei großen Versionen in `docs/releases/<v>.md`. Der Tag startet `release.yml` und `android.yml`. Nach etwa 20–30 Minuten liegt unter
 **GitHub → Releases → v0.2.0** ein Release mit allen Dateien und automatisch erzeugten Release Notes
 (aus den Pull Requests; bei Bedarf im Web nachbearbeiten).
-
-**In die Release Notes des nächsten Server-Releases übernehmen** (danach hier entfernen):
-
-> Die tägliche Sicherung ist jetzt standardmäßig an und wird auch in Bestandsinstallationen aktiv, sobald ein
-> Backup-Schlüssel vorliegt (ein vorhandenes `tuxmail_backup_age_recipients` wird übernommen). Sie enthält nur noch die
-> Einstellungen, keine Mails, Chats, Kalender oder Kontakte, und der Dienst läuft dabei weiter. Bisherige tägliche
-> Vollarchive laufen über die Aufbewahrung aus: Wer sie als Rückweg für lokale Daten braucht, nimmt die
-> Benutzer-Sicherung (`.txmb`). Die Sicherung vor einem Versionswechsel bleibt eine Vollsicherung mit Dienststopp.
-> Die Variable `tuxmail_backup_stop_service` entfällt. Abschalten: `tuxmail_backup_timer_enabled: false`.
-> Details: deploy/README.md, Abschnitt 7.
 
 Schlägt ein Job fehl: Ursache beheben, Tag löschen (`git push --delete origin v0.2.0 && git tag -d v0.2.0`),
 ggf. das angelegte Release löschen und neu taggen. Ein Tag, der nicht zu `VERSION` passt, bricht sofort ab.

@@ -1,0 +1,1 @@
+Reworked for phones: bottom bar with a More menu, dialogs from below, larger touch targets, 3-day calendar, clean spacing around the system bars. Device tokens renew automatically.

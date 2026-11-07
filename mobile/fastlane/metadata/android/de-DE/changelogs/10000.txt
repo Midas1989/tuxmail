@@ -1,0 +1,1 @@
+Für das Handy neu abgestimmt: untere Leiste mit Mehr-Menü, Dialoge von unten, größere Tippziele, 3-Tage-Kalender, saubere Abstände zu den Systemleisten. Gerätetoken erneuern sich automatisch.
