@@ -34,6 +34,11 @@ export function lastUnclearOutboxId(): string | null {
   return lastUnclearId;
 }
 
+/** The Android app's offline core reports an unclear send the same way. */
+export function noteUnclearOutboxId(id: string | null): void {
+  lastUnclearId = id;
+}
+
 let serverMode = false;
 let bootState = 'none';
 

@@ -37,6 +37,7 @@ import nativeCss from './native.css?inline';
 import { deviceName } from './device';
 import { rotateIfDue } from './rotation';
 import { installOpenFileHandler } from './files';
+import { dropOfflineStores, startOffline, type OfflineHandle } from './offline/bridge';
 
 const prefsStore: KeyValueStore = {
   get: async (key) => (await Preferences.get({ key })).value,
@@ -55,6 +56,8 @@ const PUSH_KEY = 'tuxmail.push.registered';
 
 let active: ServerProfile | null = null;
 let activeToken = '';
+/** Offline store and outbox of the active profile (native/offline). */
+let offline: OfflineHandle | null = null;
 let backgroundSince: number | null = null;
 let locked = false;
 
@@ -172,6 +175,8 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
     await TuxMail.setActiveSession({ serverUrl: active.serverUrl, token, profileId: active.id }).catch(() => {});
     // NG-08: from here on only the active server may be contacted / load images (a second meta CSP can only narrow).
     applyNativeServerCsp(document, active.serverUrl);
+    // Offline store: the app opens with what was loaded last, also without a network.
+    offline = await startOffline({ profile: active, token: () => activeToken, prefs: prefsStore, plugin: TuxMail, appPlugin: App, reauth: signInAgain }).catch(() => null);
     mountApp();
     rotateActiveToken();
     void App.addListener('appStateChange', ({ isActive }) => {
@@ -181,6 +186,8 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
   }
 
   if (mirror) writeActiveMirror(null);
+  // Profiles that are no longer active keep nothing on the device; a profile waiting for a new sign-in keeps its store.
+  void dropOfflineStores(active?.needsLogin ? active.id : null);
   const launch = await App.getLaunchUrl().catch(() => undefined);
   const render = showConnect(target, list, active?.serverUrl ?? '', !!active?.needsLogin);
   // A connect link never pre-fills silently: the user confirms the full host first (NG-01).
@@ -191,6 +198,8 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
 function rotateActiveToken(): void {
   const profile = active;
   if (!profile) return;
+  // Offline nothing is rotated: a half-done rotation could cost the device its sign-in.
+  if (offline && offline.core.state !== 'online') return;
   const rotatedKey = `tuxmail.token.rotated.${profile.id}`;
   void rotateIfDue({
     serverUrl: profile.serverUrl,
@@ -301,6 +310,16 @@ function showConnect(target: HTMLElement, list: ServerProfile[], prefill: string
 
 let unauthorizedOnce = false;
 function onUnauthorized(): void {
+  // With the offline store the app stays usable: the bar says "Anmeldung abgelaufen", nothing is lost.
+  if (offline) {
+    offline.core.markExpired();
+    return;
+  }
+  signInAgain();
+}
+
+/** The server rejected the device token: back to the sign-in of this profile. Kept data and waiting mails stay. */
+function signInAgain(): void {
   if (unauthorizedOnce || !active) return;
   unauthorizedOnce = true;
   const id = active.id;
@@ -550,6 +569,14 @@ export function controller(): NativeController {
       const i = await App.getInfo();
       return `${i.version} (${i.build})`;
     },
+    offline: offline
+      ? {
+          settings: () => offline!.settings(),
+          save: (s) => offline!.saveSettings(s),
+          syncNow: () => offline!.syncNow(),
+          clear: () => offline!.clearCache(),
+        }
+      : null,
     lockSettings: () => loadLockSettings(prefsStore),
     saveLockSettings: (s) => saveLockSettings(prefsStore, s),
     biometricAvailable: async () => (await TuxMail.biometricStatus().catch(() => ({ available: false }))).available,
@@ -562,6 +589,7 @@ export function controller(): NativeController {
       await prefsStore.remove(PUSH_KEY).catch(() => {});
       // Revoke the device token on the server (best effort), then forget it locally.
       await fetch(`${active.serverUrl}/api/auth/logout`, { method: 'POST', headers: { Authorization: `Bearer ${activeToken}` }, credentials: 'omit' }).catch(() => {});
+      await offline?.destroy().catch(() => {});
       await profiles.remove(active.id);
       await TuxMail.clearActiveSession().catch(() => {});
       clearTuxmailStorage(); // NG-07
@@ -569,6 +597,7 @@ export function controller(): NativeController {
       location.reload();
     },
     switchServer: async () => {
+      await offline?.destroy().catch(() => {});
       await profiles.deactivate();
       await TuxMail.clearActiveSession().catch(() => {});
       clearTuxmailStorage(); // NG-07

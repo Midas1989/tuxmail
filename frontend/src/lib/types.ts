@@ -215,6 +215,8 @@ export interface MessageDetail extends MessageSummary {
   hasRemoteContent?: boolean;
   /** Remote images are already loaded through the image proxy (sender/domain allowlisted). */
   remoteLoaded?: boolean;
+  /** Android app offline: only the header lines of this mail are on the device ("content only online"). */
+  offlineHeadersOnly?: boolean;
 }
 
 export type ConversationKind = 'email_thread' | 'chat' | 'person_view';
@@ -639,8 +641,13 @@ export interface OutboxEntry {
   kind: 'send' | 'action';
   title?: string;
   recipients?: string;
-  /** pending: goes out by itself; failed: the server refused; in_doubt: the server may have sent it; blocked: the send checks want a decision. */
-  state: 'pending' | 'failed' | 'in_doubt' | 'blocked';
+  /**
+   * pending: goes out by itself; failed: the server refused; in_doubt: the server may have sent it; blocked: the send checks want a decision;
+   * conflict (Android app): a noted action the server could not apply, e.g. the mail was deleted there meanwhile (error "gone" or "refused:<status>").
+   */
+  state: 'pending' | 'failed' | 'in_doubt' | 'blocked' | 'conflict';
+  /** Android app: what a noted action does. */
+  action?: 'flags' | 'move' | 'read';
   error?: string;
   findings?: SendFinding[];
   createdAt: string;
@@ -676,6 +683,8 @@ export interface ConnectionStatus {
   settingsLog: SettingsLogEntry[];
   /** Absent while not connected. */
   attention?: SettingsAttention;
+  /** Android app: moving and deleting also wait for the connection (the desktop switches them off offline). */
+  queuesMoves?: boolean;
 }
 
 /** A rule from the server: switched off here until the user has seen it. */

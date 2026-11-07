@@ -1097,7 +1097,7 @@ export class AppState {
   }
 
   async moveToRole(id: number, role: FolderRole): Promise<void> {
-    if (connection.offline) return this.toast(t('connection.notAvailableOffline')); // keyboard: the buttons are switched off
+    if (connection.movesBlocked) return this.toast(t('connection.notAvailableOffline')); // keyboard: the buttons are switched off
     const m = this.messages.find((x) => x.id === id) ?? this.message;
     if (!m) return;
     const f = (this.folders[m.accountId] ?? []).find((x) => x.role === role);
@@ -1588,7 +1588,7 @@ export class AppState {
   }
 
   async bulk(action: 'archive' | 'trash' | 'read' | 'unread' | 'flag'): Promise<void> {
-    if (connection.offline && (action === 'archive' || action === 'trash')) return this.toast(t('connection.notAvailableOffline'));
+    if (connection.movesBlocked && (action === 'archive' || action === 'trash')) return this.toast(t('connection.notAvailableOffline'));
     const ids = [...this.checked];
     if (!ids.length) return;
     if (action === 'read' || action === 'unread') await this.api.setFlags(ids, action === 'read' ? [FLAG_SEEN] : [], action === 'unread' ? [FLAG_SEEN] : []);

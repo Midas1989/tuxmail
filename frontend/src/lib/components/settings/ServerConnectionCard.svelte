@@ -11,12 +11,12 @@
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
   import KeyRound from '@lucide/svelte/icons/key-round';
   import { connection as defaultConnection, type ConnectionState } from '../../state/connection.svelte';
-  import { app } from '../../state';
-  import { i18n, t, fmt, formatSize, type MessageKey } from '../../i18n/index.svelte';
-  import type { ClientMode, OutboxEntry, SettingsLogEntry } from '../../types';
+  import { t, fmt, formatSize, type MessageKey } from '../../i18n/index.svelte';
+  import type { ClientMode, SettingsLogEntry } from '../../types';
   import { openExternal } from '../../platform';
   import Modal from '../common/Modal.svelte';
   import ServerModeChoice from './ServerModeChoice.svelte';
+  import OutboxList from '../common/OutboxList.svelte';
 
   interface Props {
     /** Tests only. */
@@ -41,32 +41,6 @@
   }
 
   const attn = $derived(s.attention);
-
-  function reasons(o: OutboxEntry): string[] {
-    return (o.findings ?? []).map((f) => f.localized?.[i18n.locale] ?? f.message);
-  }
-
-  /** Back to the composer, with the reason; the copy stays in the outbox until it is sent. */
-  async function openDraft(o: OutboxEntry) {
-    const m = await conn.outboxMessage(o.id);
-    app.openCompose({
-      mode: 'new',
-      identityId: m.identityId,
-      to: m.to,
-      cc: m.cc,
-      subject: m.subject,
-      bodyHtml: m.html || `<p>${escapeHtml(m.text)}</p>`,
-      inReplyToMessageId: m.inReplyToMessageId,
-      forwardOfMessageId: m.forwardOfMessageId,
-      outbox: { id: o.id, reasons: reasons(o), bcc: m.bcc, attachments: m.attachments },
-    });
-  }
-
-  function escapeHtml(text: string): string {
-    const d = document.createElement('div');
-    d.textContent = text ?? '';
-    return d.innerHTML.replace(/\n/g, '<br>');
-  }
 
   const when = (iso?: string) => (iso ? fmt().dateTime(iso) : t('connection.never'));
 
@@ -140,7 +114,7 @@
     {#if conn.expired}
       <div class="notice fail" role="alert">
         <p><b>{t('connection.expiredTitle')}</b> {t('connection.expiredText')}</p>
-        <button class="btn btn-primary" onclick={() => (conn.wizard = { purpose: 'reauth', serverUrl: s.serverUrl! })}><KeyRound size={15} /> {t('connection.reauth')}</button>
+        <button class="btn btn-primary" onclick={() => conn.reauth()}><KeyRound size={15} /> {t('connection.reauth')}</button>
       </div>
     {/if}
     <p class="who">
@@ -179,29 +153,7 @@
 
     {#if s.outbox.length}
       <h3>{t('connection.outbox.title')}</h3>
-      <ul class="outbox" data-testid="outbox">
-        {#each s.outbox as o (o.id)}
-          <li>
-            <span class="what">
-              <b>{o.kind === 'send' ? o.title || t('connection.outbox.noSubject') : t('connection.outbox.mark')}</b>
-              {#if o.recipients}<small>{o.recipients}</small>{/if}
-              {#if o.state === 'failed'}<small class="bad">{t('connection.outbox.failed', { error: o.error ?? '' })}</small>{/if}
-              {#if o.state === 'in_doubt'}<small class="bad">{t('connection.outbox.inDoubt')}</small>{/if}
-              {#if o.state === 'blocked'}
-                <small class="bad">{t('connection.outbox.blocked')}</small>
-                {#each reasons(o) as r, i (i)}<small class="bad">{r}</small>{/each}
-              {/if}
-            </span>
-            {#if o.state !== 'pending' && o.kind === 'send'}
-              <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => openDraft(o))}>{t('connection.outbox.asDraft')}</button>
-            {/if}
-            {#if o.state !== 'pending'}
-              <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.outboxRetry(o.id))}>{o.state === 'failed' ? t('connection.outbox.retry') : t('connection.outbox.sendAgain')}</button>
-            {/if}
-            <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.outboxDiscard(o.id))}>{t('connection.outbox.discard')}</button>
-          </li>
-        {/each}
-      </ul>
+      <OutboxList {conn} {busy} run={(fn) => void run(fn)} />
     {/if}
 
     {#if attn?.pendingWorkflows.length}

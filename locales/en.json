@@ -151,7 +151,8 @@
       "toMany": "To {name} and {count} others",
       "toMany_one": "To {name} and 1 other",
       "loadRemoteSender": "Always load for this sender",
-      "loadRemoteDomain": "Always for {domain}"
+      "loadRemoteDomain": "Always for {domain}",
+      "contentOnlyOnline": "Content only online: only the header lines of this mail are on this device. The app loads its content and attachments as soon as there is a connection again."
     },
     "sidebar": {
       "allAccounts": "All accounts",
@@ -2600,6 +2601,36 @@
       "switchServer": "Switch or add server",
       "title": "App settings",
       "version": "App version {version}"
+    },
+    "offline": {
+      "title": "Offline",
+      "intro": "The app keeps the mails, chats, events and contacts loaded last on this device, so you can read and search them without a network. Mails you write, marks, moving and deleting wait and are done when the connection is back.",
+      "state": "Connection",
+      "used": "On this device",
+      "usedOf": "{used} of at most {max}",
+      "waiting": "Waiting mails",
+      "headersOnly": "Keep only the header lines of older mails",
+      "headersOnlyAll": "empty = everything",
+      "days": "days",
+      "headersOnlyHint": "Mails older than this many days are kept on the device with sender, recipients, subject, date, flags and a short preview only. That saves space. The app loads content and attachments when you open such a mail and keeps them for another week. Without a network it shows \"Content only online\". Empty or 0: all mails in full (default).",
+      "maxSize": "Storage at most",
+      "attachments": "Load attachments ahead of time",
+      "attachmentsOpen": "Only when opened",
+      "attachmentsUpTo": "Up to {size} each",
+      "network": "Load ahead of time over",
+      "networkAny": "Wi-Fi and mobile data",
+      "networkWifi": "Wi-Fi only",
+      "interval": "Synchronise in the background",
+      "intervalOff": "Off (only while the app is open)",
+      "intervalMinutes": "Every {count} minutes",
+      "intervalHours": "Every {count} hours",
+      "intervalHours_one": "Every hour",
+      "intervalHint": "A push notification starts the synchronisation at once. Android decides the exact time; it only runs with enough battery and on the chosen network. The app sends mails as soon as it is open and has a connection.",
+      "clear": "Empty offline storage",
+      "clearHint": "Deletes the content kept on this device. Waiting mails stay.",
+      "cleared": "Emptied. The next synchronisation loads the most important things again.",
+      "leaveConfirm": "Tap again to continue anyway.",
+      "leaveNote": "Signing out and switching the server delete the content kept on this device."
     }
   },
   "cloud": {
@@ -4193,7 +4224,17 @@
       "discard": "Discard",
       "asDraft": "Open as draft",
       "blocked": "Not sent: the send checks want you to look at this.",
-      "draftNotice": "This mail was not sent:"
+      "draftNotice": "This mail was not sent:",
+      "action": {
+        "flags": "Mark",
+        "move": "Move",
+        "read": "Mark as read"
+      },
+      "conflictGone": "Not done: the mail no longer exists on the server. It was deleted or moved there in the meantime.",
+      "conflictRefused": "Not done: the server refused this action. Check the mail once there is a connection again.",
+      "understood": "OK",
+      "sentLater": "A waiting mail was sent.",
+      "blockedToast": "A waiting mail was not sent: the send checks want you to look at it."
     },
     "log": {
       "title": "Synchronisation log",

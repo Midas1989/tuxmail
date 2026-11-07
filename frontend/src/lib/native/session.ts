@@ -21,6 +21,18 @@ export interface ActiveMirror {
 
 let token: string | undefined;
 let unauthorizedHandler: (() => void) | undefined;
+let fetchOverride: typeof fetch | undefined;
+let socketOverride: typeof WebSocket | undefined;
+
+/**
+ * The offline core (native/offline/bridge.ts) takes over the transport's
+ * fetch and WebSocket before <App> is mounted. Late-bound: the transport
+ * already exists when the core has opened its store.
+ */
+export function setNativeTransport(f: typeof fetch | undefined, ws: typeof WebSocket | undefined): void {
+  fetchOverride = f;
+  socketOverride = ws;
+}
 
 function storage(): Storage | undefined {
   try {
@@ -71,9 +83,17 @@ export function hasNativeSession(store?: Storage): boolean {
 /** HttpTransport options for the active profile (base URL + Bearer token). */
 export function nativeHttpOptions(store?: Storage): HttpTransportOptions {
   const m = readActiveMirror(store);
+  const Native = (typeof WebSocket !== 'undefined' ? WebSocket : undefined) as typeof WebSocket | undefined;
+  const Late = Native
+    ? (function (url: string | URL, protocols?: string | string[]) {
+        return new (socketOverride ?? Native!)(url, protocols);
+      } as unknown as typeof WebSocket)
+    : undefined;
   return {
     baseUrl: m?.serverUrl ?? '',
     authToken: () => token,
     onUnauthorized: () => unauthorizedHandler?.(),
+    fetchImpl: (input, init) => (fetchOverride ?? fetch)(input, init),
+    webSocketImpl: Late,
   };
 }
