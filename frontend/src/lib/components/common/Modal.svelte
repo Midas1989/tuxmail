@@ -176,4 +176,28 @@
     border-top: 1px solid var(--tm-line);
     background: var(--tm-surface-2);
   }
+
+  /* Phones: dialogs are bottom sheets that use the full width and clear the system bars. */
+  @media (max-width: 639px) {
+    .backdrop:not(.top) {
+      align-items: flex-end;
+      padding: var(--tm-safe-top) 0 0;
+    }
+    .backdrop.top {
+      padding-top: calc(8px + var(--tm-safe-top));
+    }
+    .backdrop:not(.top) .dialog {
+      max-width: none !important;
+      max-height: calc(100dvh - var(--tm-safe-top) - 8px);
+      border-radius: 16px 16px 0 0;
+      border-bottom: none;
+    }
+    .dialog:not(:has(footer)) .content {
+      padding-bottom: var(--tm-safe-bottom);
+    }
+    footer {
+      padding-bottom: calc(12px + var(--tm-safe-bottom));
+      flex-wrap: wrap;
+    }
+  }
 </style>

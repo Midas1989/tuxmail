@@ -9,7 +9,7 @@
   import Search from '@lucide/svelte/icons/search';
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
-  import { MediaQuery } from 'svelte/reactivity';
+  import { phone } from '../phone.svelte';
   import { app, prefs } from '../state';
   import { t, i18n } from '../i18n/index.svelte';
 
@@ -30,7 +30,6 @@
 
   // Phones: four destinations plus "Mehr" (search, projects, files, settings in a sheet), so every
   // target is at least 44 px wide and the labels fit.
-  const phone = new MediaQuery('(max-width: 639px)');
   let moreOpen = $state(false);
   const PHONE_MAIN: readonly string[] = ['mail', 'chats', 'calendar', 'contacts'];
 

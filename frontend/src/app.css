@@ -341,35 +341,102 @@
    only min-* is set, nothing gets smaller. Desktop (>= 640 px) is untouched.
    --------------------------------------------------------------------------- */
 @media (max-width: 639px) {
-  html .btn,
-  html .icon-btn,
-  html .input:not(textarea),
-  html .seg button,
-  html button.tab,
-  html [role='tab'] {
+  html:root:root .btn,
+  html:root:root .icon-btn,
+  html:root:root .input,
+  html:root:root textarea,
+  html:root:root :is(input, select):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']),
+  html:root:root .seg button,
+  html:root:root button.tab,
+  html:root:root [role='tab'] {
     min-height: 44px;
   }
-  html .icon-btn {
+  html:root:root .icon-btn,
+  html:root:root .btn.sm,
+  html:root:root button:is(.open, .crumb) {
     min-width: 44px;
   }
-  html .seg button {
+  /* Operating text 14 px, fields 16 px (a smaller field makes the Android WebView zoom on focus). */
+  html:root:root :is(button, a[href], summary):not(.item):not(.more-item):not([data-touch-compact]) {
+    font-size: 14px;
+  }
+  html:root:root :is(input, select, textarea):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']) {
+    font-size: 16px;
+  }
+  /* Checkboxes and radios: the whole label row is the target. */
+  html:root:root label:has(> input[type='checkbox'], > input[type='radio']) {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  html:root:root summary {
+    min-height: 44px;
+    padding-block: 12px;
+    box-sizing: border-box;
+  }
+  html:root:root .seg button {
     min-width: 44px;
     justify-content: center;
   }
-  html .icon-btn svg {
+  html:root:root .icon-btn svg {
     min-width: 20px;
     min-height: 20px;
   }
-  /* Small inline "clear / advanced" buttons keep their look; the touch area grows invisibly. */
-  html button.clear {
-    position: relative;
+  /* Small "clear / advanced" buttons inside a field: real 44 px target, the extra size is pulled back with negative margins. */
+  html:root:root button.clear {
+    min-width: 44px;
+    min-height: 44px;
+    margin: -11px -11px -11px -6px;
+    align-items: center;
+    justify-content: center;
   }
-  html button.clear::after {
-    content: '';
-    position: absolute;
-    inset: -11px;
+  html:root:root button.clear svg {
+    min-width: 20px;
+    min-height: 20px;
   }
-  html .btn svg {
+  /* Scrolling tab rows fade out on the right so a cut-off tab ("Rechnungen &") reads as scrollable. */
+  html:root:root [role='tablist'] {
+    -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    padding-inline-end: 32px;
+  }
+  /* Every other button is a touch target as well; dense grids opt out with data-touch-compact. */
+  html:root:root button:not([data-touch-compact]),
+  html:root:root input[type='range'],
+  html:root:root input[type='color'] {
+    min-height: 44px;
+  }
+  /* Icon-only buttons are also 44 px wide. (Text buttons keep their natural min-width, so flex rows cannot squash them.) */
+  html:root:root button:not([data-touch-compact]):not(:has(> :not(svg))),
+  html:root:root input[type='color'] {
+    min-width: 44px;
+  }
+  /* Bare checkboxes/radios outside a label cannot grow a hit area; they get the WCAG 2.2 AA size (24 px). */
+  html:root:root input[type='checkbox'],
+  html:root:root input[type='radio'] {
+    width: 24px;
+    height: 24px;
+    flex: none;
+  }
+  html:root:root :is(input[type='date'], input[type='time'], input[type='datetime-local']) {
+    min-width: 0;
+    max-width: 100%;
+  }
+  /* Stand-alone links (phone numbers, cloud paths) are touch targets too; inline links in text keep their flow. */
+  html:root:root a[href]:not(:is(p, small, .hint, .intro) a):not(:is(li > span) a) {
+    min-height: 44px;
+  }
+  html:root:root :is(a[href]:not([class*=' ']), a.cloud):not(:is(p, small, .hint, .intro) a):not(:is(li > span) a) {
+    display: inline-flex;
+    align-items: center;
+  }
+  html:root:root button[aria-label] > svg,
+  html:root:root button[title] > svg {
+    min-width: 20px;
+    min-height: 20px;
+  }
+  html:root:root .btn svg {
     min-width: 18px;
     min-height: 18px;
   }

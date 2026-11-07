@@ -1117,4 +1117,22 @@
       display: inline-flex;
     }
   }
+  /* Phones: icon, title and the status selector share the first lines, the tabs scroll. */
+  @media (max-width: 639px) {
+    .dhead {
+      flex-wrap: wrap;
+      padding: 10px 12px;
+      gap: 8px;
+    }
+    .dtitle {
+      flex: 1 1 calc(100% - 140px);
+    }
+    .status-sel {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .tabs button {
+      flex: none;
+    }
+  }
 </style>

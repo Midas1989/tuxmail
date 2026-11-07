@@ -69,6 +69,7 @@
           {#each list.slice(0, list.length > MAX ? MAX - 1 : MAX) as e (e.id)}
             <button
               class="item"
+              data-touch-compact
               class:timed={!e.allDay}
               class:inv={e.kind === 'invitation'}
               style:--c={e.color || colors[e.calendarId] || '#64748b'}

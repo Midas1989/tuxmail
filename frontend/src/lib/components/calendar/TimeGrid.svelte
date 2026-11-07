@@ -210,6 +210,7 @@
         {@const shift = drag && drag.kind !== 'create' && drag.e.id === l.e.id ? drag.dDay : 0}
         <button
           class="chip"
+          data-touch-compact
           class:inv={l.e.kind === 'invitation'}
           style:--c={color(l.e)}
           style:grid-column="{Math.max(1, l.from + 1 + shift)} / span {l.span}"
@@ -256,6 +257,7 @@
             {@const e = p.item}
             <div
               class="ev"
+              data-touch-compact
               class:inv={e.kind === 'invitation'}
               class:tent={e.myPartStat === 'TENTATIVE' || e.myPartStat === 'NEEDS-ACTION'}
               class:declined={e.myPartStat === 'DECLINED' || e.status === 'CANCELLED'}

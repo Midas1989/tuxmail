@@ -446,4 +446,23 @@
       flex-wrap: wrap;
     }
   }
+
+  /* Phones: header button, plugin rows and account rows wrap instead of running out of the card. */
+  @media (max-width: 639px) {
+    .head,
+    .row,
+    .accounts li {
+      flex-wrap: wrap;
+    }
+    .accounts {
+      margin-left: 0;
+    }
+    .meta {
+      margin-left: 0;
+    }
+    .title {
+      flex: 1 1 60%;
+      min-width: 0;
+    }
+  }
 </style>

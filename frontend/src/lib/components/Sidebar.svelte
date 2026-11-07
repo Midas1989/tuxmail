@@ -648,4 +648,24 @@
     border-radius: 4px;
     padding: 0 4px;
   }
+
+  /* Phones (the folder drawer): rows and section buttons are real touch targets. */
+  @media (max-width: 639px) {
+    .row,
+    .account {
+      height: auto;
+      min-height: 44px;
+      font-size: 14px;
+    }
+    .sec-btn {
+      min-width: 44px;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+    }
+    .sec-btn :global(svg) {
+      min-width: 20px;
+      min-height: 20px;
+    }
+  }
 </style>

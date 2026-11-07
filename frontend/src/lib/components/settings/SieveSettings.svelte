@@ -477,4 +477,11 @@
       grid-template-columns: 1fr;
     }
   }
+
+  @media (max-width: 639px) {
+    .name {
+      min-height: 44px;
+      font-size: 14px;
+    }
+  }
 </style>
