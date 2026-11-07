@@ -35,6 +35,19 @@ func (s *Store) GetAppSetting(ctx context.Context, key string, v any) (bool, err
 	return true, nil
 }
 
+// AppSettingTime returns when the document under key was last stored (zero if it does not exist).
+func (s *Store) AppSettingTime(ctx context.Context, key string) (time.Time, error) {
+	var at int64
+	err := s.db.QueryRowContext(ctx, `SELECT updated_at FROM app_settings WHERE key = ?`, key).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(at, 0).UTC(), nil
+}
+
 // SetAppSetting stores v as JSON under key.
 func (s *Store) SetAppSetting(ctx context.Context, key string, v any) error {
 	b, err := json.Marshal(v)

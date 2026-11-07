@@ -95,6 +95,9 @@ type Signature struct {
 	// Images are the inline images referenced from HTML as cid:<ContentID>
 	// (content in the blob store).
 	Images []SignatureImage `json:"images,omitempty"`
+	// UpdatedAt is when the signature last changed (Unix seconds; 0 = unknown):
+	// "newer state wins" of the settings synchronisation.
+	UpdatedAt int64 `json:"updatedAt,omitempty"`
 }
 
 // SignatureImage is an image of a signature stored in the blob store.

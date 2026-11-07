@@ -235,7 +235,7 @@ func Routes(opts Options) []Route {
 		})},
 
 		// Sending
-		{"POST /api/send", jsonHandler(func(w w, r r, a A, in app.OutgoingMessage) { send(w)(a.Send(r.Context(), in)) })},
+		{"POST /api/send", idempotent("send", jsonHandler(func(w w, r r, a A, in app.OutgoingMessage) { send(w)(a.Send(r.Context(), in)) }))},
 		{"POST /api/uploads", func(w w, r r, a A) {
 			name, err := url.QueryUnescape(r.Header.Get("X-Filename"))
 			if err != nil || name == "" {

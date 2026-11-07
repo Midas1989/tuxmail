@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
 )
@@ -190,12 +191,12 @@ func (s *Store) SetIdentityFolders(ctx context.Context, identityID, sent, drafts
 
 // ==== Signatures ==============================================================
 
-const signatureCols = `id, name, html, plain, placement, plain_override`
+const signatureCols = `id, name, html, plain, placement, plain_override, updated_at`
 
 func scanSignature(sc scanner) (domain.Signature, error) {
 	var sig domain.Signature
 	var override int
-	err := sc.Scan(&sig.ID, &sig.Name, &sig.HTML, &sig.Plain, &sig.Placement, &override)
+	err := sc.Scan(&sig.ID, &sig.Name, &sig.HTML, &sig.Plain, &sig.Placement, &override, &sig.UpdatedAt)
 	sig.PlainOverride = override != 0
 	return sig, err
 }
@@ -211,8 +212,8 @@ func placementOrDefault(p string) string {
 func (s *Store) CreateSignature(ctx context.Context, sig domain.Signature) (int64, error) {
 	var id int64
 	err := s.withTx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `INSERT INTO signatures(name, html, plain, placement, plain_override) VALUES (?, ?, ?, ?, ?)`,
-			sig.Name, sig.HTML, sig.Plain, placementOrDefault(sig.Placement), boolInt(sig.PlainOverride))
+		res, err := tx.ExecContext(ctx, `INSERT INTO signatures(name, html, plain, placement, plain_override, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+			sig.Name, sig.HTML, sig.Plain, placementOrDefault(sig.Placement), boolInt(sig.PlainOverride), time.Now().Unix())
 		if err != nil {
 			return err
 		}
@@ -230,8 +231,8 @@ func (s *Store) CreateSignature(ctx context.Context, sig domain.Signature) (int6
 // UpdateSignature overwrites the signature sig.ID including its image set.
 func (s *Store) UpdateSignature(ctx context.Context, sig domain.Signature) error {
 	return s.withTx(ctx, func(tx *sql.Tx) error {
-		if err := checkAffected(tx.ExecContext(ctx, `UPDATE signatures SET name = ?, html = ?, plain = ?, placement = ?, plain_override = ? WHERE id = ?`,
-			sig.Name, sig.HTML, sig.Plain, placementOrDefault(sig.Placement), boolInt(sig.PlainOverride), sig.ID)); err != nil {
+		if err := checkAffected(tx.ExecContext(ctx, `UPDATE signatures SET name = ?, html = ?, plain = ?, placement = ?, plain_override = ?, updated_at = ? WHERE id = ?`,
+			sig.Name, sig.HTML, sig.Plain, placementOrDefault(sig.Placement), boolInt(sig.PlainOverride), time.Now().Unix(), sig.ID)); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM signature_images WHERE signature_id = ?`, sig.ID); err != nil {

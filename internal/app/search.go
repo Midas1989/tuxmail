@@ -269,7 +269,7 @@ func profileDTO(p store.SearchProfile) SearchProfile {
 	if !p.Query.To.IsZero() {
 		q.To = p.Query.To.AddDate(0, 0, -1).Format("2006-01-02")
 	}
-	return SearchProfile{ID: strconv.FormatInt(p.ID, 10), Name: p.Name, Query: q, Pinned: p.Pinned}
+	return SearchProfile{ID: strconv.FormatInt(p.ID, 10), Name: p.Name, Query: q, Pinned: p.Pinned, UpdatedAt: p.UpdatedAt.Unix()}
 }
 
 // ListSearchProfiles returns the saved searches.

@@ -558,6 +558,8 @@ type SearchProfile struct {
 	Name   string      `json:"name"`
 	Query  SearchQuery `json:"query"`
 	Pinned bool        `json:"pinned"`
+	// UpdatedAt (output only, Unix seconds).
+	UpdatedAt int64 `json:"updatedAt,omitempty"`
 }
 
 // SearchHistoryEntry is an entry of the search history.
@@ -586,6 +588,12 @@ type RegionSettings struct {
 type UserPreferences struct {
 	Locale string         `json:"locale"`
 	Region RegionSettings `json:"region"`
+	// View holds the view settings of the desktop app (density, view mode ...):
+	// opaque to the core, they travel with the settings synchronisation
+	// (KONZEPT 15.8). Web and Android keep theirs per device.
+	View json.RawMessage `json:"view,omitempty"`
+	// UpdatedAt (output only, Unix seconds): when the preferences last changed.
+	UpdatedAt int64 `json:"updatedAt,omitempty"`
 }
 
 // LocaleInfo describes a language file.
@@ -1148,6 +1156,8 @@ const (
 	EventConversationUpdated = "conversation.updated"
 	EventFolderUpdated       = "folder.updated"
 	EventAccountUpdated      = "account.updated"
+	EventServerConnection    = "server.connection" // the connection status changed (remote_conn.go)
+	EventSettingsSynced      = "settings.synced"   // the settings synchronisation changed something
 	EventConnection          = "connection"
 	EventTagsChanged         = "tags.changed"
 	EventProjectUpdated      = "project.updated"

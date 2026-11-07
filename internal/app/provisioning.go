@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
@@ -23,7 +24,13 @@ import (
 
 // Desktop client: connect to a TuxMail server (KONZEPT 15.8). The device
 // token and the X25519 key for the end-to-end encrypted secrets stay in the
-// core (secret store); the UI only sees the profile.
+// core; the UI only sees the profile. During the sign-in they live in the
+// session here, and when the user has chosen the mode connCommit makes them
+// lasting (remote_conn.go).
+
+// extraProvisionedRemoteID is the account's id at the server (next to
+// provisionedFrom): it links both sides for repeated set-ups and the settings sync.
+const extraProvisionedRemoteID = "provisionedRemoteId"
 
 type remoteSession struct {
 	priv    *ecdh.PrivateKey
@@ -143,7 +150,7 @@ func (a *App) DeviceAuthorize(ctx context.Context, serverURL string) (DeviceAuth
 		Message                 string `json:"error_description"`
 	}
 	code, err := a.remoteCall(ctx, http.MethodPost, base+"/api/device/authorize", "", map[string]string{
-		"client_name": "TuxMail Desktop", "client_public_key": base64.RawURLEncoding.EncodeToString(s.priv.PublicKey().Bytes())}, &res)
+		"client_name": connDeviceName(), "client_public_key": base64.RawURLEncoding.EncodeToString(s.priv.PublicKey().Bytes())}, &res)
 	if err != nil {
 		return DeviceAuthorization{}, err
 	}
@@ -162,9 +169,6 @@ type tokenResponse struct {
 
 func (a *App) finishLogin(ctx context.Context, base string, s *remoteSession, tok tokenResponse) (DeviceTokenResult, error) {
 	s.token = tok.AccessToken
-	if err := a.opts.Secrets.Set("server:"+base+":token", []byte(tok.AccessToken)); err != nil {
-		a.log.Warn("app: storing device token failed", "err", err)
-	}
 	var p remoteProfile
 	code, err := a.remoteCall(ctx, http.MethodGet, base+"/api/provisioning/profile", s.token, nil, &p)
 	if err != nil {
@@ -174,6 +178,11 @@ func (a *App) finishLogin(ctx context.Context, base string, s *remoteSession, to
 		return DeviceTokenResult{Status: "denied", Error: fmt.Sprintf("profile request failed (%d)", code)}, nil
 	}
 	s.profile = &p
+	return DeviceTokenResult{Status: "approved", Profile: a.profileForUI(base, &p)}, nil
+}
+
+// profileForUI is what the wizard shows of a server profile.
+func (a *App) profileForUI(base string, p *remoteProfile) *ProvisioningProfile {
 	prof := &ProvisioningProfile{Accounts: p.Accounts, Signatures: p.Signatures, Identities: []Identity{}, Workflows: []ProvisioningWorkflow{}}
 	prof.Server.URL, prof.Server.Name, prof.Server.Version = base, hostOf(base), p.Server.Version
 	prof.User.Name, prof.User.Email = p.User.DisplayName, p.User.Email
@@ -192,7 +201,48 @@ func (a *App) finishLogin(ctx context.Context, base string, s *remoteSession, to
 	if prof.Signatures == nil {
 		prof.Signatures = []Signature{}
 	}
-	return DeviceTokenResult{Status: "approved", Profile: prof}, nil
+	return prof
+}
+
+// ServerProfile loads what the connected server offers, with the stored token
+// (changing the mode). Fails offline.
+func (a *App) ServerProfile(ctx context.Context) (ProvisioningProfile, error) {
+	c := a.connCurrent()
+	if c == nil {
+		return ProvisioningProfile{}, Errorf(http.StatusConflict, "not_connected", "not connected")
+	}
+	s, err := a.storedSession(ctx, c)
+	if err != nil {
+		return ProvisioningProfile{}, err
+	}
+	return *a.profileForUI(c.URL, s.profile), nil
+}
+
+// storedSession rebuilds the provisioning session from the lasting connection.
+func (a *App) storedSession(ctx context.Context, c *serverConnection) (*remoteSession, error) {
+	tok, err := a.connToken(c.URL)
+	if err != nil {
+		return nil, Errorf(http.StatusConflict, "secret_store", "the secret store is not available")
+	}
+	key, err := a.connClientKey(c.URL)
+	if err != nil {
+		return nil, Errorf(http.StatusConflict, "secret_store", "the secret store is not available")
+	}
+	s := &remoteSession{priv: key, token: tok}
+	var p remoteProfile
+	code, err := a.remoteCall(ctx, http.MethodGet, c.URL+"/api/provisioning/profile", tok, nil, &p)
+	if err != nil {
+		return nil, Errorf(http.StatusServiceUnavailable, "offline", "the server cannot be reached")
+	}
+	if code == http.StatusUnauthorized {
+		a.connMarkExpired(ctx)
+		return nil, Errorf(http.StatusUnauthorized, "expired", "the sign-in at the server has expired")
+	}
+	if code/100 != 2 {
+		return nil, Errorf(http.StatusBadGateway, "server_error", "the server could not provide the set-up (%d)", code)
+	}
+	s.profile = &p
+	return s, nil
 }
 
 func hostOf(u string) string {
@@ -242,7 +292,7 @@ func (a *App) ServerLogin(ctx context.Context, serverURL string, in ServerLoginI
 	}
 	var tok tokenResponse
 	code, err := a.remoteCall(ctx, http.MethodPost, base+"/api/device/login", "", map[string]string{"username": in.Username,
-		"password": in.Password, "totp_code": in.TOTP, "device_name": "TuxMail Desktop",
+		"password": in.Password, "totp_code": in.TOTP, "device_name": connDeviceName(),
 		"client_public_key": base64.RawURLEncoding.EncodeToString(s.priv.PublicKey().Bytes())}, &tok)
 	if err != nil {
 		return DeviceTokenResult{}, err
@@ -257,21 +307,59 @@ func (a *App) ServerLogin(ctx context.Context, serverURL string, in ServerLoginI
 	return a.finishLogin(ctx, base, s, tok)
 }
 
-// ImportProvisioning imports the selected parts of a server profile.
+// ImportProvisioning finishes the set-up in the chosen mode and makes the
+// connection lasting. "thin": nothing is copied, the interface works through
+// the server from now on. "local": the selected parts are set up on this
+// device; it also serves changing the mode of an existing connection.
 func (a *App) ImportProvisioning(ctx context.Context, in ProvisioningImport) error {
 	base, err := normalizeServerURL(in.ServerURL)
 	if err != nil {
 		return err
 	}
+	if in.Mode != ConnModeThin && in.Mode != ConnModeLocal {
+		return invalid("invalid mode")
+	}
 	s, err := a.session(base, false)
 	if err != nil {
-		return err
+		cur := a.connCurrent()
+		if cur == nil || cur.URL != base {
+			return err
+		}
+		if s, err = a.storedSession(ctx, cur); err != nil {
+			return err
+		}
 	}
 	if s.profile == nil {
 		return Errorf(http.StatusConflict, "not_connected", "log in first")
 	}
+	if cur := a.connCurrent(); cur != nil && (cur.URL != base || cur.Username != s.profile.User.Username) {
+		return Errorf(http.StatusConflict, "already_connected", "this device is already connected to %s; disconnect first", cur.URL)
+	}
+	if in.Mode == ConnModeThin {
+		if err := a.connCommit(ctx, base, s, in.Mode); err != nil {
+			return err
+		}
+		a.dropSession(base)
+		// Copies of the old "thin" set-up are not needed any more; enabled
+		// accounts and accounts with mail stay untouched.
+		return a.removeStaleThinAccounts(ctx, base)
+	}
+	if err := a.importLocal(ctx, base, s, in); err != nil {
+		return err
+	}
+	if err := a.connCommit(ctx, base, s, in.Mode); err != nil {
+		return err
+	}
+	a.dropSession(base)
+	a.invalidateViews()
+	return nil
+}
+
+// importLocal copies the selected parts of the profile. Doing it again (after
+// the mode changed) finds what is there already instead of doubling it.
+func (a *App) importLocal(ctx context.Context, base string, s *remoteSession, in ProvisioningImport) error {
 	secretsByRef := map[string][]byte{}
-	if s.profile.Secrets.Available && in.Mode == "local" {
+	if s.profile.Secrets.Available {
 		var box sealed.Box
 		if code, err := a.remoteCall(ctx, http.MethodGet, base+"/api/provisioning/secrets", s.token, nil, &box); err == nil && code/100 == 2 {
 			if plain, err := sealed.Open(s.priv, &box); err == nil {
@@ -285,16 +373,33 @@ func (a *App) ImportProvisioning(ctx context.Context, in ProvisioningImport) err
 		}
 	}
 	sigMap := map[int64]int64{}
+	localSigs, err := a.st.ListSignatures(ctx)
+	if err != nil {
+		return err
+	}
+	excluded := []settingsPair{}
 	for _, sig := range s.profile.Signatures {
 		if !slices.Contains(in.SignatureIDs, sig.ID) {
+			excluded = append(excluded, settingsPair{Remote: strconv.FormatInt(sig.ID, 10), Excluded: true})
 			continue
 		}
 		old := sig.ID
+		if i := slices.IndexFunc(localSigs, func(l domain.Signature) bool { return l.Name == sig.Name }); i >= 0 {
+			sigMap[old] = localSigs[i].ID
+			continue
+		}
 		id, err := a.createImportedSignature(ctx, sig) // images arrive as data: URIs
 		if err != nil {
 			return err
 		}
 		sigMap[old] = id
+	}
+	if err := a.excludeFromSync(ctx, "signature", excluded); err != nil {
+		return err
+	}
+	existing, err := a.st.ListAccounts(ctx)
+	if err != nil {
+		return err
 	}
 	accMap := map[int64]int64{}
 	for _, acc := range s.profile.Accounts {
@@ -307,12 +412,19 @@ func (a *App) ImportProvisioning(ctx context.Context, in ProvisioningImport) err
 			acc.Extra = map[string]string{}
 		}
 		acc.Extra["provisionedFrom"] = base
-		if in.Mode == "thin" {
-			acc.Enabled = false // the server syncs; this device is a thin client
-		}
-		id, err := a.st.CreateAccount(ctx, acc)
-		if err != nil {
-			return err
+		acc.Extra[extraProvisionedRemoteID] = strconv.FormatInt(old, 10)
+		acc.Enabled = true
+		var id int64
+		if cur := findProvisionedAccount(existing, base, old, acc); cur != nil {
+			id = cur.ID
+			acc.ID, acc.SecretRef = cur.ID, cur.SecretRef
+			if err := a.st.UpdateAccount(ctx, acc); err != nil {
+				return err
+			}
+		} else {
+			if id, err = a.st.CreateAccount(ctx, acc); err != nil {
+				return err
+			}
 		}
 		accMap[old] = id
 		if v, ok := secretsByRef[ref]; ok {
@@ -330,6 +442,13 @@ func (a *App) ImportProvisioning(ctx context.Context, in ProvisioningImport) err
 		}
 		acc, ok := accMap[i.AccountID]
 		if !ok {
+			continue
+		}
+		have, err := a.st.ListIdentities(ctx, acc)
+		if err != nil {
+			return err
+		}
+		if slices.ContainsFunc(have, func(l domain.Identity) bool { return strings.EqualFold(l.Email, i.Email) }) {
 			continue
 		}
 		i.ID, i.AccountID, i.SMTPAccountID = 0, acc, accMap[i.SMTPAccountID]
@@ -350,17 +469,55 @@ func (a *App) ImportProvisioning(ctx context.Context, in ProvisioningImport) err
 		}
 		for _, src := range data.Workflows {
 			if w, err := workflow.Parse([]byte(src)); err == nil {
+				if _, exists := a.wf.Get(w.ID); exists {
+					continue
+				}
 				w.Enabled = false
 				_ = a.wf.Save(ctx, w, false)
 			}
 		}
 	}
+	// Accounts are started when the mode is committed (connResumeLocal) or now, if sync runs.
 	for _, id := range accMap {
 		if err := a.sync.AddAccount(ctx, id); err != nil {
 			a.log.Debug("app: starting provisioned account", "account", id, "err", err)
 		}
 		a.hub.Publish(Event{Type: EventAccountUpdated, AccountID: id})
 	}
-	a.invalidateViews()
 	return nil
+}
+
+// findProvisionedAccount finds this device's copy of a server account: by its
+// recorded id, or (copies made before that id was recorded) by kind and address.
+func findProvisionedAccount(existing []domain.Account, base string, remoteID int64, acc domain.Account) *domain.Account {
+	for i := range existing {
+		cur := &existing[i]
+		if cur.Extra["provisionedFrom"] != base {
+			continue
+		}
+		if cur.Extra[extraProvisionedRemoteID] == strconv.FormatInt(remoteID, 10) {
+			return cur
+		}
+		if cur.Extra[extraProvisionedRemoteID] == "" && cur.Kind == acc.Kind && cur.Extra["address"] == acc.Extra["address"] && cur.DisplayName == acc.DisplayName {
+			return cur
+		}
+	}
+	return nil
+}
+
+// excludeFromSync remembers what the user did not want on this device.
+func (a *App) excludeFromSync(ctx context.Context, kind string, pairs []settingsPair) error {
+	if len(pairs) == 0 {
+		return nil
+	}
+	m := settingsMap{}
+	if _, err := a.st.GetAppSetting(ctx, keySettingsMap, &m); err != nil {
+		return err
+	}
+	for _, p := range pairs {
+		if !slices.ContainsFunc(m[kind], func(o settingsPair) bool { return o.Remote == p.Remote }) {
+			m[kind] = append(m[kind], p)
+		}
+	}
+	return a.st.SetAppSetting(ctx, keySettingsMap, m)
 }

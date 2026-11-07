@@ -122,7 +122,10 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 		return func(w http.ResponseWriter, r *http.Request) { h(w, r, a) }
 	}, api.Options{Logger: log, Skip: map[string]bool{"GET /api/events": true}})
 
-	if err := serveDesktopTestHook(ctx, mux, log); err != nil {
+	// Server mode: the same URLs answer from the connected server (remote_proxy.go).
+	assetHandler := a.RemoteAssetHandler(mux)
+
+	if err := serveDesktopTestHook(ctx, assetHandler, log); err != nil {
 		return err
 	}
 
@@ -157,7 +160,7 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 		Linux:            &linux.Options{ProgramName: "TuxMail"},
 		AssetServer: &assetserver.Options{
 			Assets:  assets,
-			Handler: mux,
+			Handler: assetHandler,
 		},
 		OnStartup: func(wctx context.Context) {
 			events, _ := a.Events().Subscribe(wctx, 256)
@@ -166,6 +169,8 @@ func (c *cli) desktop(ctx context.Context, args []string) error {
 					wruntime.EventsEmit(wctx, "tuxmail:event", ev)
 				}
 			}()
+			// Server mode: the live events the core receives from the server.
+			a.SetRemoteEventSink(func(frame string) { wruntime.EventsEmit(wctx, "tuxmail:remote", frame) })
 			// OAuth sign-in (loopback flow) opens the system browser through Wails.
 			a.SetOAuthOpener(func(_ context.Context, u string) error { wruntime.BrowserOpenURL(wctx, u); return nil })
 			if st, _ := a.VaultStatus(wctx); st.Locked {
