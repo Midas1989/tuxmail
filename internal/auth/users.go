@@ -542,6 +542,10 @@ func (s *Service) ChangePassword(ctx context.Context, id int64, current, next st
 		s.Audit(ctx, "user.change_password", u.Username, false, "no local password; re-authentication required")
 		return fmt.Errorf("%w: set a first password with a second factor or a fresh identity-provider login", ErrReauthRequired)
 	}
+	if current == "" {
+		// An empty field is no guess: ask again without counting it.
+		return fmt.Errorf("%w: enter your current password", ErrReauthRequired)
+	}
 	{
 		// Wrong current passwords count against the persistent step-up
 		// lockout of the user (NA-05): a stolen session must not be able to

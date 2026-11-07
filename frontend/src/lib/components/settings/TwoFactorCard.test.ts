@@ -108,7 +108,7 @@ describe('TwoFactorCard: disable (re-authentication as the server demands it)', 
       await submit(root.querySelector('form') as HTMLFormElement);
       await until(() => expect(root.querySelector('[role="alert"]')).toBeTruthy());
     }
-    await until(() => expect(root.querySelector('[role="alert"]')?.textContent).toBe('Too many wrong attempts. Security checks are locked; try again in 5 min.'));
+    await until(() => expect(root.querySelector('[role="alert"]')?.textContent).toBe('Too many wrong attempts. Security checks (changing password, codes and sessions) are locked; try again in 5 min. Signing in is not affected.'));
   });
 
   it('an account without local password is asked for the code only', async () => {

@@ -4002,8 +4002,8 @@
   },
   "security": {
     "errors": {
-      "throttled": "Too many wrong attempts. Security checks are locked for a while; try again later.",
-      "throttledMinutes": "Too many wrong attempts. Security checks are locked; try again in {minutes} min.",
+      "throttled": "Too many wrong attempts. Security checks (changing password, codes and sessions) are locked for a while; try again later. Signing in is not affected.",
+      "throttledMinutes": "Too many wrong attempts. Security checks (changing password, codes and sessions) are locked; try again in {minutes} min. Signing in is not affected.",
       "invalidCode": "This code is not correct or was already used. Wait for the next code in your app and try again.",
       "invalidCredentials": "The password is not correct.",
       "reauthRequired": "Please confirm your identity first: sign in again with your identity provider, or enter a code from your authenticator app.",
@@ -4023,7 +4023,7 @@
       "password": "Password",
       "code": "Authenticator code or recovery code",
       "codeHint": "The 6-digit code from your app, or one of your recovery codes.",
-      "introPasswordOnly": "For your security, confirm this with your password.",
+      "introPasswordOnly": "Confirm with your TuxMail sign-in password.",
       "introRecentLogin": "This needs a recent sign-in. If it is refused, sign in again and retry."
     },
     "setup": {

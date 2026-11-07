@@ -86,6 +86,7 @@ kennt das Konto.
 ## Sätze für die Basis-ADR
 
 - Eine Konto-Sperre je Konto gilt nur je Netz (tuxmail: 5 Versuche); netzübergreifend tritt ab 50 Fehlversuchen statt einer Sperre eine Bremse in Kraft, damit Fremde den Inhaber nicht aussperren können.
+- Die Sperre der Sicherheitsabfragen (Step-up: Passwort, Codes, Passkeys, Sitzungen beenden) gilt je Konto, nicht je Netz: 5 Fehlversuche in 24 h, dann 5 min bis 1 h; sie schützt vor Raten mit einer gestohlenen Sitzung. Sie ist vom Zähler der Anmeldung getrennt (Schlüssel `s:<id>` statt `u:…`): Fehleingaben dort sperren die Anmeldung nicht, eine Anmeldung hebt die Sperre nicht auf, und eine bestehende Sperre verlängert sich durch weitere Anfragen nicht. Eine Anfrage ganz ohne Passwort und ohne Code ist ein unfertiges Formular, kein Versuch: Antwort `reauth_required`, kein Zähler, kein Rate-Limit-Treffer.
 - Native Anmelde-Endpunkte ohne Sitzungsbezug, die kein Cookie setzen und nur im Antwort-Body antworten (`/api/device/authorize|token|login`), sind von der CSRF-Prüfung ausgenommen.
 - Bei der Rotation von Geräte-Token gilt das alte Token 60 s nach dem ersten Gebrauch des neuen weiter, ohne erneut rotieren zu dürfen; danach widerruft sein Gebrauch die Familie.
 - Gespeicherte Passwörter gehen nur an den Server, Port und Benutzer, für den sie eingegeben wurden; wer das Ziel ändert, bringt ein neues Passwort mit.

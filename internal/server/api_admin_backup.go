@@ -247,7 +247,7 @@ func (s *Server) backupKeyStepUp(w http.ResponseWriter, r *http.Request, a *auth
 		writeError(w, http.StatusForbidden, "forbidden", "the backup key can only be managed in the web client")
 		return false
 	}
-	if !s.limitLogin(w, r, a.User.Username) {
+	if s.stepUpEmpty(w, a, req.Password, req.Code, req.RecoveryCode) || !s.limitLogin(w, r, a.User.Username) {
 		return false
 	}
 	if err := s.auth.VerifyPasskeyStepUp(r.Context(), a.User.ID, a.Session.ID, req.Password, req.Code, req.RecoveryCode); err != nil {

@@ -422,6 +422,11 @@ func (s *Service) VerifyStepUp(ctx context.Context, userID, sessionID int64, pas
 
 func (s *Service) verifyStepUp(ctx context.Context, u *User, sess *Session, password, totpCode, recoveryCode string) error {
 	userID := u.ID
+	if StepUpInputMissing(u, password, totpCode, recoveryCode) {
+		// Nothing was entered: not a wrong answer, so it is not counted (and
+		// does not extend a lock either).
+		return fmt.Errorf("%w: enter your password", ErrReauthRequired)
+	}
 	if err := s.StepUpCheck(ctx, userID); err != nil {
 		return err
 	}

@@ -51,7 +51,7 @@ describe('securityErrorMessage', () => {
   }
 
   it('429 throttled: with Retry-After the minutes are named (rounded up), without a generic text', () => {
-    expect(securityErrorMessage(new ApiError('x', 429, 'throttled', 240), tEn)).toBe('Too many wrong attempts. Security checks are locked; try again in 4 min.');
+    expect(securityErrorMessage(new ApiError('x', 429, 'throttled', 240), tEn)).toBe('Too many wrong attempts. Security checks (changing password, codes and sessions) are locked; try again in 4 min. Signing in is not affected.');
     expect(securityErrorMessage(new ApiError('x', 429, 'throttled', 61), tEn)).toContain('2 min');
     expect(securityErrorMessage(new ApiError('x', 429, 'throttled', 5), tEn)).toContain('1 min');
     expect(securityErrorMessage(new ApiError('x', 429, 'throttled'), tEn)).toBe(EN['security.errors.throttled']);

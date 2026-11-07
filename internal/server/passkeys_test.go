@@ -155,7 +155,7 @@ func TestPasskeyHTTPEndToEnd(t *testing.T) {
 	}
 
 	// Delete needs the password; a wrong id changes nothing.
-	if resp, m := b.do("DELETE", "/api/auth/passkeys/"+itoa(id), nil); resp.StatusCode != 401 || m["error"] != "invalid_credentials" {
+	if resp, m := b.do("DELETE", "/api/auth/passkeys/"+itoa(id), nil); resp.StatusCode != 403 || m["error"] != "reauth_required" {
 		t.Fatalf("delete without re-authentication: %s %v", resp.Status, m)
 	}
 	if resp, _ := b.do("DELETE", "/api/auth/passkeys/"+itoa(id), map[string]string{"password": "wrong password!"}); resp.StatusCode != 401 {
@@ -239,10 +239,12 @@ func TestPasskeyRegistrationNeedsReauth(t *testing.T) {
 	b.login("anna")
 	a := passkeytest.New(pkOrigin, pkRPID)
 
-	for name, body := range map[string]map[string]string{"nothing": nil, "wrong password": {"password": "wrong password!"}} {
-		if resp, m := b.do("POST", "/api/auth/passkeys/register/begin", body); resp.StatusCode != 401 || m["error"] != "invalid_credentials" {
-			t.Errorf("%s: %s %v", name, resp.Status, m)
-		}
+	// A request without any proof is an unfinished form: reauth_required, not counted.
+	if resp, m := b.do("POST", "/api/auth/passkeys/register/begin", nil); resp.StatusCode != 403 || m["error"] != "reauth_required" {
+		t.Errorf("nothing: %s %v", resp.Status, m)
+	}
+	if resp, m := b.do("POST", "/api/auth/passkeys/register/begin", map[string]string{"password": "wrong password!"}); resp.StatusCode != 401 || m["error"] != "invalid_credentials" {
+		t.Errorf("wrong password: %s %v", resp.Status, m)
 	}
 	// Wrong answers lock the step-up of the user persistently (shared with TOTP disable, device approval ...).
 	for range 6 {

@@ -681,7 +681,7 @@ func TestPasskeyStepUp(t *testing.T) {
 	if err := s.VerifyPasskeyStepUp(ctx, u.ID, pw.Session.ID, "wrong password!", "", ""); !errors.Is(err, ErrInvalidCredentials) {
 		t.Fatalf("wrong password: %v", err)
 	}
-	if err := s.VerifyPasskeyStepUp(ctx, u.ID, pw.Session.ID, "", "", ""); !errors.Is(err, ErrInvalidCredentials) {
+	if err := s.VerifyPasskeyStepUp(ctx, u.ID, pw.Session.ID, "", "", ""); !errors.Is(err, ErrReauthRequired) {
 		t.Fatalf("no password: %v", err)
 	}
 	if err := s.VerifyPasskeyStepUp(ctx, u.ID, pw.Session.ID, goodPW, "", ""); err != nil {

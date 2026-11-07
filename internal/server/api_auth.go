@@ -5,6 +5,7 @@ package server
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
 	"time"
@@ -146,7 +147,14 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, a 
 		TOTPCode        string `json:"totpCode"`     // first password of an account with TOTP
 		RecoveryCode    string `json:"recoveryCode"` // alternative to totpCode
 	}
-	if !readJSON(w, r, &req) || !s.limitLogin(w, r, a.User.Username) {
+	if !readJSON(w, r, &req) {
+		return
+	}
+	if a.User.HasPassword && req.CurrentPassword == "" {
+		s.writeAuthError(w, fmt.Errorf("%w: enter your current password", auth.ErrReauthRequired))
+		return
+	}
+	if !s.limitLogin(w, r, a.User.Username) {
 		return
 	}
 	var err error
@@ -265,7 +273,7 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request, a *authInfo, pas
 		refuseDevice(w)
 		return false
 	}
-	if !s.limitLogin(w, r, a.User.Username) {
+	if s.stepUpEmpty(w, a, password, code, recovery) || !s.limitLogin(w, r, a.User.Username) {
 		return false
 	}
 	if err := s.auth.VerifyStepUp(r.Context(), a.User.ID, a.Session.ID, password, code, recovery); err != nil {
@@ -273,6 +281,17 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request, a *authInfo, pas
 		return false
 	}
 	s.rotateAfterStepUp(w, r, a)
+	return true
+}
+
+// stepUpEmpty answers a request without any proof (reauth_required) when the
+// account has one to give. Such a request counts for neither the step-up lock
+// nor the login rate limit: it is a form sent too early, not a guess.
+func (s *Server) stepUpEmpty(w http.ResponseWriter, a *authInfo, password, code, recovery string) bool {
+	if !auth.StepUpInputMissing(a.User, password, code, recovery) {
+		return false
+	}
+	s.writeAuthError(w, fmt.Errorf("%w: enter your password", auth.ErrReauthRequired))
 	return true
 }
 

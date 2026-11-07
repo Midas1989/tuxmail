@@ -4001,8 +4001,8 @@
   },
   "security": {
     "errors": {
-      "throttled": "Zu viele falsche Eingaben. Die Sicherheitsabfragen sind für eine Weile gesperrt; versuche es später erneut.",
-      "throttledMinutes": "Zu viele falsche Eingaben. Die Sicherheitsabfragen sind gesperrt; versuche es in {minutes} Min. erneut.",
+      "throttled": "Zu viele falsche Eingaben. Die Sicherheitsabfragen (Passwort, Codes und Sitzungen ändern) sind für eine Weile gesperrt; versuche es später erneut. Das Anmelden ist nicht betroffen.",
+      "throttledMinutes": "Zu viele falsche Eingaben. Die Sicherheitsabfragen (Passwort, Codes und Sitzungen ändern) sind gesperrt; versuche es in {minutes} Min. erneut. Das Anmelden ist nicht betroffen.",
       "invalidCode": "Dieser Code ist nicht korrekt oder wurde schon verwendet. Warte auf den nächsten Code in deiner App und versuche es erneut.",
       "invalidCredentials": "Das Passwort ist nicht korrekt.",
       "reauthRequired": "Bitte bestätige zuerst deine Identität: Melde dich erneut bei deinem Identitätsanbieter an oder gib einen Code aus deiner Authenticator-App ein.",
@@ -4022,7 +4022,7 @@
       "password": "Passwort",
       "code": "Authenticator-Code oder Wiederherstellungscode",
       "codeHint": "Der 6-stellige Code aus deiner App oder einer deiner Wiederherstellungscodes.",
-      "introPasswordOnly": "Bestätige das zu deiner Sicherheit mit deinem Passwort.",
+      "introPasswordOnly": "Bestätige mit deinem Anmeldepasswort für TuxMail.",
       "introRecentLogin": "Das braucht eine frische Anmeldung. Wird es abgelehnt, melde dich neu an und versuche es noch einmal."
     },
     "setup": {

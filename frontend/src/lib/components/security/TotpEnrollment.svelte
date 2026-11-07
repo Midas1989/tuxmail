@@ -39,6 +39,8 @@
   let stored = $state(false);
   let error = $state<string | null>(null);
   let busy = $state(false);
+  /** The account has a local password: then every failure of the proof stays at the password field. */
+  let hasPassword = $state(true);
   let secretCopied = $state(false);
   let codeInput = $state<HTMLInputElement>();
 
@@ -50,7 +52,8 @@
     step = 'loading';
     try {
       const me = await api.getAuthMe();
-      if (me.user.hasPassword) step = 'reauth';
+      hasPassword = me.user.hasPassword;
+      if (hasPassword) step = 'reauth';
       else await enroll({});
     } catch (err) {
       error = securityErrorMessage(err, t);
@@ -65,8 +68,10 @@
       step = 'scan';
     } catch (err) {
       const e = err as { code?: string };
-      step = e?.code === 'invalid_credentials' ? 'reauth' : 'loading';
-      error = securityErrorMessage(err, t);
+      // With a password the field never disappears (wrong password, lock, network ...).
+      step = hasPassword ? 'reauth' : 'loading';
+      // "Nothing entered" is the form itself, not an error.
+      error = hasPassword && e?.code === 'reauth_required' ? null : securityErrorMessage(err, t);
     } finally {
       busy = false;
     }

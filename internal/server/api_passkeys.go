@@ -65,7 +65,7 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		s.writeAuthError(w, auth.ErrPasskeysDisabled)
 		return
 	}
-	if !s.limitLogin(w, r, a.User.Username) {
+	if s.stepUpEmpty(w, a, req.Password, req.Code, req.RecoveryCode) || !s.limitLogin(w, r, a.User.Username) {
 		return
 	}
 	if err := s.auth.VerifyPasskeyStepUp(r.Context(), a.User.ID, a.Session.ID, req.Password, req.Code, req.RecoveryCode); err != nil {
@@ -131,7 +131,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request, a *
 		return
 	}
 	var req reauthReq
-	if !readJSON(w, r, &req) || !s.limitLogin(w, r, a.User.Username) {
+	if !readJSON(w, r, &req) || s.stepUpEmpty(w, a, req.Password, req.Code, req.RecoveryCode) || !s.limitLogin(w, r, a.User.Username) {
 		return
 	}
 	if err := s.auth.VerifyPasskeyStepUp(r.Context(), a.User.ID, a.Session.ID, req.Password, req.Code, req.RecoveryCode); err != nil {

@@ -3,6 +3,7 @@
 package server
 
 import (
+	"errors"
 	"github.com/Midas1989/Mailclient/internal/app"
 	"github.com/Midas1989/Mailclient/internal/domain"
 	"strconv"
@@ -457,7 +458,7 @@ func TestDeviceTokenCannotGetSecretsFromBackup(t *testing.T) {
 	// A browser session needs proof.
 	w := e.browser()
 	w.login("ida")
-	if resp, m := w.do("POST", "/api/backup", body(true)); resp.StatusCode != 401 {
+	if resp, m := w.do("POST", "/api/backup", body(true)); resp.StatusCode != 403 {
 		t.Fatal("without reauth:", resp.Status, m)
 	}
 	w.fetchCSRF()
@@ -506,7 +507,7 @@ func TestRestoreReplaceRefusesDeviceTokens(t *testing.T) {
 	w := e.browser()
 	w.login("ida")
 	body["mode"] = "replace"
-	if resp, m := w.do("POST", "/api/backup/restore", body); resp.StatusCode != 401 {
+	if resp, m := w.do("POST", "/api/backup/restore", body); resp.StatusCode != 403 {
 		t.Fatal("browser without proof:", resp.Status, m)
 	}
 }
@@ -675,10 +676,11 @@ func TestSessionNeedsReauthForAccountSecurity(t *testing.T) {
 	for _, r := range []struct{ method, path string }{
 		{"POST", "/api/auth/totp/setup"}, {"POST", "/api/auth/sessions/revoke-others"}, {"DELETE", "/api/auth/sessions/" + itoa(int(sid))},
 	} {
-		for _, wrong := range []map[string]string{{}, {"password": "falsch-falsch-falsch"}} {
-			if resp, m := b.do(r.method, r.path, wrong); resp.StatusCode != 401 {
-				t.Errorf("%s %s with %v: %s %v", r.method, r.path, wrong, resp.Status, m)
-			}
+		if resp, m := b.do(r.method, r.path, map[string]string{}); resp.StatusCode != 403 || m["error"] != "reauth_required" {
+			t.Errorf("%s %s without proof: %s %v", r.method, r.path, resp.Status, m)
+		}
+		if resp, m := b.do(r.method, r.path, map[string]string{"password": "falsch-falsch-falsch"}); resp.StatusCode != 401 {
+			t.Errorf("%s %s with a wrong password: %s %v", r.method, r.path, resp.Status, m)
 		}
 		e.svc.ClearStepUp(t.Context(), 1)
 	}
@@ -706,7 +708,7 @@ func TestSessionNeedsReauthForAccountSecurity(t *testing.T) {
 	code := grant["user_code"].(string)
 	a := e.browser()
 	a.login("ida")
-	if resp, m := a.do("POST", "/api/device/approve", map[string]string{"user_code": code}); resp.StatusCode != 401 {
+	if resp, m := a.do("POST", "/api/device/approve", map[string]string{"user_code": code}); resp.StatusCode != 403 {
 		t.Fatal("approve without proof:", resp.Status, m)
 	}
 	a.fetchCSRF()
@@ -1121,5 +1123,69 @@ func TestRequestIDInHeaderAndLog(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "evil") {
 		t.Fatal("client id logged")
+	}
+}
+
+// A form sent without any proof is no guess (t-101): reauth_required, nothing
+// counted. Wrong answers still lock the step-up of the user; the lock does not
+// extend itself and never touches the normal sign-in.
+func TestEmptyStepUpIsNoGuess(t *testing.T) {
+	e := newEnv(t, Options{}, func(c *config.Config) { c.Limits.LoginRatePerMinute = 1000 })
+	u := e.user("ida", auth.RoleUser)
+	b := e.browser()
+	b.login("ida")
+
+	for i := range 12 {
+		for _, r := range []struct {
+			method, path string
+			body         map[string]string
+		}{
+			{"POST", "/api/auth/totp/setup", map[string]string{}},
+			{"POST", "/api/auth/sessions/revoke-others", map[string]string{}},
+			{"POST", "/api/auth/password", map[string]string{"newPassword": "ein-anderes-langes-passwort"}},
+		} {
+			b.fetchCSRF()
+			if resp, m := b.do(r.method, r.path, r.body); resp.StatusCode != 403 || m["error"] != "reauth_required" {
+				t.Fatalf("%d %s %s: %s %v", i, r.method, r.path, resp.Status, m)
+			}
+		}
+	}
+	if err := e.svc.StepUpCheck(t.Context(), u.ID); err != nil {
+		t.Fatal("empty requests were counted:", err)
+	}
+	b.fetchCSRF()
+	if resp, m := b.do("POST", "/api/auth/totp/setup", map[string]string{"password": pw}); resp.StatusCode != 200 {
+		t.Fatal("right password after empty requests:", resp.Status, m)
+	}
+
+	// Wrong passwords count; the sixth is refused by the lock.
+	for range 5 {
+		b.fetchCSRF()
+		if resp, _ := b.do("POST", "/api/auth/totp/setup", map[string]string{"password": "falsch-falsch-falsch"}); resp.StatusCode != 401 {
+			t.Fatal("wrong password:", resp.Status)
+		}
+	}
+	var te *auth.ThrottleError
+	err := e.svc.StepUpCheck(t.Context(), u.ID)
+	if !errors.As(err, &te) {
+		t.Fatal("no lock after five wrong answers:", err)
+	}
+	until := te.Until
+	// A locked step-up neither counts nor extends: wrong and empty requests alike.
+	for _, body := range []map[string]string{{"password": "falsch-falsch-falsch"}, {"password": pw}, {}} {
+		b.fetchCSRF()
+		resp, m := b.do("POST", "/api/auth/totp/setup", body)
+		if body["password"] != "" && resp.StatusCode != 429 {
+			t.Fatalf("locked, %v: %s %v", body, resp.Status, m)
+		}
+	}
+	if err := e.svc.StepUpCheck(t.Context(), u.ID); !errors.As(err, &te) || !te.Until.Equal(until) {
+		t.Fatalf("the lock moved: %v -> %v", until, err)
+	}
+	// The normal sign-in is not affected, neither by the lock nor by the failures behind it.
+	c := e.browser()
+	c.login("ida")
+	if err := e.svc.StepUpCheck(t.Context(), u.ID); err == nil {
+		t.Fatal("signing in must not lift the step-up lock of a possibly stolen session")
 	}
 }

@@ -35,6 +35,35 @@ describe('TotpEnrollment: QR code -> first code -> recovery codes', () => {
     expect(setup).toHaveBeenLastCalledWith(expect.objectContaining({ password: 'richtig' }));
   });
 
+  it('the password field never disappears: lock, network error and "nothing entered" all stay at the field (t-101)', async () => {
+    const api = mock();
+    const setup = vi
+      .spyOn(api, 'totpSetup')
+      .mockRejectedValueOnce(new ApiError('x', 429, 'throttled', 240))
+      .mockRejectedValueOnce(new ApiError('x', 0, 'network'))
+      .mockRejectedValueOnce(new ApiError('x', 403, 'reauth_required'));
+    const root = render(TotpEnrollment, { api, onfinished: () => {} });
+    await until(() => expect(root.querySelector('[data-step="reauth"]')).toBeTruthy());
+    expect(text(root)).toContain('Confirm with your TuxMail sign-in password.');
+    for (const [i, wanted] of ['locked', 'cannot be reached', ''].entries()) {
+      await stepUp(root, 'irgendwas');
+      await until(() => expect(setup).toHaveBeenCalledTimes(i + 1));
+      await until(() => expect(root.querySelector('[data-step="reauth"]')).toBeTruthy());
+      expect(root.querySelector('input[type="password"]')).toBeTruthy();
+      expect(hasButton(root, 'Try again')).toBe(false);
+      expect(root.querySelector('[role="alert"]')?.textContent ?? '').toContain(wanted);
+    }
+  });
+
+  it('no request leaves before a password was typed: opening the form is not an attempt', async () => {
+    const api = mock();
+    const setup = vi.spyOn(api, 'totpSetup');
+    const root = render(TotpEnrollment, { api, onfinished: () => {} });
+    await until(() => expect(root.querySelector('[data-step="reauth"]')).toBeTruthy());
+    expect(setup).not.toHaveBeenCalled();
+    expect(button(root, 'Continue').disabled).toBe(true);
+  });
+
   it('an account without a password goes straight on: the server decides by the recent sign-in', async () => {
     const api = new MockTransport({ latencyMs: 0, security: { hasPassword: false } });
     const root = render(TotpEnrollment, { api, onfinished: () => {} });
@@ -154,14 +183,14 @@ describe('TotpEnrollment: QR code -> first code -> recovery codes', () => {
     expect(hasButton(root, 'Cancel')).toBe(false);
   });
 
-  it('a failing set-up request shows the localized error and can be retried', async () => {
+  it('a failing set-up request shows the localized error at the password field and can be sent again', async () => {
     const api = mock();
     const setup = vi.spyOn(api, 'totpSetup').mockRejectedValueOnce(new ApiError('two-factor authentication is already active', 409, 'exists'));
     const root = render(TotpEnrollment, { api, onfinished: () => {} });
     await stepUp(root);
     await until(() => expect(root.querySelector('[role="alert"]')?.textContent).toBe('Two-factor authentication is already active.'));
+    expect(root.querySelector('[data-step="reauth"]')).toBeTruthy();
     setup.mockRestore();
-    await click(button(root, 'Try again'));
     await stepUp(root);
     await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
   });

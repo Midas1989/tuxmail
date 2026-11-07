@@ -33,6 +33,14 @@ var stepUpPolicy = throttlePolicy{free: stepUpFreeFails, window: stepUpWindow, b
 
 func stepUpKey(userID int64) string { return "s:" + strconv.FormatInt(userID, 10) }
 
+// StepUpInputMissing reports a step-up request without any proof although the
+// account has one to give (password or second factor). Such a request is an
+// unfinished form, not a guess: the server answers reauth_required and counts
+// nothing. Any wrong value still counts.
+func StepUpInputMissing(u *User, password, totpCode, recoveryCode string) bool {
+	return (u.HasPassword || u.TOTPEnabled) && password == "" && totpCode == "" && recoveryCode == ""
+}
+
 // StepUpCheck fails with a *ThrottleError while step-up checks of the user
 // are locked.
 func (s *Service) StepUpCheck(ctx context.Context, userID int64) error {
