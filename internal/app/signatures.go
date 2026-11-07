@@ -3,13 +3,13 @@
 package app
 
 import (
-	"strconv"
 	"bytes"
 	"context"
 	"errors"
 	"html"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
