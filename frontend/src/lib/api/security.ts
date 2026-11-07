@@ -10,14 +10,14 @@
 // REST routes (internal/server/api_auth.go):
 //   GET    /api/auth/me                    -> AuthMe  (user, session, mfaSetupRequired, recoveryCodesLeft)
 //   GET    /api/auth/config                -> AuthConfigInfo (public; password policy)
-//   POST   /api/auth/totp/setup            -> TotpEnrollment (secret + otpauth:// URL; replaces a pending secret)
+//   POST   /api/auth/totp/setup            Reauth -> TotpEnrollment (secret + otpauth:// URL; replaces a pending secret)
 //   POST   /api/auth/totp/confirm          {code} -> {recoveryCodes}
 //   POST   /api/auth/totp/disable          Reauth (password if the account has one, plus a second factor)
 //   POST   /api/auth/recovery-codes        Reauth -> {recoveryCodes} (409 totp_not_enabled without TOTP)
 //   POST   /api/auth/password              PasswordChange (204; ends all other sessions)
 //   GET    /api/auth/sessions              -> {sessions: AuthSession[]}
-//   DELETE /api/auth/sessions/{id}
-//   POST   /api/auth/sessions/revoke-others
+//   DELETE /api/auth/sessions/{id}         Reauth (not for the own session)
+//   POST   /api/auth/sessions/revoke-others Reauth
 // Server errors (ApiError.code): invalid_code (400), invalid_credentials (401),
 // reauth_required (403), mfa_setup_required (403), weak_password (400),
 // throttled (429, Retry-After), totp_not_enabled (409), exists (409), not_found (404).

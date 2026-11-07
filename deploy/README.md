@@ -387,7 +387,12 @@ Benutzer `tuxmail` geprüft (Leserechte). `check-config` lehnt unbekannte Schlü
 dass TLS-Dateien, OIDC-Secret-Datei und Logdatei vorhanden bzw. lesbar sind – das Playbook legt
 diese Dateien deshalb vorher an.
 
-**Health-Check:** `GET /healthz` sagt nur, dass der Prozess lebt; `GET /healthz?deep=1` prüft die Datenbank und meldet Audit-Kette und offene Schlüssel-Rotation (`ok`, `warn`, `fail`; 503 bei `fail`). Nach jedem (Neu-)Start fragt Ansible `GET /healthz?deep=1` direkt am Listener ab
+**Health-Check:** `GET /healthz` ist öffentlich und sagt nur, dass der Prozess lebt. `GET /healthz?deep=1` und
+`GET /api/v1/monitoring/self` nennen alle Prüfungen mit Einzelheiten (`db`, `disk`, `jobs`, `backup`, `audit_chain`,
+`key_rotation`, bei eigenem TLS `certificate`; je `ok`, `warn` oder `fail`). Beide antworten nur mit dem Token aus
+`monitoring.token_file` (`Authorization: Bearer …`) oder direkt vom selben Rechner; über nginx zählt das als Zugriff von außen.
+`/api/v1/monitoring/self` antwortet immer 200 mit dem Zustand, `/healthz?deep=1` antwortet 503, wenn die Datenbank nicht geht.
+Der Dienst läuft auch mit `fail` bei `backup`, solange kein Sicherungsschlüssel erzeugt ist. Nach jedem (Neu-)Start fragt Ansible `GET /healthz?deep=1` direkt am Listener ab
 (bis zu 30 × 2 s). Schlägt das fehl, bricht der Lauf ab (siehe Fehlerbehebung).
 Geprüft wird nur der Status 200; `/healthz` nennt die Version anonymen Clients nur mit
 `tuxmail_security_expose_version: true` (sonst `{"status":"ok","product":"tuxmail"}`).
@@ -649,7 +654,7 @@ tuxmail keys retire --kid K # entfernt einen alten Schlüssel, verweigert das, s
 tuxmail keys retire-legacy  # benennt master.key um, verweigert das, solange ein Wert es nutzt
 ```
 
-`tuxmail audit verify` prüft die Audit-Kette. Der Dienst schreibt einmal täglich den neuesten Hash ins Log (`audit chain anchor`):
+`tuxmail audit verify` prüft die Audit-Kette. Eine Zeile ohne Hash, eine geänderte oder entfernte Zeile meldet er als Bruch (Exit 1). Der Dienst schreibt einmal täglich den neuesten Hash ins Log (`audit chain anchor`):
 Diese Zeile ins zentrale Logging geben, nur so fällt ein abgeschnittenes Ende auf.
 
 `tuxmail keys rollback --yes` (Dienst gestoppt, vorher sichern) bringt Daten und Schema zurück auf die Vorversion, solange

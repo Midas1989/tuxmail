@@ -216,13 +216,14 @@ func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request, a *
 		s.writeAuthError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"request": req, "totpRequired": a.User.TOTPEnabled})
+	writeJSON(w, http.StatusOK, map[string]any{"request": req, "totpRequired": a.User.TOTPEnabled, "passwordRequired": a.User.HasPassword})
 }
 
 func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	var req struct {
 		UserCode     string `json:"user_code"`
 		Approve      *bool  `json:"approve"`
+		Password     string `json:"password"`
 		TOTPCode     string `json:"totp_code"`
 		RecoveryCode string `json:"recovery_code"`
 	}
@@ -234,12 +235,9 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *
 		return
 	}
 	approve := req.Approve == nil || *req.Approve
-	if approve && a.User.TOTPEnabled {
-		if err := s.auth.VerifyStepUpSecondFactor(r.Context(), a.User.ID, req.TOTPCode, req.RecoveryCode); err != nil {
-			s.writeAuthError(w, err)
-			return
-		}
-		defer s.auth.ClearStepUp(r.Context(), a.User.ID)
+	// Approving creates a long-lived way into the account.
+	if approve && !s.reauth(w, r, a, req.Password, req.TOTPCode, req.RecoveryCode) {
+		return
 	}
 	if err := s.auth.ApproveDevice(r.Context(), a.User.ID, req.UserCode, approve); err != nil {
 		s.writeAuthError(w, err)

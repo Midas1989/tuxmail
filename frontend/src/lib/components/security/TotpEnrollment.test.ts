@@ -5,7 +5,7 @@ import { ApiError } from '../../api/api';
 import { MockTransport } from '../../api/mock';
 import { MOCK_TOTP_CODE } from '../../api/mockSecurity';
 import TotpEnrollment from './TotpEnrollment.svelte';
-import { button, cleanup, click, hasButton, input, render, submit, text, type, until } from './mountUtil';
+import { button, cleanup, click, hasButton, input, render, stepUp, submit, text, type, until } from './mountUtil';
 
 beforeEach(() => {
   Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => undefined) } });
@@ -15,15 +15,36 @@ afterEach(cleanup);
 const mock = () => new MockTransport({ latencyMs: 0 });
 
 async function toVerifyStep(root: HTMLElement) {
-  await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
+  await stepUp(root);
+    await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
   await click(button(root, 'Next'));
   expect(root.querySelector('[data-step="verify"]')).toBeTruthy();
 }
 
 describe('TotpEnrollment: QR code -> first code -> recovery codes', () => {
+  it('asks for the password first and sends it; a wrong one keeps the question', async () => {
+    const api = mock();
+    const setup = vi.spyOn(api, 'totpSetup').mockRejectedValueOnce(new ApiError('wrong', 401, 'invalid_credentials'));
+    const root = render(TotpEnrollment, { api, onfinished: () => {} });
+    await stepUp(root, 'falsch');
+    await until(() => expect(root.querySelector('[role="alert"]')).toBeTruthy());
+    expect(root.querySelector('[data-step="reauth"]')).toBeTruthy();
+    expect(setup).toHaveBeenLastCalledWith(expect.objectContaining({ password: 'falsch' }));
+    await stepUp(root, 'richtig');
+    await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
+    expect(setup).toHaveBeenLastCalledWith(expect.objectContaining({ password: 'richtig' }));
+  });
+
+  it('an account without a password goes straight on: the server decides by the recent sign-in', async () => {
+    const api = new MockTransport({ latencyMs: 0, security: { hasPassword: false } });
+    const root = render(TotpEnrollment, { api, onfinished: () => {} });
+    await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
+  });
+
   it('step 1 shows the QR code and the secret for manual entry, in groups of four', async () => {
     const root = render(TotpEnrollment, { api: mock(), onfinished: () => {} });
     expect(text(root)).toContain('Step 1 of 3');
+    await stepUp(root);
     await until(() => expect(root.querySelector('svg[role="img"]')).toBeTruthy());
     expect(root.querySelector('svg')?.getAttribute('aria-label')).toBe('QR code for your authenticator app');
     expect(root.querySelector('svg path')?.getAttribute('d')?.length).toBeGreaterThan(100);
@@ -137,9 +158,11 @@ describe('TotpEnrollment: QR code -> first code -> recovery codes', () => {
     const api = mock();
     const setup = vi.spyOn(api, 'totpSetup').mockRejectedValueOnce(new ApiError('two-factor authentication is already active', 409, 'exists'));
     const root = render(TotpEnrollment, { api, onfinished: () => {} });
+    await stepUp(root);
     await until(() => expect(root.querySelector('[role="alert"]')?.textContent).toBe('Two-factor authentication is already active.'));
     setup.mockRestore();
     await click(button(root, 'Try again'));
+    await stepUp(root);
     await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
   });
 });

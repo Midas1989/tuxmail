@@ -3,7 +3,6 @@
 package auth
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -11,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"strings"
 	"time"
 	"unicode"
@@ -150,7 +150,7 @@ func checkPasskeyKey(cose []byte) error {
 		}
 	case webauthncose.RSAPublicKeyData:
 		if webauthncose.COSEAlgorithmIdentifier(k.Algorithm) == webauthncose.AlgRS256 {
-			if len(bytes.TrimLeft(k.Modulus, "\x00"))*8 < minPasskeyRSABits {
+			if new(big.Int).SetBytes(k.Modulus).BitLen() < minPasskeyRSABits {
 				return fmt.Errorf("RSA key shorter than %d bits", minPasskeyRSABits)
 			}
 			return nil
@@ -402,6 +402,26 @@ func (s *Service) VerifyPasskeyStepUp(ctx context.Context, userID, sessionID int
 		s.Audit(ctx, "passkey.stepup", u.Username, false, "refused: two-factor enrolment pending")
 		return ErrMFASetupRequired
 	}
+	return s.verifyStepUp(ctx, u, sess, password, totpCode, recoveryCode)
+}
+
+// VerifyStepUp is the re-authentication before a sensitive change (Basis
+// spec/AUTH.md §3): the same proofs as VerifyPasskeyStepUp, and also for a session
+// that owes the mandatory TOTP enrolment, which it is about to do.
+func (s *Service) VerifyStepUp(ctx context.Context, userID, sessionID int64, password, totpCode, recoveryCode string) error {
+	u, err := s.GetUser(ctx, userID)
+	if err != nil {
+		return err
+	}
+	sess, err := s.getSession(ctx, `id = ? AND user_id = ?`, sessionID, userID)
+	if err != nil {
+		return err
+	}
+	return s.verifyStepUp(ctx, u, sess, password, totpCode, recoveryCode)
+}
+
+func (s *Service) verifyStepUp(ctx context.Context, u *User, sess *Session, password, totpCode, recoveryCode string) error {
+	userID := u.ID
 	if err := s.StepUpCheck(ctx, userID); err != nil {
 		return err
 	}

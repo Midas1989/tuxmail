@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Settings -> Backup & Restore (KONZEPT 14): backup now (scope tree, passphrase, target), schedules, restore wizard. -->
 <script lang="ts">
+  import { isNativeShell } from '../../platform';
+  import { buildReauth } from '../../security';
   import DatabaseBackup from '@lucide/svelte/icons/database-backup';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import Play from '@lucide/svelte/icons/play';
@@ -30,6 +32,11 @@
   let selAccounts = $state<number[]>([]);
   let selAreas = $state<BackupArea[]>([...areas]);
   let secrets = $state(false);
+  // On a server, secrets in or out of an archive need a fresh proof; the app has none to give.
+  const serverAccount = app.api.kind === 'http';
+  const native = isNativeShell();
+  let reauthPassword = $state('');
+  let reauthCode = $state('');
   let pass = $state('');
   let pass2 = $state('');
   let targetKind = $state<'download' | 'local' | 'webdav'>('download');
@@ -55,10 +62,11 @@
     try {
       backupJob = await app.api.createBackup({
         scope: { mode, accounts: mode === 'custom' ? selAccounts : undefined, areas: mode === 'custom' ? selAreas : undefined, secrets },
+        reauth: secrets && serverAccount ? buildReauth({ hasPassword: true, password: reauthPassword, secondFactor: reauthCode }) : undefined,
         passphrase: pass || undefined,
         target: { kind: targetKind, path: targetPath || undefined, url: davUrl || undefined, username: davUser || undefined, password: davPass || undefined },
       });
-      pass = pass2 = '';
+      pass = pass2 = reauthPassword = reauthCode = '';
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
     }
@@ -154,7 +162,7 @@
       inspection = await app.api.inspectBackup(src, rpass);
       if (inspection.manifest) {
         rAccounts = (inspection.manifest.accounts ?? []).map((a) => a.id);
-        rSecrets = inspection.manifest.secrets;
+        rSecrets = inspection.manifest.secrets && !native;
         rstep = 'inspect';
       }
     } catch (e) {
@@ -176,6 +184,7 @@
         accounts: rAccounts.length === (inspection.manifest.accounts ?? []).length ? undefined : rAccounts,
         configOnly: rConfigOnly,
         secrets: rSecrets,
+        reauth: rSecrets && serverAccount ? buildReauth({ hasPassword: true, password: reauthPassword, secondFactor: reauthCode }) : undefined,
       });
       rstep = 'progress';
     } catch (e) {
@@ -198,6 +207,15 @@
     return `${Math.max(1, Math.round(n / 1024))} KB`;
   }
 </script>
+
+{#snippet reauthFields()}
+  <p class="muted">{t('security.stepup.introPassword')}</p>
+  <label class="label" for="bk-re-pw">{t('security.stepup.password')}</label>
+  <input id="bk-re-pw" class="input" type="password" autocomplete="current-password" bind:value={reauthPassword} />
+  <label class="label" for="bk-re-code">{t('security.stepup.code')}</label>
+  <input id="bk-re-code" class="input" autocomplete="one-time-code" autocapitalize="off" spellcheck="false" bind:value={reauthCode} />
+  <span class="muted">{t('backup.reauthHint')}</span>
+{/snippet}
 
 <section class="card wide" id="set-backup" aria-labelledby="set-backup-h">
   <div class="card-head">
@@ -231,7 +249,10 @@
             </li>
           </ul>
         {/if}
-        <label class="check"><input type="checkbox" bind:checked={secrets} /> {t('backup.includeSecrets')}</label>
+        {#if !native}
+          <label class="check"><input type="checkbox" bind:checked={secrets} /> {t('backup.includeSecrets')}</label>
+          {#if secrets && serverAccount}{@render reauthFields()}{/if}
+        {/if}
         {#if messengerSelected}<p class="warn"><TriangleAlert size={13} /> {t('backup.messengerEncrypt')}</p>{/if}
       </div>
       <div class="col">
@@ -374,7 +395,10 @@
         <label class="radio"><input type="radio" bind:group={rmode} value="merge" /> <span><strong>{t('backup.merge')}</strong> <span class="muted">{t('backup.mergeHint')}</span></span></label>
         <label class="radio"><input type="radio" bind:group={rmode} value="replace" /> <span><strong>{t('backup.replace')}</strong> <span class="muted">{t('backup.replaceHint')}</span></span></label>
         <label class="check"><input type="checkbox" bind:checked={rConfigOnly} /> {t('backup.configOnly')}</label>
-        {#if m.secrets}<label class="check"><input type="checkbox" bind:checked={rSecrets} /> {t('backup.restoreSecrets')}</label>{/if}
+        {#if m.secrets && !native}
+          <label class="check"><input type="checkbox" bind:checked={rSecrets} /> {t('backup.restoreSecrets')}</label>
+          {#if rSecrets && serverAccount}{@render reauthFields()}{/if}
+        {/if}
       </fieldset>
       <div class="nav">
         <button class="btn btn-ghost" onclick={restartRestore}>{t('backup.back')}</button>

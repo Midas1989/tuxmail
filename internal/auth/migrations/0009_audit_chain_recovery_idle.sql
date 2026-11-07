@@ -4,12 +4,16 @@
 -- (Basis spec/BETRIEB.md, spec/PARAMETER.md). The way back: rollback.go.
 
 -- hash = HMAC-SHA256(chain key, prev_hash || canonical JSON of the row), see
--- internal/auth/auditchain.go. Existing rows are sealed at the first start, as the
--- beginning of the chain; rows are immutable from then on. Only a row without a
--- hash can get one.
+-- internal/auth/auditchain.go. Existing rows are sealed once at the first start, as
+-- the beginning of the chain; rows are immutable from then on. New rows always come
+-- with a hash, a later row without one is reported by `tuxmail audit verify`.
 ALTER TABLE audit_log ADD COLUMN prev_hash TEXT;
 ALTER TABLE audit_log ADD COLUMN hash TEXT;
-CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log WHEN OLD.hash IS NOT NULL
+CREATE TRIGGER audit_log_no_null BEFORE INSERT ON audit_log WHEN NEW.hash IS NULL
+BEGIN
+    SELECT RAISE(ABORT, 'audit_log rows need a hash');
+END;
+CREATE TRIGGER audit_log_no_update BEFORE UPDATE ON audit_log WHEN OLD.hash IS NOT NULL OR NEW.hash IS NULL
 BEGIN
     SELECT RAISE(ABORT, 'audit_log is append-only');
 END;

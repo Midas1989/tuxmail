@@ -254,6 +254,7 @@ func (s *Server) backupKeyStepUp(w http.ResponseWriter, r *http.Request, a *auth
 		s.writeAuthError(w, err)
 		return false
 	}
+	s.rotateAfterStepUp(w, r, a)
 	return true
 }
 

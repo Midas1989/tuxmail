@@ -18,7 +18,7 @@ import (
 // unnoticed; triggers refuse changes at the database level. Removing rows at
 // the end shows only against a hash kept outside, which is why the server logs the
 // newest hash once a day (AuditAnchor). Rows from before the chain became its
-// beginning at the first start (sealAuditBacklog).
+// beginning at the first start (sealAuditBacklog), once.
 const auditKeyName = "audit_chain"
 
 type auditRow struct {
@@ -84,25 +84,35 @@ func scanAuditRow(rows *sql.Rows, extra ...any) (auditRow, error) {
 	return r, err
 }
 
-// sealAuditBacklog links the rows without a hash into the chain, oldest first: the
-// rows from before the chain existed, or written by an older version after a
-// rollback. Idempotent.
+// sealAuditBacklog makes the rows from before the chain its beginning. This happens
+// exactly once, in one transaction with the creation of the chain key: when the key
+// exists there is nothing to seal any more. A row without hash that turns up later
+// did not come from this program, it stays as it is and VerifyAuditChain reports it.
+// Removing the key to get here again does not help: all earlier rows then fail.
 func (s *Service) sealAuditBacklog(ctx context.Context) error {
 	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM audit_log WHERE hash IS NULL`).Scan(&n); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM server_keys WHERE name = ?`, auditKeyName).Scan(&n); err != nil {
 		return err
 	}
-	if n == 0 {
+	if n > 0 {
 		return nil
 	}
-	key, err := s.purposeKey(ctx, auditKeyName)
+	key, err := randomServerKey()
+	if err != nil {
+		return err
+	}
+	defer clear(key)
+	enc, err := s.seal(key, serverKeyContext(auditKeyName))
 	if err != nil {
 		return err
 	}
 	return s.withTx(ctx, func(tx *sql.Tx) error {
-		prev, err := chainHead(ctx, tx)
+		res, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO server_keys(name, key_enc) VALUES (?, ?)`, auditKeyName, enc)
 		if err != nil {
 			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil // another process was faster
 		}
 		rows, err := tx.QueryContext(ctx, `SELECT `+auditRowCols+` FROM audit_log WHERE hash IS NULL ORDER BY id`)
 		if err != nil {
@@ -122,6 +132,7 @@ func (s *Service) sealAuditBacklog(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		prev := auditchain.Genesis
 		for _, r := range todo {
 			h := r.entry().Hash(prev, key)
 			if _, err := tx.ExecContext(ctx, `UPDATE audit_log SET prev_hash = ?, hash = ? WHERE id = ?`, prev, h, r.id); err != nil {

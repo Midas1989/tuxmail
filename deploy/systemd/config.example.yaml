@@ -86,3 +86,8 @@ security:
   # not behind a proxy that sets its own) gets includeSubDomains. Only if EVERY
   # subdomain of the host name is served via HTTPS. "preload" is never sent.
   hsts_include_subdomains: false
+
+# Token (mindestens 32 Zeichen) für /api/v1/monitoring/self und /healthz?deep=1.
+# Ohne Token antworten beide nur auf demselben Rechner.
+# monitoring:
+#   token_file: /etc/tuxmail/monitoring.token

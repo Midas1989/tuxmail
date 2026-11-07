@@ -108,6 +108,11 @@ describe('PasswordSessionsCard: change password', () => {
   });
 });
 
+async function proof(root: HTMLElement) {
+  type(root.querySelector<HTMLInputElement>('form.stepup input[type="password"]')!, 'pw');
+  await submit(root.querySelector<HTMLFormElement>('form.stepup')!);
+}
+
 describe('PasswordSessionsCard: sessions', () => {
   it('lists this device first, marks it, describes browser/OS or the app and hides "Sign out" for this device', async () => {
     const root = render(PasswordSessionsCard, { api: mock() });
@@ -126,8 +131,12 @@ describe('PasswordSessionsCard: sessions', () => {
     const api = mock();
     const root = render(PasswordSessionsCard, { api });
     await ready(root);
+    const revoke = vi.spyOn(api, 'revokeAuthSession');
     await click(root.querySelector<HTMLButtonElement>('button[aria-label="Sign out Safari on macOS"]')!);
+    expect(revoke).not.toHaveBeenCalled(); // first the proof
+    await proof(root);
     await until(() => expect(rows(root)).toHaveLength(2));
+    expect(revoke).toHaveBeenCalledWith(2, expect.objectContaining({ password: 'pw' }));
     expect((await api.listAuthSessions()).map((s) => s.id)).toEqual([1, 3]);
   });
 
@@ -136,6 +145,7 @@ describe('PasswordSessionsCard: sessions', () => {
     const root = render(PasswordSessionsCard, { api });
     await ready(root);
     await click(button(root, 'Sign out all other sessions'));
+    await proof(root);
     await until(() => expect(rows(root)).toHaveLength(1));
     expect(button(root, 'Sign out all other sessions').disabled).toBe(true);
     expect(text(root)).toContain('There are no other sessions.');
@@ -147,6 +157,7 @@ describe('PasswordSessionsCard: sessions', () => {
     const root = render(PasswordSessionsCard, { api });
     await ready(root);
     await click(root.querySelector<HTMLButtonElement>('button[aria-label="Sign out Safari on macOS"]')!);
+    await proof(root);
     await until(() => expect(root.textContent).toContain('This entry no longer exists'));
     expect(rows(root)).toHaveLength(3);
   });

@@ -27,6 +27,7 @@ import (
 const rollbackFromVersion = 9
 
 const rollbackSQL = `
+DROP TRIGGER audit_log_no_null;
 DROP TRIGGER audit_log_no_update;
 DROP TRIGGER audit_log_no_delete;
 ALTER TABLE audit_log DROP COLUMN prev_hash;
@@ -123,6 +124,10 @@ func (s *Service) rollback(ctx context.Context, rep *RollbackReport) error {
 	}
 	if err := s.rollbackRecoveryCodes(ctx, rep); err != nil {
 		return err
+	}
+	// The last entry of the chain; the row stays for the previous version.
+	if err := s.Audit(ctx, "keys.rollback", "schema 7", true, fmt.Sprintf("recovery_codes_removed=%d", rep.RecoveryCodesRemoved)); err != nil {
+		return fmt.Errorf("auth: rollback: audit: %w", err)
 	}
 	if err := s.withTx(ctx, func(tx *sql.Tx) error {
 		_, err := tx.ExecContext(ctx, rollbackSQL)

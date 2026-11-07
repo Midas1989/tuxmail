@@ -83,6 +83,7 @@ func (s *Service) useRecoveryCode(ctx context.Context, userID int64, code string
 		return err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
+		s.auditUser(ctx, "recovery_code.use", userID, nil, "")
 		return nil
 	}
 	// Codes from before the HMAC.
@@ -120,6 +121,7 @@ func (s *Service) useRecoveryCode(ctx context.Context, userID int64, code string
 			return err
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
+			s.auditUser(ctx, "recovery_code.use", userID, nil, "")
 			return nil
 		}
 	}

@@ -204,7 +204,7 @@ func TestReauditNH08StreamClosedWhenSessionEnds(t *testing.T) {
 		if !st.stillOpen(t, 200*time.Millisecond) {
 			t.Fatal("valid device token closed")
 		}
-		if resp, _ := web.do("DELETE", fmt.Sprintf("/api/auth/sessions/%d", sid), nil); resp.StatusCode != http.StatusNoContent {
+		if resp, _ := web.do("DELETE", fmt.Sprintf("/api/auth/sessions/%d", sid), map[string]string{"password": pw}); resp.StatusCode != http.StatusNoContent {
 			t.Fatal(resp.Status)
 		}
 		if code := st.waitClose(t, 3*time.Second); code != policyViolation {

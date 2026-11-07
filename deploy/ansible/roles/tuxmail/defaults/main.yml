@@ -105,6 +105,9 @@ tuxmail_security_allowed_networks_extra: []
 # true = /healthz und /api/auth/config nennen anonymen Clients die exakte Version
 # (security.expose_version). Standard: aus; angemeldete Benutzer sehen sie immer.
 tuxmail_security_expose_version: false
+# Datei mit dem Token (mind. 32 Zeichen) für /api/v1/monitoring/self und /healthz?deep=1.
+# Leer: beides antwortet nur auf demselben Rechner (der Health-Check des Playbooks läuft dort).
+tuxmail_monitoring_token_file: ""
 # Sicherheits-Header und HSTS der Anwendung. Nur abschalten, wenn ein eigener Proxy sie setzt.
 tuxmail_security_headers: true
 tuxmail_security_hsts: true

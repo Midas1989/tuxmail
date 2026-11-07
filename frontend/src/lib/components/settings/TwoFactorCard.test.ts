@@ -5,7 +5,7 @@ import { MockTransport } from '../../api/mock';
 import { MOCK_PASSWORD, MOCK_TOTP_CODE } from '../../api/mockSecurity';
 import type { MockSecurityOptions } from '../../api/mockSecurity';
 import TwoFactorCard from './TwoFactorCard.svelte';
-import { button, cleanup, click, hasButton, input, render, submit, text, type, until } from '../security/mountUtil';
+import { button, cleanup, click, hasButton, input, render, stepUp, submit, text, type, until } from '../security/mountUtil';
 
 beforeEach(() => {
   Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => undefined) } });
@@ -28,6 +28,7 @@ describe('TwoFactorCard: enable', () => {
     expect(hasButton(root, 'Turn off')).toBe(false);
 
     await click(button(root, 'Set up two-factor authentication'));
+    await stepUp(root);
     await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
     await click(button(root, 'Next'));
     type(input(root, 'input[inputmode="numeric"]'), MOCK_TOTP_CODE);
@@ -60,6 +61,7 @@ describe('TwoFactorCard: enable', () => {
     const root = render(TwoFactorCard, { api: mock() });
     await ready(root);
     await click(button(root, 'Set up two-factor authentication'));
+    await stepUp(root);
     await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
     await click(button(root, 'Cancel'));
     expect(hasButton(root, 'Set up two-factor authentication')).toBe(true);

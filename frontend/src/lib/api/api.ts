@@ -625,7 +625,8 @@ export interface Api {
   /** Public server settings (password policy). */
   getAuthConfig(): Promise<AuthConfigInfo>;
   /** Start enrolment: new secret + otpauth URL (replaces a pending secret). Error "exists": TOTP already active. */
-  totpSetup(): Promise<TotpEnrollment>;
+  /** Starts the enrolment (re-authentication: the password of accounts that have one). */
+  totpSetup(reauth: Reauth): Promise<TotpEnrollment>;
   /** Activate TOTP with the first code; returns the recovery codes (shown once). Error "invalid_code". */
   totpConfirm(code: string): Promise<string[]>;
   /** Switch TOTP off (re-authentication). Errors: invalid_credentials, invalid_code, throttled. */
@@ -635,7 +636,8 @@ export interface Api {
   /** Change the password (or set a first local password); the server ends all other sessions. */
   changePassword(input: PasswordChange): Promise<void>;
   listAuthSessions(): Promise<AuthSession[]>;
-  revokeAuthSession(id: number): Promise<void>;
-  /** Sign out everywhere except this session. */
-  revokeOtherSessions(): Promise<void>;
+  /** Ends another session (re-authentication); the own session needs none. */
+  revokeAuthSession(id: number, reauth?: Reauth): Promise<void>;
+  /** Sign out everywhere except this session (re-authentication). */
+  revokeOtherSessions(reauth: Reauth): Promise<void>;
 }

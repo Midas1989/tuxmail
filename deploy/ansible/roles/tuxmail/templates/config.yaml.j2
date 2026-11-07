@@ -81,6 +81,11 @@ security:
   headers: {{ tuxmail_security_headers | bool | to_json }}
   hsts: {{ tuxmail_security_hsts | bool | to_json }}
   hsts_include_subdomains: {{ tuxmail_security_hsts_include_subdomains | bool | to_json }}
+{% if tuxmail_monitoring_token_file %}
+
+monitoring:
+  token_file: {{ tuxmail_monitoring_token_file | to_json }}
+{% endif %}
 {% if tuxmail_fcm_enabled | bool %}
 
 # Native Push für die Android-App (Play-Store-Variante) über Firebase Cloud Messaging.

@@ -56,6 +56,7 @@ func newEnv(t *testing.T, opts Options, mod ...func(*config.Config)) *env {
 	t.Helper()
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
+	cfg.Auth.TOTPRequiredForAdmins = false // tested on its own
 	for _, m := range mod {
 		m(&cfg)
 	}
@@ -132,6 +133,7 @@ func (b *browser) do(method, path string, body any) (*http.Response, map[string]
 	for k, v := range b.header {
 		req.Header[k] = v
 	}
+	hadSession := b.sessionCookieValue()
 	resp, err := b.c.Do(req)
 	if err != nil {
 		b.e.t.Fatal(err)
@@ -140,6 +142,10 @@ func (b *browser) do(method, path string, body any) (*http.Response, map[string]
 	raw, _ := io.ReadAll(resp.Body)
 	var m map[string]any
 	json.Unmarshal(raw, &m)
+	// A step-up gave the session a new id; the web client reads the new token from the cookie.
+	if now := b.sessionCookieValue(); b.csrf != "" && hadSession != "" && now != "" && now != hadSession {
+		b.csrf = csrfTokenFor(now)
+	}
 	return resp, m
 }
 
@@ -276,7 +282,7 @@ func TestTOTPOverHTTP(t *testing.T) {
 	e.user("bob", auth.RoleUser)
 	b := e.browser()
 	b.login("bob")
-	resp, m := b.do("POST", "/api/auth/totp/setup", nil)
+	resp, m := b.do("POST", "/api/auth/totp/setup", map[string]string{"password": pw})
 	if resp.StatusCode != 200 {
 		t.Fatal(resp.Status, m)
 	}
@@ -337,12 +343,12 @@ func TestCSRFProtection(t *testing.T) {
 	}
 	// Same origin passes.
 	b.header = http.Header{"Origin": {e.ts.URL}}
-	if resp, _ := b.do("POST", "/api/auth/sessions/revoke-others", nil); resp.StatusCode != 204 {
+	if resp, _ := b.do("POST", "/api/auth/sessions/revoke-others", map[string]string{"password": pw}); resp.StatusCode != 204 {
 		t.Fatal(resp.Status)
 	}
 	// Configured public origin passes too.
 	b.header = http.Header{"Origin": {"http://127.0.0.1:8080"}}
-	if resp, _ := b.do("POST", "/api/auth/sessions/revoke-others", nil); resp.StatusCode != 204 {
+	if resp, _ := b.do("POST", "/api/auth/sessions/revoke-others", map[string]string{"password": pw}); resp.StatusCode != 204 {
 		t.Fatal(resp.Status)
 	}
 	// Wrong token fails.
@@ -711,7 +717,7 @@ func TestDeviceFlowAndProvisioning(t *testing.T) {
 	if m["request"].(map[string]any)["clientName"] != "Ivy's Laptop" {
 		t.Fatal(m)
 	}
-	if resp, m := web.do("POST", "/api/device/approve", map[string]string{"user_code": userCode}); resp.StatusCode != 204 {
+	if resp, m := web.do("POST", "/api/device/approve", map[string]string{"user_code": userCode, "password": pw}); resp.StatusCode != 204 {
 		t.Fatal(resp.Status, m)
 	}
 	// Poll interval enforced by the service clock; advance it.
@@ -768,7 +774,7 @@ func TestDeviceFlowAndProvisioning(t *testing.T) {
 	if resp, _ := web.do("GET", "/api/provisioning/secrets", nil); resp.StatusCode != 403 {
 		t.Fatal(resp.Status)
 	}
-	if resp, _ := web.do("DELETE", "/api/auth/sessions/"+itoa(int(deviceID)), nil); resp.StatusCode != 204 {
+	if resp, _ := web.do("DELETE", "/api/auth/sessions/"+itoa(int(deviceID)), map[string]string{"password": pw}); resp.StatusCode != 204 {
 		t.Fatal(resp.Status)
 	}
 	if resp, _ := desktop.do("GET", "/api/provisioning/profile", nil); resp.StatusCode != 401 {

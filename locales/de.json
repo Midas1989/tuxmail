@@ -3005,6 +3005,7 @@
       "settings": "Einstellungen & Regeln"
     },
     "includeSecrets": "Zugangsdaten und private Schlüssel einschließen (Passwörter, Tokens, OpenPGP, S/MIME)",
+    "reauthHint": "Den Code nur, wenn die Zwei-Faktor-Anmeldung aktiv ist.",
     "messengerEncrypt": "Messenger-Sitzungen sind enthalten – eine Passphrase ist erforderlich.",
     "encryption": "Verschlüsselung",
     "passphrase": "Passphrase",
@@ -3993,6 +3994,7 @@
     },
     "setup": {
       "step": "Schritt {current} von {total}",
+      "continue": "Weiter",
       "preparing": "Wird vorbereitet …",
       "retry": "Erneut versuchen",
       "scanTitle": "QR-Code scannen",

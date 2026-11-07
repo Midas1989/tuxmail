@@ -37,25 +37,25 @@ describe('HttpTransport account security routes', () => {
     });
     expect((await api.getAuthMe()).mfaSetupRequired).toBe(true);
     expect((await api.getAuthConfig()).passwordMinLength).toBe(14);
-    expect(await api.totpSetup()).toEqual({ secret: 'ABCDEF', otpauthUrl: 'otpauth://totp/x?secret=ABCDEF' });
+    expect(await api.totpSetup({})).toEqual({ secret: 'ABCDEF', otpauthUrl: 'otpauth://totp/x?secret=ABCDEF' });
     expect(await api.totpConfirm('123456')).toEqual(['aaaaa-bbbbb', 'ccccc-ddddd']);
     await api.totpDisable({ password: 'pw', code: '654321' });
     expect(await api.regenerateRecoveryCodes({ recoveryCode: 'zzzzz-yyyyy' })).toEqual(['eeeee-fffff']);
     await api.changePassword({ currentPassword: 'old', newPassword: 'new-password-1' });
     expect(await api.listAuthSessions()).toEqual([{ id: 7, current: true }]);
     await api.revokeAuthSession(9);
-    await api.revokeOtherSessions();
+    await api.revokeOtherSessions({});
     expect(sent).toEqual([
       { method: 'GET', url: '/api/auth/me' },
       { method: 'GET', url: '/api/auth/config' },
-      { method: 'POST', url: '/api/auth/totp/setup' },
+      { method: 'POST', url: '/api/auth/totp/setup', body: {} },
       { method: 'POST', url: '/api/auth/totp/confirm', body: { code: '123456' } },
       { method: 'POST', url: '/api/auth/totp/disable', body: { password: 'pw', code: '654321' } },
       { method: 'POST', url: '/api/auth/recovery-codes', body: { recoveryCode: 'zzzzz-yyyyy' } },
       { method: 'POST', url: '/api/auth/password', body: { currentPassword: 'old', newPassword: 'new-password-1' } },
       { method: 'GET', url: '/api/auth/sessions' },
       { method: 'DELETE', url: '/api/auth/sessions/9' },
-      { method: 'POST', url: '/api/auth/sessions/revoke-others' },
+      { method: 'POST', url: '/api/auth/sessions/revoke-others', body: {} },
     ]);
   });
 
@@ -94,7 +94,7 @@ describe('MockTransport account security', () => {
     const api = mock();
     expect((await api.getAuthMe()).user.totpEnabled).toBe(false);
     await expect(api.totpConfirm(MOCK_TOTP_CODE)).rejects.toMatchObject({ code: 'invalid_code' }); // no setup yet
-    const enr = await api.totpSetup();
+    const enr = await api.totpSetup({});
     expect(enr.otpauthUrl.startsWith('otpauth://totp/')).toBe(true);
     await expect(api.totpConfirm('000000')).rejects.toMatchObject({ status: 400, code: 'invalid_code' });
     const codes = await api.totpConfirm(MOCK_TOTP_CODE);
@@ -103,13 +103,13 @@ describe('MockTransport account security', () => {
     const me = await api.getAuthMe();
     expect(me.user.totpEnabled).toBe(true);
     expect(me.recoveryCodesLeft).toBe(10);
-    await expect(api.totpSetup()).rejects.toMatchObject({ code: 'exists' });
+    await expect(api.totpSetup({})).rejects.toMatchObject({ code: 'exists' });
   });
 
   it('administrator without TOTP: mfaSetupRequired until the set-up is done', async () => {
     const api = mock({ admin: true });
     expect((await api.getAuthMe()).mfaSetupRequired).toBe(true);
-    await api.totpSetup();
+    await api.totpSetup({});
     await api.totpConfirm(MOCK_TOTP_CODE);
     expect((await api.getAuthMe()).mfaSetupRequired).toBe(false);
   });
@@ -160,7 +160,7 @@ describe('MockTransport account security', () => {
   it('first password of an account without one needs the second factor', async () => {
     const api = mock({ hasPassword: false });
     await expect(api.changePassword({ newPassword: 'a-long-new-password' })).rejects.toMatchObject({ code: 'reauth_required' });
-    await api.totpSetup();
+    await api.totpSetup({});
     await api.totpConfirm(MOCK_TOTP_CODE);
     await expect(api.changePassword({ newPassword: 'a-long-new-password', totpCode: '000000' })).rejects.toMatchObject({ code: 'invalid_code' });
     await api.changePassword({ newPassword: 'a-long-new-password', totpCode: MOCK_TOTP_CODE });
@@ -172,7 +172,7 @@ describe('MockTransport account security', () => {
     await api.revokeAuthSession(2);
     expect((await api.listAuthSessions()).map((s) => s.id)).toEqual([1, 3]);
     await expect(api.revokeAuthSession(99)).rejects.toMatchObject({ status: 404 });
-    await api.revokeOtherSessions();
+    await api.revokeOtherSessions({});
     expect((await api.listAuthSessions()).map((s) => s.id)).toEqual([1]);
   });
 
@@ -185,7 +185,7 @@ describe('WailsTransport (desktop shell has no server account)', () => {
   it('rejects with not_supported', async () => {
     const api = new WailsTransport({} as never);
     await expect(api.getAuthMe()).rejects.toMatchObject({ code: 'not_supported' });
-    await expect(api.totpSetup()).rejects.toMatchObject({ code: 'not_supported' });
+    await expect(api.totpSetup({})).rejects.toMatchObject({ code: 'not_supported' });
     await expect(api.listAuthSessions()).rejects.toMatchObject({ code: 'not_supported' });
   });
 });

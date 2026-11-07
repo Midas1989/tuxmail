@@ -74,8 +74,16 @@ func ioRoutes() []Route {
 		{"GET /api/io/jobs/{id}", func(w w, r r, a A) { send(w)(a.GetIOJob(r.Context(), r.PathValue("id"))) }},
 		{"DELETE /api/io/jobs/{id}", func(w w, r r, a A) { done(w, a.CancelIOJob(r.Context(), r.PathValue("id"))) }},
 
-		{"POST /api/backup", jsonHandler(func(w w, r r, a A, in app.BackupRequest) {
-			job, err := a.CreateBackup(r.Context(), in)
+		// An archive with the account secrets, encrypted with a passphrase of the
+		// caller's choice, is the secrets in clear for whoever asks: re-authentication.
+		{"POST /api/backup", jsonHandler(func(w w, r r, a A, in struct {
+			app.BackupRequest
+			Reauth Reauth `json:"reauth"`
+		}) {
+			if in.Scope.Secrets && !needReauth(w, r, in.Reauth) {
+				return
+			}
+			job, err := a.CreateBackup(r.Context(), in.BackupRequest)
 			if err != nil {
 				writeErr(w, err)
 				return
@@ -88,8 +96,14 @@ func ioRoutes() []Route {
 		}) {
 			send(w)(a.InspectBackup(r.Context(), in.Source, in.Passphrase))
 		})},
-		{"POST /api/backup/restore", jsonHandler(func(w w, r r, a A, in app.RestoreRequest) {
-			job, err := a.StartRestore(r.Context(), in)
+		{"POST /api/backup/restore", jsonHandler(func(w w, r r, a A, in struct {
+			app.RestoreRequest
+			Reauth Reauth `json:"reauth"`
+		}) {
+			if in.Secrets && !needReauth(w, r, in.Reauth) { // replaces stored credentials
+				return
+			}
+			job, err := a.StartRestore(r.Context(), in.RestoreRequest)
 			if err != nil {
 				writeErr(w, err)
 				return
@@ -97,13 +111,25 @@ func ioRoutes() []Route {
 			writeJSON(w, http.StatusAccepted, job)
 		})},
 		{"GET /api/backup/schedules", func(w w, r r, a A) { send(w)(a.ListBackupSchedules(r.Context())) }},
-		{"POST /api/backup/schedules", jsonHandler(func(w w, r r, a A, in app.BackupScheduleInput) {
+		{"POST /api/backup/schedules", jsonHandler(func(w w, r r, a A, in struct {
+			app.BackupScheduleInput
+			Reauth Reauth `json:"reauth"`
+		}) {
+			if in.Scope.Secrets && !needReauth(w, r, in.Reauth) {
+				return
+			}
 			in.ID = ""
-			send(w)(a.SaveBackupSchedule(r.Context(), in))
+			send(w)(a.SaveBackupSchedule(r.Context(), in.BackupScheduleInput))
 		})},
-		{"PUT /api/backup/schedules/{id}", jsonHandler(func(w w, r r, a A, in app.BackupScheduleInput) {
+		{"PUT /api/backup/schedules/{id}", jsonHandler(func(w w, r r, a A, in struct {
+			app.BackupScheduleInput
+			Reauth Reauth `json:"reauth"`
+		}) {
+			if in.Scope.Secrets && !needReauth(w, r, in.Reauth) {
+				return
+			}
 			in.ID = r.PathValue("id")
-			send(w)(a.SaveBackupSchedule(r.Context(), in))
+			send(w)(a.SaveBackupSchedule(r.Context(), in.BackupScheduleInput))
 		})},
 		{"DELETE /api/backup/schedules/{id}", func(w w, r r, a A) { done(w, a.DeleteBackupSchedule(r.Context(), r.PathValue("id"))) }},
 		{"POST /api/backup/schedules/{id}/run", func(w w, r r, a A) {

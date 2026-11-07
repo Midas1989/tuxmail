@@ -34,6 +34,7 @@ func newTestService(t *testing.T, mod ...func(*config.Config)) (*Service, *clock
 	t.Helper()
 	cfg := config.Default()
 	cfg.DataDir = t.TempDir()
+	cfg.Auth.TOTPRequiredForAdmins = false // tested on its own
 	for _, m := range mod {
 		m(&cfg)
 	}

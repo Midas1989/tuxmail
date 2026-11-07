@@ -8,6 +8,9 @@ package server
 
 import (
 	"context"
+	"crypto/subtle"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -61,15 +64,16 @@ type Options struct {
 
 // Server is the HTTP server of the server mode.
 type Server struct {
-	periodic  atomic.Pointer[periodicResult] // health checks that are too expensive to run on request
-	anchorDay string                         // housekeeping only: day of the last audit chain anchor
-	cfg       *config.Config
-	auth      *auth.Service
-	log       *slog.Logger
-	version   string
-	static    fs.FS
-	trusted   []netip.Prefix
-	mailData  MailDataSource
+	periodic        atomic.Pointer[periodicResult] // health checks that are too expensive to run on request
+	anchorDay       string                         // housekeeping only: day of the last audit chain anchor
+	monitoringToken string
+	cfg             *config.Config
+	auth            *auth.Service
+	log             *slog.Logger
+	version         string
+	static          fs.FS
+	trusted         []netip.Prefix
+	mailData        MailDataSource
 
 	backupKeyMu sync.Mutex // serialises replacing the backup key (api_admin_backup.go)
 
@@ -114,6 +118,15 @@ func New(cfg *config.Config, svc *auth.Service, opts Options) (*Server, error) {
 	s := &Server{
 		cfg: cfg, auth: svc, log: opts.Logger, version: opts.Version, static: opts.Static,
 		trusted: trusted, mailData: opts.MailData, locales: opts.Locales, appOptions: opts.AppOptions,
+	}
+	if tf := cfg.Monitoring.TokenFile; tf != "" {
+		raw, err := os.ReadFile(tf)
+		if err != nil {
+			return nil, fmt.Errorf("monitoring.token_file: %w", err)
+		}
+		if s.monitoringToken = strings.TrimSpace(string(raw)); len(s.monitoringToken) < 32 {
+			return nil, errors.New("monitoring.token_file: the token must have at least 32 characters")
+		}
 	}
 	s.apps = newAppPool(s)
 	if s.log == nil {
@@ -253,6 +266,7 @@ func (s *Server) housekeeping(ctx context.Context) {
 func (s *Server) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /api/v1/monitoring/self", s.handleMonitoring)
 
 	// Authentication (public)
 	mux.HandleFunc("GET /api/auth/config", s.handleAuthConfig)
@@ -269,19 +283,19 @@ func (s *Server) routes() http.Handler {
 	// Authentication (logged in)
 	mux.HandleFunc("POST /api/auth/logout", s.signedIn(s.handleLogout))
 	mux.HandleFunc("GET /api/auth/me", s.signedIn(s.handleMe))
-	mux.HandleFunc("POST /api/auth/password", s.user(s.handleChangePassword))
+	mux.HandleFunc("POST /api/auth/password", s.session(s.handleChangePassword))
 	mux.HandleFunc("GET /api/auth/sessions", s.user(s.handleListSessions))
-	mux.HandleFunc("DELETE /api/auth/sessions/{id}", s.user(s.handleRevokeSession))
-	mux.HandleFunc("POST /api/auth/sessions/revoke-others", s.user(s.handleRevokeOthers))
-	mux.HandleFunc("POST /api/auth/totp/setup", s.user(s.handleTOTPSetup))
-	mux.HandleFunc("POST /api/auth/totp/confirm", s.user(s.handleTOTPConfirm))
-	mux.HandleFunc("POST /api/auth/totp/disable", s.user(s.handleTOTPDisable))
-	mux.HandleFunc("POST /api/auth/recovery-codes", s.user(s.handleRecoveryCodes))
+	mux.HandleFunc("DELETE /api/auth/sessions/{id}", s.session(s.handleRevokeSession))
+	mux.HandleFunc("POST /api/auth/sessions/revoke-others", s.session(s.handleRevokeOthers))
+	mux.HandleFunc("POST /api/auth/totp/setup", s.session(s.handleTOTPSetup))
+	mux.HandleFunc("POST /api/auth/totp/confirm", s.session(s.handleTOTPConfirm))
+	mux.HandleFunc("POST /api/auth/totp/disable", s.session(s.handleTOTPDisable))
+	mux.HandleFunc("POST /api/auth/recovery-codes", s.session(s.handleRecoveryCodes))
 	mux.HandleFunc("GET /api/auth/passkeys", s.user(s.handlePasskeyList))
-	mux.HandleFunc("POST /api/auth/passkeys/register/begin", s.user(s.handlePasskeyRegisterBegin))
-	mux.HandleFunc("POST /api/auth/passkeys/register/finish", s.user(s.handlePasskeyRegisterFinish))
-	mux.HandleFunc("PATCH /api/auth/passkeys/{id}", s.user(s.handlePasskeyRename))
-	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", s.user(s.handlePasskeyDelete))
+	mux.HandleFunc("POST /api/auth/passkeys/register/begin", s.session(s.handlePasskeyRegisterBegin))
+	mux.HandleFunc("POST /api/auth/passkeys/register/finish", s.session(s.handlePasskeyRegisterFinish))
+	mux.HandleFunc("PATCH /api/auth/passkeys/{id}", s.session(s.handlePasskeyRename))
+	mux.HandleFunc("DELETE /api/auth/passkeys/{id}", s.session(s.handlePasskeyDelete))
 
 	// User settings (opaque JSON per key)
 	mux.HandleFunc("GET /api/settings", s.user(s.handleListSettings))
@@ -333,8 +347,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/device/token", s.handleDeviceToken)
 	mux.HandleFunc("POST /api/device/login", s.handleDeviceLogin)
 	mux.HandleFunc("POST /api/device/rotate", s.device(s.handleDeviceRotate))
-	mux.HandleFunc("GET /api/device/request", s.user(s.handleDeviceRequest))
-	mux.HandleFunc("POST /api/device/approve", s.user(s.handleDeviceApprove))
+	mux.HandleFunc("GET /api/device/request", s.session(s.handleDeviceRequest))
+	mux.HandleFunc("POST /api/device/approve", s.session(s.handleDeviceApprove))
 	mux.HandleFunc("GET /api/provisioning/profile", s.provisioning(s.handleProvisioningProfile))
 	mux.HandleFunc("GET /api/provisioning/secrets", s.deviceProvisioning(s.handleProvisioningSecrets))
 
@@ -374,46 +388,146 @@ func (s *Server) routes() http.Handler {
 }
 
 // handleHealth is Basis spec/BETRIEB.md: /healthz says the process lives and needs
-// nothing else; /healthz?deep=1 checks the dependencies, for start scripts and
-// container health checks. Both are public, so the deep answer names checks and
-// states only. "ok" only after a check has succeeded.
+// nothing else, for everybody. "product" lets clients recognise a TuxMail server; the
+// exact version is only disclosed on request (security.expose_version, NA-07).
+// With ?deep=1 it is handleMonitoring.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	// "product" lets clients recognise a TuxMail server; the exact version is
-	// only disclosed on request (security.expose_version, NA-07).
+	if r.URL.Query().Get("deep") == "1" {
+		s.handleMonitoring(w, r)
+		return
+	}
 	out := map[string]any{"status": "ok", "product": productMarker}
 	if s.cfg.Security.ExposeVersion {
 		out["version"] = s.version
 	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleMonitoring is GET /api/v1/monitoring/self (and /healthz?deep=1): all checks
+// with their details, so only with the monitoring token or from this machine.
+func (s *Server) handleMonitoring(w http.ResponseWriter, r *http.Request) {
+	if !s.monitoringAllowed(r) {
+		writeError(w, http.StatusForbidden, "forbidden", "monitoring token required")
+		return
+	}
+	status, checks := s.healthChecks(r.Context())
+	// The monitoring endpoint always answers 200 with the status (Basis
+	// spec/BETRIEB.md). /healthz?deep=1 serves start scripts and container checks,
+	// which only understand the status code: 503 if this instance cannot work. A
+	// server without a backup key is "fail" in monitoring (ADR 0007 no. 15) and runs.
 	code := http.StatusOK
-	if r.URL.Query().Get("deep") == "1" {
-		status, checks := s.healthChecks(r.Context())
-		out["status"], out["checks"] = status, checks
-		if status == "fail" {
-			code = http.StatusServiceUnavailable
+	if r.URL.Path == "/healthz" {
+		for _, c := range checks {
+			if c.Name == "db" && c.Status == "fail" {
+				code = http.StatusServiceUnavailable
+			}
 		}
 	}
-	writeJSON(w, code, out)
+	writeJSON(w, code, map[string]any{"status": status, "version": s.version, "product": productMarker, "checks": checks})
+}
+
+// monitoringAllowed: the token, or a direct connection from this machine. A proxy on
+// this machine forwards with X-Forwarded-For and so counts as outside.
+func (s *Server) monitoringAllowed(r *http.Request) bool {
+	if t := bearerToken(r); t != "" {
+		return s.monitoringToken != "" && subtle.ConstantTimeCompare([]byte(t), []byte(s.monitoringToken)) == 1
+	}
+	if r.Header.Get("X-Forwarded-For") != "" || r.Header.Get("X-Real-Ip") != "" || r.Header.Get("Forwarded") != "" {
+		return false
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if host == "" || host == "@" {
+		return true // unix socket
+	}
+	peer, err := netip.ParseAddr(host)
+	if err != nil {
+		return false
+	}
+	peer = peer.Unmap()
+	if peer.IsLoopback() {
+		return true
+	}
+	if la, ok := r.Context().Value(http.LocalAddrContextKey).(net.Addr); ok {
+		if lh, _, err := net.SplitHostPort(la.String()); err == nil {
+			if l, err := netip.ParseAddr(lh); err == nil {
+				return l.Unmap() == peer
+			}
+		}
+	}
+	return false
 }
 
 type healthCheck struct {
 	Name   string `json:"name"`
 	Status string `json:"status"`
+	MS     int64  `json:"ms"`
+	Detail string `json:"detail,omitempty"`
 }
 
-// healthChecks runs the database check and adds the results of the periodic job:
-// the audit chain and open key rotations are too expensive for a public endpoint.
+// Thresholds of the health checks.
+const (
+	diskWarnPercent = 10
+	diskFailPercent = 2
+	jobsMaxAge      = time.Hour
+	certWarnBefore  = 14 * 24 * time.Hour
+)
+
+// healthChecks is the list of Basis spec/BETRIEB.md, without what TuxMail does not
+// have: it sends no mail of its own and has no licences. "ok" only after proof: what
+// the periodic job has not checked yet is a warning. The chain and the keys are
+// checked by that job (runPeriodicChecks), they take too long for a request.
 func (s *Server) healthChecks(ctx context.Context) (string, []healthCheck) {
-	db := "ok"
-	if err := s.auth.DB().PingContext(ctx); err != nil {
-		db = "fail"
-	} else if err := s.auth.DB().QueryRowContext(ctx, `SELECT 1 FROM schema_version LIMIT 1`).Scan(new(int)); err != nil {
-		db = "fail"
+	timed := func(name string, fn func() (string, string)) healthCheck {
+		start := time.Now()
+		st, detail := fn()
+		return healthCheck{Name: name, Status: st, Detail: detail, MS: time.Since(start).Milliseconds()}
 	}
-	checks := []healthCheck{{"db", db}}
-	if p := s.periodic.Load(); p != nil {
-		checks = append(checks, healthCheck{"audit_chain", p.audit}, healthCheck{"key_rotation", p.keys})
-	} else {
-		checks = append(checks, healthCheck{"audit_chain", "warn"}, healthCheck{"key_rotation", "warn"})
+	checks := []healthCheck{
+		timed("db", func() (string, string) {
+			if err := s.auth.DB().PingContext(ctx); err != nil {
+				return "fail", "database unavailable"
+			}
+			if err := s.auth.DB().QueryRowContext(ctx, `SELECT 1 FROM schema_version LIMIT 1`).Scan(new(int)); err != nil {
+				return "fail", "database unavailable"
+			}
+			return "ok", ""
+		}),
+		timed("disk", func() (string, string) {
+			free, ok := diskFreePercent(s.cfg.DataDir)
+			switch {
+			case !ok:
+				return "warn", "cannot be measured here"
+			case free < diskFailPercent:
+				return "fail", fmt.Sprintf("%d %% free", free)
+			case free < diskWarnPercent:
+				return "warn", fmt.Sprintf("%d %% free", free)
+			}
+			return "ok", fmt.Sprintf("%d %% free", free)
+		}),
+		timed("backup", func() (string, string) {
+			h := s.backupHealth()
+			return h, ""
+		}),
+	}
+	p := s.periodic.Load()
+	if p == nil {
+		p = &periodicResult{audit: "warn", auditDetail: "not checked yet", keys: "warn", keysDetail: "not checked yet"}
+	}
+	jobs, jobsDetail := "warn", "not run yet"
+	if !p.at.IsZero() {
+		jobs, jobsDetail = "ok", "last run "+p.at.UTC().Format(time.RFC3339)
+		if time.Since(p.at) > jobsMaxAge {
+			jobs = "fail"
+		}
+	}
+	checks = append(checks, healthCheck{Name: "jobs", Status: jobs, Detail: jobsDetail},
+		healthCheck{Name: "audit_chain", Status: p.audit, Detail: p.auditDetail},
+		healthCheck{Name: "key_rotation", Status: p.keys, Detail: p.keysDetail})
+	if s.cfg.TLS.Mode == "file" {
+		checks = append(checks, timed("certificate", s.certificateCheck))
 	}
 	status := "ok"
 	for _, c := range checks {
@@ -427,36 +541,62 @@ func (s *Server) healthChecks(ctx context.Context) (string, []healthCheck) {
 	return status, checks
 }
 
-// periodicResult is what the periodic job last found out.
-type periodicResult struct{ audit, keys string }
+func (s *Server) certificateCheck() (string, string) {
+	pair, err := tls.LoadX509KeyPair(s.cfg.TLS.CertFile, s.cfg.TLS.KeyFile)
+	if err != nil || len(pair.Certificate) == 0 {
+		return "fail", "certificate unreadable"
+	}
+	cert, err := x509.ParseCertificate(pair.Certificate[0])
+	if err != nil {
+		return "fail", "certificate unreadable"
+	}
+	left := time.Until(cert.NotAfter)
+	detail := "expires " + cert.NotAfter.UTC().Format(time.DateOnly)
+	switch {
+	case left <= 0:
+		return "fail", detail
+	case left < certWarnBefore:
+		return "warn", detail
+	}
+	return "ok", detail
+}
 
-// runPeriodicChecks verifies the audit chain and looks for open key rotations.
-// The anchor of the chain goes to the log once a day.
+// periodicResult is what the periodic job last found out.
+type periodicResult struct {
+	at                 time.Time
+	audit, auditDetail string
+	keys, keysDetail   string
+}
+
+// runPeriodicChecks looks for open key rotations and, once a day, verifies the audit
+// chain and writes its anchor to the log.
 func (s *Server) runPeriodicChecks(ctx context.Context) {
-	res := &periodicResult{audit: "fail", keys: "warn"}
+	res := &periodicResult{audit: "warn", auditDetail: "not checked yet", keys: "warn", keysDetail: "not checked yet"}
 	if prev := s.periodic.Load(); prev != nil {
 		*res = *prev
 	}
+	res.at = time.Now()
 	if st, err := s.auth.KeyStatus(ctx); err != nil {
 		s.log.Warn("key status", "err", err)
+		res.keys, res.keysDetail = "warn", "status unavailable"
 	} else if st.UnknownKid > 0 {
-		res.keys = "fail"
-	} else if st.NeedsRewrap() > 0 {
-		res.keys = "warn"
+		res.keys, res.keysDetail = "fail", fmt.Sprintf("%d values use an unknown key", st.UnknownKid)
+	} else if n := st.NeedsRewrap(); n > 0 {
+		res.keys, res.keysDetail = "warn", fmt.Sprintf("%d values wait for keys rewrap", n)
 	} else {
-		res.keys = "ok"
+		res.keys, res.keysDetail = "ok", ""
 	}
 	if day := time.Now().UTC().Format(time.DateOnly); day != s.anchorDay {
 		rep, err := s.auth.AuditAnchor(ctx)
 		switch {
 		case err != nil:
 			s.log.Error("audit chain check", "err", err)
-			res.audit = "fail"
+			res.audit, res.auditDetail = "fail", "check failed"
 		case !rep.OK():
-			res.audit = "fail"
+			res.audit, res.auditDetail = "fail", fmt.Sprintf("broken at entry %d: %s", rep.BrokenAt, rep.Reason)
 			s.anchorDay = day
 		default:
-			res.audit = "ok"
+			res.audit, res.auditDetail = "ok", fmt.Sprintf("%d entries, verified %s", rep.Entries, day)
 			s.anchorDay = day
 		}
 	}

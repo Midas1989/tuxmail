@@ -1909,6 +1909,8 @@ export interface BackupTarget {
 
 export interface BackupRequest {
   scope: BackupScope;
+  /** Server mode, with secrets: proof of the user. */
+  reauth?: import('./api/security').Reauth;
   passphrase?: string;
   target: BackupTarget;
 }
@@ -1956,6 +1958,8 @@ export interface BackupInspection {
 
 export interface RestoreRequest {
   source: BackupSource;
+  /** Server mode, with secrets: proof of the user. */
+  reauth?: import('./api/security').Reauth;
   bases?: BackupSource[];
   passphrase?: string;
   mode: 'replace' | 'merge';

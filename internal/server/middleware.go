@@ -134,7 +134,7 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 				if v == http.ErrAbortHandler {
 					panic(v)
 				}
-				s.log.Error("panic in handler", "request_id", requestID(r), "panic", v, "path", r.URL.Path, "stack", string(debug.Stack()))
+				s.log.Error("panic in handler", "request_id", requestID(r), "panic", v, "path", logPath(r.URL.Path), "stack", string(debug.Stack()))
 				writeError(w, http.StatusInternalServerError, "internal", "internal server error")
 			}
 		}()
@@ -171,6 +171,19 @@ func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	return http.NewResponseController(w.ResponseWriter).Hijack()
 }
 
+// secretPathPrefixes are paths whose rest is a secret token.
+var secretPathPrefixes = []string{"/api/auth/invites/", "/api/io/downloads/"}
+
+// logPath is the path of a request as it may appear in the log.
+func logPath(p string) string {
+	for _, prefix := range secretPathPrefixes {
+		if strings.HasPrefix(p, prefix) {
+			return prefix + "********"
+		}
+	}
+	return p
+}
+
 func (s *Server) logRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -181,7 +194,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 			lvl = s.log.Info
 		}
 		// Never log query strings: they may contain codes or tokens.
-		lvl("http request", "method", r.Method, "path", r.URL.Path, "status", sw.status,
+		lvl("http request", "method", r.Method, "path", logPath(r.URL.Path), "status", sw.status,
 			"duration_ms", time.Since(start).Milliseconds(), "ip", clientFrom(r).IP, "request_id", requestID(r))
 	})
 }
@@ -575,6 +588,42 @@ func (s *Server) device(h handlerFunc) http.HandlerFunc {
 		}
 		return true
 	}, h)
+}
+
+func refuseDevice(w http.ResponseWriter) {
+	writeError(w, http.StatusForbidden, "device_token_forbidden", "this needs a browser session")
+}
+
+// session lets browser sessions through, no device tokens, whatever their scopes:
+// for what protects the account. A device token is a long-lived credential on a
+// device that can get lost; it must not be able to lock the owner out or add ways in.
+func (s *Server) session(h handlerFunc) http.HandlerFunc {
+	return s.withAuth(func(w http.ResponseWriter, a *authInfo) bool {
+		if a.Session.Kind == auth.KindDevice {
+			refuseDevice(w)
+			return false
+		}
+		return true
+	}, h)
+}
+
+// deviceForbiddenAppRoutes are the routes of the application API that device tokens
+// may not use, although they belong to the user's own data: they hand out key
+// material or decide what is trusted. The reasons for all sensitive routes:
+// docs/security/BASIS-ABWEICHUNGEN.md, "Geräte-Token: Routen". A test keeps this
+// list complete (TestDeviceTokenSensitiveRoutesAreClassified).
+var deviceForbiddenAppRoutes = map[string]bool{
+	"POST /api/comfort/pgp/keys/{id}/secret":         true, // exports the private key
+	"POST /api/comfort/pgp/keys/{id}/passphrase":     true,
+	"DELETE /api/comfort/pgp/keys/{id}":              true,
+	"PUT /api/comfort/pgp/keys/{id}/trust":           true,
+	"POST /api/comfort/pgp/peers/accept":             true,
+	"POST /api/comfort/pgp/peers/verify":             true,
+	"POST /api/comfort/pgp/peers/delete":             true,
+	"DELETE /api/comfort/smime/certificates/{id}":    true,
+	"PUT /api/comfort/smime/certificates/{id}/trust": true,
+	"PUT /api/oauth/clients/{provider}":              true, // whose app gets the mail tokens
+	"DELETE /api/oauth/clients/{provider}":           true,
 }
 
 // deviceProvisioning is device plus the provisioning scope.

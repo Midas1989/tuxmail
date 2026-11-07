@@ -77,7 +77,8 @@ const deviceBody = `<h1>Connect a device</h1>
 <div id="step1"><form id="code"><label for="c">Code shown on the device</label><input id="c" name="code" autocomplete="off" required autofocus>
 <button type="submit">Continue</button></form></div>
 <div id="step2" class="hidden"><p>Allow <b id="name"></b> to access your TuxMail account?</p><p>Code: <code id="ucode"></code></p>
-<p id="where"></p><p class="err">Only allow this if you started the sign-in on this device yourself just now. Never enter or approve a code that someone sent you.</p><div id="totp" class="hidden"><label for="t">Two-factor code</label><input id="t" inputmode="numeric" autocomplete="one-time-code"></div>
+<p id="where"></p><p class="err">Only allow this if you started the sign-in on this device yourself just now. Never enter or approve a code that someone sent you.</p><div id="pw" class="hidden"><label for="p">Your password</label><input id="p" type="password" autocomplete="current-password"></div>
+<div id="totp" class="hidden"><label for="t">Two-factor code</label><input id="t" inputmode="numeric" autocomplete="one-time-code"></div>
 <button id="approve">Allow</button><button id="deny" class="secondary">Deny</button></div>
 <div id="done" class="hidden"><p id="donemsg"></p></div><div class="err" id="err" role="alert"></div>`
 
@@ -88,8 +89,9 @@ if(r.status===401){location.href='/login?next='+encodeURIComponent(location.path
 if(r.status!==200){err.textContent=msg(j);return}
 code=c;const q=j.request||{};$('name').textContent=q.deviceName||q.clientName||'TuxMail';$('ucode').textContent=c;
 $('where').textContent=[q.ip?('IP: '+q.ip):'',q.userAgent?('Client: '+q.userAgent):'',q.createdAt?('Requested: '+new Date(q.createdAt).toLocaleString()):''].filter(Boolean).join(' · ');if(j.totpRequired)$('totp').classList.remove('hidden');
+if(j.passwordRequired)$('pw').classList.remove('hidden');
 $('step1').classList.add('hidden');$('step2').classList.remove('hidden')}
-async function decide(approve){const res=await post('/api/device/approve',{user_code:code,approve,totp_code:$('t').value.trim()});
+async function decide(approve){const res=await post('/api/device/approve',{user_code:code,approve,password:$('p').value,totp_code:$('t').value.trim()});
 if(res.status!==204){err.textContent=msg(res.body);return}
 $('step2').classList.add('hidden');$('done').classList.remove('hidden');
 $('donemsg').textContent=approve?'Done. You can return to the app.':'The request was denied.'}

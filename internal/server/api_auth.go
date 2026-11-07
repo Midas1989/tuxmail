@@ -140,6 +140,7 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request, a 
 	}
 	s.streams.revokeUser(a.User.ID, a.Session.ID) // other sessions ended with the password change
 	s.apps.lockPGP(a.User.ID)
+	s.rotateAfterStepUp(w, r, a)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -170,6 +171,14 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, a *
 	if !ok {
 		return
 	}
+	// The own session is a sign-out; ending another one needs proof, or a stolen
+	// cookie could throw out its owner.
+	if id != a.Session.ID {
+		var req reauthReq
+		if !readJSON(w, r, &req) || !s.reauth(w, r, a, req.Password, req.Code, req.RecoveryCode) {
+			return
+		}
+	}
 	if err := s.auth.RevokeSession(r.Context(), a.User.ID, id); err != nil {
 		s.writeAuthError(w, err)
 		return
@@ -183,6 +192,10 @@ func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request, a *
 }
 
 func (s *Server) handleRevokeOthers(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	var req reauthReq
+	if !readJSON(w, r, &req) || !s.reauth(w, r, a, req.Password, req.Code, req.RecoveryCode) {
+		return
+	}
 	if err := s.auth.RevokeAllSessions(r.Context(), a.User.ID, a.Session.ID); err != nil {
 		s.writeAuthError(w, err)
 		return
@@ -193,6 +206,10 @@ func (s *Server) handleRevokeOthers(w http.ResponseWriter, r *http.Request, a *a
 }
 
 func (s *Server) handleTOTPSetup(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	var req reauthReq
+	if !readJSON(w, r, &req) || !s.reauth(w, r, a, req.Password, req.Code, req.RecoveryCode) {
+		return
+	}
 	enr, err := s.auth.BeginTOTP(r.Context(), a.User.ID)
 	if err != nil {
 		s.writeAuthError(w, err)
@@ -216,28 +233,44 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request, a *au
 	writeJSON(w, http.StatusOK, map[string]any{"recoveryCodes": codes})
 }
 
-// reauth verifies the password (if the user has one) and, when TOTP is
-// active, a second factor before sensitive self-service changes.
+// reauth is the step-up before a sensitive change (Basis spec/AUTH.md §3): the
+// password if the user has one and, with TOTP, a second factor; an account with
+// neither needs a recent login from its identity provider or passkey. Wrong answers
+// count persistently per user (NA-05). Device tokens never get here: they have
+// nothing to prove themselves with. Success gives the session a new id.
 func (s *Server) reauth(w http.ResponseWriter, r *http.Request, a *authInfo, password, code, recovery string) bool {
+	if a.Session.Kind == auth.KindDevice {
+		refuseDevice(w)
+		return false
+	}
 	if !s.limitLogin(w, r, a.User.Username) {
 		return false
 	}
-	// Wrong answers are counted persistently per user (NA-05): the in-memory
-	// rate limit alone can be bypassed from many source addresses.
-	if a.User.HasPassword {
-		if err := s.auth.VerifyStepUpPassword(r.Context(), a.User.ID, password); err != nil {
-			s.writeAuthError(w, err)
-			return false
-		}
+	if err := s.auth.VerifyStepUp(r.Context(), a.User.ID, a.Session.ID, password, code, recovery); err != nil {
+		s.writeAuthError(w, err)
+		return false
 	}
-	if a.User.TOTPEnabled {
-		if err := s.auth.VerifyStepUpSecondFactor(r.Context(), a.User.ID, code, recovery); err != nil {
-			s.writeAuthError(w, err)
-			return false
-		}
-	}
-	s.auth.ClearStepUp(r.Context(), a.User.ID)
+	s.rotateAfterStepUp(w, r, a)
 	return true
+}
+
+// rotateAfterStepUp gives the session a new id and the browser the new cookies. The
+// request goes on; a failure here must not undo a proof that succeeded.
+func (s *Server) rotateAfterStepUp(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	if a.Bearer || a.Session.Kind != auth.KindWeb {
+		return
+	}
+	next, err := s.auth.RotateWebSession(r.Context(), a.Session, a.Token)
+	if err != nil {
+		s.log.Warn("session rotation", "request_id", requestID(r), "err", err)
+		return
+	}
+	if next == "" {
+		return
+	}
+	a.Token = next
+	s.setCookie(w, sessionCookie, next, s.cfg.Auth.EffectiveSessionLifetime(), true, http.SameSiteLaxMode)
+	s.setCookie(w, csrfCookie, csrfTokenFor(next), 0, false, http.SameSiteStrictMode)
 }
 
 type reauthReq struct {

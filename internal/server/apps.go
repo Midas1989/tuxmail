@@ -249,6 +249,26 @@ var readonlyAllowed = map[string]bool{
 // token) and passes the user's App to h.
 func (s *Server) appHandler(h api.AppHandler) http.HandlerFunc {
 	return s.user(func(w http.ResponseWriter, r *http.Request, a *authInfo) {
+		if a.Session.Kind == auth.KindDevice && deviceForbiddenAppRoutes[r.Pattern] {
+			refuseDevice(w)
+			return
+		}
+		r = r.WithContext(api.WithGuards(r.Context(), api.Guards{
+			Reauth: func(w http.ResponseWriter, r *http.Request, re api.Reauth) bool {
+				if a.Session.Kind == auth.KindDevice {
+					refuseDevice(w)
+					return false
+				}
+				return s.reauth(w, r, a, re.Password, re.Code, re.RecoveryCode)
+			},
+			NoDevice: func(w http.ResponseWriter, _ *http.Request) bool {
+				if a.Session.Kind == auth.KindDevice {
+					refuseDevice(w)
+					return false
+				}
+				return true
+			},
+		}))
 		if a.User.Role == auth.RoleReadonly && !safeMethod(r.Method) && !readonlyAllowed[r.Pattern] {
 			writeError(w, http.StatusForbidden, "read_only", "this account is read-only")
 			return

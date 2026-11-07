@@ -284,7 +284,7 @@ export class WailsTransport implements Api {
   getAuthConfig(): Promise<AuthConfigInfo> {
     return this.noAccount();
   }
-  totpSetup(): Promise<TotpEnrollment> {
+  totpSetup(_reauth: Reauth): Promise<TotpEnrollment> {
     return this.noAccount();
   }
   totpConfirm(_code: string): Promise<string[]> {
@@ -302,10 +302,10 @@ export class WailsTransport implements Api {
   listAuthSessions(): Promise<AuthSession[]> {
     return this.noAccount();
   }
-  revokeAuthSession(_id: number): Promise<void> {
+  revokeAuthSession(_id: number, _reauth?: Reauth): Promise<void> {
     return this.noAccount();
   }
-  revokeOtherSessions(): Promise<void> {
+  revokeOtherSessions(_reauth: Reauth): Promise<void> {
     return this.noAccount();
   }
   vaultStatus(): Promise<VaultStatus> {

@@ -4,6 +4,7 @@ package auth
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
@@ -796,5 +797,135 @@ func TestLoginFailsWithoutAudit(t *testing.T) {
 	s.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n)
 	if n != 0 {
 		t.Fatal("session left behind")
+	}
+}
+
+// An idle limit of a minute, the smallest allowed: active sessions must survive it.
+func TestShortIdleLimitKeepsActiveSession(t *testing.T) {
+	s, clk := newTestService(t, func(c *config.Config) { c.Auth.SessionIdleTimeout = config.Duration(time.Minute) })
+	mustUser(t, s, "ida", RoleUser, goodPW)
+	ctx := context.Background()
+	res, err := s.Login(ctx, LoginRequest{Login: "ida", Password: goodPW, Client: ClientInfo{IP: "192.0.2.1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	active := WithUserActivity(ctx)
+	for i := range 10 {
+		clk.Add(50 * time.Second)
+		if _, _, err := s.Authenticate(active, res.Token, "192.0.2.1"); err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+	}
+	clk.Add(time.Minute)
+	if _, _, err := s.Authenticate(active, res.Token, "192.0.2.1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("after the limit: %v", err)
+	}
+}
+
+// Only the first start seals; what a database admin adds later shows.
+func TestAuditForeignRowsAreNotSealed(t *testing.T) {
+	li := newLegacyInstall(t)
+	s := li.open(t)
+	ctx := context.Background()
+	if rep, err := s.VerifyAuditChain(ctx); err != nil || !rep.OK() {
+		t.Fatalf("%+v %v", rep, err)
+	}
+	// The database refuses a row without hash and clearing a hash.
+	if _, err := s.db.Exec(`INSERT INTO audit_log(at, action) VALUES (1, 'fremd')`); err == nil {
+		t.Fatal("row without hash accepted")
+	}
+	if _, err := s.db.Exec(`UPDATE audit_log SET hash = NULL WHERE id = 1`); err == nil {
+		t.Fatal("hash cleared")
+	}
+	// Without the triggers: neither a restart nor anything else adopts the row.
+	for _, q := range []string{`DROP TRIGGER audit_log_no_null`, `DROP TRIGGER audit_log_no_update`} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.Exec(`INSERT INTO audit_log(at, actor, action, success) VALUES (5, 'fremd', 'erfunden', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	id := int64(0)
+	s.db.QueryRow(`SELECT id FROM audit_log WHERE action = 'erfunden'`).Scan(&id)
+	s.Close()
+	s2 := li.open(t)
+	rep, err := s2.VerifyAuditChain(ctx)
+	if err != nil || rep.OK() || rep.BrokenAt != id || rep.Reason != "row without hash" {
+		t.Fatalf("%+v %v", rep, err)
+	}
+	var hash sql.NullString
+	s2.db.QueryRow(`SELECT hash FROM audit_log WHERE id = ?`, id).Scan(&hash)
+	if hash.Valid {
+		t.Fatal("foreign row sealed at the start")
+	}
+}
+
+func TestAuditDatabaseAdminCannotForge(t *testing.T) {
+	li := newLegacyInstall(t)
+	s := li.open(t)
+	ctx := context.Background()
+	s.Audit(ctx, "echt", "x", true, "")
+	for _, q := range []string{`DROP TRIGGER audit_log_no_null`, `DROP TRIGGER audit_log_no_update`, `DROP TRIGGER audit_log_no_delete`} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep, _ := s.VerifyAuditChain(ctx)
+	head := rep.Head
+	// Correct predecessor, plausible hash, no key: the HMAC decides.
+	sum := sha256.Sum256([]byte(head + "erfunden"))
+	if _, err := s.db.Exec(`INSERT INTO audit_log(at, actor, action, prev_hash, hash) VALUES (9, 'x', 'erfunden', ?, ?)`, head, hex.EncodeToString(sum[:])); err != nil {
+		t.Fatal(err)
+	}
+	rep, err := s.VerifyAuditChain(ctx)
+	if err != nil || rep.OK() || rep.Reason != "content changed" {
+		t.Fatalf("%+v %v", rep, err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM audit_log WHERE action = 'erfunden'`); err != nil {
+		t.Fatal(err)
+	}
+	// Removing the chain key does not bring back sealing that hides anything.
+	if _, err := s.db.Exec(`DELETE FROM server_keys WHERE name = ?`, auditKeyName); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO audit_log(at, action) VALUES (9, 'erfunden2')`); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	s2 := li.open(t)
+	rep, err = s2.VerifyAuditChain(ctx)
+	if err != nil || rep.OK() {
+		t.Fatalf("chain looks intact after the key was removed: %+v %v", rep, err)
+	}
+}
+
+func TestRecoveryCodeUseIsAudited(t *testing.T) {
+	li := newLegacyInstall(t)
+	s := li.open(t)
+	ctx := context.Background()
+	if err := s.useRecoveryCode(ctx, 1, legacyRecoveryCode); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action = 'recovery_code.use' AND target = 'user1'`).Scan(&n)
+	if n != 1 {
+		t.Fatal("old code:", n)
+	}
+	codes, err := s.RegenerateRecoveryCodes(ctx, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.useRecoveryCode(ctx, 2, codes[0]); err != nil {
+		t.Fatal(err)
+	}
+	s.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action = 'recovery_code.use' AND target = 'user2'`).Scan(&n)
+	if n != 1 {
+		t.Fatal("new code:", n)
+	}
+	s.useRecoveryCode(ctx, 2, codes[0])
+	s.db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action = 'recovery_code.use'`).Scan(&n)
+	if n != 2 {
+		t.Fatal("refused use audited as a use:", n)
 	}
 }

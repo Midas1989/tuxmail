@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MockTransport } from '../../api/mock';
 import { MOCK_TOTP_CODE } from '../../api/mockSecurity';
 import MfaSetupDialog from './MfaSetupDialog.svelte';
-import { button, cleanup, click, hasButton, input, render, submit, text, type, until } from './mountUtil';
+import { button, cleanup, click, hasButton, input, render, stepUp, submit, text, type, until } from './mountUtil';
 
 afterEach(cleanup);
 
@@ -26,6 +26,7 @@ describe('MfaSetupDialog (forced set-up for administrators)', () => {
     expect(root.querySelector('[role="dialog"]')).toBeTruthy();
     expect(hasButton(root, 'Sign out')).toBe(true);
     // every other button belongs to the set-up itself
+    await stepUp(root);
     await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
   });
 
@@ -46,6 +47,7 @@ describe('MfaSetupDialog (forced set-up for administrators)', () => {
     const onfinished = vi.fn();
     const api = mock();
     const root = render(MfaSetupDialog, { api, onfinished, onsignout: async () => {} });
+    await stepUp(root);
     await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
     await click(button(root, 'Next'));
     type(input(root, 'input[inputmode="numeric"]'), MOCK_TOTP_CODE);

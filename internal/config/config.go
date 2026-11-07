@@ -58,6 +58,11 @@ type Config struct {
 	OAuth          OAuth    `yaml:"oauth"`    // oauth.go
 	Push           Push     `yaml:"push"`     // push.go
 	Security       Security `yaml:"security"` // security.go
+	// Monitoring: TokenFile holds the token for /api/v1/monitoring/self and
+	// /healthz?deep=1 (empty: these answer only on the machine itself).
+	Monitoring struct {
+		TokenFile string `yaml:"token_file"`
+	} `yaml:"monitoring"`
 }
 
 // Log configures logging.
@@ -141,8 +146,10 @@ func Default() Config {
 			SessionLifetime:    Duration(MaxSessionLifetime),
 			SessionIdleTimeout: Duration(MaxSessionIdle),
 			PasswordMinLength:  12,
-			Registration:       "disabled",
-			OIDC:               OIDC{GroupsClaim: "groups"},
+			// Schutzklasse hoch; switching it off is a decision of the installation.
+			TOTPRequiredForAdmins: true,
+			Registration:          "disabled",
+			OIDC:                  OIDC{GroupsClaim: "groups"},
 		},
 		Security: Security{Headers: true, HSTS: true, HSTSIncludeSubdomains: true},
 		Limits:   Limits{MaxUploadMB: 200, LoginRatePerMinute: 10, BackgroundSync: true, BackgroundSyncMaxUsers: 500},

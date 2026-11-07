@@ -28,7 +28,7 @@ func (s *Server) mountTeamAdmin(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/admin/team/mailboxes/{id}", s.admin(s.handleTeamAdminDelete))
 	mux.HandleFunc("POST /api/admin/team/mailboxes/{id}/accounts", s.admin(s.handleTeamAdminAddAccount))
 	mux.HandleFunc("GET /api/team/{teamId}/grants", s.user(s.handleTeamGrants))
-	mux.HandleFunc("PUT /api/team/{teamId}/grants", s.user(s.handleTeamSetGrant))
+	mux.HandleFunc("PUT /api/team/{teamId}/grants", s.session(s.handleTeamSetGrant))
 	mux.HandleFunc("GET /api/team/directory", s.user(s.handleTeamDirectory))
 }
 

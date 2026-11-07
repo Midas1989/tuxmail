@@ -661,8 +661,8 @@ export class HttpTransport implements Api {
   getAuthConfig(): Promise<AuthConfigInfo> {
     return this.request('GET', '/api/auth/config');
   }
-  totpSetup(): Promise<TotpEnrollment> {
-    return this.request('POST', '/api/auth/totp/setup');
+  totpSetup(reauth: Reauth): Promise<TotpEnrollment> {
+    return this.request('POST', '/api/auth/totp/setup', reauth);
   }
   async totpConfirm(code: string): Promise<string[]> {
     const r = await this.request<{ recoveryCodes?: string[] }>('POST', '/api/auth/totp/confirm', { code });
@@ -682,11 +682,11 @@ export class HttpTransport implements Api {
     const r = await this.request<{ sessions?: AuthSession[] }>('GET', '/api/auth/sessions');
     return r?.sessions ?? [];
   }
-  revokeAuthSession(id: number): Promise<void> {
-    return this.request('DELETE', `/api/auth/sessions/${id}`);
+  revokeAuthSession(id: number, reauth?: Reauth): Promise<void> {
+    return this.request('DELETE', `/api/auth/sessions/${id}`, reauth);
   }
-  revokeOtherSessions(): Promise<void> {
-    return this.request('POST', '/api/auth/sessions/revoke-others');
+  revokeOtherSessions(reauth: Reauth): Promise<void> {
+    return this.request('POST', '/api/auth/sessions/revoke-others', reauth);
   }
   vaultStatus(): Promise<VaultStatus> {
     return this.request('GET', '/api/vault/status');

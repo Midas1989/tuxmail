@@ -141,6 +141,10 @@ func (s *Service) resolveRotatedToken(ctx context.Context, h []byte, ip string) 
 		sess.superseded = true
 		return sess, nil
 	}
+	if sess.Kind == KindWeb {
+		// A cookie replaced at a step-up: simply dead, the browser has the new one.
+		return nil, ErrNotFound
+	}
 	// Two parties hold tokens of this family: nobody can tell which one is the
 	// device. End it, the owner signs in again.
 	if _, err := s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM sessions WHERE id = ?`, sessionID); err != nil {
@@ -178,4 +182,41 @@ func (s *Service) RotateDeviceToken(ctx context.Context, sess *Session, token st
 		return "", time.Time{}, err
 	}
 	return next, s.now().Add(DeviceTokenLifetime), nil
+}
+
+// RotateWebSession gives a browser session a new id after a step-up (Basis
+// spec/PARAMETER.md); the row and thus its lifetime stay. Requests still on their
+// way with the old cookie pass for DeviceTokenLeeway, then it is dead. It returns
+// "" for a request made with an already replaced cookie.
+func (s *Service) RotateWebSession(ctx context.Context, sess *Session, token string) (string, error) {
+	if sess.Kind != KindWeb {
+		return "", ErrInvalidInput
+	}
+	if sess.superseded {
+		return "", nil
+	}
+	next := randomToken(32)
+	now := s.now()
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO device_retired_tokens(token_hash, session_id, retired_at, expires_at)
+			VALUES (?, ?, ?, ?)`, hashToken(token), sess.ID, now.Unix(), now.Add(2*DeviceTokenLeeway).Unix()); err != nil {
+			return err
+		}
+		res, err := tx.ExecContext(ctx, `UPDATE sessions SET token_hash = ? WHERE id = ? AND token_hash = ?`, hashToken(next), sess.ID, hashToken(token))
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return ErrTokenSuperseded
+		}
+		return nil
+	})
+	if errors.Is(err, ErrTokenSuperseded) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	s.Audit(ctx, "session.rotate", sess.DeviceName, true, "session="+strconv.FormatInt(sess.ID, 10)+" reason=step-up")
+	return next, nil
 }

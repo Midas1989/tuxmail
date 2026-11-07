@@ -10,6 +10,8 @@
   only after step 3 was confirmed; the parent reloads its state.
 -->
 <script lang="ts">
+  import StepUpForm from './StepUpForm.svelte';
+  import type { Reauth } from '../../api/security';
   import { onMount } from 'svelte';
   import Copy from '@lucide/svelte/icons/copy';
   import Check from '@lucide/svelte/icons/check';
@@ -29,7 +31,7 @@
   }
   let { api, onfinished, oncancel }: Props = $props();
 
-  type Step = 'loading' | 'scan' | 'verify' | 'codes';
+  type Step = 'loading' | 'reauth' | 'scan' | 'verify' | 'codes';
   let step = $state<Step>('loading');
   let enrollment = $state<TotpEnrollment | null>(null);
   let code = $state('');
@@ -40,16 +42,33 @@
   let secretCopied = $state(false);
   let codeInput = $state<HTMLInputElement>();
 
-  const stepNumber = $derived(step === 'loading' || step === 'scan' ? 1 : step === 'verify' ? 2 : 3);
+  const stepNumber = $derived(step === 'loading' || step === 'reauth' || step === 'scan' ? 1 : step === 'verify' ? 2 : 3);
 
+  /** The server asks for the password first (accounts without one: a recent sign-in). */
   async function begin() {
     error = null;
     step = 'loading';
     try {
-      enrollment = await api.totpSetup();
-      step = 'scan';
+      const me = await api.getAuthMe();
+      if (me.user.hasPassword) step = 'reauth';
+      else await enroll({});
     } catch (err) {
       error = securityErrorMessage(err, t);
+    }
+  }
+
+  async function enroll(reauth: Reauth) {
+    error = null;
+    busy = true;
+    try {
+      enrollment = await api.totpSetup(reauth);
+      step = 'scan';
+    } catch (err) {
+      const e = err as { code?: string };
+      step = e?.code === 'invalid_credentials' ? 'reauth' : 'loading';
+      error = securityErrorMessage(err, t);
+    } finally {
+      busy = false;
     }
   }
 
@@ -98,7 +117,9 @@
 <div class="enroll" data-step={step}>
   <p class="steps" aria-live="polite">{t('security.setup.step', { current: stepNumber, total: 3 })}</p>
 
-  {#if step === 'loading'}
+  {#if step === 'reauth'}
+    <StepUpForm hasPassword={true} hasSecondFactor={false} submitLabel={t('security.setup.continue')} {busy} {error} onsubmit={(r) => void enroll(r)} oncancel={() => oncancel?.()} />
+  {:else if step === 'loading'}
     {#if error}
       <p class="error" role="alert">{error}</p>
       <div class="row">

@@ -77,3 +77,10 @@ export async function submit(form: HTMLFormElement): Promise<void> {
 }
 
 export const text = (root: ParentNode): string => (root.textContent ?? '').replace(/\s+/g, ' ').trim();
+
+/** Passes the password question in front of the TOTP set-up. */
+export async function stepUp(root: HTMLElement, password = 'pw'): Promise<void> {
+  await until(() => expect(root.querySelector('[data-step="reauth"]')).toBeTruthy());
+  type(input(root, 'input[type="password"]'), password);
+  await submit(root.querySelector('[data-step="reauth"] form') as HTMLFormElement);
+}

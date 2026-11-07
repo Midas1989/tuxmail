@@ -811,6 +811,18 @@ func TestPasskeyAlgorithms(t *testing.T) {
 	if err := checkPasskeyKey(rsa(1024)); err == nil {
 		t.Error("RSA 1024 accepted")
 	}
+	// 256 bytes, but only 2041 bits: the length of the number counts.
+	short := []byte{0xa4, 0x01, 0x03, 0x03}
+	short = append(short, neg(-257)...)
+	short = append(short, neg(-1)...)
+	short = append(short, cbor(2, 256)...)
+	short = append(short, 0x01)
+	short = append(short, bytes.Repeat([]byte{0xab}, 255)...)
+	short = append(short, neg(-2)...)
+	short = append(short, cbor(2, 3)[0], 1, 0, 1)
+	if err := checkPasskeyKey(short); err == nil {
+		t.Error("2041-bit RSA key accepted")
+	}
 	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)

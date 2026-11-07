@@ -571,6 +571,10 @@ func TestMigrationForwardBackwardForward(t *testing.T) {
 	if n < 3 {
 		t.Fatal("audit rows lost", n)
 	}
+	db.QueryRow(`SELECT COUNT(*) FROM audit_log WHERE action = 'keys.rollback'`).Scan(&n)
+	if n != 1 {
+		t.Fatal("rollback not audited", n)
+	}
 	if _, err := db.Exec(`INSERT INTO audit_log(at, action) VALUES (1, 'alte.version')`); err != nil {
 		t.Fatal(err)
 	}

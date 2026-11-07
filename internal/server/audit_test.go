@@ -179,7 +179,7 @@ func TestAuditA04PushEndsWithSession(t *testing.T) {
 		case "revoke":
 			other := e.browser()
 			other.login("anna")
-			other.do("POST", "/api/auth/sessions/revoke-others", nil)
+			other.do("POST", "/api/auth/sessions/revoke-others", map[string]string{"password": pw})
 		}
 		if l, _ := e.srv.pushStore.List(context.Background(), u.ID); len(l) != 0 {
 			t.Fatalf("%s: push subscription survived the session", how)

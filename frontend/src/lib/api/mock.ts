@@ -1408,7 +1408,7 @@ export class MockTransport implements Api {
   getAuthConfig(): Promise<AuthConfigInfo> {
     return this.run(() => this.sec.config());
   }
-  totpSetup(): Promise<TotpEnrollment> {
+  totpSetup(_reauth: Reauth): Promise<TotpEnrollment> {
     return this.run(() => this.sec.setup());
   }
   totpConfirm(code: string): Promise<string[]> {
@@ -1426,10 +1426,10 @@ export class MockTransport implements Api {
   listAuthSessions(): Promise<AuthSession[]> {
     return this.run(() => this.sec.list());
   }
-  revokeAuthSession(id: number): Promise<void> {
+  revokeAuthSession(id: number, _reauth?: Reauth): Promise<void> {
     return this.run(() => this.sec.revoke(id));
   }
-  revokeOtherSessions(): Promise<void> {
+  revokeOtherSessions(_reauth: Reauth): Promise<void> {
     return this.run(() => this.sec.revokeOthers());
   }
 

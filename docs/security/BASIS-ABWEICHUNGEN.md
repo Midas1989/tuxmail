@@ -15,7 +15,7 @@ Stand: 2026-11-07, Release 1.0.0. Bezug: Basis `spec/PARAMETER.md`, `spec/AUTH.m
 
 | # | Vorgabe | TuxMail | Grund |
 |---|---|---|---|
-| 4 | Kein `'unsafe-inline'`, auch nicht für `style-src` (`PARAMETER.md`) | `style-src` ist ohne, aber `style-src-attr 'unsafe-inline'` ist gesetzt. | HTML-Mail besteht aus `style`-Attributen. Sie läuft in einem `srcdoc`-Frame, der die CSP der Seite erbt, und Attribute können keine Nonce tragen. Der Frame ist `sandbox`, ohne Skripte, mit eigener CSP. Mails über eine eigene Route auszuliefern wäre ein größerer Umbau. |
+| 4 | Kein `'unsafe-inline'`, auch nicht für `style-src` (`PARAMETER.md`) | `style-src` ist ohne, aber `style-src-attr 'unsafe-inline'` ist gesetzt. | HTML-Mail besteht aus `style`-Attributen. Sie läuft in einem `srcdoc`-Frame, der die CSP der Seite erbt, und Attribute können keine Nonce tragen; ohne die Ausnahme sähe fast jede HTML-Mail kaputt aus. Risiko: Ein eingeschleustes `style`-Attribut kann die Darstellung ändern, aber kein Skript ausführen und keine Stylesheets oder Verbindungen laden (`style-src-elem` bleibt streng, `connect-src`, `img-src` begrenzt). Der Frame ist `sandbox`, ohne Skripte, mit eigener CSP. Die Alternative, Mails über eine eigene Route mit eigener CSP auszuliefern, ist ein größerer Umbau von Mailansicht, Druck und Kurzansicht. |
 | 5 | CSP mit Nonce je Anfrage | Android (Capacitor) und Desktop (Wails) behalten die CSP im `<meta>` mit `script-src 'self'`, ohne Nonce und mit `style-src 'unsafe-inline'`. | Die Dateien liegen lokal, kein Server rendert sie, eine Nonce wäre fest eingebaut und damit wertlos. Kein Inline-Skript ist erlaubt. |
 | 6 | Testlauf mit `Report-Only` (`konzept/PORTIERUNG.md`, Risiken) | Die CSP gilt sofort. | `WEB.md` verlangt `Report-Only` nicht, und die Oberfläche wurde lokal im Browser ohne Verstoß geprüft. |
 | 7 | Migrationen nur vorwärts (`BETRIEB.md`) | Es gibt zusätzlich den Notweg `tuxmail keys rollback`. | Einmaliger Rückweg für dieses Release, nur von Hand bei gestopptem Dienst. Beim Start läuft nichts rückwärts. Wiederherstellungscodes, die seit dem Upgrade erzeugt wurden, gehen dabei verloren; der Befehl nennt die Konten. |
@@ -26,12 +26,38 @@ Stand: 2026-11-07, Release 1.0.0. Bezug: Basis `spec/PARAMETER.md`, `spec/AUTH.m
 | 12 | Basis-Module verwenden (`CLAUDE.md`) | `internal/secretbox` und `internal/auditchain` sind Kopien, Recovery-HMAC und Sperrliste ebenso. | Das Basis-Repository ist privat, TuxMail baut auf öffentlicher CI. Die Testvektoren aus `spec/testvektoren.json` laufen in den Tests. |
 | 13 | Leerlauf je Anfrage (`AUTH.md` §3) | Nur Anfragen mit `X-TuxMail-Activity: 1` zählen, das setzt der Webclient bis 60 s nach einer Eingabe. | Ein offener Tab fragt im Hintergrund nach und hält den Event-Stream. Das darf den Leerlauf nicht aufheben. Das Lesen eines Textes ohne Eingabe zählt also nicht als Aktivität. |
 
+| 14 | Herkunft nur aus `ALLOWED_ORIGINS` (`WEB.md`) | Neben `public_url` gilt auch das eigene `Host` der Anfrage (`originAllowed`). | Für den Direktzugriff ohne Proxy, etwa `http://127.0.0.1:8080` beim Einrichten. Eine fremde Seite kann ihr `Origin` nicht auf einen fremden `Host` passend setzen, außer über DNS-Rebinding; das `__Host-`-Cookie und das HMAC-Token gehören aber zum Host der echten Anmeldung. |
+| 15 | Schlüssel nicht im Backup derselben Daten (`KRYPTO.md`) | Tägliche Einstellungs-Sicherung und Server-Sicherung enthalten `secretbox.json` und `master.key`. | Nur innerhalb der age-Verschlüsselung (vergleiche ADR 0007 Nr. 6): Ein Backup, das sich ohne getrennt gepflegte Schlüssel nicht einspielen lässt, ist im Ernstfall wertlos. Der private age-Schlüssel liegt nicht am Server. Unverschlüsselt nur nach ausdrücklicher Einstellung. |
+| 16 | Pflicht-Checks (`BETRIEB.md`) | `mail` und `license` fehlen, `certificate` nur bei eigenem TLS. | TuxMail ist Mail-Client und verschickt keine eigene Systempost, Lizenzen gibt es nicht. Hinter nginx prüft das Zertifikat die Stelle, die es hält. |
+| 17 | Schwellen der Health-Checks (ohne Wert in der Spezifikation) | Platz: `warn` unter 10 %, `fail` unter 2 %. Jobs: `fail` nach 1 h ohne Lauf. Zertifikat: `warn` 14 Tage vor Ablauf. | Eigene Werte, in `internal/server/server.go`. |
+| 18 | Reauth als `stepup_until` für 5 min (`AUTH.md` §3) | Jede sensible Aktion verlangt ihren eigenen Nachweis, ohne Zeitfenster. | Strenger als verlangt, und die vorhandenen Dialoge fragen ohnehin je Aktion. |
+
+## Geräte-Token: Routen
+
+Gerätetoken sind langlebig und liegen auf Geräten, die verloren gehen. Sie können sich nicht erneut ausweisen. Daher:
+
+| Gruppe | Routen | Gerätetoken | Browser-Sitzung |
+|---|---|---|---|
+| Verwaltung | `/api/admin/*` | nie | Admin, 2FA-Pflicht |
+| Kontoschutz | `/api/auth/password`, `/totp/*`, `/recovery-codes`, `/passkeys/*` (außer Liste), `/sessions/{id}`, `/sessions/revoke-others`, `/api/device/request`, `/api/device/approve` | nie | Reauth; `totp/confirm` folgt auf `totp/setup` mit Reauth, Passkey-Name ändern und Sperren der eigenen Sitzung brauchen keine |
+| Schlüsselmaterial | PGP: `keys/{id}/secret`, `/passphrase`, Löschen, Vertrauen, `peers/accept`, `/verify`, `/delete`. S/MIME: Löschen, Vertrauen | nie | wie bisher (PGP-Export verlangt die Passphrase) |
+| OAuth-Clients | `PUT`/`DELETE /api/oauth/clients/{provider}` | nie | wie bisher |
+| Team-Rechte | `PUT /api/team/{teamId}/grants` | nie | wie bisher |
+| Geheimnisse im Archiv | `POST /api/backup`, `/backup/restore`, `/backup/schedules` mit `secrets: true` | nie, auch nicht mit Scope `provisioning` | Reauth |
+| Anderer Server fürs Konto | `PATCH /api/accounts/{id}` mit `incoming`, `outgoing`, `easUrl`, `jmapUrl` | nie | wie bisher |
+| Versiegelte Geheimnisse | `GET /api/provisioning/secrets` | Scope `provisioning`, nur an den Schlüssel des Geräts | nein |
+| Bewusst erlaubt | `PUT /api/accounts/{id}/password` (setzt nur), PGP entsperren (braucht die Passphrase), Schlüssel erzeugen und einführen, Passwort eines eigenen Freigabelinks | ja | ja |
+
+`POST /api/backup` mit `secrets: true` geht bewusst auch mit Scope `provisioning` nicht: Der Scope liefert Geheimnisse nur
+versiegelt an den Schlüssel des Geräts, ein Archiv mit frei gewählter Passphrase dagegen jedem, der das Token hat.
+`TestDeviceTokenSensitiveRoutesAreClassified` scheitert, wenn eine neue Route dieser Art nicht zugeordnet ist.
+
 ## Noch offen
 
 | Punkt | Grund |
 |---|---|
-| 2FA für Admins immer (`PARAMETER.md`) | `auth.totp_required_for_admins` ist Einstellung, Ansible setzt sie an, der Code-Standard ist aus. Ein Wechsel des Standards betrifft bestehende Admins beim Upgrade. |
-| Neue Sitzungs-ID bei Rechtewechsel und Step-up | Heute nur beim Login (vergleiche ADR 0007 Nr. 1). |
+| Admin-2FA nicht abschaltbar (`PARAMETER.md`: „Admins immer“) | Standard an (Entscheidung 2026-11-07), per `auth.totp_required_for_admins` abschaltbar. |
+| Neue Sitzungs-ID bei Rechtewechsel | Bei Login und Step-up neu; beim Rechtewechsel erst mit der nächsten Anmeldung (vergleiche ADR 0007 Nr. 1). |
 | Audit: Archivierung älterer Abschnitte, Zabbix-Item | Der neueste Hash geht täglich ins Log (`audit chain anchor`). Abschnitte und Monitoring-Vorlage fehlen. |
 | `old_json`/`new_json` im Audit | Bestehende Felder liegen im Basis-Feld `new`. Alte Werte werden nicht erfasst. |
 | Verschlüsselung der Mail-Datenbanken | Nicht in diesem Paket. |

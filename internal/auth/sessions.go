@@ -189,7 +189,8 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 		s.db.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ?, ip = ? WHERE id = ?`, now.Unix(), ip, sess.ID)
 		sess.LastSeenAt, sess.IP = now, ip
 	}
-	if isUserActivity(ctx) && now.Sub(sess.LastActiveAt) >= time.Minute {
+	// Written rarely, but often enough for a short idle limit not to end active sessions.
+	if isUserActivity(ctx) && now.Sub(sess.LastActiveAt) >= min(time.Minute, s.cfg.Auth.EffectiveIdleTimeout()/10) {
 		s.db.ExecContext(ctx, `UPDATE sessions SET last_active_at = ? WHERE id = ?`, now.Unix(), sess.ID)
 		sess.LastActiveAt = now
 	}

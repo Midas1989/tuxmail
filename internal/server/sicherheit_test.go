@@ -3,11 +3,17 @@
 package server
 
 import (
+	"encoding/base32"
+	"os"
+	"path/filepath"
+
 	"bytes"
 	"crypto/ecdh"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"github.com/Midas1989/Mailclient/internal/config"
+	"github.com/Midas1989/Mailclient/internal/server/api"
 	"io"
 	"log/slog"
 	"net/http"
@@ -220,7 +226,7 @@ func TestAuthSection6HTTP(t *testing.T) {
 	d2, m := deviceLoginHTTP(t, e2, "ben", "")
 	w := e2.browser()
 	w.login("ben")
-	if resp, r := w.do("DELETE", "/api/auth/sessions/"+itoa(int(m["session_id"].(float64))), nil); resp.StatusCode/100 != 2 {
+	if resp, r := w.do("DELETE", "/api/auth/sessions/"+itoa(int(m["session_id"].(float64))), map[string]string{"password": pw}); resp.StatusCode/100 != 2 {
 		t.Fatal(resp.Status, r)
 	}
 	wantStatus(t, d2, "GET", "/api/auth/me", 401, "")
@@ -283,38 +289,60 @@ func TestHealth(t *testing.T) {
 	if resp.StatusCode != 200 || m["status"] != "ok" || m["product"] != "tuxmail" || m["checks"] != nil {
 		t.Fatal(resp.Status, m)
 	}
-	// Not yet proven: not green (Basis spec/BETRIEB.md).
+	// Not yet proven, no backup key: not green (Basis spec/BETRIEB.md), but this
+	// instance works, so a start script gets 200.
 	resp, m = b.do("GET", "/healthz?deep=1", nil)
-	if resp.StatusCode != 200 || m["status"] != "warn" {
+	if resp.StatusCode != 200 || m["status"] != "fail" {
 		t.Fatal(resp.Status, m)
 	}
 	e.srv.runPeriodicChecks(t.Context())
 	resp, m = b.do("GET", "/healthz?deep=1", nil)
-	if resp.StatusCode != 200 || m["status"] != "ok" {
+	if resp.StatusCode != 200 {
 		t.Fatal(resp.Status, m)
 	}
 	names := map[string]string{}
 	for _, c := range m["checks"].([]any) {
 		x := c.(map[string]any)
 		names[x["name"].(string)] = x["status"].(string)
-		if len(x) != 2 {
-			t.Fatal("details in a public answer:", x)
+	}
+	for _, want := range []string{"db", "disk", "jobs", "backup", "audit_chain", "key_rotation"} {
+		if names[want] == "" {
+			t.Errorf("check %s missing: %v", want, names)
 		}
 	}
-	if names["db"] != "ok" || names["audit_chain"] != "ok" || names["key_rotation"] != "ok" {
+	if names["db"] != "ok" || names["audit_chain"] != "ok" || names["key_rotation"] != "ok" || names["jobs"] != "ok" {
 		t.Fatal(names)
 	}
-	// An open rotation is a warning.
-	if _, err := e.svc.RotateKey(t.Context()); err != nil {
-		t.Fatal(err)
+	check := func(name string) string {
+		t.Helper()
+		_, m := b.do("GET", "/api/v1/monitoring/self", nil)
+		for _, c := range m["checks"].([]any) {
+			if x := c.(map[string]any); x["name"] == name {
+				return x["status"].(string)
+			}
+		}
+		t.Fatal("no check", name)
+		return ""
 	}
+	// An open rotation is a warning.
 	e.user("ida", auth.RoleUser)
 	if _, err := e.svc.RotateKey(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 	e.srv.runPeriodicChecks(t.Context())
-	if resp, m = b.do("GET", "/healthz?deep=1", nil); resp.StatusCode != 200 || m["status"] != "warn" {
-		t.Fatal(resp.Status, m)
+	if got := check("key_rotation"); got != "warn" {
+		t.Fatal(got)
+	}
+	// A broken chain fails, as soon as it is checked.
+	e.srv.anchorDay = ""
+	for _, q := range []string{`DROP TRIGGER audit_log_no_null`, `INSERT INTO audit_log(at, action) VALUES (1, 'fremd')`} {
+		if _, err := e.svc.DB().Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.srv.runPeriodicChecks(t.Context())
+	if got := check("audit_chain"); got != "fail" {
+		t.Fatal(got)
 	}
 	// Without the database: the plain answer lives on, the deep one fails.
 	e.svc.DB().Close()
@@ -323,6 +351,374 @@ func TestHealth(t *testing.T) {
 	}
 	if resp, m = b.do("GET", "/healthz?deep=1", nil); resp.StatusCode != 503 || m["status"] != "fail" {
 		t.Fatal(resp.Status, m)
+	}
+	if resp, m = b.do("GET", "/api/v1/monitoring/self", nil); resp.StatusCode != 200 || m["status"] != "fail" {
+		t.Fatal(resp.Status, m)
+	}
+}
+
+// The deep answer has details: the token, or this machine.
+func TestMonitoringAccess(t *testing.T) {
+	tf := filepath.Join(t.TempDir(), "token")
+	token := strings.Repeat("m", 40)
+	os.WriteFile(tf, []byte(token+"\n"), 0o600)
+	e := newEnv(t, Options{}, func(c *config.Config) { c.Monitoring.TokenFile = tf })
+	h := e.srv.Handler()
+	call := func(path, remote string, hdr map[string]string) int {
+		req := httptest.NewRequest("GET", path, nil)
+		req.RemoteAddr = remote
+		for k, v := range hdr {
+			req.Header.Set(k, v)
+		}
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	const outside = "203.0.113.5:4444"
+	for _, p := range []string{"/healthz?deep=1", "/api/v1/monitoring/self"} {
+		for name, c := range map[string]struct {
+			remote string
+			hdr    map[string]string
+			want   int
+		}{
+			"outside":                 {outside, nil, 403},
+			"outside, wrong token":    {outside, map[string]string{"Authorization": "Bearer " + strings.Repeat("x", 40)}, 403},
+			"outside, token":          {outside, map[string]string{"Authorization": "Bearer " + token}, 200},
+			"local":                   {"127.0.0.1:4444", nil, 200},
+			"local proxy for outside": {"127.0.0.1:4444", map[string]string{"X-Forwarded-For": "203.0.113.5"}, 403},
+			"local, wrong token":      {"127.0.0.1:4444", map[string]string{"Authorization": "Bearer x"}, 403},
+		} {
+			if got := call(p, c.remote, c.hdr); got != c.want {
+				t.Errorf("%s, %s: %d, want %d", p, name, got, c.want)
+			}
+		}
+	}
+	if got := call("/healthz", outside, nil); got != 200 {
+		t.Errorf("plain /healthz: %d", got)
+	}
+	// Without a configured token only this machine.
+	e2 := newEnv(t, Options{})
+	req := httptest.NewRequest("GET", "/api/v1/monitoring/self", nil)
+	req.RemoteAddr = outside
+	req.Header.Set("Authorization", "Bearer ")
+	rec := httptest.NewRecorder()
+	e2.srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != 403 {
+		t.Errorf("no token configured: %d", rec.Code)
+	}
+	// A short token file does not start.
+	short := filepath.Join(t.TempDir(), "kurz")
+	os.WriteFile(short, []byte("abc"), 0o600)
+	cfg := *e2.cfg
+	cfg.Monitoring.TokenFile = short
+	if _, err := New(&cfg, e2.svc, Options{}); err == nil {
+		t.Error("short monitoring token accepted")
+	}
+}
+
+func deviceTok(t *testing.T, e *env, name, scope string) *browser {
+	t.Helper()
+	b, _ := deviceLoginHTTP(t, e, name, scope)
+	return b
+}
+
+// Hochstufe 1 der Prüfung: with its own passphrase the caller gets the secrets in clear.
+func TestDeviceTokenCannotGetSecretsFromBackup(t *testing.T) {
+	e := newEnv(t, Options{})
+	e.user("ida", auth.RoleUser)
+	dl := map[string]any{"kind": "download"}
+	body := func(secrets bool) map[string]any {
+		return map[string]any{"scope": map[string]any{"mode": "config", "secrets": secrets}, "passphrase": "eine lange passphrase", "target": dl}
+	}
+	for _, scope := range []string{"data", ""} { // "" = data and provisioning, as old tokens have
+		d := deviceTok(t, e, "ida", scope)
+		if resp, m := d.do("POST", "/api/backup", body(true)); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
+			t.Fatal(scope, resp.Status, m)
+		}
+		if resp, m := d.do("POST", "/api/backup/schedules", map[string]any{"name": "x", "scope": map[string]any{"mode": "config", "secrets": true}}); resp.StatusCode != 403 {
+			t.Fatal(scope, resp.Status, m)
+		}
+		if resp, m := d.do("PUT", "/api/backup/schedules/x", map[string]any{"scope": map[string]any{"secrets": true}}); resp.StatusCode != 403 {
+			t.Fatal(scope, resp.Status, m)
+		}
+		if resp, m := d.do("POST", "/api/backup/restore", map[string]any{"secrets": true}); resp.StatusCode != 403 {
+			t.Fatal(scope, resp.Status, m)
+		}
+		// Without secrets it stays possible.
+		if resp, m := d.do("POST", "/api/backup", body(false)); resp.StatusCode != 202 {
+			t.Fatal(scope, resp.Status, m)
+		}
+	}
+	// A browser session needs proof.
+	w := e.browser()
+	w.login("ida")
+	if resp, m := w.do("POST", "/api/backup", body(true)); resp.StatusCode != 401 {
+		t.Fatal("without reauth:", resp.Status, m)
+	}
+	w.fetchCSRF()
+	withProof := body(true)
+	withProof["reauth"] = map[string]string{"password": pw}
+	if resp, m := w.do("POST", "/api/backup", withProof); resp.StatusCode != 202 {
+		t.Fatal("with reauth:", resp.Status, m)
+	}
+}
+
+func TestDeviceTokenCannotMoveAccountOrKeys(t *testing.T) {
+	e := newEnv(t, Options{})
+	e.user("ida", auth.RoleUser)
+	d := deviceTok(t, e, "ida", "data")
+	// Another server would get the stored password.
+	for _, patch := range []map[string]any{
+		{"incoming": map[string]any{"host": "evil.example"}}, {"outgoing": map[string]any{"host": "evil.example"}},
+		{"easUrl": "https://evil.example"}, {"jmapUrl": "https://evil.example"},
+	} {
+		if resp, m := d.do("PATCH", "/api/accounts/1", patch); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
+			t.Fatal(patch, resp.Status, m)
+		}
+	}
+	// A display name is fine for the check; the unknown account answers 404.
+	if resp, m := d.do("PATCH", "/api/accounts/1", map[string]any{"displayName": "x"}); resp.StatusCode == 403 {
+		t.Fatal(resp.Status, m)
+	}
+	re := regexp.MustCompile(`\{[a-zA-Z]+\}`)
+	for pattern := range deviceForbiddenAppRoutes {
+		method, path, _ := strings.Cut(pattern, " ")
+		wantStatus(t, d, method, re.ReplaceAllString(path, "1"), 403, "device_token_forbidden")
+	}
+	wantStatus(t, d, "PUT", "/api/team/1/grants", 403, "device_token_forbidden")
+}
+
+// Every route that sounds like secrets, keys or trust is decided here, also future ones.
+func TestDeviceTokenSensitiveRoutesAreClassified(t *testing.T) {
+	allowed := map[string]string{
+		"GET /api/vault/status":                   "only says whether the desktop vault is locked",
+		"POST /api/vault/unlock":                  "needs the vault password, desktop only",
+		"PUT /api/accounts/{id}/password":         "sets, never reads; the app must be able to fix a changed mail password",
+		"GET /api/cloud/accounts/{id}/password":   "generates a random password, reads nothing stored",
+		"GET /api/cloud/shares/{id}/password":     "the password of a share link the user made, part of the sharing dialog",
+		"GET /api/comfort/pgp/keys":               "public data",
+		"POST /api/comfort/pgp/keys":              "imports; hands nothing out",
+		"POST /api/comfort/pgp/keys/generate":     "creates; hands nothing out",
+		"POST /api/comfort/pgp/keys/lookup":       "public directory",
+		"GET /api/comfort/pgp/keys/{id}/public":   "public data",
+		"POST /api/comfort/pgp/keys/{id}/unlock":  "needs the passphrase of the key; reading encrypted mail in the app",
+		"POST /api/comfort/pgp/lock":              "only locks",
+		"GET /api/comfort/smime/certificates":     "public data",
+		"POST /api/comfort/smime/certificates":    "imports; hands nothing out",
+		"GET /api/comfort/pgp/peers":              "public data",
+		"GET /api/comfort/pgp/status":             "state only",
+		"GET /api/comfort/smime/status":           "state only",
+		"GET /api/oauth/providers":                "public data",
+		"POST /api/oauth/start":                   "the user signs in at the provider",
+		"GET /api/oauth/flows/{flowId}/status":    "state of the own flow",
+		"DELETE /api/oauth/flows/{flowId}":        "ends the own flow",
+		"GET /api/oauth/{provider}/callback":      "bound to the flow state",
+		"POST /api/backup":                        "secrets: guarded in the handler",
+		"POST /api/backup/inspect":                "needs the passphrase of the archive",
+		"POST /api/backup/restore":                "secrets: guarded in the handler",
+		"GET /api/backup/schedules":               "no secrets in the answer",
+		"POST /api/backup/schedules":              "secrets: guarded in the handler",
+		"PUT /api/backup/schedules/{id}":          "secrets: guarded in the handler",
+		"DELETE /api/backup/schedules/{id}":       "own schedule",
+		"POST /api/backup/schedules/{id}/run":     "goes to the configured target",
+		"GET /api/backup/schedules/{id}/archives": "names only",
+		"GET /api/diagnostics/export":             "redacted",
+		"GET /api/diagnostics":                    "redacted",
+		"GET /api/accounts/{id}/diagnostics":      "redacted",
+		"GET /api/cloud/oauth/callback":           "bound to the flow state",
+	}
+	sensitive := regexp.MustCompile(`(?i)secret|password|passphrase|vault|/pgp|smime|trust|oauth|backup|diagnostics`)
+	for _, rt := range api.Routes(api.Options{}) {
+		if !sensitive.MatchString(rt.Pattern) || deviceForbiddenAppRoutes[rt.Pattern] {
+			continue
+		}
+		if allowed[rt.Pattern] == "" {
+			t.Errorf("%s: decide whether device tokens may use it (deviceForbiddenAppRoutes or this list)", rt.Pattern)
+		}
+	}
+}
+
+func TestAccountSecurityRoutesRefuseDeviceTokens(t *testing.T) {
+	e := newEnv(t, Options{})
+	e.user("ida", auth.RoleUser)
+	proof := map[string]string{"password": pw, "currentPassword": pw, "newPassword": "ein-ganz-anderes-kennwort", "code": "123456", "user_code": "BCDF-GHJK"}
+	for _, scope := range []string{"data", "provisioning", ""} {
+		d := deviceTok(t, e, "ida", scope)
+		for _, r := range []struct{ method, path string }{
+			{"POST", "/api/auth/totp/setup"}, {"POST", "/api/auth/totp/confirm"}, {"POST", "/api/auth/totp/disable"},
+			{"POST", "/api/auth/recovery-codes"}, {"POST", "/api/auth/password"},
+			{"DELETE", "/api/auth/sessions/1"}, {"POST", "/api/auth/sessions/revoke-others"},
+			{"POST", "/api/auth/passkeys/register/begin"}, {"POST", "/api/auth/passkeys/register/finish"},
+			{"PATCH", "/api/auth/passkeys/1"}, {"DELETE", "/api/auth/passkeys/1"},
+			{"GET", "/api/device/request?user_code=x"}, {"POST", "/api/device/approve"},
+		} {
+			if resp, m := d.do(r.method, r.path, proof); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
+				t.Errorf("%q %s %s: %s %v", scope, r.method, r.path, resp.Status, m)
+			}
+		}
+	}
+	// The owner still gets in: the token did not set up TOTP.
+	w := e.browser()
+	w.login("ida")
+	if resp, m := w.do("GET", "/api/auth/me", nil); resp.StatusCode != 200 || m["user"].(map[string]any)["totpEnabled"] == true {
+		t.Fatal(resp.Status, m)
+	}
+}
+
+// A stolen session cookie alone is not enough.
+func TestSessionNeedsReauthForAccountSecurity(t *testing.T) {
+	e := newEnv(t, Options{}, func(c *config.Config) { c.Limits.LoginRatePerMinute = 1000 })
+	e.user("ida", auth.RoleUser)
+	other := e.browser()
+	other.login("ida")
+	b := e.browser()
+	b.login("ida")
+	var sid float64
+	_, me := other.do("GET", "/api/auth/me", nil)
+	sid = me["session"].(map[string]any)["id"].(float64)
+
+	for _, r := range []struct{ method, path string }{
+		{"POST", "/api/auth/totp/setup"}, {"POST", "/api/auth/sessions/revoke-others"}, {"DELETE", "/api/auth/sessions/" + itoa(int(sid))},
+	} {
+		for _, wrong := range []map[string]string{{}, {"password": "falsch-falsch-falsch"}} {
+			if resp, m := b.do(r.method, r.path, wrong); resp.StatusCode != 401 {
+				t.Errorf("%s %s with %v: %s %v", r.method, r.path, wrong, resp.Status, m)
+			}
+		}
+		e.svc.ClearStepUp(t.Context(), 1)
+	}
+	wantStatus(t, other, "GET", "/api/auth/me", 200, "")
+	proof := map[string]string{"password": pw}
+	b.fetchCSRF()
+	resp, m := b.do("POST", "/api/auth/totp/setup", proof)
+	if resp.StatusCode != 200 || m["secret"] == nil {
+		t.Fatal(resp.Status, m)
+	}
+	b.fetchCSRF()
+	if resp, m := b.do("DELETE", "/api/auth/sessions/"+itoa(int(sid)), proof); resp.StatusCode != 204 {
+		t.Fatal(resp.Status, m)
+	}
+	wantStatus(t, other, "GET", "/api/auth/me", 401, "")
+	// The own session needs nothing: that is signing out.
+	_, me = b.do("GET", "/api/auth/me", nil)
+	own := int(me["session"].(map[string]any)["id"].(float64))
+	b.fetchCSRF()
+	wantStatus(t, b, "DELETE", "/api/auth/sessions/"+itoa(own), 204, "")
+
+	// Approving a device.
+	g := deviceClient(t, e)
+	_, grant := g.do("POST", "/api/device/authorize", map[string]string{"client_name": "x"})
+	code := grant["user_code"].(string)
+	a := e.browser()
+	a.login("ida")
+	if resp, m := a.do("POST", "/api/device/approve", map[string]string{"user_code": code}); resp.StatusCode != 401 {
+		t.Fatal("approve without proof:", resp.Status, m)
+	}
+	a.fetchCSRF()
+	if resp, m := a.do("POST", "/api/device/approve", map[string]any{"user_code": code, "approve": false}); resp.StatusCode != 204 {
+		t.Fatal("deny needs no proof:", resp.Status, m)
+	}
+	_, grant = g.do("POST", "/api/device/authorize", map[string]string{"client_name": "x"})
+	a.fetchCSRF()
+	if resp, m := a.do("POST", "/api/device/approve", map[string]string{"user_code": grant["user_code"].(string), "password": pw}); resp.StatusCode != 204 {
+		t.Fatal("approve with proof:", resp.Status, m)
+	}
+}
+
+func TestStepUpGivesNewSessionID(t *testing.T) {
+	e := newEnv(t, Options{})
+	e.user("ida", auth.RoleUser)
+	b := e.browser()
+	b.login("ida")
+	old := b.sessionCookieValue()
+	_, me := b.do("GET", "/api/auth/me", nil)
+	sid := me["session"].(map[string]any)["id"]
+	if resp, m := b.do("POST", "/api/auth/totp/setup", map[string]string{"password": pw}); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+	fresh := b.sessionCookieValue()
+	if fresh == old || fresh == "" {
+		t.Fatal("same session id after step-up")
+	}
+	b.fetchCSRF()
+	if b.csrf != csrfTokenFor(fresh) {
+		t.Fatal("CSRF token does not follow the session")
+	}
+	_, me = b.do("GET", "/api/auth/me", nil)
+	if me["session"].(map[string]any)["id"] != sid {
+		t.Fatal("not the same session")
+	}
+	// Requests still on their way pass, later the old cookie is dead, the session lives.
+	c := e.browser()
+	c.setSessionCookie(old)
+	wantStatus(t, c, "GET", "/api/auth/me", 200, "")
+	e.svc.Now = func() time.Time { return time.Now().Add(auth.DeviceTokenLeeway + time.Minute) }
+	wantStatus(t, c, "GET", "/api/auth/me", 401, "")
+	wantStatus(t, b, "GET", "/api/auth/me", 200, "")
+}
+
+// Standard on (decision 2026-11-07), without locking anybody out.
+func TestAdminTOTPDefaultOnWithoutLockout(t *testing.T) {
+	if !config.Default().Auth.TOTPRequiredForAdmins {
+		t.Fatal("default off")
+	}
+	e := newEnv(t, Options{}, func(c *config.Config) { c.Auth.TOTPRequiredForAdmins = true })
+	u := e.user("chef", auth.RoleAdmin)
+	b := e.browser()
+	b.login("chef")
+	_, me := b.do("GET", "/api/auth/me", nil)
+	if me["mfaSetupRequired"] != true {
+		t.Fatal(me)
+	}
+	wantStatus(t, b, "GET", "/api/admin/users", 403, "mfa_setup_required")
+	// The way out: the enrolment works for this very session, and it can sign out.
+	resp, m := b.do("POST", "/api/auth/totp/setup", map[string]string{"password": pw})
+	if resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+	secret, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(m["secret"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.fetchCSRF()
+	resp, m = b.do("POST", "/api/auth/totp/confirm", map[string]string{"code": auth.TOTP{Secret: secret}.Code(time.Now())})
+	if resp.StatusCode != 200 || len(m["recoveryCodes"].([]any)) != 10 {
+		t.Fatal(resp.Status, m)
+	}
+	wantStatus(t, b, "GET", "/api/admin/users", 200, "")
+	// Lost authenticator: recovery code at the login, or from the command line.
+	c := e.browser()
+	c.fetchCSRF()
+	resp, m = c.do("POST", "/api/auth/login", map[string]string{"username": "chef", "password": pw, "recoveryCode": m["recoveryCodes"].([]any)[0].(string)})
+	if resp.StatusCode != 200 || m["status"] != "ok" {
+		t.Fatal(resp.Status, m)
+	}
+	if err := e.svc.ResetSecondFactors(t.Context(), u.ID); err != nil { // tuxmail user reset-2fa
+		t.Fatal(err)
+	}
+	d := e.browser()
+	d.login("chef")
+	wantStatus(t, d, "GET", "/api/admin/users", 403, "mfa_setup_required")
+	// Off by configuration.
+	off := newEnv(t, Options{})
+	off.user("chef", auth.RoleAdmin)
+	a := off.browser()
+	a.login("chef")
+	wantStatus(t, a, "GET", "/api/admin/users", 200, "")
+}
+
+func TestLogPathHidesTokens(t *testing.T) {
+	var logs bytes.Buffer
+	e := newEnv(t, Options{Logger: slog.New(slog.NewJSONHandler(&logs, nil))}, func(c *config.Config) { c.Auth.Registration = "invite" })
+	b := e.browser()
+	for _, p := range []string{"/api/auth/invites/GEHEIMESTOKEN", "/api/io/downloads/GEHEIMESTOKEN"} {
+		b.do("GET", p, nil)
+	}
+	if strings.Contains(logs.String(), "GEHEIMESTOKEN") {
+		t.Fatal(logs.String())
+	}
+	if !strings.Contains(logs.String(), "/api/auth/invites/********") {
+		t.Fatal(logs.String())
 	}
 }
 

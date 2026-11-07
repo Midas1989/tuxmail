@@ -15,7 +15,8 @@
   import KeyRound from '@lucide/svelte/icons/key-round';
   import { app } from '../../state';
   import type { Api } from '../../api/api';
-  import type { AuthMe, AuthSession } from '../../api/security';
+  import type { AuthMe, AuthSession, Reauth } from '../../api/security';
+  import StepUpForm from '../security/StepUpForm.svelte';
   import { fmt, t } from '../../i18n/index.svelte';
   import { buildPasswordChange, describeSession, securityErrorMessage, sortSessions, validatePasswordForm } from '../../security';
 
@@ -97,27 +98,25 @@
     }
   }
 
-  async function revoke(s: AuthSession) {
-    sessionBusy = s.id;
-    sessionsError = null;
-    try {
-      await api.revokeAuthSession(s.id);
-      sessions = sessions.filter((x) => x.id !== s.id);
-      app.toast(t('security.sessions.revoked'));
-    } catch (err) {
-      sessionsError = securityErrorMessage(err, t);
-    } finally {
-      sessionBusy = null;
-    }
-  }
+  /** Ending other sessions needs the proofs first. */
+  let pendingRevoke = $state<AuthSession | 'others' | null>(null);
 
-  async function revokeOthers() {
-    sessionBusy = 'others';
+  async function confirmRevoke(reauth: Reauth) {
+    const target = pendingRevoke;
+    if (!target) return;
+    sessionBusy = target === 'others' ? 'others' : target.id;
     sessionsError = null;
     try {
-      await api.revokeOtherSessions();
-      sessions = sessions.filter((x) => x.current);
-      app.toast(t('security.sessions.othersRevoked'));
+      if (target === 'others') {
+        await api.revokeOtherSessions(reauth);
+        sessions = sessions.filter((x) => x.current);
+        app.toast(t('security.sessions.othersRevoked'));
+      } else {
+        await api.revokeAuthSession(target.id, reauth);
+        sessions = sessions.filter((x) => x.id !== target.id);
+        app.toast(t('security.sessions.revoked'));
+      }
+      pendingRevoke = null;
     } catch (err) {
       sessionsError = securityErrorMessage(err, t);
     } finally {
@@ -197,7 +196,7 @@
             </div>
           </div>
           {#if !s.current}
-            <button class="btn" disabled={sessionBusy !== null} onclick={() => void revoke(s)} aria-label={t('security.sessions.revokeLabel', { name: title(s) })}>
+            <button class="btn" disabled={sessionBusy !== null} onclick={() => (pendingRevoke = s)} aria-label={t('security.sessions.revokeLabel', { name: title(s) })}>
               {#if sessionBusy === s.id}<LoaderCircle size={14} class="spin" />{:else}<LogOut size={14} />{/if}
               {t('security.sessions.revoke')}
             </button>
@@ -205,8 +204,11 @@
         </li>
       {/each}
     </ul>
+    {#if pendingRevoke}
+      <StepUpForm {hasPassword} hasSecondFactor={totpEnabled} submitLabel={t('security.sessions.revoke')} danger busy={sessionBusy !== null} error={sessionsError} onsubmit={(r) => void confirmRevoke(r)} oncancel={() => ((pendingRevoke = null), (sessionsError = null))} />
+    {/if}
     <div class="foot">
-      <button class="btn" disabled={others.length === 0 || sessionBusy !== null} onclick={() => void revokeOthers()}>
+      <button class="btn" disabled={others.length === 0 || sessionBusy !== null} onclick={() => (pendingRevoke = 'others')}>
         {#if sessionBusy === 'others'}<LoaderCircle size={14} class="spin" />{:else}<LogOut size={14} />{/if}
         {t('security.sessions.revokeOthers')}
       </button>

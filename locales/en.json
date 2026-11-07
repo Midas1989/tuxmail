@@ -3006,6 +3006,7 @@
       "settings": "Settings & rules"
     },
     "includeSecrets": "Include credentials and private keys (passwords, tokens, OpenPGP, S/MIME)",
+    "reauthHint": "The code only if two-factor sign-in is on.",
     "messengerEncrypt": "Messenger sessions are included – a passphrase is required.",
     "encryption": "Encryption",
     "passphrase": "Passphrase",
@@ -3994,6 +3995,7 @@
     },
     "setup": {
       "step": "Step {current} of {total}",
+      "continue": "Continue",
       "preparing": "Preparing …",
       "retry": "Try again",
       "scanTitle": "Scan the QR code",

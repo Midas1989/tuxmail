@@ -49,12 +49,16 @@ func rawDo(t *testing.T, b *browser, path string, body any) (*http.Response, []b
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(csrfHeader, b.csrf)
 	req.Header.Set("Origin", b.e.ts.URL)
+	hadSession := b.sessionCookieValue()
 	resp, err := b.c.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
+	if now := b.sessionCookieValue(); hadSession != "" && now != hadSession && now != "" {
+		b.csrf = csrfTokenFor(now) // a step-up gave the session a new id
+	}
 	return resp, raw
 }
 

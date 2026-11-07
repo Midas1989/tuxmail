@@ -72,6 +72,7 @@ func (s *Server) handlePasskeyRegisterBegin(w http.ResponseWriter, r *http.Reque
 		s.writeAuthError(w, err)
 		return
 	}
+	s.rotateAfterStepUp(w, r, a)
 	id, creation, err := s.auth.BeginPasskeyRegistration(r.Context(), a.User.ID)
 	if err != nil {
 		s.writeAuthError(w, err)
@@ -137,6 +138,7 @@ func (s *Server) handlePasskeyDelete(w http.ResponseWriter, r *http.Request, a *
 		s.writeAuthError(w, err)
 		return
 	}
+	s.rotateAfterStepUp(w, r, a)
 	if err := s.auth.DeletePasskey(r.Context(), a.User.ID, id); err != nil {
 		s.writeAuthError(w, err)
 		return

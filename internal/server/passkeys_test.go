@@ -454,7 +454,7 @@ func TestPasskeyDeviceTokensCannotManage(t *testing.T) {
 	for _, r := range []struct{ method, path string }{
 		{"POST", "/api/auth/passkeys/register/begin"}, {"PATCH", "/api/auth/passkeys/1"}, {"DELETE", "/api/auth/passkeys/1"},
 	} {
-		if resp, m := c.do(r.method, r.path, map[string]string{"password": pw, "name": "x"}); resp.StatusCode != 403 || m["error"] != "forbidden" {
+		if resp, m := c.do(r.method, r.path, map[string]string{"password": pw, "name": "x"}); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
 			t.Errorf("%s %s with a device token: %s %v", r.method, r.path, resp.Status, m)
 		}
 	}
@@ -578,7 +578,7 @@ func TestPasskeySessionRevocationAndDisable(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatal(resp.Status, m)
 	}
-	if resp, _ := b.do("POST", "/api/auth/sessions/revoke-others", nil); resp.StatusCode != 204 {
+	if resp, _ := b.do("POST", "/api/auth/sessions/revoke-others", map[string]string{"password": pw}); resp.StatusCode != 204 {
 		t.Fatal(resp.Status)
 	}
 	if resp, _ := pb.do("GET", "/api/auth/me", nil); resp.StatusCode != 401 {
