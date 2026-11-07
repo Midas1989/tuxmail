@@ -233,6 +233,9 @@ type RemoteCachedMessage struct {
 	Date          string
 	SummaryJSON   string
 	SearchText    string // lower case; empty keeps the text already stored
+	// ReplaceText replaces the stored search text even with a shorter one
+	// (a mail whose content is no longer kept: header and preview only).
+	ReplaceText bool
 }
 
 // PutRemoteMessages stores loaded messages.
@@ -245,8 +248,8 @@ func (s *Store) PutRemoteMessages(ctx context.Context, msgs []RemoteCachedMessag
 			if _, err := tx.ExecContext(ctx, `INSERT INTO remote_cache_messages(id, account_id, msg_date, summary_json, search_text, used_at)
 				VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET account_id = excluded.account_id, msg_date = excluded.msg_date,
 				summary_json = excluded.summary_json, used_at = excluded.used_at,
-				search_text = CASE WHEN LENGTH(excluded.search_text) > LENGTH(search_text) THEN excluded.search_text ELSE search_text END`,
-				m.ID, m.AccountID, m.Date, m.SummaryJSON, m.SearchText, now.UnixMilli()); err != nil {
+				search_text = CASE WHEN ? OR LENGTH(excluded.search_text) > LENGTH(search_text) THEN excluded.search_text ELSE search_text END`,
+				m.ID, m.AccountID, m.Date, m.SummaryJSON, m.SearchText, now.UnixMilli(), m.ReplaceText); err != nil {
 				return err
 			}
 			if m.FolderIDs == nil {

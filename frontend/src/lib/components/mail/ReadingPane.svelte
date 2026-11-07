@@ -16,6 +16,8 @@
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import ImageOff from '@lucide/svelte/icons/image-off';
   import MailOpen from '@lucide/svelte/icons/mail-open';
+  import CloudOff from '@lucide/svelte/icons/cloud-off';
+  import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import Tags from '@lucide/svelte/icons/tags';
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import TagChips from '../common/TagChips.svelte';
@@ -129,6 +131,19 @@
           </div>
         </div>
       </header>
+
+      {#if app.contentLoadingId === m.id}
+        <div class="notice info" role="status" aria-live="polite" data-testid="content-loading">
+          <LoaderCircle size={16} class="spin" aria-hidden="true" />
+          <span>{t('mail.reader.contentLoading')}</span>
+        </div>
+      {:else if m.contentUnavailable}
+        <div class="notice" role="status" data-testid="content-offline">
+          <CloudOff size={16} aria-hidden="true" />
+          <span><strong>{t('mail.reader.contentOffline')}</strong> – {t('mail.reader.contentOfflineHint')}</span>
+          <button class="btn" disabled={connection.offline} onclick={() => app.reloadMessage()}>{t('mail.reader.retry')}</button>
+        </div>
+      {/if}
 
       {#if m.hasRemoteContent && !allowRemote}
         <div class="notice" role="note">
@@ -289,6 +304,22 @@
   }
   .notice span {
     flex: 1;
+  }
+  .notice.info {
+    background: color-mix(in srgb, var(--tm-accent) 10%, var(--tm-surface));
+  }
+  .notice :global(.spin) {
+    animation: tm-spin 1s linear infinite;
+  }
+  @keyframes tm-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .notice :global(.spin) {
+      animation: none;
+    }
   }
   .notice .btn {
     height: 28px;

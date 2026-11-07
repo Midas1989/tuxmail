@@ -150,7 +150,13 @@
       "toMany": "An {name} und {count} weitere",
       "toMany_one": "An {name} und 1 weitere Person",
       "loadRemoteSender": "Immer für Absender laden",
-      "loadRemoteDomain": "Immer für {domain}"
+      "loadRemoteDomain": "Immer für {domain}",
+      "contentLoading": "Inhalt wird geladen …",
+      "contentOffline": "Inhalt nur online verfügbar",
+      "contentOfflineHint": "Diese Mail ist auf diesem Gerät nur mit Kopf und Vorschau gespeichert. Mit Netz lädt TuxMail den Inhalt beim Öffnen.",
+      "retry": "Erneut laden",
+      "headersOnly": "nur Kopf",
+      "headersOnlyTitle": "Auf diesem Gerät nur mit Kopf und Vorschau gespeichert; der Inhalt wird beim Öffnen geladen."
     },
     "sidebar": {
       "allAccounts": "Alle Konten",
@@ -1348,7 +1354,7 @@
       "bodyPolicy": "Mail-Inhalte herunterladen",
       "body": {
         "recent": "Letzte 30 Tage (ältere bei Bedarf)",
-        "all": "Alle",
+        "all": "Alle (Standard)",
         "on_demand": "Nur bei Bedarf"
       },
       "pollMinutes": "Abrufintervall (Minuten, 0 = Standard)",
@@ -1396,7 +1402,16 @@
       "diagnostics": "Diagnose",
       "diagnosticsHint": "Exportiert Einstellungen, Sync-Status, Ordnerzähler und fehlgeschlagene Vorgänge dieses Kontos als JSON-Datei für den Support. Passwörter und Tokens sind nie enthalten.",
       "diagnosticsExport": "Diagnose exportieren",
-      "diagnosticsDone": "Diagnose exportiert."
+      "diagnosticsDone": "Diagnose exportiert.",
+      "headersOnly": "Ältere Mails nur mit Kopf",
+      "headersOnlyMode": {
+        "default": "Wie in Einstellungen › Mail ({value})",
+        "all": "Alle Mails vollständig",
+        "days": "Nur Kopf, wenn älter als …"
+      },
+      "headersOnlyOff": "aus",
+      "headersOnlyDays": "{days} Tage",
+      "headersOnlyHint": "Mails, die älter als X Tage sind, lädt TuxMail nur mit Absender, Betreff, Datum und Vorschau; den Inhalt erst beim Öffnen. Spart Speicher; ohne Netz sind diese Mails nur mit Kopf lesbar."
     },
     "passkeys": {
       "title": "Passkeys",
@@ -1566,7 +1581,8 @@
           "remote": "Externe Bilder",
           "compose": "Rechtschreibung, Meetings & Serienmail",
           "snippets": "Schnellantworten",
-          "vacation": "Abwesenheitsnotiz"
+          "vacation": "Abwesenheitsnotiz",
+          "storage": "Speicher & offline"
         }
       },
       "chats": {
@@ -1720,6 +1736,25 @@
         "signOut": "Abmelden",
         "failed": "Abmelden fehlgeschlagen: {error}. Ihre Sitzung ist auf dem Server möglicherweise noch aktiv; lokale Daten wurden entfernt."
       }
+    },
+    "storage": {
+      "title": "Ältere Mails nur mit Kopf speichern",
+      "intro": "Mails, die älter als X Tage sind, lädt TuxMail nur mit Absender, Betreff, Datum und Vorschau; den Inhalt erst beim Öffnen. Spart Speicher; ohne Netz sind diese Mails nur mit Kopf lesbar.",
+      "enable": "Nur Kopf und Vorschau für Mails, die älter sind als",
+      "days": "Tage",
+      "daysLabel": "Anzahl Tage",
+      "off": "Aus – alle Mails werden vollständig gespeichert (Standard).",
+      "on": "Mails älter als {days} Tage: nur Kopf und Vorschau.",
+      "release": "Einschalten oder Verkleinern gibt die Inhalte älterer Mails nach und nach frei (Kopf und Vorschau bleiben). Vergrößern oder Ausschalten lädt sie wieder herunter.",
+      "exceptions": "Immer vollständig bleiben: POP3-Konten (der Server hat oft keine Kopie mehr), lokale Ordner, Entwürfe, importierte Mails und verschlüsselte Mails (PGP, S/MIME).",
+      "opening": "Beim Öffnen lädt TuxMail den Inhalt nach. Das markiert die Mail nicht als gelesen, sendet keine Lesebestätigung und lädt keine externen Bilder – dafür gelten die Regeln unter „Externe Bilder“.",
+      "search": "Die Suche findet diese Mails über Kopf und Vorschau. Mit Netz sucht TuxMail zusätzlich auf dem Mailserver (IMAP); solche Treffer sind mit „nur Kopf“ markiert.",
+      "providers": "Vorschau ohne Herunterladen: IMAP, Microsoft 365, Gmail, JMAP und ActiveSync. Exchange (EWS) zeigt die Vorschau erst nach dem Öffnen.",
+      "thin": "Im Modus „Über den Server“ hält der Offline-Lesespeicher dieses Geräts für ältere Mails nur Kopf und Vorschau. Der Server selbst speichert weiter alles vollständig.",
+      "perAccount": "Einzelne Konten können einen eigenen Wert haben: Konten › Bearbeiten › Erweitert.",
+      "stats": "Auf diesem Gerät: {headersOnly} Mails nur mit Kopf, {complete} vollständig.",
+      "saved": "Gespeichert.",
+      "invalid": "Bitte eine Zahl zwischen 1 und 36500 eingeben."
     }
   },
   "search": {
@@ -1860,7 +1895,9 @@
       "badRange": "Bereich erwartet: [von TO bis]",
       "emptyTerm": "Leerer Suchbegriff",
       "unexpectedToken": "Unerwartetes „{token}“"
-    }
+    },
+    "headersOnly": "nur Kopf",
+    "serverMatch": "auf dem Server gefunden"
   },
   "compose": {
     "attach": "Datei anhängen",

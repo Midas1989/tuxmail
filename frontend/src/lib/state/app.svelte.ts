@@ -768,15 +768,30 @@ export class AppState {
   // Classic selection
   // -------------------------------------------------------------------------
 
+  /** Message whose content is being loaded on opening (kept with header only, "nur Kopf"). */
+  contentLoadingId = $state<number | null>(null);
+
   async selectMessage(id: number | null, opts: { scroll?: boolean } = {}): Promise<void> {
     this.selectedMessageId = id;
     if (this.seenTimer) clearTimeout(this.seenTimer);
     if (id == null) {
       this.message = null;
+      this.contentLoadingId = null;
       return;
     }
     if (opts.scroll) this.listScrollTick++;
-    const detail = await this.api.getMessage(id);
+    const summary = this.messages.find((m) => m.id === id);
+    if (summary?.headersOnly) {
+      // Header and preview right away; the content follows (may take a moment).
+      this.message = { ...summary, inReplyTo: [], references: [], attachments: [], text: summary.preview };
+      this.contentLoadingId = id;
+    }
+    let detail: MessageDetail;
+    try {
+      detail = await this.api.getMessage(id);
+    } finally {
+      if (this.contentLoadingId === id) this.contentLoadingId = null;
+    }
     if (this.selectedMessageId !== id) return;
     this.message = detail;
     this.prefetchNeighbours(id);
@@ -784,6 +799,19 @@ export class AppState {
       this.seenTimer = setTimeout(() => {
         if (this.selectedMessageId === id) void this.api.setFlags([id], [FLAG_SEEN], []);
       }, 700);
+    }
+  }
+
+  /** "Erneut laden" of a mail whose content was not available. */
+  async reloadMessage(): Promise<void> {
+    const id = this.selectedMessageId;
+    if (id == null) return;
+    this.contentLoadingId = id;
+    try {
+      const detail = await this.api.getMessage(id);
+      if (this.selectedMessageId === id) this.message = detail;
+    } finally {
+      if (this.contentLoadingId === id) this.contentLoadingId = null;
     }
   }
 
@@ -795,7 +823,8 @@ export class AppState {
     const i = this.messages.findIndex((m) => m.id === id);
     if (i < 0) return;
     for (const n of [this.messages[i + 1], this.messages[i - 1]]) {
-      if (n && !this.prefetched.has(n.id)) {
+      // Mails kept with header only load their content when opened, not ahead.
+      if (n && !n.headersOnly && !this.prefetched.has(n.id)) {
         this.prefetched.add(n.id);
         void this.api.getMessage(n.id).catch(() => this.prefetched.delete(n.id));
       }

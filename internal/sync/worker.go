@@ -422,6 +422,15 @@ func (w *Worker) cycle(ctx context.Context) error {
 	}
 	w.setState(StateSyncing, "")
 	more, err := w.backfillBodies(ctx)
+	if err == nil {
+		// Mails kept with header only (headersonly.go): previews, then the
+		// release of bodies older than the day count.
+		var mp, mr bool
+		if mp, err = w.backfillPreviews(ctx); err == nil {
+			mr, err = w.releaseBodies(ctx)
+		}
+		more = more || mp || mr
+	}
 	w.mu.Lock()
 	w.moreBodies = more
 	w.mu.Unlock()

@@ -159,6 +159,7 @@ func (a *App) Search(ctx context.Context, q SearchQuery) (SearchResult, error) {
 			if m, ok := byID[h.ID]; ok {
 				hit.ConversationID = m.ConversationID
 				hit.Unread = m.Flags&store.FlagSeen == 0
+				hit.HeadersOnly = m.BlobHash == ""
 			}
 			if fs := folders[h.ID]; len(fs) > 0 {
 				hit.FolderID = fs[0]
@@ -182,6 +183,7 @@ func (a *App) Search(ctx context.Context, q SearchQuery) (SearchResult, error) {
 	} else {
 		out.Total = len(out.Hits)
 	}
+	out.Total += a.serverSearchHits(ctx, q, &out)
 	for _, f := range res.Facets {
 		buckets := make([]FacetBucket, 0, len(f.Buckets))
 		for _, b := range f.Buckets {

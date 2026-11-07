@@ -17,15 +17,18 @@ import (
 	"github.com/Midas1989/Mailclient/internal/workflow"
 )
 
-// BodyPolicy decides which raw messages are downloaded during sync.
+// BodyPolicy decides which raw messages are downloaded during sync. With
+// BodiesRecent and BodiesOnDemand older mails are kept with header and
+// preview only ("Nur Kopf"); the body is loaded on opening.
 type BodyPolicy string
 
 const (
-	// BodiesRecent downloads messages of the last RecentBodyDays (default);
-	// older ones are loaded on demand (Manager.FetchBody).
+	// BodiesRecent downloads messages of the last days (RecentBodyDays or
+	// mail.headersOnlyOlderThanDays); older ones are loaded on demand
+	// (Manager.FetchBody).
 	BodiesRecent BodyPolicy = "recent"
 	// BodiesAll downloads recent messages first and then backfills all
-	// others in the background.
+	// others in the background (default).
 	BodiesAll BodyPolicy = "all"
 	// BodiesOnDemand only stores headers; bodies are loaded on demand. New
 	// mails arriving during incremental sync are still downloaded so that
@@ -96,10 +99,22 @@ type Config struct {
 	Logger *slog.Logger
 	Now    func() time.Time
 
-	// Bodies is the download policy (default BodiesRecent).
+	// Bodies is the download policy (default BodiesAll: every body, the
+	// newest first).
 	Bodies BodyPolicy
-	// RecentBodyDays is the age limit of BodiesRecent (default 30).
+	// RecentBodyDays is the age limit of BodiesRecent chosen as the older
+	// account body policy (default 30).
 	RecentBodyDays int
+	// HeadersOnlyDays returns the global default of
+	// mail.headersOnlyOlderThanDays of this device (0 = all bodies). Set
+	// only by the desktop app; nil switches the day count off, including the
+	// accounts' own (the server always loads every mail completely).
+	HeadersOnlyDays func() int
+	// ReleaseBatch is the number of bodies released per worker cycle (default 200).
+	ReleaseBatch int
+	// ReleaseGrace is how long a body loaded on opening is kept before it may
+	// be released again (default 24 h).
+	ReleaseGrace time.Duration
 	// MaxBodySize skips downloading larger messages (default 50 MiB).
 	MaxBodySize int64
 	// BackfillBatch is the number of bodies downloaded per worker cycle (default 50).
@@ -163,8 +178,10 @@ func (c *Config) defaults() error {
 		c.Now = time.Now
 	}
 	if c.Bodies == "" {
-		c.Bodies = BodiesRecent
+		c.Bodies = BodiesAll
 	}
+	setInt(&c.ReleaseBatch, 200)
+	setDur(&c.ReleaseGrace, 24*time.Hour)
 	setInt(&c.RecentBodyDays, 30)
 	if c.MaxBodySize <= 0 {
 		c.MaxBodySize = 50 << 20

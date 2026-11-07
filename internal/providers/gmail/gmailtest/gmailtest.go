@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"net/mail"
@@ -174,7 +175,8 @@ func (s *Server) labelList(m *Message) []string {
 
 func (s *Server) meta(m *Message, format string) map[string]any {
 	out := map[string]any{"id": m.ID, "threadId": m.ThreadID, "labelIds": s.labelList(m),
-		"internalDate": strconv.FormatInt(m.Date.UnixMilli(), 10), "sizeEstimate": len(m.Raw), "historyId": strconv.Itoa(s.hid)}
+		"internalDate": strconv.FormatInt(m.Date.UnixMilli(), 10), "sizeEstimate": len(m.Raw), "historyId": strconv.Itoa(s.hid),
+		"snippet": snippet(m.Raw)}
 	switch format {
 	case "raw":
 		out["raw"] = base64.URLEncoding.EncodeToString([]byte(m.Raw))
@@ -393,4 +395,14 @@ func (s *Server) calendar(w http.ResponseWriter, r *http.Request, p string) {
 func asList(v any) []any {
 	l, _ := v.([]any)
 	return l
+}
+
+// snippet is Gmail's preview text: the start of the body, HTML-escaped.
+func snippet(raw string) string {
+	_, body, _ := strings.Cut(strings.ReplaceAll(raw, "\r\n", "\n"), "\n\n")
+	body = strings.Join(strings.Fields(body), " ")
+	if r := []rune(body); len(r) > 200 {
+		body = string(r[:200])
+	}
+	return html.EscapeString(body)
 }

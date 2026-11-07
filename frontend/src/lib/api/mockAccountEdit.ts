@@ -22,6 +22,8 @@ import type {
 
 interface Options {
   bodyPolicy: BodyPolicy;
+  /** -1 = as in Settings › Mail. */
+  headersOnlyOlderThanDays: number;
   pollMinutes: number;
   idleMode: IdleMode;
   idleFolders: number[];
@@ -31,6 +33,8 @@ interface Options {
   error?: string;
 }
 
+/** Kinds whose contents can be loaded again (mirror of store.HeadersOnlyKinds). */
+const HEADERS_ONLY = new Set(['imap', 'jmap', 'eas', 'graph', 'ews', 'gmail']);
 const EDITABLE = new Set(['imap', 'pop3', 'jmap', 'eas', 'ews', 'graph', 'gmail', 'caldav', 'carddav']);
 const TLS = new Set(['tls', 'starttls', 'none']);
 const AUTH = new Set(['password', 'oauth2', 'client_cert']);
@@ -68,7 +72,8 @@ export class MockAccountEdit {
     let o = this.opts.get(id);
     if (!o) {
       o = {
-        bodyPolicy: 'recent',
+        bodyPolicy: 'all',
+        headersOnlyOlderThanDays: -1,
         pollMinutes: 0,
         idleMode: 'default',
         idleFolders: [],
@@ -95,6 +100,8 @@ export class MockAccountEdit {
       jmapUrl: acc.extra?.jmapUrl,
       pop3: acc.kind === 'pop3' ? (o.pop3 ?? { leaveOnServer: true, deleteAfterDays: 0, deleteOnLocalDelete: false }) : undefined,
       bodyPolicy: o.bodyPolicy,
+      headersOnlyOlderThanDays: HEADERS_ONLY.has(acc.kind) ? o.headersOnlyOlderThanDays : -1,
+      headersOnlyAvailable: HEADERS_ONLY.has(acc.kind),
       pollMinutes: o.pollMinutes,
       idleMode: o.idleMode,
       idleFolders: [...o.idleFolders],
@@ -114,6 +121,11 @@ export class MockAccountEdit {
     validServer('incoming', u.incoming);
     validServer('outgoing', u.outgoing);
     if (u.pollMinutes !== undefined && (u.pollMinutes < 0 || u.pollMinutes > 1440)) invalid('pollMinutes must be between 0 and 1440');
+    if (u.headersOnlyOlderThanDays !== undefined) {
+      if (!HEADERS_ONLY.has(acc.kind)) invalid('keeping older mails with header only is not available for this account here');
+      const n = u.headersOnlyOlderThanDays;
+      if (!Number.isInteger(n) || n < -1 || n > 36500) invalid('headersOnlyOlderThanDays must be -1 or between 0 and 36500');
+    }
     const o = this.o(acc.id);
     const changed = !!(u.incoming || u.outgoing || u.easUrl !== undefined || u.jmapUrl !== undefined);
     if (u.displayName !== undefined) acc.displayName = u.displayName.trim();
@@ -126,6 +138,7 @@ export class MockAccountEdit {
     if (u.jmapUrl !== undefined) acc.extra = { ...acc.extra, jmapUrl: u.jmapUrl };
     if (u.pop3) o.pop3 = { ...u.pop3 };
     if (u.bodyPolicy) o.bodyPolicy = u.bodyPolicy;
+    if (u.headersOnlyOlderThanDays !== undefined) o.headersOnlyOlderThanDays = u.headersOnlyOlderThanDays;
     if (u.pollMinutes !== undefined) o.pollMinutes = u.pollMinutes;
     if (u.idleMode) {
       o.idleMode = u.idleMode;

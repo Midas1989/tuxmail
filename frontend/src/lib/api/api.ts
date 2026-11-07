@@ -593,7 +593,7 @@ export interface Api {
 // "Konto bearbeiten" (Settings -> Konten; Go: internal/app/account_edit.go),
 // another part of the Api interface (declaration merging).
 
-import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity } from '../types';
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity, MailStorageSettings } from '../types';
 
 export interface Api {
   getAccountSettings(accountId: number): Promise<AccountSettings>;
@@ -612,6 +612,13 @@ export interface Api {
   setDefaultIdentity(identityId: number): Promise<void>;
   /** Support export of one account (no secrets). */
   accountDiagnostics(accountId: number): Promise<AccountDiagnostics>;
+  /**
+   * Einstellungen › Mail › Speicher: mail.headersOnlyOlderThanDays of this
+   * device (local core only, never synced; the web client and the server
+   * answer `available: false`).
+   */
+  getMailStorageSettings(): Promise<MailStorageSettings>;
+  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'>): Promise<MailStorageSettings>;
 }
 
 // --- Account security ---

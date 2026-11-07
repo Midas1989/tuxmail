@@ -89,6 +89,9 @@ type MessageSummary struct {
 	Size           int64     `json:"size"`
 	TagIDs         []int64   `json:"tagIds,omitempty"`
 	ProjectIDs     []int64   `json:"projectIds,omitempty"`
+	// HeadersOnly: only header and preview are stored on this device ("nur
+	// Kopf"); the content is loaded on opening.
+	HeadersOnly bool `json:"headersOnly,omitempty"`
 }
 
 // MessageDetail is a message with body and attachments.
@@ -105,6 +108,9 @@ type MessageDetail struct {
 	// RemoteLoaded is set when HTML already references remote images through
 	// the image proxy (sender/domain on the allowlist), mailproto.go.
 	RemoteLoaded bool `json:"remoteLoaded,omitempty"`
+	// ContentUnavailable: the content could not be loaded (no connection);
+	// Text holds the preview. The interface says "Inhalt nur online verfügbar".
+	ContentUnavailable bool `json:"contentUnavailable,omitempty"`
 }
 
 // Conversation is a row of the chat list.
@@ -511,6 +517,12 @@ type SearchHit struct {
 	ConversationID  int64    `json:"conversationId,omitempty"`
 	ItemID          string   `json:"itemId,omitempty"`
 	PersonID        int64    `json:"personId,omitempty"`
+	// HeadersOnly: a mail kept with header only; found by header and
+	// preview (or ServerMatch), its content is loaded on opening.
+	HeadersOnly bool `json:"headersOnly,omitempty"`
+	// ServerMatch: found by the search on the mail server (IMAP SEARCH), not
+	// in the local index.
+	ServerMatch bool `json:"serverMatch,omitempty"`
 }
 
 // FacetBucket is one facet value.

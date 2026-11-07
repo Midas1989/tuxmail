@@ -230,11 +230,12 @@ type gMessage struct {
 		FlagStatus string `json:"flagStatus"`
 	} `json:"flag"`
 	ParentFolderID string          `json:"parentFolderId"`
+	BodyPreview    string          `json:"bodyPreview"`
 	Removed        json.RawMessage `json:"@removed"`
 }
 
 const messageSelect = "id,conversationId,conversationIndex,internetMessageId,subject,from,sender,toRecipients," +
-	"ccRecipients,bccRecipients,replyTo,sentDateTime,receivedDateTime,isRead,isDraft,hasAttachments,categories,flag,parentFolderId"
+	"ccRecipients,bccRecipients,replyTo,sentDateTime,receivedDateTime,isRead,isDraft,hasAttachments,categories,flag,parentFolderId,bodyPreview"
 
 func addrs(in []gAddr) []domain.Address {
 	var out []domain.Address
@@ -259,7 +260,7 @@ func (p *Provider) remoteMessage(folderRemote string, m gMessage) domain.RemoteM
 		h.Date = m.ReceivedDateTime
 	}
 	return domain.RemoteMessage{Ref: domain.RemoteRef{FolderRemoteID: folderRemote, ID: m.ID}, Header: h,
-		Flags: p.flags(m), ReceivedAt: m.ReceivedDateTime, HasAttachments: m.HasAttachments}
+		Flags: p.flags(m), ReceivedAt: m.ReceivedDateTime, HasAttachments: m.HasAttachments, Preview: strings.TrimSpace(m.BodyPreview)}
 }
 
 func (p *Provider) flags(m gMessage) []domain.Flag {

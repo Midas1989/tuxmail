@@ -166,6 +166,7 @@ type App struct {
 	bubbles        bodyCache         // items.go
 	rendered       renderCache       // rendercache.go
 	chromiumBroken atomic.Bool       // comfort_pdf.go
+	hoDays         atomic.Int64      // mail.headersOnlyOlderThanDays of this device, headersonly.go
 }
 
 // New creates the application layer.
@@ -234,9 +235,13 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		}
 		a.opts.Sender = ms
 	}
+	a.loadHeadersOnlyDays(ctx)
 	if a.sync == nil && opts.Sync != nil && a.blobs != nil {
 		cfg := tsync.Config{Store: a.st, Blobs: a.blobs, Bus: a.bus, Secrets: a.opts.Secrets, Projects: a.proj, Tags: a.proj,
 			Logger: opts.Logger, Now: opts.Now, Extractor: ParseExtractor{}}
+		if opts.Mode != ModeServer { // the server keeps every mail completely
+			cfg.HeadersOnlyDays = a.headersOnlyDays
+		}
 		if ms, ok := a.opts.Sender.(*MailSender); ok {
 			cfg.Sender = syncSender{act: func() *send.Actions { return ms.Actions }}
 		}

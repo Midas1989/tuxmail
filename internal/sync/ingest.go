@@ -304,6 +304,14 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 			return err
 		}
 	} else if created {
+		// Kept with header only for now: a preview the server delivered with
+		// the header data (no extra request) is stored right away.
+		if p := m.previewOf(rm); p != "" {
+			if err := st.SetMessagePreview(ctx, id, p); err != nil {
+				return err
+			}
+			row.Snippet = p
+		}
 		if err := m.indexMessage(ctx, row, nil); err != nil {
 			return err
 		}
@@ -420,6 +428,10 @@ func (m *Manager) extract(raw []byte) *content.Content {
 // storeContent stores the raw message in the blob store and records
 // snippet, attachments and the full-text index entry.
 func (m *Manager) storeContent(ctx context.Context, msg store.Message, raw []byte, ct *content.Content) (store.Message, error) {
+	// Releasing a body (headersonly.go) must not delete a blob stored here
+	// between its reference check and the deletion.
+	m.blobMu.RLock()
+	defer m.blobMu.RUnlock()
 	hash, err := m.cfg.Blobs.Put(bytes.NewReader(raw))
 	if err != nil {
 		return msg, fmt.Errorf("sync: store raw message: %w", err)
@@ -440,6 +452,9 @@ func (m *Manager) storeContent(ctx context.Context, msg store.Message, raw []byt
 	}
 	hasAtt := msg.HasAttachments || named
 	if err := m.st.SetMessageContent(ctx, msg.ID, hash, ct.Snippet, hasAtt); err != nil {
+		return msg, err
+	}
+	if err := m.st.SetContentTime(ctx, msg.ID, m.now()); err != nil {
 		return msg, err
 	}
 	msg.BlobHash, msg.Snippet, msg.HasAttachments = hash, ct.Snippet, hasAtt
@@ -463,6 +478,20 @@ func (m *Manager) indexMessage(ctx context.Context, msg store.Message, ct *conte
 		ab.WriteByte(' ')
 	}
 	doc := store.SearchDoc{Subject: msg.Subject, Addresses: strings.TrimSpace(ab.String())}
+	if ct == nil && msg.BlobHash == "" {
+		// A mail kept with header only is found by its preview and the
+		// names of its attachments (known from before a release).
+		doc.Body = msg.Snippet
+		if atts, err := m.st.AttachmentsOf(ctx, msg.ID); err == nil {
+			names := make([]string, 0, len(atts))
+			for _, a := range atts {
+				if a.Filename != "" {
+					names = append(names, a.Filename)
+				}
+			}
+			doc.Attachments = strings.Join(names, " ")
+		}
+	}
 	if ct != nil {
 		doc.Body = ct.Text
 		names := make([]string, 0, len(ct.Attachments))
@@ -649,11 +678,11 @@ func (m *Manager) mailEvent(ctx context.Context, typ events.Type, msg store.Mess
 func (w *Worker) backfillBodies(ctx context.Context) (bool, error) {
 	cfg := &w.m.cfg
 	var notBefore time.Time
-	switch w.bodyPolicy() {
+	switch rule := w.contentRule(); rule.policy {
 	case BodiesOnDemand:
 		return false, nil
 	case BodiesRecent:
-		notBefore = w.m.now().AddDate(0, 0, -cfg.RecentBodyDays)
+		notBefore = rule.cutoff(w.m.now())
 	}
 	tasks, err := w.m.st.MessagesWithoutBody(ctx, w.acc.ID, notBefore, cfg.MaxBodySize, placeholderPrefix, cfg.BackfillBatch+len(w.failedBodies()))
 	if err != nil {

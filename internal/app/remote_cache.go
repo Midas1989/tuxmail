@@ -63,10 +63,17 @@ func (a *App) cacheResponse(ctx context.Context, u *url.URL, res *connResponse) 
 		return
 	}
 	now := a.now()
-	err := a.st.PutRemoteCache(ctx, store.RemoteCacheEntry{Key: cacheKey(u), ContentType: res.Header.Get("Content-Type"),
-		Disposition: res.Header.Get("Content-Disposition"), Body: res.Body}, now)
-	if err == nil {
-		err = a.indexMessages(ctx, u, res.Body, now)
+	var err error
+	if a.remoteContentOld(ctx, u, res.Body) {
+		// Older than mail.headersOnlyOlderThanDays: only the list entry and
+		// the preview are kept (headersonly.go).
+		err = a.indexMessages(ctx, u, res.Body, now, true)
+	} else {
+		err = a.st.PutRemoteCache(ctx, store.RemoteCacheEntry{Key: cacheKey(u), ContentType: res.Header.Get("Content-Type"),
+			Disposition: res.Header.Get("Content-Disposition"), Body: res.Body}, now)
+		if err == nil {
+			err = a.indexMessages(ctx, u, res.Body, now, false)
+		}
 	}
 	// Measuring the cache takes a moment: not on every answer.
 	if err == nil && a.cr.cacheWritten.Add(int64(len(res.Body))) > min(a.remoteCacheMax()/8, 16<<20) {
@@ -109,7 +116,27 @@ func cachedMessage(m *MessageSummary, body string) store.RemoteCachedMessage {
 	return store.RemoteCachedMessage{ID: m.ID, AccountID: m.AccountID, FolderIDs: folders, Date: m.Date, SummaryJSON: string(js), SearchText: messageSearchText(m, body)}
 }
 
-func (a *App) indexMessages(ctx context.Context, u *url.URL, body []byte, now time.Time) error {
+var reMessageContent = regexp.MustCompile(`^/api/messages/(\d+)/(attachments/\d+|cid/[^/]+|remote-content)$`)
+
+// remoteContentOld reports whether an answer is the content of a mail older
+// than mail.headersOnlyOlderThanDays: it is not kept for reading offline.
+func (a *App) remoteContentOld(ctx context.Context, u *url.URL, body []byte) bool {
+	if a.headersOnlyCutoff().IsZero() {
+		return false
+	}
+	if reMessageDetail.MatchString(u.Path) {
+		var m MessageSummary
+		return json.Unmarshal(body, &m) == nil && a.remoteHeadersOnly(m.Date)
+	}
+	if mm := reMessageContent.FindStringSubmatch(u.Path); mm != nil {
+		id, _ := strconv.ParseInt(mm[1], 10, 64)
+		date, err := a.st.RemoteCachedDate(ctx, id)
+		return err == nil && a.remoteHeadersOnly(date)
+	}
+	return false
+}
+
+func (a *App) indexMessages(ctx context.Context, u *url.URL, body []byte, now time.Time, headersOnly bool) error {
 	switch {
 	case u.Path == "/api/messages":
 		var p Page[MessageSummary]
@@ -129,6 +156,11 @@ func (a *App) indexMessages(ctx context.Context, u *url.URL, body []byte, now ti
 		text := d.Text
 		if text == "" {
 			text = stripTags(d.HTML)
+		}
+		if headersOnly {
+			cm := cachedMessage(&d.MessageSummary, "")
+			cm.ReplaceText = true
+			return a.st.PutRemoteMessages(ctx, []store.RemoteCachedMessage{cm}, now)
 		}
 		return a.st.PutRemoteMessages(ctx, []store.RemoteCachedMessage{cachedMessage(&d.MessageSummary, text)}, now)
 	}
@@ -198,7 +230,15 @@ func (a *App) offlineFallback(ctx context.Context, u *url.URL) (*connResult, err
 		})
 	case u.Path == "/api/autocomplete":
 		return a.offlineAutocomplete(ctx, q.Get("q"), q.Get("limit"))
-	case reMessageExtras.MatchString(u.Path), reMessageDetail.MatchString(u.Path):
+	case reMessageDetail.MatchString(u.Path):
+		// Content not kept (older than the day count, or never opened):
+		// header and preview, marked "Inhalt nur online verfügbar".
+		id, _ := strconv.ParseInt(reMessageDetail.FindStringSubmatch(u.Path)[1], 10, 64)
+		if res, ok := a.offlineHeadersOnly(ctx, id); ok {
+			return res, nil
+		}
+		return offlineUnavailable(), nil
+	case reMessageExtras.MatchString(u.Path):
 		return offlineUnavailable(), nil
 	}
 	if strings.Count(u.Path, "/") == 2 || u.Path == "/api/search/profiles" || u.Path == "/api/persons/frequent" || strings.HasSuffix(u.Path, "/folders") {
@@ -429,6 +469,9 @@ func (a *App) offlineSearch(ctx context.Context, body []byte) (*connResult, erro
 		}
 		hit := SearchHit{ID: fmt.Sprintf("%s:%d", store.ScopeMail, m.ID), Kind: string(store.ScopeMail), Title: m.Subject, Snippet: m.Preview, Highlights: [][2]int{}, TitleHighlights: [][2]int{},
 			Date: m.Date, AccountID: m.AccountID, Size: m.Size, HasAttachments: m.HasAttachments, MessageID: m.ID, ConversationID: m.ConversationID, Unread: !slices.Contains(m.Flags, domain.FlagSeen), ItemID: mailItemID(m.ID)}
+		if have, err := a.st.HasRemoteCache(ctx, fmt.Sprintf("/api/messages/%d", m.ID)); err == nil && !have {
+			hit.HeadersOnly = true // the content is not kept here: header and preview only
+		}
 		if len(m.FolderIDs) > 0 {
 			hit.FolderID = m.FolderIDs[0]
 		}
@@ -515,11 +558,17 @@ func (a *App) refreshRemoteCache(ctx context.Context) {
 				if i >= remoteCacheAheadDetails {
 					break
 				}
+				if a.remoteHeadersOnly(m.Date) {
+					continue // older than the day count: header and preview only
+				}
 				if _, have, err := a.st.GetRemoteCache(ctx, fmt.Sprintf("/api/messages/%d", m.ID), a.now()); err == nil && !have {
 					get(fmt.Sprintf("/api/messages/%d", m.ID))
 				}
 			}
 		}
+	}
+	if err := a.releaseRemoteCacheBodies(ctx); err != nil && ctx.Err() == nil {
+		a.log.Warn("app: releasing older mails from the read cache failed", "err", err)
 	}
 	if a.connState() == ConnStateOnline {
 		if err := a.connUpdate(ctx, func(c *serverConnection) { c.LastDataSync = a.now().Unix() }); err != nil {

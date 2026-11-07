@@ -27,6 +27,24 @@ type MailProvider interface {
 	Close() error
 }
 
+// PartialFetcher is implemented by providers that can load the header and
+// the beginning of the body of messages without downloading them completely
+// (IMAP: BODY.PEEK[HEADER] and BODY.PEEK[TEXT]<0.n>). The sync engine uses
+// it for the preview of mails kept with their header only. The result maps
+// ids of the folder to header + body prefix (a truncated RFC 5322 message);
+// missing ids were not found. It never marks a message as read.
+type PartialFetcher interface {
+	FetchPartial(ctx context.Context, folderRemoteID string, ids []string, maxBodyBytes int64) (map[string][]byte, error)
+}
+
+// TextSearcher is implemented by providers that can search the text of the
+// messages of a folder on the server (IMAP SEARCH TEXT). The sync engine
+// uses it to find mails kept with their header only by their body; it
+// returns the ids of the matches, newest last, at most limit.
+type TextSearcher interface {
+	SearchText(ctx context.Context, folderRemoteID, text string, limit int) ([]string, error)
+}
+
 // OutgoingMessage is a fully rendered RFC 5322 message ready for submission.
 type OutgoingMessage struct {
 	From       Address

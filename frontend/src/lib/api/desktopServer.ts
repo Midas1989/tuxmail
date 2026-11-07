@@ -7,7 +7,7 @@
 import { HttpTransport } from './http';
 import { WailsTransport, type WailsWindow } from './wails';
 import { desktopHttpOptions, type DesktopWin } from '../desktop/bridge';
-import type { DeviceAuthorization, DeviceTokenResult, ProvisioningImport, ServerLoginInput, VaultStatus } from '../types';
+import type { DeviceAuthorization, DeviceTokenResult, MailStorageSettings, ProvisioningImport, ServerLoginInput, VaultStatus } from '../types';
 
 export class DesktopServerTransport extends HttpTransport {
   private readonly local: WailsTransport;
@@ -34,5 +34,12 @@ export class DesktopServerTransport extends HttpTransport {
   }
   override unlockVault(password: string): Promise<void> {
     return this.local.unlockVault(password);
+  }
+  /** The offline read cache of this device keeps older mails with header only. */
+  override getMailStorageSettings(): Promise<MailStorageSettings> {
+    return this.local.getMailStorageSettings();
+  }
+  override setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'>): Promise<MailStorageSettings> {
+    return this.local.setMailStorageSettings(settings);
   }
 }

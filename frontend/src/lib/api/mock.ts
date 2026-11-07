@@ -436,7 +436,9 @@ export class MockTransport implements Api {
   private summary(m: MessageDetail): MessageSummary {
     const { inReplyTo: _a, references: _b, html: _c, text: _d, attachments: _e, hasRemoteContent: _f, bcc: _g, replyTo: _h, ...rest } = m;
     const ref: ItemRef = { kind: 'message', id: m.id };
-    return { ...rest, tagIds: this.org?.tagIds(ref) ?? [], projectIds: this.org?.projectIdsFor(ref) ?? [] };
+    const out: MessageSummary = { ...rest, tagIds: this.org?.tagIds(ref) ?? [], projectIds: this.org?.projectIdsFor(ref) ?? [] };
+    if (this.accountEdit && this.isHeadersOnly(m)) out.headersOnly = true;
+    return out;
   }
 
   private personByEmail(email: string): Person | undefined {
@@ -807,6 +809,10 @@ export class MockTransport implements Api {
     const m = this.messages.get(id);
     if (!m) return Promise.reject(new ApiError('Nachricht nicht gefunden', 404, 'not_found'));
     const ref: ItemRef = { kind: 'message', id: m.id };
+    if (this.isHeadersOnly(m) && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      // Kept with header only and no network: header and preview ("Inhalt nur online verfügbar").
+      return this.reply({ ...this.summary(m), inReplyTo: [], references: [], attachments: [], text: m.preview, contentUnavailable: true, headersOnly: true });
+    }
     return this.reply({ ...m, tagIds: this.org.tagIds(ref), projectIds: this.org.projectIdsFor(ref) });
   }
 
@@ -1605,6 +1611,10 @@ export class MockTransport implements Api {
       },
       monthLabel: (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' }),
     });
+    for (const h of result.hits) {
+      const m = h.messageId != null ? this.messages.get(h.messageId) : undefined;
+      if (m && this.isHeadersOnly(m)) h.headersOnly = true;
+    }
     if (query.text.trim() && !query.cursor) {
       this.searchHistory = [{ text: query.text, mode: query.mode, at: new Date().toISOString() }, ...this.searchHistory.filter((h) => h.text !== query.text)].slice(0, 20);
     }
@@ -2815,6 +2825,31 @@ export class MockTransport implements Api {
       return this.accountEdit.diagnostics(s, this.folders.filter((f) => f.accountId === accountId), this.identities.filter((i) => i.accountId === accountId).length, 'demo');
     });
   }
+
+  // --- Einstellungen › Mail › Speicher (mail.headersOnlyOlderThanDays) ---
+  private mailStorageDays = 0;
+  getMailStorageSettings(): Promise<MailStorageSettings> {
+    return this.run(() => {
+      const all = [...this.messages.values()];
+      const h = all.filter((m) => this.isHeadersOnly(m)).length;
+      return { headersOnlyOlderThanDays: this.mailStorageDays, available: true, headersOnly: h, complete: all.length - h };
+    });
+  }
+  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'>): Promise<MailStorageSettings> {
+    const n = settings.headersOnlyOlderThanDays;
+    if (!Number.isInteger(n) || n < 0 || n > 36500) return Promise.reject(new ApiError('headersOnlyOlderThanDays must be between 0 and 36500', 400, 'invalid_input'));
+    this.mailStorageDays = n;
+    return this.getMailStorageSettings();
+  }
+  /** Older than the day count (per account or global), not a draft: header and preview only on this device. */
+  protected isHeadersOnly(m: MessageSummary): boolean {
+    if (m.flags.includes(DRAFT)) return false;
+    const acc = this.accounts.find((a) => a.id === m.accountId);
+    if (!acc) return false;
+    const own = this.accountEdit.settings(acc).headersOnlyOlderThanDays ?? -1;
+    const days = own >= 0 ? own : this.mailStorageDays;
+    return days > 0 && !!this.accountEdit.settings(acc).headersOnlyAvailable && Date.parse(m.date) < Date.now() - days * 86_400_000;
+  }
 }
 
 import { MockMessenger } from './mockMessenger';
@@ -2826,7 +2861,7 @@ import { MockIO } from './mockIO';
 
 // --- Account edit ---
 import { MockAccountEdit } from './mockAccountEdit';
-import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult } from '../types';
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, MailStorageSettings } from '../types';
 // --- Diagnostics ---
 import type { AccountSyncStatus, DiagnosticsInfo } from '../types';
 const messengerKinds = new Set(['signal', 'whatsapp', 'telegram', 'matrix_bridge']);

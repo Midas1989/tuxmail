@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/store"
 )
 
 // Per-account overrides of the sync configuration, stored in
@@ -17,6 +18,12 @@ import (
 const (
 	// ExtraBodyPolicy overrides Config.Bodies: recent | all | on_demand.
 	ExtraBodyPolicy = "bodyPolicy"
+	// ExtraHeadersOnlyDays overrides the global default of
+	// mail.headersOnlyOlderThanDays for the account: mails older than this
+	// many days are kept with header and preview only ("0" = all mails
+	// completely). It takes precedence over ExtraBodyPolicy and is only
+	// honoured when Config.HeadersOnlyDays is set (desktop, not the server).
+	ExtraHeadersOnlyDays = "headersOnlyOlderThanDays"
 	// ExtraPollMinutes overrides Config.PollInterval (whole minutes, > 0).
 	ExtraPollMinutes = "pollMinutes"
 	// ExtraIdleFolders overrides Config.WatchRoles: "off" (poll only) or a
@@ -39,13 +46,86 @@ func (w *Worker) extra(key string) string {
 	return strings.TrimSpace(w.acc.Extra[key])
 }
 
-// bodyPolicy is the body download policy of the worker's account.
-func (w *Worker) bodyPolicy() BodyPolicy {
-	if p := BodyPolicy(w.extra(ExtraBodyPolicy)); ValidBodyPolicy(p) {
-		return p
+// MaxHeadersOnlyDays bounds mail.headersOnlyOlderThanDays (100 years).
+const MaxHeadersOnlyDays = 36500
+
+// ParseHeadersOnlyDays reads a stored day count; ok is false for an empty
+// or invalid value.
+func ParseHeadersOnlyDays(v string) (int, bool) {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 || n > MaxHeadersOnlyDays {
+		return 0, false
 	}
-	return w.m.cfg.Bodies
+	return n, true
 }
+
+// contentRule says which bodies the worker keeps.
+type contentRule struct {
+	policy BodyPolicy
+	// days is the age limit of BodiesRecent.
+	days int
+	// release: bodies of older mails already stored are released again
+	// (only for the day count of mail.headersOnlyOlderThanDays, never for
+	// the older body policies).
+	release bool
+}
+
+// cutoff is the date before which mails are kept with header only (zero:
+// none, BodiesAll).
+func (r contentRule) cutoff(now time.Time) time.Time {
+	switch r.policy {
+	case BodiesRecent:
+		return now.AddDate(0, 0, -r.days)
+	case BodiesOnDemand:
+		return now.Add(time.Hour) // every mail already there
+	}
+	return time.Time{}
+}
+
+// headersOnlyKind reports whether bodies of the account can be loaded again
+// at any time, so that a mail may be kept with its header only.
+func headersOnlyKind(k domain.AccountKind) bool {
+	for _, x := range store.HeadersOnlyKinds {
+		if string(k) == x {
+			return true
+		}
+	}
+	return false
+}
+
+// contentRule is the body policy of the worker's account: the account's day
+// count, else its (older) body policy, else the global day count of this
+// device, else Config.Bodies. Accounts whose bodies cannot be loaded again
+// (POP3) always keep everything.
+func (w *Worker) contentRule() contentRule {
+	if !headersOnlyKind(w.acc.Kind) {
+		return contentRule{policy: BodiesAll}
+	}
+	days := func(n int) contentRule {
+		if n == 0 {
+			return contentRule{policy: BodiesAll}
+		}
+		return contentRule{policy: BodiesRecent, days: n, release: true}
+	}
+	global := w.m.cfg.HeadersOnlyDays
+	if global != nil {
+		if n, ok := ParseHeadersOnlyDays(w.extra(ExtraHeadersOnlyDays)); ok {
+			return days(n)
+		}
+	}
+	if p := BodyPolicy(w.extra(ExtraBodyPolicy)); ValidBodyPolicy(p) {
+		return contentRule{policy: p, days: w.m.cfg.RecentBodyDays}
+	}
+	if global != nil {
+		if n := global(); n > 0 && n <= MaxHeadersOnlyDays {
+			return days(n)
+		}
+	}
+	return contentRule{policy: w.m.cfg.Bodies, days: w.m.cfg.RecentBodyDays}
+}
+
+// bodyPolicy is the body download policy of the worker's account.
+func (w *Worker) bodyPolicy() BodyPolicy { return w.contentRule().policy }
 
 // pollInterval is how often the worker syncs every folder.
 func (w *Worker) pollInterval() time.Duration {

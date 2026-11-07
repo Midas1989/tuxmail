@@ -312,6 +312,8 @@
                     {#if acc}<span class="acc"><span class="dot" style:background={acc.color}></span>{acc.displayName}</span>{/if}
                     {#if h.folderId && app.folder(h.folderId)}<span>{folderName(app.folder(h.folderId)!)}</span>{/if}
                     {#if h.kind === 'file' && h.size}<span>{formatSize(h.size)}</span>{/if}
+                    {#if h.headersOnly}<span class="badge-ho" title={t('mail.reader.headersOnlyTitle')}>{t('search.headersOnly')}</span>{/if}
+                    {#if h.serverMatch}<span class="badge-ho">{t('search.serverMatch')}</span>{/if}
                   </span>
                   <span class="snippet">
                     {#each segments(h.snippet, h.highlights) as seg, si (si)}{#if seg.hit}<mark>{seg.s}</mark>{:else}{seg.s}{/if}{/each}
@@ -792,5 +794,14 @@
     .hide-sm {
       display: none;
     }
+  }
+  .badge-ho {
+    padding: 0 7px;
+    border-radius: 99px;
+    border: 1px solid var(--tm-line);
+    background: var(--tm-surface-3, var(--tm-surface));
+    color: var(--tm-muted);
+    font-size: 11px;
+    line-height: 17px;
   }
 </style>

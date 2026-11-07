@@ -118,7 +118,7 @@ func (f *fake) addEmail(mbox, subject string, kw ...string) string {
 func (f *fake) emailJSON(e *fEmail, props []string) map[string]any {
 	all := map[string]any{"id": e.ID, "blobId": e.Blob, "threadId": e.Thread, "mailboxIds": e.Mailboxes, "keywords": e.Keywords,
 		"size": len(e.Raw), "receivedAt": e.Received, "messageId": []string{e.ID + "@x"}, "subject": e.Subject,
-		"from": []map[string]string{{"name": "Bob", "email": "bob@example.org"}}, "hasAttachment": false}
+		"from": []map[string]string{{"name": "Bob", "email": "bob@example.org"}}, "hasAttachment": false, "preview": "body of " + e.ID}
 	if props == nil {
 		return all
 	}

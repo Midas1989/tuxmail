@@ -151,7 +151,13 @@
       "toMany": "To {name} and {count} others",
       "toMany_one": "To {name} and 1 other",
       "loadRemoteSender": "Always load for this sender",
-      "loadRemoteDomain": "Always for {domain}"
+      "loadRemoteDomain": "Always for {domain}",
+      "contentLoading": "Loading the content …",
+      "contentOffline": "Content only available online",
+      "contentOfflineHint": "This mail is stored on this device with header and preview only. With a network, TuxMail loads the content when you open it.",
+      "retry": "Load again",
+      "headersOnly": "header only",
+      "headersOnlyTitle": "Stored on this device with header and preview only; the content is loaded when opened."
     },
     "sidebar": {
       "allAccounts": "All accounts",
@@ -1349,7 +1355,7 @@
       "bodyPolicy": "Download mail contents",
       "body": {
         "recent": "Last 30 days (older ones on demand)",
-        "all": "All",
+        "all": "All (default)",
         "on_demand": "Only on demand"
       },
       "pollMinutes": "Poll interval (minutes, 0 = default)",
@@ -1397,7 +1403,16 @@
       "diagnostics": "Diagnostics",
       "diagnosticsHint": "Exports the settings, sync status, folder counts and failed operations of this account as a JSON file for support. Passwords and tokens are never included.",
       "diagnosticsExport": "Export diagnostics",
-      "diagnosticsDone": "Diagnostics exported."
+      "diagnosticsDone": "Diagnostics exported.",
+      "headersOnly": "Older mails with header only",
+      "headersOnlyMode": {
+        "default": "As in Settings › Mail ({value})",
+        "all": "All mails completely",
+        "days": "Header only when older than …"
+      },
+      "headersOnlyOff": "off",
+      "headersOnlyDays": "{days} days",
+      "headersOnlyHint": "For mails older than X days, TuxMail only downloads sender, subject, date and a preview; the content is loaded when you open the mail. Saves storage; without a network these mails can only be read with their header."
     },
     "passkeys": {
       "title": "Passkeys",
@@ -1567,7 +1582,8 @@
           "remote": "Remote images",
           "compose": "Spelling, meetings & mail merge",
           "snippets": "Quick replies",
-          "vacation": "Out of office"
+          "vacation": "Out of office",
+          "storage": "Storage & offline"
         }
       },
       "chats": {
@@ -1721,6 +1737,25 @@
         "signOut": "Sign out",
         "failed": "Sign-out failed: {error}. Your session may still be active on the server; local data was removed."
       }
+    },
+    "storage": {
+      "title": "Keep older mails with header only",
+      "intro": "For mails older than X days, TuxMail only downloads sender, subject, date and a preview; the content is loaded when you open the mail. Saves storage; without a network these mails can only be read with their header.",
+      "enable": "Header and preview only for mails older than",
+      "days": "days",
+      "daysLabel": "Number of days",
+      "off": "Off – all mails are stored completely (default).",
+      "on": "Mails older than {days} days: header and preview only.",
+      "release": "Switching it on or making it smaller frees the content of older mails bit by bit (header and preview stay). Making it larger or switching it off downloads them again.",
+      "exceptions": "Always kept completely: POP3 accounts (the server often has no copy any more), local folders, drafts, imported mails and encrypted mails (PGP, S/MIME).",
+      "opening": "Opening a mail loads its content. This does not mark it as read, sends no read receipt and loads no remote images – the rules under “Remote images” apply.",
+      "search": "Search finds these mails by header and preview. When online, TuxMail also searches on the mail server (IMAP); such hits are marked “header only”.",
+      "providers": "Preview without downloading: IMAP, Microsoft 365, Gmail, JMAP and ActiveSync. Exchange (EWS) shows the preview only after opening.",
+      "thin": "In the mode “Through the server” this device's offline read cache keeps only header and preview of older mails. The server itself keeps everything completely.",
+      "perAccount": "Single accounts can have their own value: Accounts › Edit › Advanced.",
+      "stats": "On this device: {headersOnly} mails with header only, {complete} complete.",
+      "saved": "Saved.",
+      "invalid": "Please enter a number between 1 and 36500."
     }
   },
   "search": {
@@ -1861,7 +1896,9 @@
       "badRange": "Range expected: [from TO to]",
       "emptyTerm": "Empty search term",
       "unexpectedToken": "Unexpected “{token}”"
-    }
+    },
+    "headersOnly": "header only",
+    "serverMatch": "found on the server"
   },
   "compose": {
     "attach": "Attach file",
