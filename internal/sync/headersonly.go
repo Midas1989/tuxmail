@@ -215,6 +215,14 @@ func (w *Worker) releaseBodies(ctx context.Context, syncedOK []int64) (bool, err
 		}
 		byFolder[c.FolderID] = append(byFolder[c.FolderID], c)
 	}
+	// Two steps: a mail confirmed in this cycle is released only in the next
+	// one, after its folder was synced again (deletions in between turn it
+	// orphaned first) and the server confirmed it once more.
+	w.mu.Lock()
+	ready := w.releaseReady
+	w.mu.Unlock()
+	next := map[int64]string{}
+	var resync []int64
 	released := 0
 	for _, fid := range order {
 		if err := ctx.Err(); err != nil {
@@ -241,9 +249,15 @@ func (w *Worker) releaseBodies(ctx context.Context, syncedOK []int64) (bool, err
 			w.log.Info("sync: confirming messages before releasing failed", "folder", batch[0].FolderRemoteID, "err", err)
 			continue
 		}
+		marked := false
 		for _, c := range batch {
 			if !exists[c.RemoteRef] {
 				continue // gone or moved on the server: the sync handles it, the body stays
+			}
+			if ready[c.MessageID] != c.BlobHash {
+				next[c.MessageID] = c.BlobHash
+				marked = true
+				continue
 			}
 			ok, err := w.m.releaseBody(ctx, c)
 			if err != nil {
@@ -253,6 +267,15 @@ func (w *Worker) releaseBodies(ctx context.Context, syncedOK []int64) (bool, err
 				released++
 			}
 		}
+		if marked {
+			resync = append(resync, fid)
+		}
+	}
+	w.mu.Lock()
+	w.releaseReady = next
+	w.mu.Unlock()
+	for _, fid := range resync {
+		w.markDirty(fid) // the next cycle syncs the folder, then releases
 	}
 	if released > 0 {
 		w.log.Info("sync: released bodies of older mails", "count", released)

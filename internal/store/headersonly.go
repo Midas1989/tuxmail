@@ -273,11 +273,11 @@ func (s *Store) ReleaseRemoteCachedBodies(ctx context.Context, release func(id i
 	})
 }
 
-// PendingBodies counts the mails of HeadersOnlyKinds accounts without a
+// PendingBodies counts the mails of an account (of HeadersOnlyKinds) without a
 // stored body dated since notBefore (zero: all) that the sync would download
 // (at most maxSize, with a server location), and their size.
-func (s *Store) PendingBodies(ctx context.Context, notBefore time.Time, maxSize int64) (count int, bytes int64, err error) {
-	args := []any{}
+func (s *Store) PendingBodies(ctx context.Context, accountID int64, notBefore time.Time, maxSize int64) (count int, bytes int64, err error) {
+	args := []any{accountID}
 	kinds := ""
 	for i, k := range HeadersOnlyKinds {
 		if i > 0 {
@@ -288,7 +288,7 @@ func (s *Store) PendingBodies(ctx context.Context, notBefore time.Time, maxSize 
 	}
 	args = append(args, unixOrZero(notBefore), maxSize, maxSize)
 	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(m.size), 0) FROM messages m JOIN accounts a ON a.id = m.account_id
-		WHERE a.kind IN (`+kinds+`) AND a.enabled = 1 AND m.state = 'live' AND m.blob_hash IS NULL
+		WHERE m.account_id = ? AND a.kind IN (`+kinds+`) AND a.enabled = 1 AND m.state = 'live' AND m.blob_hash IS NULL
 		  AND COALESCE(m.sent_at, m.received_at, 0) >= ? AND (? <= 0 OR m.size <= ?)
 		  AND EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id
 		              WHERE l.message_id = m.id AND substr(l.remote_ref, 1, 1) <> '~' AND substr(f.remote_id, 1, 6) <> 'local/')`, args...).Scan(&count, &bytes)

@@ -45,6 +45,9 @@ type Worker struct {
 	nextToken   int64
 	bodyFailed  map[int64]bool
 	moreBodies  bool
+	// releaseReady: mails confirmed on the server in the previous cycle
+	// (message id -> blob hash), released in this one (headersonly.go).
+	releaseReady map[int64]string
 	// bodyResumeAt: throttled downloads of the day count continue then.
 	bodyResumeAt time.Time
 	// lastProgress is when the last progress update was published.

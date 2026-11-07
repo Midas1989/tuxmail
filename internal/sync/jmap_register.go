@@ -67,8 +67,20 @@ func JMAPFactory(ctx context.Context, acc domain.Account, creds Credentials, opt
 	if err != nil {
 		return nil, Permanent(err)
 	}
-	return permanentErrors{MailProvider: p, permanent: func(err error) bool {
+	return confirmingPermanentErrors{permanentErrors{MailProvider: p, permanent: func(err error) bool {
 		var se *jmapprov.SetError
 		return errors.Is(err, jmapprov.ErrNotFound) || errors.As(err, &se)
-	}}, nil
+	}}, p}, nil
+}
+
+// confirmingPermanentErrors is permanentErrors that keeps the provider's
+// domain.ExistenceChecker visible (needed before bodies are released).
+type confirmingPermanentErrors struct {
+	permanentErrors
+	ec domain.ExistenceChecker
+}
+
+func (c confirmingPermanentErrors) ConfirmExisting(ctx context.Context, folder string, state domain.SyncState, ids []string) (map[string]bool, error) {
+	out, err := c.ec.ConfirmExisting(ctx, folder, state, ids)
+	return out, c.wrap(err)
 }

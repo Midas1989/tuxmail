@@ -15,7 +15,8 @@ import (
 var _ domain.ExistenceChecker = (*Provider)(nil)
 
 // ConfirmExisting implements domain.ExistenceChecker: the messages must still
-// exist and lie in the folder (a moved message has another parent).
+// exist and lie in the folder (a moved message has another parent; no
+// parent named confirms nothing).
 func (p *Provider) ConfirmExisting(ctx context.Context, folderRemoteID string, _ domain.SyncState, ids []string) (map[string]bool, error) {
 	out := map[string]bool{}
 	fid := lastSeg(folderRemoteID)
@@ -35,7 +36,7 @@ func (p *Provider) ConfirmExisting(ctx context.Context, folderRemoteID string, _
 				continue
 			}
 			var m gMessage
-			if json.Unmarshal(br.Body, &m) == nil && m.ID == id && (m.ParentFolderID == "" || m.ParentFolderID == fid || m.ParentFolderID == folderRemoteID) {
+			if json.Unmarshal(br.Body, &m) == nil && m.ID == id && m.ParentFolderID != "" && (m.ParentFolderID == fid || m.ParentFolderID == folderRemoteID) {
 				out[id] = true
 			}
 		}

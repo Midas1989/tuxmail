@@ -78,8 +78,43 @@ func (a *App) EstimateMailStorage(ctx context.Context, days int) (MailStorageEst
 	if days < -1 || days > tsync.MaxHeadersOnlyDays {
 		return MailStorageEstimate{}, invalid("days must be -1 or between 0 and %d", tsync.MaxHeadersOnlyDays)
 	}
-	n, b, err := a.st.PendingBodies(ctx, a.downloadWindow(days), maxSyncBody)
+	n, b, err := a.pendingBodies(ctx, days)
 	return MailStorageEstimate{Messages: n, Bytes: b}, err
+}
+
+// pendingBodies sums what the sync would download with the global day count
+// days, honouring the accounts' own day counts and body policies.
+func (a *App) pendingBodies(ctx context.Context, days int) (int, int64, error) {
+	accs, err := a.st.ListAccounts(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+	var n int
+	var b int64
+	for _, acc := range accs {
+		if !acc.Enabled || !slices.Contains(store.HeadersOnlyKinds, string(acc.Kind)) {
+			continue
+		}
+		d := days
+		if own, ok := tsync.ParseHeadersOnlyDays(acc.Extra[tsync.ExtraHeadersOnlyDays]); ok {
+			d = own
+		} else {
+			switch tsync.BodyPolicy(acc.Extra[tsync.ExtraBodyPolicy]) {
+			case tsync.BodiesOnDemand:
+				continue // downloads nothing ahead
+			case tsync.BodiesAll:
+				d = 0
+			case tsync.BodiesRecent:
+				d = -1
+			}
+		}
+		cn, cb, err := a.st.PendingBodies(ctx, acc.ID, a.downloadWindow(d), maxSyncBody)
+		if err != nil {
+			return 0, 0, err
+		}
+		n, b = n+cn, b+cb
+	}
+	return n, b, nil
 }
 
 // EstimateMailStorage is the Wails binding.
@@ -118,7 +153,7 @@ func (a *App) GetMailStorageSettings(ctx context.Context) (MailStorageSettings, 
 	out := MailStorageSettings{HeadersOnlyOlderThanDays: a.headersOnlyDays(), Available: a.opts.Mode != ModeServer, DownloadPaused: a.downloadPaused()}
 	if out.Available && out.HeadersOnlyOlderThanDays >= 0 { // only downloads the setting causes
 		var err error
-		if out.Pending, out.PendingBytes, err = a.st.PendingBodies(ctx, a.downloadWindow(out.HeadersOnlyOlderThanDays), maxSyncBody); err != nil {
+		if out.Pending, out.PendingBytes, err = a.pendingBodies(ctx, out.HeadersOnlyOlderThanDays); err != nil {
 			return out, err
 		}
 	}

@@ -243,6 +243,14 @@ func TestHeadersOnlyEstimateAndPause(t *testing.T) {
 	if e30 := must[app.MailStorageEstimate](t)(f.a.EstimateMailStorage(ctx, 30)); e30.Messages >= est.Messages {
 		t.Errorf("estimate for 30 days %+v not smaller than for all %+v", e30, est)
 	}
+	// The accounts' own day counts count: "all" on the account, 30 days globally.
+	zero := 0
+	must[app.AccountSettings](t)(f.a.UpdateAccount(ctx, f.acc.ID, app.AccountUpdate{HeadersOnlyOlderThanDays: &zero}))
+	if own := must[app.MailStorageEstimate](t)(f.a.EstimateMailStorage(ctx, 30)); own.Messages != est.Messages {
+		t.Errorf("estimate with the account's own count %+v, want %+v", own, est)
+	}
+	reset := -1
+	must[app.AccountSettings](t)(f.a.UpdateAccount(ctx, f.acc.ID, app.AccountUpdate{HeadersOnlyOlderThanDays: &reset}))
 	if _, err := f.a.EstimateMailStorage(ctx, -5); err == nil {
 		t.Error("invalid estimate accepted")
 	}

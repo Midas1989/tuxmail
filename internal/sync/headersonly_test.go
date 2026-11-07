@@ -508,3 +508,87 @@ func TestHeadersOnlyDownloadThrottledAndPausable(t *testing.T) {
 		t.Errorf("downloaded in %v, want at least %v (throttled)", d, 2*pause)
 	}
 }
+
+// confirmHook wraps the IMAP provider and runs after each confirmation.
+type confirmHook struct {
+	domain.MailProvider
+	after    func()
+	confirms atomic.Int32
+}
+
+func (c *confirmHook) ConfirmExisting(ctx context.Context, folder string, st domain.SyncState, ids []string) (map[string]bool, error) {
+	out, err := c.MailProvider.(domain.ExistenceChecker).ConfirmExisting(ctx, folder, st, ids)
+	c.confirms.Add(1)
+	if c.after != nil {
+		c.after()
+	}
+	return out, err
+}
+
+// A mail deleted on the server right after the confirmation: the body is
+// only removed in the next cycle after the folder was synced again, so the
+// mail turns orphaned with its content instead of losing it.
+func TestHeadersOnlyDeletedBetweenConfirmAndRelease(t *testing.T) {
+	srv := newTestServer(t, "Archive")
+	ctx := context.Background()
+	ext := srv.ext(t)
+	old := time.Now().AddDate(0, 0, -100)
+	appendMail(t, ctx, ext, "Archive", mail("race@x", "C <c@example.org>", "A <a@example.org>", "R", old, "", "racebody"))
+	var days atomic.Int64
+	days.Store(0) // everything completely first
+	hook := &confirmHook{}
+	var once atomic.Bool
+	hook.after = func() {
+		if once.CompareAndSwap(false, true) {
+			ref, _, _ := serverMessage(ctx, ext, "Archive", "race@x")
+			_ = ext.Delete(ctx, []domain.RemoteRef{ref})
+		}
+	}
+	e := newEnv(t, srv, func(c *Config) {
+		reg := NewRegistry()
+		reg.Register(domain.KindIMAP, func(ctx context.Context, a domain.Account, cr Credentials, o ProviderOptions) (domain.MailProvider, error) {
+			p, err := IMAPFactory(ctx, a, cr, o)
+			hook.MailProvider = p
+			return hook, err
+		})
+		c.Providers = reg
+		c.HeadersOnlyDays = func() int { return int(days.Load()) }
+		c.ReleaseGrace = time.Nanosecond
+		c.PollInterval = time.Hour
+	})
+	e.eventually("body", func() bool { return e.has("race@x") && e.msg("race@x").BlobHash != "" })
+	e.eventually("idle", e.idle)
+	days.Store(30)
+	e.mgr.HeadersOnlyChanged()
+	e.eventually("confirmed", func() bool { return hook.confirms.Load() > 0 })
+	e.eventually("orphaned", func() bool { return e.msg("race@x").State != store.StateLive })
+	e.eventually("idle", e.idle)
+	if m := e.msg("race@x"); m.BlobHash == "" {
+		t.Fatalf("content lost: state=%s", m.State)
+	}
+}
+
+// JMAP's provider wrapper keeps the existence check visible: without it,
+// JMAP accounts would never release.
+func TestJMAPWrapperConfirms(t *testing.T) {
+	inner := &fakeConfirmer{}
+	var p domain.MailProvider = confirmingPermanentErrors{permanentErrors{permanent: func(error) bool { return false }}, inner}
+	ec, ok := p.(domain.ExistenceChecker)
+	if !ok {
+		t.Fatal("wrapper hides ConfirmExisting")
+	}
+	got, err := ec.ConfirmExisting(context.Background(), "mb", "", []string{"a"})
+	if err != nil || !got["a"] {
+		t.Fatalf("delegation: %v %v", got, err)
+	}
+}
+
+type fakeConfirmer struct{}
+
+func (fakeConfirmer) ConfirmExisting(_ context.Context, _ string, _ domain.SyncState, ids []string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
+}
