@@ -34,7 +34,7 @@
   $effect(() => {
     // Scroll to 7:00 (or one hour before now) when the view opens.
     const now = minutesIn(new Date(), tz);
-    if (scroller) scroller.scrollTop = (now >= 8 * 60 && now <= 20 * 60 ? now - 90 : 7 * 60) * (HOUR / 60);
+    if (scroller) scroller.scrollTop = Math.max(0, (now >= 8 * 60 && now <= 20 * 60 ? now - 90 : 7 * 60) * (HOUR / 60) - 10); // 10 px so the first hour label is not cut off
   });
 
   const allDay = $derived(events.filter((e) => isAllDayRow(e, tz)));
@@ -573,6 +573,14 @@
     }
     .em {
       display: none;
+    }
+  }
+
+  /* Phones: no scrollbar to reserve room for, so the header columns sit above the grid columns. */
+  @media (max-width: 639px) {
+    .head,
+    .allday {
+      padding-right: 0;
     }
   }
 </style>

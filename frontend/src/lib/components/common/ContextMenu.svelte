@@ -148,9 +148,17 @@
     color: var(--tm-muted);
     flex: none;
   }
-  .item:hover,
-  .item:focus {
+  /* Hover only where a pointer exists, focus only for the keyboard: no sticky highlight after a tap. */
+  @media (hover: hover) {
+    .item:hover {
+      background: var(--tm-surface-2);
+    }
+  }
+  .item:focus-visible {
     background: var(--tm-surface-2);
+    outline: none;
+  }
+  .item:focus {
     outline: none;
   }
   .item.danger,

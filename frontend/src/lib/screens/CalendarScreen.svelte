@@ -67,10 +67,12 @@
 
   const title = $derived.by(() => {
     const mid = zonedInstant(anchor, 720, tz);
-    if (mode === 'day') return fmt().dateLong(mid);
-    if (mode === 'month' || mode === 'tasks') return fmt().pattern(mid, 'MMMM YYYY');
+    // Phones: short titles that fit next to the navigation buttons ("Sa., 7. Nov.", "7.–9. Nov.", "Nov. 2026").
+    if (mode === 'day') return phone.current ? fmt().pattern(mid, 'ddd, D. MMM') : fmt().dateLong(mid);
+    if (mode === 'month' || mode === 'tasks') return fmt().pattern(mid, phone.current ? 'MMM YYYY' : 'MMMM YYYY');
     const a = zonedInstant(days[0], 720, tz);
     const b = zonedInstant(days[days.length - 1], 720, tz);
+    if (phone.current) return days[0].slice(0, 7) === days[days.length - 1].slice(0, 7) ? `${fmt().pattern(a, 'D')}.–${fmt().pattern(b, 'D. MMM')}` : `${fmt().pattern(a, 'D. MMM')} – ${fmt().pattern(b, 'D. MMM')}`;
     return `${fmt().dateShort(a)} – ${fmt().date(b)}`;
   });
 
@@ -417,9 +419,12 @@
       padding: 10px 12px;
       gap: 6px;
     }
+    /* The title gets its own line so it is always readable in full. */
     h1 {
       font-size: 16px;
-      flex: 1;
+      flex: 1 1 100%;
+      order: -1;
+      white-space: nowrap;
     }
     .sp {
       display: none;
@@ -448,7 +453,7 @@
       position: relative;
     }
     .main {
-      padding: 8px 8px 72px;
+      padding: 8px;
     }
   }
 </style>

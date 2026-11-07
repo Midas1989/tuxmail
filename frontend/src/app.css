@@ -201,8 +201,10 @@
       border-color var(--tm-dur),
       color var(--tm-dur);
   }
-  .btn:hover {
-    background: var(--tm-surface-2);
+  @media (hover: hover) {
+    .btn:hover {
+      background: var(--tm-surface-2);
+    }
   }
   .btn:disabled {
     opacity: 0.5;
@@ -213,15 +215,19 @@
     border-color: var(--tm-accent);
     color: var(--tm-accent-fg);
   }
-  .btn-primary:hover {
-    background: color-mix(in srgb, var(--tm-accent) 88%, black);
+  @media (hover: hover) {
+    .btn-primary:hover {
+      background: color-mix(in srgb, var(--tm-accent) 88%, black);
+    }
   }
   .btn-ghost {
     border-color: transparent;
     background: transparent;
   }
-  .btn-ghost:hover {
-    background: var(--tm-surface-2);
+  @media (hover: hover) {
+    .btn-ghost:hover {
+      background: var(--tm-surface-2);
+    }
   }
   .icon-btn {
     display: inline-flex;
@@ -237,9 +243,11 @@
       background var(--tm-dur),
       color var(--tm-dur);
   }
-  .icon-btn:hover {
-    background: var(--tm-surface-2);
-    color: var(--tm-fg);
+  @media (hover: hover) {
+    .icon-btn:hover {
+      background: var(--tm-surface-2);
+      color: var(--tm-fg);
+    }
   }
   .icon-btn[aria-pressed='true'] {
     color: var(--tm-accent-text);
