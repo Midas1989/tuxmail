@@ -82,6 +82,8 @@ const deviceBody = `<h1 data-k="title">Connect a device</h1>
 <div id="totp" class="hidden"><label for="t" data-k="totp">Two-factor code or recovery code</label><input id="t" autocomplete="one-time-code" autocapitalize="off" spellcheck="false"></div>
 <div class="err" id="lock" role="alert"></div>
 <button type="button" id="pkapprove" class="hidden" data-k="allowPk">Allow with passkey</button>
+<button type="button" id="oidcapprove" class="hidden" data-k="allowIdp">Confirm at your sign-in service</button>
+<p id="nomethod" class="err hidden" data-k="noMethod">This account has no way to confirm here.</p>
 <button type="submit" id="approve" data-k="allow">Allow</button><button type="button" id="deny" class="secondary" data-k="deny">Deny</button></form></div>
 <div id="done" class="hidden"><p id="donemsg"></p></div><div class="err" id="err" role="alert"></div>`
 
@@ -96,21 +98,27 @@ password:'Current password',totp:'Two-factor code or recovery code',allow:'Allow
 wrongPw:'The password is not correct.',wrongCode:'This code is not correct or was already used.',empty:'Enter your password and your code first.',reauth:'This needs a recent sign-in. Sign in again and retry.',
 locked:'Locked after too many wrong attempts. Try again in {t}. Signing in is not affected.',min:'{n} min',sec:'{n} s',unknown:'This code is unknown or has expired. Start the sign-in on the device again.',
 generic:'That did not work. Please try again.',signedOut:'You are signed out. Sign in again.',
-allowPk:'Allow with passkey',allowPw:'Allow with password',pkFailed:'The passkey was not accepted. Try again or use your password.'},
+allowPk:'Allow with passkey',allowPw:'Allow with password',allowCode:'Allow with code',allowIdp:'Confirm at your sign-in service',
+pkFailed:'The passkey was not accepted. Try again or use another way.',idpFailed:'The sign-in at your sign-in service did not confirm the device. Start again on the device.',
+noMethod:'This account cannot confirm devices yet: it has no password, no two-factor code and no passkey. Set up a passkey first (Settings, Security), then start again on the device.',
+noPkBrowser:'This browser cannot use passkeys. Open the page in a current browser.'},
 de:{title:'Gerät verbinden',codeLabel:'Code, der auf dem Gerät angezeigt wird',continue:'Weiter',allow1:'Soll',allow2:'auf dein TuxMail-Konto zugreifen dürfen?',code:'Code:',
 warn:'Erlaube das nur, wenn du die Anmeldung gerade selbst auf diesem Gerät gestartet hast. Gib nie einen Code ein und bestätige nie einen, den dir jemand geschickt hat.',
 password:'Aktuelles Passwort',totp:'Zwei-Faktor-Code oder Wiederherstellungscode',allow:'Erlauben',deny:'Ablehnen',ip:'IP',client:'Programm',requested:'Angefragt',done:'Fertig. Du kannst zur App zurückkehren.',denied:'Die Anfrage wurde abgelehnt.',
 wrongPw:'Das Passwort stimmt nicht.',wrongCode:'Dieser Code stimmt nicht oder wurde schon benutzt.',empty:'Gib zuerst dein Passwort und deinen Code ein.',reauth:'Dafür ist eine frische Anmeldung nötig. Melde dich neu an und versuche es noch einmal.',
 locked:'Gesperrt nach zu vielen falschen Eingaben. Neuer Versuch in {t}. Das Anmelden ist nicht betroffen.',min:'{n} Minuten',sec:'{n} Sekunden',unknown:'Dieser Code ist unbekannt oder abgelaufen. Starte die Anmeldung am Gerät neu.',
 generic:'Das hat nicht geklappt. Bitte versuche es noch einmal.',signedOut:'Du bist abgemeldet. Melde dich neu an.',
-allowPk:'Mit Passkey erlauben',allowPw:'Mit Passwort erlauben',pkFailed:'Der Passkey wurde nicht angenommen. Versuche es noch einmal oder nimm dein Passwort.'}};
+allowPk:'Mit Passkey erlauben',allowPw:'Mit Passwort erlauben',allowCode:'Mit Code erlauben',allowIdp:'Beim Anmeldedienst bestätigen',
+pkFailed:'Der Passkey wurde nicht angenommen. Versuche es noch einmal oder nimm einen anderen Weg.',idpFailed:'Die Anmeldung beim Anmeldedienst hat das Gerät nicht bestätigt. Starte die Anmeldung am Gerät neu.',
+noMethod:'Mit diesem Konto lassen sich noch keine Geräte bestätigen: Es hat kein Passwort, keinen Zwei-Faktor-Code und keinen Passkey. Richte zuerst einen Passkey ein (Einstellungen, Sicherheit) und starte dann die Anmeldung am Gerät neu.',
+noPkBrowser:'Dieser Browser kann keine Passkeys verwenden. Öffne die Seite in einem aktuellen Browser.'}};
 const tx=((navigator.language||'en').toLowerCase().startsWith('de')?L.de:L.en);
 document.documentElement.lang=tx===L.de?'de':'en';document.title=tx.title+' – TuxMail';
 document.querySelectorAll('[data-k]').forEach((e)=>{if(tx[e.dataset.k])e.textContent=tx[e.dataset.k]});
 function why(res){const b=res.body||{},c=b.error;
 if(res.status===429||c==='throttled')return null;
 if(c==='invalid_credentials')return tx.wrongPw;if(c==='invalid_code')return tx.wrongCode;if(c==='reauth_required')return (b.message||'').indexOf('enter your')>=0?tx.empty:tx.reauth;
-if(c==='passkey_invalid'||c==='passkey_challenge')return tx.pkFailed;if(c==='not_found')return tx.unknown;if(res.status===401)return tx.signedOut;return tx===L.de?tx.generic:msg(b)}
+if(c==='passkey_invalid'||c==='passkey_challenge')return tx.pkFailed;if(c==='approval_proof_required')return tx.noMethod;if(c==='not_found')return tx.unknown;if(res.status===401)return tx.signedOut;return tx===L.de?tx.generic:msg(b)}
 function lockFor(sec){clearInterval(lockTimer);lockEnd=Date.now()+Math.max(1,sec)*1000;
 const tick=()=>{const left=Math.ceil((lockEnd-Date.now())/1000);
 if(left<=0){clearInterval(lockTimer);$('lock').textContent='';$('approve').disabled=false;return}
@@ -124,7 +132,11 @@ code=c;const q=j.request||{};$('name').textContent=q.deviceName||q.clientName||'
 $('where').textContent=[q.ip?(tx.ip+': '+q.ip):'',q.userAgent?(tx.client+': '+q.userAgent):'',q.createdAt?(tx.requested+': '+new Date(q.createdAt).toLocaleString()):''].filter(Boolean).join(' · ');
 if(j.totpRequired)$('totp').classList.remove('hidden');
 if(j.passwordRequired)$('pw').classList.remove('hidden');
-if(j.passkey&&pkSupported(window)){$('pkapprove').classList.remove('hidden');$('approve').textContent=tx.allowPw;$('approve').classList.add('secondary')}
+// Only the ways this account has (never an "Allow" without a field to fill).
+const form=!!(j.passwordRequired||j.totpRequired),pk=!!(j.passkey&&pkSupported(window)),idp=!!j.oidc;
+if(pk)$('pkapprove').classList.remove('hidden');if(idp)$('oidcapprove').classList.remove('hidden');
+if(!form)$('approve').classList.add('hidden');else if(pk||idp){$('approve').textContent=j.passwordRequired?tx.allowPw:tx.allowCode;$('approve').classList.add('secondary')}
+if(!form&&!pk&&!idp){$('nomethod').textContent=j.passkey?tx.noPkBrowser:tx.noMethod;$('nomethod').classList.remove('hidden')}
 $('step1').classList.add('hidden');$('step2').classList.remove('hidden')}
 async function decide(approve){err.textContent='';const v=$('t').value.trim(),six=v.replace(/[\s-]/g,'');
 const body={user_code:code,approve,password:$('p').value};if(/^\d{6}$/.test(six))body.totp_code=six;else if(v)body.recovery_code=v;
@@ -144,8 +156,14 @@ catch(e){err.textContent=(e&&(e.name==='NotAllowedError'||e.name==='AbortError')
 finally{btn.disabled=false}
 if(res.status!==204){if(res.status===429||res.body.error==='throttled')lockFor(res.retry||60);else err.textContent=why(res)||tx.generic;return}
 $('step2').classList.add('hidden');$('done').classList.remove('hidden');$('donemsg').textContent=tx.done}
-$('pkapprove').addEventListener('click',()=>pkApprove());$('deny').addEventListener('click',()=>decide(false));
-const pre=new URLSearchParams(location.search).get('user_code');if(pre){$('c').value=pre;lookup(pre)}`
+$('pkapprove').addEventListener('click',()=>pkApprove());
+// Identity provider: a new sign-in there (prompt=login), bound to this request; the server approves in its callback.
+$('oidcapprove').addEventListener('click',async()=>{err.textContent='';const b=await post('/api/device/approve/oidc',{user_code:code});
+if(b.status!==200||!b.body.url){if(b.status===429||b.body.error==='throttled')lockFor(b.retry||60);else err.textContent=why(b)||tx.generic;return}location.href=b.body.url});$('deny').addEventListener('click',()=>decide(false));
+const qs=new URLSearchParams(location.search),pre=qs.get('user_code');
+if(qs.get('approved')==='1'){$('step1').classList.add('hidden');$('done').classList.remove('hidden');$('donemsg').textContent=tx.done}
+else if(qs.get('oidc')==='failed'){err.textContent=tx.idpFailed}
+if(pre){$('c').value=pre;lookup(pre)}`
 
 func serveScript(w http.ResponseWriter, js string) {
 	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")

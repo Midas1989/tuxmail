@@ -503,7 +503,10 @@ heruntergeladenen.
    - **Apps mit Passkey verbinden:** Die Android- und Desktop-App melden sich über die Gerätebestätigung an
      („Mit Passkey oder Passwort im Browser bestätigen“). Die Seite `/device` nimmt einen Passkey an: Nach dem Anzeigen der
      Anfrage bestätigt man mit „Mit Passkey erlauben“ (an genau diese Anfrage gebunden) oder mit Passwort und Code.
-     Eine gerade erfolgte Anmeldung allein reicht bewusst nicht (Schutz vor untergeschobenen Codes).
+     Eine gerade erfolgte Anmeldung allein reicht bewusst nicht (Schutz vor untergeschobenen Codes). Konten des
+     Anmeldedienstes (OIDC) ohne Passkey bestätigen mit einer neuen Anmeldung dort („Beim Anmeldedienst bestätigen“,
+     `prompt=login`, `max_age=0`; der Dienst muss `auth_time` im ID-Token liefern). Ein Konto ohne Passwort, Code,
+     Passkey und Anmeldedienst kann keine Geräte bestätigen und bekommt den Hinweis, zuerst einen Passkey einzurichten.
      Die **direkte** Passkey-Anmeldung in der Android-App (ohne Browser) braucht zusätzlich
      `auth.passkeys.android_apps` (Ansible: `tuxmail_auth_passkeys_android_apps`) mit Paketname und SHA-256-Fingerabdruck
      des Signaturzertifikats der App; der Server liefert daraus `/.well-known/assetlinks.json`. Ohne Eintrag zeigt die

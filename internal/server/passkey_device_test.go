@@ -538,3 +538,50 @@ func assertAuditDetails(t *testing.T, e *env, action, target, details string) {
 	}
 	t.Errorf("no audit entry %s %s %q", action, target, details)
 }
+
+// Account without password and TOTP, with a passkey: a phishing link, sign-in
+// with the passkey, one click. The step-up fallback of reauth (recent passkey
+// or IdP sign-in) must never approve a device: only a passkey proof for the
+// shown request does.
+func TestDeviceApprovalPasswordlessAccountNoFallback(t *testing.T) {
+	e := passkeyEnv(t, fastLogin)
+	u, a := enrolPasskey(t, e, "anna")
+	if _, err := e.svc.DB().Exec(`UPDATE users SET password_hash = '' WHERE id = ?`, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	dc, uc := startGrant(t, e)
+	_, uc2 := startGrant(t, e)
+	pb, resp, m := e.passkeyLoginHTTP(a, nil)
+	if resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+	_, m = pb.do("GET", "/api/device/request?user_code="+uc, nil)
+	if m["passwordRequired"] != false || m["totpRequired"] != false || m["passkey"] != true || m["oidc"] != false {
+		t.Fatalf("ways: %v", m)
+	}
+	for _, body := range []map[string]any{
+		{"user_code": uc}, {"user_code": uc, "approve": true}, {"user_code": uc2},
+		{"user_code": uc, "password": "irgendwas"}, {"user_code": uc, "totp_code": "123456"},
+	} {
+		if resp, m := pb.do("POST", "/api/device/approve", body); resp.StatusCode != 403 || m["error"] != "approval_proof_required" {
+			t.Fatalf("%v approved without proof: %s %v", body, resp.Status, m)
+		}
+	}
+	if resp, m := pollToken(t, e, dc); resp.StatusCode == 200 {
+		t.Fatalf("token without proof: %v", m)
+	}
+	if resp, m := pb.do("POST", "/api/device/approve", map[string]any{"user_code": uc, "passkey": approvalProofOf(t, pb, a, uc)}); resp.StatusCode != 204 {
+		t.Fatalf("passkey proof: %s %v", resp.Status, m)
+	}
+	if resp, m := pollToken(t, e, dc); resp.StatusCode != 200 {
+		t.Fatalf("token: %s %v", resp.Status, m)
+	}
+	// Deny needs no proof.
+	if resp, m := pb.do("POST", "/api/device/approve", map[string]any{"user_code": uc2, "approve": false}); resp.StatusCode != 204 {
+		t.Fatalf("deny: %s %v", resp.Status, m)
+	}
+	// The identity-provider way is not offered to a local account.
+	if resp, m := pb.do("POST", "/api/device/approve/oidc", map[string]string{"user_code": uc2}); resp.StatusCode < 400 || resp.StatusCode >= 500 {
+		t.Fatalf("oidc start: %s %v", resp.Status, m)
+	}
+}

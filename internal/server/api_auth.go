@@ -431,6 +431,14 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res, ret, err := s.auth.OIDCCallback(r.Context(), state, q.Get("code"), s.clientInfoFor(r, ""))
+	if errors.Is(err, auth.ErrOIDCApproval) {
+		http.Redirect(w, r, "/device?oidc=failed", http.StatusFound)
+		return
+	}
+	if err == nil && res == nil { // a device approval (api_device_passkey.go): no session
+		http.Redirect(w, r, ret, http.StatusFound)
+		return
+	}
 	if err != nil {
 		code := "oidc_failed"
 		switch {

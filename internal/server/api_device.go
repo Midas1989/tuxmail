@@ -217,8 +217,10 @@ func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request, a *
 		return
 	}
 	// passkey: the account can confirm with a passkey instead of password and code.
+	// The ways this account can confirm, each given after the request is shown
+	// (approvalProof): password (+ code), code, passkey, identity provider.
 	writeJSON(w, http.StatusOK, map[string]any{"request": req, "totpRequired": a.User.TOTPEnabled, "passwordRequired": a.User.HasPassword,
-		"passkey": s.auth.HasUsablePasskey(r.Context(), a.User.ID)})
+		"passkey": s.auth.HasUsablePasskey(r.Context(), a.User.ID), "oidc": a.User.OIDC && s.cfg.Auth.OIDC.Enabled})
 }
 
 func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *authInfo) {

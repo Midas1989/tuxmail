@@ -173,6 +173,10 @@ func (s *Service) OIDCCallback(ctx context.Context, state, code string, ci Clien
 	if cl.Nonce != nonce {
 		return nil, "", errors.New("auth: OIDC nonce mismatch")
 	}
+	// A device approval (device_oidc.go): no session, nothing provisioned.
+	if strings.HasPrefix(returnTo, oidcApprovePrefix) {
+		return nil, DeviceApprovedPath, s.finishOIDCDeviceApproval(ctx, c.issuer, returnTo, cl, all)
+	}
 	groups := claimStrings(all[s.cfg.Auth.OIDC.GroupsClaim])
 	u, err := s.provisionOIDCUser(ctx, c.issuer, cl, groups)
 	if err != nil {
