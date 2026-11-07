@@ -72,6 +72,8 @@ type Server struct {
 	log             *slog.Logger
 	version         string
 	static          fs.FS
+	clientBuildOnce sync.Once
+	clientBuildID   string
 	trusted         []netip.Prefix
 	mailData        MailDataSource
 

@@ -22,9 +22,14 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches
       .open(CACHE)
-      .then((cache) => cache.addAll(PRECACHE.map((p) => new Request(p, { cache: 'reload' }))))
-      .then(() => self.skipWaiting()),
+      .then((cache) => cache.addAll(PRECACHE.map((p) => new Request(p, { cache: 'reload' })))),
   );
+  // No skipWaiting here: an open tab keeps the files of its own build (lazy chunks
+  // still resolve) until the user confirms the update; a first install activates anyway.
+});
+
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'skip-waiting') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {

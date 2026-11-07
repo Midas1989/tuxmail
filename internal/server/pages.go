@@ -136,8 +136,11 @@ func loginRedirect(w http.ResponseWriter, r *http.Request) {
 
 // injectMeta adds the transport and CSRF meta tags to index.html so that
 // the SPA uses the HTTP transport against this server.
-func injectMeta(idx []byte, csrf string, n cspNonces) []byte {
+func injectMeta(idx []byte, csrf, build string, n cspNonces) []byte {
 	tags := `<meta name="tuxmail-api" content="http"><meta name="tuxmail-csrf" content="` + template.HTMLEscapeString(csrf) + `">`
+	if build != "" {
+		tags += `<meta name="tuxmail-build" content="` + template.HTMLEscapeString(build) + `">`
+	}
 	if n.style != "" {
 		tags += `<meta name="tuxmail-style-nonce" content="` + n.style + `">`
 	}

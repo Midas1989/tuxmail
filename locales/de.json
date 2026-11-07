@@ -4125,6 +4125,11 @@
     }
   },
   "connection": {
+    "update": {
+      "text": "TuxMail wurde aktualisiert.",
+      "reload": "Neu laden",
+      "composing": "Schließe zuerst das Schreibfenster, dann kannst du neu laden. Dein Text bleibt so erhalten."
+    },
     "notAvailableOffline": "Ohne Verbindung zum Server nicht verfügbar.",
     "sendLater": "Gespeichert. Die Mail wird gesendet, sobald wieder eine Verbindung besteht. Beanstandet die Versandprüfung etwas, kommt sie als Entwurf zu dir zurück.",
     "settingsOffline": "Du bist offline. Diese Einstellungen liegen auf dem Server und lassen sich erst wieder ändern, wenn eine Verbindung besteht.",

@@ -25,6 +25,7 @@ func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		"passwordMinLength": s.cfg.Auth.PasswordMinLength,
 		"passkeysEnabled":   s.auth.PasskeysEnabled(),
 		"maxUploadMB":       s.cfg.Limits.MaxUploadMB,
+		"clientBuild":       s.clientBuild(), // hash of the web client, not the version
 	}
 	if s.cfg.Security.ExposeVersion { // NA-07: anonymous clients get no version by default
 		out["version"] = s.version

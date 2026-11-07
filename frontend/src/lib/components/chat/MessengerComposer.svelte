@@ -8,6 +8,8 @@
 -->
 <script lang="ts">
   import SendHorizontal from '@lucide/svelte/icons/send-horizontal';
+  import { onMount } from 'svelte';
+  import { updateWatch } from '../../state/updateWatch.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import Smile from '@lucide/svelte/icons/face-slightly-smiling';
   import Mic from '@lucide/svelte/icons/mic';
@@ -72,6 +74,7 @@
   let scheduleCustom = $state(toLocalInput(new Date(Date.now() + 2 * 3600_000)));
   let meetingOpen = $state(false);
   let draftTimer: ReturnType<typeof setTimeout> | null = null;
+  let pendingDraft: (() => Promise<void>) | null = null;
   let loadedFor: number | null = null;
 
   const options = $derived(app.selectedConversationId != null ? app.channelOptions() : []);
@@ -113,8 +116,23 @@
     if (id == null) return;
     if (draftTimer) clearTimeout(draftTimer);
     const snapshot = { text, replyToItemId: app.replyingTo?.id, channelKey: selectedKey ?? undefined };
-    draftTimer = setTimeout(() => void app.api.saveDraft(id, snapshot.text.trim() ? snapshot : null), 500);
+    pendingDraft = () => app.api.saveDraft(id, snapshot.text.trim() ? snapshot : null);
+    draftTimer = setTimeout(() => {
+      const save = pendingDraft;
+      pendingDraft = null;
+      void save?.();
+    }, 500);
   }
+
+  /** Before the page is reloaded for an update: the draft is saved now, not after the pause. */
+  async function flushDraft() {
+    if (draftTimer) clearTimeout(draftTimer);
+    draftTimer = null;
+    const save = pendingDraft;
+    pendingDraft = null;
+    await save?.();
+  }
+  onMount(() => updateWatch.onBeforeReload(flushDraft));
 
   const participants = $derived((app.conversation?.participantIds ?? []).map((id) => app.person(id)).filter((p) => !!p));
   const triggerList = $derived.by((): { id: string; label: string; detail: string; snippet?: Snippet; personId?: number }[] => {

@@ -27,6 +27,8 @@
   import TitleBar from './lib/components/TitleBar.svelte';
   import MailWindows from './lib/components/mail/MailWindows.svelte';
   import { desktopWindow } from './lib/native/window.svelte';
+  import UpdateBar from './lib/components/common/UpdateBar.svelte';
+  import { updateWatch } from './lib/state/updateWatch.svelte';
   import ConnectionBar from './lib/components/common/ConnectionBar.svelte';
   import ServerConnectWizard from './lib/components/settings/ServerConnectWizard.svelte';
 
@@ -43,6 +45,7 @@
     const stopKeys = installShortcuts(app);
     void desktopWindow.init();
     const stopSecurity = security.start(); // web client: forced two-factor set-up for administrators
+    const stopUpdates = updateWatch.start(); // web client: notice when the server serves a newer client
     const stopConnection = connection.start(); // desktop app: connection to a TuxMail server
     connection.onAttention = () => app.toast(t('connection.attention'), { label: t('connection.attentionOpen'), run: () => (location.hash = '#/settings/accounts/server') });
     connection.onSettingsSynced = () => {
@@ -66,6 +69,7 @@
       stopRouter();
       stopKeys();
       stopSecurity();
+      stopUpdates();
       stopConnection();
       app.destroy();
     };
@@ -77,6 +81,7 @@
   <TitleBar />
 {/if}
 <ConnectionBar />
+<UpdateBar />
 <div class="app" class:barred={connection.unreachable} class:framed={desktopWindow.custom} class:chat-open={app.route === 'mail' && !app.messageListView && app.selectedConversationId != null}>
   <ActivityBar />
   <main id="main" class="main" tabindex="-1">

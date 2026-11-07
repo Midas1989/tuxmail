@@ -4126,6 +4126,11 @@
     }
   },
   "connection": {
+    "update": {
+      "text": "TuxMail was updated.",
+      "reload": "Reload",
+      "composing": "Close the compose window first, then reload. This keeps your text."
+    },
     "notAvailableOffline": "Not available without a connection to the server.",
     "sendLater": "Saved. The mail will be sent as soon as there is a connection again. If the send checks object, it comes back to you as a draft.",
     "settingsOffline": "You are offline. These settings live on the server and can be changed again once there is a connection.",

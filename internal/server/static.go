@@ -4,6 +4,8 @@ package server
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"io/fs"
 	"net/http"
@@ -22,6 +24,23 @@ const placeholderIndex = `<!doctype html>
 <p>The server is running. The web frontend is not included in this build yet.</p>
 </body></html>
 `
+
+// clientBuild is a short hash of the embedded index.html: it names the build of
+// the web client without saying anything about the version. index.html refers to
+// the content-hashed bundles, so it changes with every build of the client. An
+// open tab compares its own value (meta tag) with /api/auth/config.
+func (s *Server) clientBuild() string {
+	s.clientBuildOnce.Do(func() {
+		if s.static == nil {
+			return
+		}
+		if idx, err := fs.ReadFile(s.static, "index.html"); err == nil {
+			sum := sha256.Sum256(idx)
+			s.clientBuildID = hex.EncodeToString(sum[:6])
+		}
+	})
+	return s.clientBuildID
+}
 
 // staticHandler serves the SPA: existing files directly, every other non-API
 // path falls back to index.html so client-side routes work on reload.
@@ -71,7 +90,7 @@ func (s *Server) staticHandler() http.Handler {
 			return
 		}
 		tok, _ := r.Context().Value(ctxCSRF).(string)
-		serveIndex(w, r, injectMeta(idx, tok, noncesFrom(r)))
+		serveIndex(w, r, injectMeta(idx, tok, s.clientBuild(), noncesFrom(r)))
 	})
 }
 

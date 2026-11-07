@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -625,6 +626,38 @@ func TestStaticSPA(t *testing.T) {
 	}
 	if code, _, _ := get("/../../etc/passwd"); code != 200 && code != http.StatusSeeOther && code != http.StatusMovedPermanently && code != http.StatusTemporaryRedirect {
 		t.Fatal(code)
+	}
+}
+
+// The tab knows its client build (meta tag) and the server names the current one
+// without the version: a changed index.html means a changed value.
+func TestClientBuildInConfigAndIndex(t *testing.T) {
+	build := func(html string) (string, string) {
+		e := newEnv(t, Options{Static: fstest.MapFS{"index.html": {Data: []byte("<html><head></head><body>" + html + "</body></html>")}}, Version: "9.9.9-secret"})
+		e.user("spa", auth.RoleUser)
+		br := e.browser()
+		br.login("spa")
+		resp, err := br.c.Get(e.ts.URL + "/")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		m := regexp.MustCompile(`<meta name="tuxmail-build" content="([0-9a-f]{12})">`).FindSubmatch(b)
+		_, cfg := br.do("GET", "/api/auth/config", nil)
+		got, _ := cfg["clientBuild"].(string)
+		if m == nil || string(m[1]) != got {
+			t.Fatalf("meta %v, config %q", m, got)
+		}
+		if _, ok := cfg["version"]; ok || strings.Contains(string(b), "9.9.9") || strings.Contains(got, "9.9.9") {
+			t.Fatal("the version must stay hidden:", cfg)
+		}
+		return got, string(m[1])
+	}
+	a, _ := build("A")
+	b, _ := build("B")
+	if a == b {
+		t.Fatal("a different client must have a different build id")
 	}
 }
 
