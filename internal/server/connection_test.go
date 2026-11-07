@@ -89,6 +89,7 @@ func (k *keepSecrets) Delete(ref string) error {
 
 // gate can cut the path to the server.
 type gate struct {
+	mu   sync.RWMutex
 	next http.Handler
 	down atomic.Bool
 	// loseSend lets this many POST /api/send reach the server and then loses
@@ -105,15 +106,27 @@ func (d *discardResponse) Header() http.Header       { return d.h }
 func (d *discardResponse) Write(b []byte) (int, error) { return len(b), nil }
 func (d *discardResponse) WriteHeader(int)           {}
 
+func (g *gate) handler() http.Handler {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	return g.next
+}
+
+func (g *gate) setHandler(h http.Handler) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.next = h
+}
+
 func (g *gate) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if g.down.Load() {
 		panic(http.ErrAbortHandler)
 	}
 	if r.URL.Path == "/api/send" && g.loseSend.Add(-1) >= 0 {
-		g.next.ServeHTTP(&discardResponse{h: http.Header{}}, r)
+		g.handler().ServeHTTP(&discardResponse{h: http.Header{}}, r)
 		panic(http.ErrAbortHandler)
 	}
-	g.next.ServeHTTP(w, r)
+	g.handler().ServeHTTP(w, r)
 }
 
 type desktop struct {
@@ -468,7 +481,7 @@ func TestConnectionOfflineReadSearchAndNoHang(t *testing.T) {
 	// A page size never asked for online comes from the index of loaded mails.
 	check("/api/messages?scope=unified&role=inbox&offset=0&limit=17", subject)
 	// Never-loaded lists are empty, not an error.
-	check("/api/tags", "[]")
+	check("/api/starred", "[]")
 	// Searching what was loaded.
 	word := strings.Fields(subject)[0]
 	status, raw, _ := d.request("POST", "/api/search", map[string]any{"text": word, "mode": "simple"})
@@ -986,15 +999,15 @@ func TestConnectionProxyBoundaries(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`[]`))
 	})
-	g2 := c.g.next
-	c.g.next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/tags" {
+	g2 := c.g.handler()
+	c.g.setHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("probe") == "1" {
 			h(w, r)
 			return
 		}
 		g2.ServeHTTP(w, r)
-	})
-	res, err := d.a.ServerRequest(ctx, app.ServerProxyRequest{Method: "GET", Path: "/api/tags", Headers: map[string]string{"Authorization": "Bearer stolen", "Cookie": "a=b"}})
+	}))
+	res, err := d.a.ServerRequest(ctx, app.ServerProxyRequest{Method: "GET", Path: "/api/tags?probe=1", Headers: map[string]string{"Authorization": "Bearer stolen", "Cookie": "a=b"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1011,13 +1024,13 @@ func TestConnectionProxyBoundaries(t *testing.T) {
 	var hit atomic.Int32
 	other := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hit.Add(1) }))
 	defer other.Close()
-	c.g.next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c.g.setHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/persons" {
 			http.Redirect(w, r, other.URL+"/x", http.StatusFound)
 			return
 		}
 		g2.ServeHTTP(w, r)
-	})
+	}))
 	if _, err := d.a.ServerRequest(ctx, app.ServerProxyRequest{Method: "GET", Path: "/api/persons"}); err != nil {
 		t.Fatal(err)
 	}
@@ -1132,8 +1145,8 @@ func TestConnectionTokenRotation(t *testing.T) {
 	oldToken := tokenNow()
 	var calls, status atomic.Int32
 	var seen atomic.Value
-	next := c.g.next
-	c.g.next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	next := c.g.handler()
+	c.g.setHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/device/rotate" {
 			// The stub server: the new token stands for the old one.
 			if r.Header.Get("Authorization") == "Bearer renewed-token-0123456789" {
@@ -1151,7 +1164,7 @@ func TestConnectionTokenRotation(t *testing.T) {
 		default:
 			w.WriteHeader(int(status.Load()))
 		}
-	})
+	}))
 	// Grown old: same data directory, shorter limit.
 	restartWith := func(tm *app.ConnTiming) {
 		t.Helper()
