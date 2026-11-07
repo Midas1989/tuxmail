@@ -20,6 +20,7 @@ import org.tuxmail.app.share.ShareInbox
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(TuxMailPlugin::class.java)
+        registerPlugin(PasskeyPlugin::class.java)
         super.onCreate(savedInstanceState)
         applySecureScreen()
         Channels.ensure(this)

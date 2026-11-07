@@ -101,25 +101,32 @@ func (s *Service) webAuthn() (*webauthn.WebAuthn, string, error) {
 	}
 	rpID, origin, _ := s.cfg.PasskeyRP()
 	s.waOnce.Do(func() {
-		s.wa, s.waErr = webauthn.New(&webauthn.Config{
-			RPID:                  rpID,
-			RPDisplayName:         s.cfg.PasskeyRPName(),
-			RPOrigins:             []string{origin},
-			AttestationPreference: protocol.PreferNoAttestation,
-			AuthenticatorSelection: protocol.AuthenticatorSelection{
-				RequireResidentKey: protocol.ResidentKeyRequired(),
-				ResidentKey:        protocol.ResidentKeyRequirementRequired,
-				UserVerification:   protocol.VerificationRequired,
-			},
-			// Sent to the client as the ceremony timeout; the server-side limit is
-			// passkeyChallengeTTL in the database.
-			Timeouts: webauthn.TimeoutsConfig{
-				Login:        webauthn.TimeoutConfig{Timeout: passkeyChallengeTTL, TimeoutUVD: passkeyChallengeTTL},
-				Registration: webauthn.TimeoutConfig{Timeout: passkeyChallengeTTL, TimeoutUVD: passkeyChallengeTTL},
-			},
-		})
+		s.wa, s.waErr = webauthn.New(s.webAuthnConfig(rpID, origin, nil))
 	})
 	return s.wa, rpID, s.waErr
+}
+
+// webAuthnConfig is the relying party of all ceremonies; opaque lists further
+// accepted non-web origins (passkey_device.go: Android apps).
+func (s *Service) webAuthnConfig(rpID, origin string, opaque []string) *webauthn.Config {
+	return &webauthn.Config{
+		RPID:                  rpID,
+		RPDisplayName:         s.cfg.PasskeyRPName(),
+		RPOrigins:             []string{origin},
+		RPOpaqueOrigins:       opaque,
+		AttestationPreference: protocol.PreferNoAttestation,
+		AuthenticatorSelection: protocol.AuthenticatorSelection{
+			RequireResidentKey: protocol.ResidentKeyRequired(),
+			ResidentKey:        protocol.ResidentKeyRequirementRequired,
+			UserVerification:   protocol.VerificationRequired,
+		},
+		// Sent to the client as the ceremony timeout; the server-side limit is
+		// passkeyChallengeTTL in the database.
+		Timeouts: webauthn.TimeoutsConfig{
+			Login:        webauthn.TimeoutConfig{Timeout: passkeyChallengeTTL, TimeoutUVD: passkeyChallengeTTL},
+			Registration: webauthn.TimeoutConfig{Timeout: passkeyChallengeTTL, TimeoutUVD: passkeyChallengeTTL},
+		},
+	}
 }
 
 // allowedPasskeyAlgorithms is Basis spec/PARAMETER.md: EdDSA, ES256, RS256.
@@ -331,10 +338,20 @@ func (s *Service) ListPasskeys(ctx context.Context, userID int64) ([]Passkey, er
 
 // --- ceremony state ---------------------------------------------------------
 
+// ceremonyState is what passkey_challenges.data holds: the library's
+// SessionData and the purpose the ceremony was started for. The purpose binds a
+// challenge to its endpoint beyond the kind column (whose CHECK constraint only
+// knows 'register' and 'login'): "" is the web sign-in and registration,
+// passkey_device.go adds the device login and the device approval.
+type ceremonyState struct {
+	webauthn.SessionData
+	Purpose string `json:"tuxmailPurpose,omitempty"`
+}
+
 // putPasskeyChallenge stores the ceremony state and returns the opaque id the
 // client must present to finish it.
-func (s *Service) putPasskeyChallenge(ctx context.Context, kind string, userID int64, sd *webauthn.SessionData) (string, error) {
-	data, err := json.Marshal(sd)
+func (s *Service) putPasskeyChallenge(ctx context.Context, kind, purpose string, userID int64, sd *webauthn.SessionData) (string, error) {
+	data, err := json.Marshal(ceremonyState{SessionData: *sd, Purpose: purpose})
 	if err != nil {
 		return "", err
 	}
@@ -351,8 +368,9 @@ func (s *Service) putPasskeyChallenge(ctx context.Context, kind string, userID i
 }
 
 // takePasskeyChallenge consumes a ceremony (single use). It fails with
-// ErrPasskeyChallenge for unknown, expired, used or foreign ids.
-func (s *Service) takePasskeyChallenge(ctx context.Context, id, kind string, userID int64) (*webauthn.SessionData, error) {
+// ErrPasskeyChallenge for unknown, expired, used or foreign ids and for a
+// ceremony started for another purpose (which is consumed all the same).
+func (s *Service) takePasskeyChallenge(ctx context.Context, id, kind, purpose string, userID int64) (*webauthn.SessionData, error) {
 	if id == "" || len(id) > 100 {
 		return nil, ErrPasskeyChallenge
 	}
@@ -371,11 +389,11 @@ func (s *Service) takePasskeyChallenge(ctx context.Context, id, kind string, use
 		}
 		return nil, err
 	}
-	var sd webauthn.SessionData
-	if err := json.Unmarshal(data, &sd); err != nil {
+	var st ceremonyState
+	if err := json.Unmarshal(data, &st); err != nil || st.Purpose != purpose {
 		return nil, ErrPasskeyChallenge
 	}
-	return &sd, nil
+	return &st.SessionData, nil
 }
 
 // --- registration -----------------------------------------------------------
@@ -495,7 +513,7 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, userID int64) (s
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM passkey_challenges WHERE kind = 'register' AND user_id = ?`, userID); err != nil {
 		return "", nil, err
 	}
-	id, err := s.putPasskeyChallenge(ctx, "register", userID, sd)
+	id, err := s.putPasskeyChallenge(ctx, "register", "", userID, sd)
 	if err != nil {
 		return "", nil, err
 	}
@@ -522,7 +540,7 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, userID int64, c
 		s.Audit(ctx, "passkey.register", u.Username, false, reason)
 		return nil, err
 	}
-	sd, err := s.takePasskeyChallenge(ctx, challengeID, "register", userID)
+	sd, err := s.takePasskeyChallenge(ctx, challengeID, "register", "", userID)
 	if err != nil {
 		return fail("unknown, expired or used ceremony", err)
 	}
@@ -653,6 +671,10 @@ func (s *Service) BeginPasskeyLogin(ctx context.Context, ci ClientInfo) (string,
 	if err != nil {
 		return "", nil, err
 	}
+	return s.beginDiscoverableLogin(ctx, wa, "", ci)
+}
+
+func (s *Service) beginDiscoverableLogin(ctx context.Context, wa *webauthn.WebAuthn, purpose string, ci ClientInfo) (string, *protocol.CredentialAssertion, error) {
 	if err := s.checkThrottle(ctx, passkeyThrottleKey(ci.IP)); err != nil {
 		return "", nil, err
 	}
@@ -672,7 +694,7 @@ func (s *Service) BeginPasskeyLogin(ctx context.Context, ci ClientInfo) (string,
 			return "", nil, err
 		}
 	}
-	id, err := s.putPasskeyChallenge(ctx, "login", 0, sd)
+	id, err := s.putPasskeyChallenge(ctx, "login", purpose, 0, sd)
 	if err != nil {
 		return "", nil, err
 	}
@@ -705,18 +727,33 @@ func (s *Service) FinishPasskeyLogin(ctx context.Context, challengeID string, cr
 	if err != nil {
 		return nil, err
 	}
+	u, err := s.finishDiscoverableLogin(ctx, wa, rpID, "", challengeID, credentialJSON, ci)
+	if err != nil {
+		return nil, err
+	}
+	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: ci.IP})
+	// A verified passkey is possession plus user verification: two factors.
+	return s.finishLogin(ctx, u, kind, MethodPasskey, true, ci)
+}
+
+// finishDiscoverableLogin verifies a discoverable-credential assertion of the
+// ceremony challengeID (started for purpose) and returns the account. It
+// enforces everything but the session: network throttle, single use, origin
+// and RP ID (by wa), user verification, the signature counter and disabled
+// accounts. Every failure is ErrInvalidCredentials.
+func (s *Service) finishDiscoverableLogin(ctx context.Context, wa *webauthn.WebAuthn, rpID, purpose, challengeID string, credentialJSON []byte, ci ClientInfo) (*User, error) {
 	ctx = WithActor(ctx, Actor{Name: "(passkey)", IP: ci.IP})
 	key := passkeyThrottleKey(ci.IP)
 	if err := s.checkThrottle(ctx, key); err != nil {
 		s.Audit(ctx, "login", "(passkey)", false, "throttled")
 		return nil, err
 	}
-	fail := func(target, reason string) (*LoginResult, error) {
+	fail := func(target, reason string) (*User, error) {
 		s.recordFailure(ctx, key, networkPolicy)
 		s.Audit(ctx, "login", target, false, "passkey: "+reason)
 		return nil, ErrInvalidCredentials
 	}
-	sd, err := s.takePasskeyChallenge(ctx, challengeID, "login", 0)
+	sd, err := s.takePasskeyChallenge(ctx, challengeID, "login", purpose, 0)
 	if err != nil {
 		if errors.Is(err, ErrPasskeyChallenge) {
 			return fail("(passkey)", "unknown, expired or used ceremony")
@@ -762,24 +799,32 @@ func (s *Service) FinishPasskeyLogin(ctx context.Context, challengeID string, cr
 		return fail("(passkey)", "user vanished")
 	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: ci.IP})
+	if err := s.acceptAssertion(ctx, u, row, cred); err != nil {
+		return fail(u.Username, err.Error())
+	}
+	s.clearThrottle(ctx, key)
+	return u, nil
+}
+
+// acceptAssertion is the end of every verified assertion: a counter that did not
+// increase or a disabled account refuses it, otherwise the counter is stored
+// with a compare-and-swap (a concurrent assertion with the same stored value
+// loses). The error text is the audit reason.
+func (s *Service) acceptAssertion(ctx context.Context, u *User, row *passkeyRow, cred *webauthn.Credential) error {
 	if cred.Authenticator.CloneWarning {
-		return fail(u.Username, "signature counter did not increase (possible cloned authenticator)")
+		return errors.New("signature counter did not increase (possible cloned authenticator)")
 	}
 	if u.Disabled {
 		// NA-04: same answer as for any failure.
-		return fail(u.Username, "disabled")
+		return errors.New("disabled")
 	}
-	// Compare-and-swap of the counter: a concurrent login with the same stored
-	// value loses.
 	res, err := s.db.ExecContext(ctx, `UPDATE passkeys SET sign_count = ?, backup_state = ?, last_used_at = ? WHERE id = ? AND sign_count = ?`,
 		int64(cred.Authenticator.SignCount), cred.Flags.BackupState, s.now().Unix(), row.id, int64(row.signCount))
 	if err != nil {
-		return nil, err
+		return errors.New("storing the counter failed")
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fail(u.Username, "signature counter changed concurrently")
+		return errors.New("signature counter changed concurrently")
 	}
-	s.clearThrottle(ctx, key)
-	// A verified passkey is possession plus user verification: two factors.
-	return s.finishLogin(ctx, u, kind, MethodPasskey, true, ci)
+	return nil
 }

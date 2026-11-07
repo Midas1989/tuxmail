@@ -646,7 +646,7 @@ func TestAccountSecurityRoutesRefuseDeviceTokens(t *testing.T) {
 			{"DELETE", "/api/auth/sessions/1"}, {"POST", "/api/auth/sessions/revoke-others"},
 			{"POST", "/api/auth/passkeys/register/begin"}, {"POST", "/api/auth/passkeys/register/finish"},
 			{"PATCH", "/api/auth/passkeys/1"}, {"DELETE", "/api/auth/passkeys/1"},
-			{"GET", "/api/device/request?user_code=x"}, {"POST", "/api/device/approve"},
+			{"GET", "/api/device/request?user_code=x"}, {"POST", "/api/device/approve"}, {"POST", "/api/device/approve/passkey"},
 		} {
 			if resp, m := d.do(r.method, r.path, proof); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
 				t.Errorf("%q %s %s: %s %v", scope, r.method, r.path, resp.Status, m)

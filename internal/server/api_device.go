@@ -216,16 +216,20 @@ func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request, a *
 		s.writeAuthError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"request": req, "totpRequired": a.User.TOTPEnabled, "passwordRequired": a.User.HasPassword})
+	// passkey: the account can confirm with a passkey instead of password and
+	// code; passkeyFresh: this session's own passkey sign-in is the confirmation.
+	writeJSON(w, http.StatusOK, map[string]any{"request": req, "totpRequired": a.User.TOTPEnabled, "passwordRequired": a.User.HasPassword,
+		"passkey": s.auth.HasUsablePasskey(r.Context(), a.User.ID), "passkeyFresh": s.auth.PasskeySessionFresh(a.Session)})
 }
 
 func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	var req struct {
-		UserCode     string `json:"user_code"`
-		Approve      *bool  `json:"approve"`
-		Password     string `json:"password"`
-		TOTPCode     string `json:"totp_code"`
-		RecoveryCode string `json:"recovery_code"`
+		UserCode     string        `json:"user_code"`
+		Approve      *bool         `json:"approve"`
+		Password     string        `json:"password"`
+		TOTPCode     string        `json:"totp_code"`
+		RecoveryCode string        `json:"recovery_code"`
+		Passkey      *passkeyProof `json:"passkey"` // api_device_passkey.go
 	}
 	if !readJSON(w, r, &req) || !s.limitLogin(w, r, a.User.Username) {
 		return
@@ -236,7 +240,7 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *
 	}
 	approve := req.Approve == nil || *req.Approve
 	// Approving creates a long-lived way into the account.
-	if approve && !s.reauth(w, r, a, req.Password, req.TOTPCode, req.RecoveryCode) {
+	if approve && !s.approvalProof(w, r, a, req.Passkey, req.Password, req.TOTPCode, req.RecoveryCode) {
 		return
 	}
 	if err := s.auth.ApproveDevice(r.Context(), a.User.ID, req.UserCode, approve); err != nil {

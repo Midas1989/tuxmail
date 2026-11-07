@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -298,7 +299,9 @@ func (a *App) DeviceToken(ctx context.Context, serverURL, deviceCode string) (De
 	return a.finishLogin(ctx, base, s, tok)
 }
 
-// ServerLogin logs in at a server with username and password (+TOTP).
+var totpCodeRe = regexp.MustCompile(`^[0-9]{6}$`)
+
+// ServerLogin logs in at a server with username and password (+TOTP or recovery code).
 func (a *App) ServerLogin(ctx context.Context, serverURL string, in ServerLoginInput) (DeviceTokenResult, error) {
 	base, err := normalizeServerURL(serverURL)
 	if err != nil {
@@ -309,9 +312,16 @@ func (a *App) ServerLogin(ctx context.Context, serverURL string, in ServerLoginI
 		return DeviceTokenResult{}, err
 	}
 	var tok tokenResponse
-	code, err := a.remoteCall(ctx, http.MethodPost, base+"/api/device/login", "", map[string]string{"username": in.Username,
-		"password": in.Password, "totp_code": in.TOTP, "device_name": connDeviceName(),
-		"client_public_key": base64.RawURLEncoding.EncodeToString(s.priv.PublicKey().Bytes())}, &tok)
+	body := map[string]string{"username": in.Username, "password": in.Password, "device_name": connDeviceName(),
+		"client_public_key": base64.RawURLEncoding.EncodeToString(s.priv.PublicKey().Bytes())}
+	// One field for the second factor: six digits are a TOTP code, anything
+	// else is a recovery code.
+	if c := strings.TrimSpace(in.TOTP); totpCodeRe.MatchString(strings.Join(strings.Fields(c), "")) {
+		body["totp_code"] = strings.Join(strings.Fields(c), "")
+	} else if c != "" {
+		body["recovery_code"] = c
+	}
+	code, err := a.remoteCall(ctx, http.MethodPost, base+"/api/device/login", "", body, &tok)
 	if err != nil {
 		return DeviceTokenResult{}, err
 	}

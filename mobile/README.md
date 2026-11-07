@@ -33,7 +33,11 @@ Systemleisten, App-Sperre und die App-Einstellungen unter `#/native-settings`.
   `GET /api/auth/config` geprüft (Erkennung am Feld `product: "tuxmail"`; die
   Versionsangabe liefert der Server nur mit `security.expose_version`). Anmeldung per **Gerätebestätigung** (RFC 8628:
   Custom Tab mit `verification_uri_complete`, Abfrage von `/api/device/token`)
-  oder direkt mit Benutzername, Passwort und TOTP (`/api/device/login`).
+  oder direkt mit Benutzername, Passwort und TOTP bzw. Wiederherstellungscode (`/api/device/login`).
+  Die Bestätigungsseite nimmt einen **Passkey** an (empfohlener Weg). Direkt in der App
+  per Passkey (Android Credential Manager, `PasskeyPlugin.kt`, `/api/device/passkey/*`)
+  nur, wenn der Server die App in `/.well-known/assetlinks.json` führt
+  (`auth.passkeys.android_apps`): `play` ab Android 9, `foss` ab Android 14.
 - **Geräte-Token** im Android-Keystore (AES-256-GCM, eigener kleiner Kotlin-Code
   statt veralteter EncryptedSharedPreferences oder Fremd-Plugins). Mehrere
   Server-Profile sind im Datenmodell vorgesehen (Wechsel = Neustart der Oberfläche).

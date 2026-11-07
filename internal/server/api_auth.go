@@ -24,6 +24,7 @@ func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 		"oidcEnabled":       s.cfg.Auth.OIDC.Enabled,
 		"passwordMinLength": s.cfg.Auth.PasswordMinLength,
 		"passkeysEnabled":   s.auth.PasskeysEnabled(),
+		"passkeyAppLogin":   s.auth.PasskeyAppLogin(), // apps may sign in with a passkey directly (assetlinks.json)
 		"maxUploadMB":       s.cfg.Limits.MaxUploadMB,
 		"clientBuild":       s.clientBuild(), // hash of the web client, not the version
 	}

@@ -70,6 +70,16 @@ service. `github.com/golang-jwt/jwt/v5`, `github.com/tinylib/msgp` and
 `github.com/philhofer/fwd` were already in the module graph; the library
 raises their minimum versions (v5.3.1, v1.6.4, v1.2.0).
 
+## Android libraries for the passkey sign-in of the app (`mobile/android`, `PasskeyPlugin.kt`)
+
+| Library | Version | License | Used for |
+|---|---|---|---|
+| `androidx.credentials:credentials` | 1.5.0 | Apache-2.0 | Credential Manager API (both flavors) |
+| `androidx.credentials:credentials-play-services-auth` | 1.5.0 | Apache-2.0 | Credential Manager on Android 9-13 through Google Play services (`play` flavor only, pulls the proprietary Play services client) |
+
+Apache-2.0 is compatible with AGPL-3.0 (one way). The `foss` flavor (F-Droid)
+contains no Google library; there the direct passkey sign-in needs Android 14+.
+
 ## signal-cli and Java runtime (Signal messenger plugin)
 
 The Signal plugin (`internal/messenger/plugins/signal`) starts **signal-cli**

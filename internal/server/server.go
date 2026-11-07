@@ -352,6 +352,10 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/device/rotate", s.device(s.handleDeviceRotate))
 	mux.HandleFunc("GET /api/device/request", s.session(s.handleDeviceRequest))
 	mux.HandleFunc("POST /api/device/approve", s.session(s.handleDeviceApprove))
+	mux.HandleFunc("POST /api/device/approve/passkey", s.session(s.handleDeviceApprovePasskeyBegin))
+	mux.HandleFunc("POST /api/device/passkey/begin", s.handleDevicePasskeyBegin)
+	mux.HandleFunc("POST /api/device/passkey/login", s.handleDevicePasskeyLogin)
+	mux.HandleFunc("GET /.well-known/assetlinks.json", s.handleAssetLinks)
 	mux.HandleFunc("GET /api/provisioning/profile", s.provisioning(s.handleProvisioningProfile))
 	mux.HandleFunc("GET /api/provisioning/secrets", s.deviceProvisioning(s.handleProvisioningSecrets))
 

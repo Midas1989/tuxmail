@@ -500,6 +500,13 @@ heruntergeladenen.
      erzwingen: `auth.passkeys.enabled` (Ansible: `tuxmail_auth_passkeys_enabled: auto|true|false`), Anzeigename
      `tuxmail_auth_passkeys_rp_name`. Geht ein Gerät verloren, entfernt ein Administrator unter *Administration →
      Benutzer → Verwalten → Zwei-Faktor zurücksetzen* TOTP, Wiederherstellungscodes **und** Passkeys des Kontos.
+   - **Apps mit Passkey verbinden:** Die Android- und Desktop-App melden sich über die Gerätebestätigung an
+     („Mit Passkey oder Passwort im Browser bestätigen“). Die Seite `/device` nimmt einen Passkey an: Wer sich gerade
+     per Passkey angemeldet hat, bestätigt ohne weitere Eingabe, sonst mit „Allow with passkey“ oder Passwort und Code.
+     Die **direkte** Passkey-Anmeldung in der Android-App (ohne Browser) braucht zusätzlich
+     `auth.passkeys.android_apps` (Ansible: `tuxmail_auth_passkeys_android_apps`) mit Paketname und SHA-256-Fingerabdruck
+     des Signaturzertifikats der App; der Server liefert daraus `/.well-known/assetlinks.json`. Ohne Eintrag zeigt die
+     App die Schaltfläche nicht.
    - **Gemeinsame Postfächer** richtest du in den Team-Einstellungen ein.
 
 ---

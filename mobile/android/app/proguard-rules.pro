@@ -39,3 +39,10 @@
 # Kotlin metadata for reflection-based libraries.
 -keep class kotlin.Metadata { *; }
 -dontwarn kotlin.**
+
+# Credential Manager (PasskeyPlugin.kt): the Play services provider is found by
+# reflection (rule from the androidx.credentials documentation).
+-if class androidx.credentials.CredentialManager
+-keep class androidx.credentials.playservices.** {
+  *;
+}

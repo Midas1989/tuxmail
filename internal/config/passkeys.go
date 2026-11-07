@@ -35,6 +35,13 @@ type Passkeys struct {
 	// RPName is the name of the service that authenticators show next to the
 	// passkey (default "TuxMail"), at most 64 characters.
 	RPName string `yaml:"rp_name"`
+	// AndroidApps are the Android apps that may sign in with the passkeys of
+	// this server directly (Credential Manager, passkeys_apps.go). The server
+	// publishes them in /.well-known/assetlinks.json and accepts their
+	// android:apk-key-hash origin for the passkey device login. Empty (the
+	// default): no app can use the passkeys directly, the app signs in through
+	// the browser (device approval) instead.
+	AndroidApps []AndroidApp `yaml:"android_apps"`
 }
 
 // DefaultPasskeyRPName is shown by authenticators when rp_name is unset.
@@ -108,5 +115,6 @@ func (c *Config) validatePasskeys() []error {
 	} else if strings.IndexFunc(p.RPName, unicode.IsControl) >= 0 {
 		errs = append(errs, fmt.Errorf("auth.passkeys.rp_name: must not contain control characters"))
 	}
+	errs = append(errs, validateAndroidApps(p.AndroidApps)...)
 	return errs
 }

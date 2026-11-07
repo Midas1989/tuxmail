@@ -4,8 +4,10 @@
   First start of the Android app: "Server verbinden" (KONZEPT 15.8/15.9).
   1. server address -> GET /healthz + /api/auth/config
   2. sign in via device flow (Custom Tab on verification_uri_complete, polling
-     /api/device/token) or directly with username/password/TOTP
-     (/api/device/login).
+     /api/device/token; recommended: the server page accepts passkey, password +
+     second factor or SSO), directly with a passkey through Credential Manager
+     (/api/device/passkey/*, only when the server publishes assetlinks.json) or
+     with username/password and TOTP or recovery code (/api/device/login).
   The device token goes to secure storage (ProfileStore -> Android Keystore).
 -->
 <script lang="ts">
@@ -13,6 +15,7 @@
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import ExternalLink from '@lucide/svelte/icons/external-link';
   import KeyRound from '@lucide/svelte/icons/key-round';
+  import Fingerprint from '@lucide/svelte/icons/fingerprint';
   import Server from '@lucide/svelte/icons/server';
   import Trash from '@lucide/svelte/icons/trash-2';
   import penguinUrl from '$branding/tuxmail-penguin.png';
@@ -22,7 +25,9 @@
   import {
     ServerError,
     directLogin,
+    passkeyLogin,
     pollDeviceToken,
+    secondFactor,
     safeVerificationUrl,
     startDeviceAuthorization,
     validateServer,
@@ -30,6 +35,7 @@
     type ServerInfo,
     type TokenResult,
   } from './server';
+  import { nativePasskeys, type PasskeyBridge } from './passkey';
 
   interface Props {
     store: ProfileStore;
@@ -46,8 +52,13 @@
     openUrl: (url: string) => Promise<void>;
     closeBrowser?: () => Promise<void>;
     ondone: (profile: ServerProfile) => void;
+    /** Credential Manager bridge (tests inject one; default: the app's plugin). */
+    passkeys?: PasskeyBridge;
   }
-  let { store, profiles, deviceName, prefill = '', expired = false, fromLink = false, oncancel, openUrl, closeBrowser, ondone }: Props = $props();
+  let { store, profiles, deviceName, prefill = '', expired = false, fromLink = false, oncancel, openUrl, closeBrowser, ondone, passkeys }: Props = $props();
+  const bridge = untrack(() => passkeys ?? nativePasskeys());
+  // Direct passkey sign-in: offered when the server allows it for apps and the device can do it.
+  let passkeyReady = $state(false);
 
   type Step = 'url' | 'choose' | 'device' | 'password';
   // Initial values only: later prop changes do not reset the form.
@@ -93,6 +104,7 @@
     abort = new AbortController();
     try {
       info = await validateServer(urlInput, fetch, abort.signal);
+      passkeyReady = info.passkeyAppLogin && (await bridge.available().catch(() => false));
       step = 'choose';
     } catch (err) {
       error = message(err);
@@ -148,7 +160,7 @@
     error = null;
     busy = true;
     try {
-      const res = await directLogin(info.serverUrl, { username, password, totpCode: needTotp ? totp : undefined, deviceName });
+      const res = await directLogin(info.serverUrl, { username, password, ...(needTotp ? secondFactor(totp) : {}), deviceName });
       await finish(res);
     } catch (err) {
       if (err instanceof ServerError && err.code === 'mfa_required' && !needTotp) {
@@ -156,6 +168,21 @@
       } else {
         error = message(err);
       }
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function signInPasskey() {
+    if (!info) return;
+    error = null;
+    busy = true;
+    abort?.abort();
+    abort = new AbortController();
+    try {
+      await finish(await passkeyLogin(info.serverUrl, bridge, deviceName, fetch, abort.signal));
+    } catch (err) {
+      if (!(err instanceof ServerError && err.code === 'aborted')) error = message(err);
     } finally {
       busy = false;
     }
@@ -253,6 +280,10 @@
           {t('native.connect.signInBrowser')}
         </button>
         <p class="hint">{t('native.connect.browserHint')}</p>
+        {#if passkeyReady}
+          <button class="btn wide" data-testid="passkey-direct" onclick={() => void signInPasskey()} disabled={busy}><Fingerprint size={16} />{t('native.connect.signInPasskey')}</button>
+          <p class="hint">{t('native.connect.passkeyHint')}</p>
+        {/if}
         <button class="btn wide" onclick={() => (step = 'password')} disabled={busy}><KeyRound size={16} />{t('onboarding.connect.withPassword')}</button>
         {#if error}<p class="error" role="alert">{error}</p>{/if}
         <button class="btn btn-ghost wide" onclick={back}>{t('native.connect.changeServer')}</button>
@@ -281,7 +312,7 @@
           <p class="hint">{t('native.connect.totpHint')}</p>
           <label class="label" for="login-totp">{t('onboarding.connect.totp')}</label>
           <!-- svelte-ignore a11y_autofocus -->
-          <input id="login-totp" class="input mono" inputmode="numeric" autocomplete="one-time-code" maxlength="12" bind:value={totp} required autofocus />
+          <input id="login-totp" class="input mono" autocapitalize="off" autocomplete="one-time-code" spellcheck="false" maxlength="40" bind:value={totp} required autofocus />
         {/if}
         {#if error}<p class="error" role="alert">{error}</p>{/if}
         <button class="btn btn-primary wide" type="submit" disabled={busy || !username || !password}>

@@ -83,6 +83,15 @@ tuxmail_auth_totp_required_for_admins: true
 tuxmail_auth_passkeys_enabled: "auto"
 # Name des Dienstes, den Authenticatoren neben dem Passkey anzeigen (höchstens 64 Zeichen).
 tuxmail_auth_passkeys_rp_name: "TuxMail"
+# Android-App, die sich direkt (ohne Browser) mit einem Passkey anmelden darf. Der Server veröffentlicht sie in
+# /.well-known/assetlinks.json; Android gibt die Passkeys des Servers sonst nicht an die App. Leer = nur Anmeldung
+# im Browser (Gerätebestätigung, auch mit Passkey). Fingerabdruck: SHA-256 des Signaturzertifikats der App
+# (keytool -list -v -keystore release.jks, Zeile "SHA256:"; bei Google Play App Signing der Wert aus der Play Console).
+# Beispiel:
+# tuxmail_auth_passkeys_android_apps:
+#   - package_name: org.tuxmail.app
+#     sha256_cert_fingerprints: ["14:6D:E9:...:E5"]
+tuxmail_auth_passkeys_android_apps: []
 
 tuxmail_oidc_enabled: false
 tuxmail_oidc_issuer: "" # z. B. https://cloud.example.org oder https://auth.example.org/application/o/tuxmail/

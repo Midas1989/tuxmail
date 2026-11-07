@@ -79,23 +79,37 @@ const deviceBody = `<h1>Connect a device</h1>
 <div id="step2" class="hidden"><p>Allow <b id="name"></b> to access your TuxMail account?</p><p>Code: <code id="ucode"></code></p>
 <p id="where"></p><p class="err">Only allow this if you started the sign-in on this device yourself just now. Never enter or approve a code that someone sent you.</p><div id="pw" class="hidden"><label for="p">Your password</label><input id="p" type="password" autocomplete="current-password"></div>
 <div id="totp" class="hidden"><label for="t">Two-factor code</label><input id="t" inputmode="numeric" autocomplete="one-time-code"></div>
-<button id="approve">Allow</button><button id="deny" class="secondary">Deny</button></div>
+<p id="fresh" class="hidden">You just signed in with your passkey: that confirms this request.</p>
+<button id="pkapprove" class="hidden">Allow with passkey</button><button id="approve">Allow</button><button id="deny" class="secondary">Deny</button></div>
 <div id="done" class="hidden"><p id="donemsg"></p></div><div class="err" id="err" role="alert"></div>`
 
+// deviceJS is the approval page. Its step-up: password (+ code), a passkey
+// (#pkapprove, api_device_passkey.go) or, right after a passkey sign-in, nothing
+// more (passkeyFresh).
 const deviceJS = commonJS + `const $=(id)=>document.getElementById(id),err=$('err');let code='';
 async function lookup(c){err.textContent='';const r=await fetch('/api/device/request?user_code='+encodeURIComponent(c),{credentials:'same-origin'});
 let j={};try{j=await r.json()}catch(e){}
 if(r.status===401){location.href='/login?next='+encodeURIComponent(location.pathname+'?user_code='+c);return}
 if(r.status!==200){err.textContent=msg(j);return}
 code=c;const q=j.request||{};$('name').textContent=q.deviceName||q.clientName||'TuxMail';$('ucode').textContent=c;
-$('where').textContent=[q.ip?('IP: '+q.ip):'',q.userAgent?('Client: '+q.userAgent):'',q.createdAt?('Requested: '+new Date(q.createdAt).toLocaleString()):''].filter(Boolean).join(' · ');if(j.totpRequired)$('totp').classList.remove('hidden');
+$('where').textContent=[q.ip?('IP: '+q.ip):'',q.userAgent?('Client: '+q.userAgent):'',q.createdAt?('Requested: '+new Date(q.createdAt).toLocaleString()):''].filter(Boolean).join(' · ');
+if(j.passkeyFresh){$('fresh').classList.remove('hidden')}else{if(j.totpRequired)$('totp').classList.remove('hidden');
 if(j.passwordRequired)$('pw').classList.remove('hidden');
+if(j.passkey&&pkSupported(window)){$('pkapprove').classList.remove('hidden');$('approve').textContent='Allow with password';$('approve').classList.add('secondary')}}
 $('step1').classList.add('hidden');$('step2').classList.remove('hidden')}
-async function decide(approve){const res=await post('/api/device/approve',{user_code:code,approve,password:$('p').value,totp_code:$('t').value.trim()});
+async function send(approve,extra){const res=await post('/api/device/approve',Object.assign({user_code:code,approve},extra));
 if(res.status!==204){err.textContent=msg(res.body);return}
 $('step2').classList.add('hidden');$('done').classList.remove('hidden');
 $('donemsg').textContent=approve?'Done. You can return to the app.':'The request was denied.'}
 $('code').addEventListener('submit',(e)=>{e.preventDefault();lookup($('c').value.trim().toUpperCase())});
+function decide(approve){return send(approve,approve?{password:$('p').value,totp_code:$('t').value.trim()}:{})}
+async function pkApprove(){err.textContent='';const btn=$('pkapprove');btn.disabled=true;
+try{const b=await post('/api/device/approve/passkey',{});if(b.status!==200)throw Object.assign(new Error(msg(b.body)),{status:b.status});
+const cred=await navigator.credentials.get({publicKey:pkRequestOptions(b.body.publicKey)});
+if(!cred)throw Object.assign(new Error('cancelled'),{name:'NotAllowedError'});
+await send(true,{passkey:{challengeId:b.body.challengeId,credential:pkAssertionJSON(cred)}})}
+catch(e){err.textContent=pkErrorMessage(e)}finally{btn.disabled=false}}
+$('pkapprove').addEventListener('click',()=>pkApprove());
 $('approve').addEventListener('click',()=>decide(true));$('deny').addEventListener('click',()=>decide(false));
 const pre=new URLSearchParams(location.search).get('user_code');if(pre){$('c').value=pre;lookup(pre)}`
 
@@ -117,7 +131,9 @@ func (s *Server) handleDevicePage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, r, "Connect a device", "/device.js", template.HTML(deviceBody))
 }
 
-func (s *Server) handleDeviceScript(w http.ResponseWriter, r *http.Request) { serveScript(w, deviceJS) }
+func (s *Server) handleDeviceScript(w http.ResponseWriter, r *http.Request) {
+	serveScript(w, passkeyLoginJS+deviceJS)
+}
 
 // loggedIn reports whether the request carries a valid session.
 func (s *Server) loggedIn(r *http.Request) bool {

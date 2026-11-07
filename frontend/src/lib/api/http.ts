@@ -644,7 +644,10 @@ export class HttpTransport implements Api {
     const { status, data } = await this.remoteCall(this.remote(serverUrl, '/api/device/login'), {
       username: credentials.username,
       password: credentials.password,
-      totp_code: credentials.totp || undefined,
+      // One field for the second factor: six digits = TOTP, otherwise a recovery code.
+      ...(/^\d{6}$/.test((credentials.totp ?? '').replace(/\s+/g, ''))
+        ? { totp_code: (credentials.totp ?? '').replace(/\s+/g, '') }
+        : { recovery_code: credentials.totp?.trim() || undefined }),
       device_name: 'TuxMail Web',
     });
     if (status === 200 && typeof data.access_token === 'string') return this.profileResult(serverUrl, data.access_token);

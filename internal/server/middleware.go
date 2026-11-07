@@ -314,6 +314,9 @@ var csrfExempt = map[string]bool{
 	"/api/device/authorize": true,
 	"/api/device/token":     true,
 	"/api/device/login":     true,
+	// Passkey sign-in of the app (api_device_passkey.go), same reasoning.
+	"/api/device/passkey/begin": true,
+	"/api/device/passkey/login": true,
 }
 
 func safeMethod(m string) bool {

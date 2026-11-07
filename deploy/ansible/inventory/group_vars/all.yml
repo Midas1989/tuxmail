@@ -71,6 +71,7 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_auth_totp_required_for_admins: true
 # tuxmail_auth_passkeys_enabled: auto      # auto | true | false; Passkeys (WebAuthn) brauchen https-public_url (oder http://localhost)
 # tuxmail_auth_passkeys_rp_name: TuxMail   # Dienstname in der Authenticator-Anzeige; Hostname-Wechsel macht alle Passkeys ungültig
+# tuxmail_auth_passkeys_android_apps: []   # direkte Passkey-Anmeldung der Android-App, siehe roles/tuxmail/defaults/main.yml
 
 # --- OIDC (z. B. Nextcloud, OpenCloud, Authentik, Keycloak) ---
 # tuxmail_oidc_enabled: false

@@ -46,6 +46,8 @@ auth:
     enabled: {{ tuxmail_auth_passkeys_enabled | bool | to_json }}
 {% endif %}
     rp_name: {{ tuxmail_auth_passkeys_rp_name | to_json }}
+    # Android-Apps, die Passkeys dieses Servers direkt nutzen dürfen (/.well-known/assetlinks.json).
+    android_apps: {{ tuxmail_auth_passkeys_android_apps | to_json }}
   oidc:
     enabled: {{ tuxmail_oidc_enabled | bool | to_json }}
     issuer: {{ tuxmail_oidc_issuer | to_json }}

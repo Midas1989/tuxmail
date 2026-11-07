@@ -8,10 +8,12 @@
 //   (the version is only sent when the operator set security.expose_version)
 //   POST /api/device/authorize   {client_name} -> RFC 8628 grant (snake_case)
 //   POST /api/device/token       {device_code} -> token | 400 {error: authorization_pending|slow_down|...}
-//   POST /api/device/login       {username, password, totp_code, device_name} -> token | 401 {error: mfa_required}
+//   POST /api/device/login       {username, password, totp_code | recovery_code, device_name} -> token | 401 {error: mfa_required}
+//   POST /api/device/passkey/begin + /login  passkey sign-in through Credential Manager (passkey.ts)
 // Pure functions with an injectable fetch (unit-tested without Capacitor).
 
 import { normalizeServerUrl } from '../platform';
+import { PasskeyError, type PasskeyBridge } from './passkey';
 
 export type Fetch = typeof fetch;
 
@@ -22,6 +24,8 @@ export interface ServerInfo {
   oidcEnabled: boolean;
   registration?: string;
   maxUploadMB?: number;
+  /** The server lets apps sign in with a passkey directly (assetlinks.json is published). */
+  passkeyAppLogin: boolean;
 }
 
 export interface DeviceGrant {
@@ -54,6 +58,9 @@ export type ServerErrorCode =
   | 'access_denied'
   | 'expired_token'
   | 'aborted'
+  | 'passkey_cancelled'
+  | 'passkey_unavailable'
+  | 'passkey_failed'
   | 'server_error';
 
 export class ServerError extends Error {
@@ -123,6 +130,7 @@ export async function validateServer(input: string, f: Fetch = fetch, signal?: A
     oidcEnabled: cfg.body.oidcEnabled === true,
     registration: typeof cfg.body.registration === 'string' ? cfg.body.registration : undefined,
     maxUploadMB: typeof cfg.body.maxUploadMB === 'number' ? cfg.body.maxUploadMB : undefined,
+    passkeyAppLogin: cfg.body.passkeyAppLogin === true,
   };
 }
 
@@ -251,4 +259,53 @@ export function safeVerificationUrl(serverUrl: string, url: string): string | nu
   } catch {
     return null;
   }
+}
+
+/**
+ * One field for the second factor: six digits are a TOTP code, anything else
+ * is a recovery code (the server checks both the same way as in the web login).
+ */
+export function secondFactor(code: string | undefined): { totpCode?: string; recoveryCode?: string } {
+  const c = (code ?? '').trim();
+  if (!c) return {};
+  const digits = c.replace(/\s+/g, '');
+  return /^\d{6}$/.test(digits) ? { totpCode: digits } : { recoveryCode: c };
+}
+
+/**
+ * Direct passkey sign-in of the app: begin -> Credential Manager -> login.
+ * Every server refusal of the assertion is the same 401 (it never says why);
+ * it becomes passkey_failed, cancelling in the system dialog passkey_cancelled.
+ */
+export async function passkeyLogin(
+  serverUrl: string,
+  bridge: PasskeyBridge,
+  deviceName: string,
+  f: Fetch = fetch,
+  signal?: AbortSignal,
+): Promise<TokenResult> {
+  const begin = await postJson(f, serverUrl + '/api/device/passkey/begin', {}, signal);
+  if (begin.status !== 200) throw errorFor(begin.status, begin.body);
+  const challengeId = begin.body.challengeId;
+  if (typeof challengeId !== 'string' || !begin.body.publicKey) throw new ServerError('server_error', 'no passkey options');
+  let credential: unknown;
+  try {
+    credential = JSON.parse(await bridge.get(JSON.stringify(begin.body.publicKey)));
+  } catch (err) {
+    if (err instanceof PasskeyError) {
+      if (err.code === 'cancelled') throw new ServerError('passkey_cancelled', err.message);
+      if (err.code === 'no_credential' || err.code === 'unsupported') throw new ServerError('passkey_unavailable', err.message);
+    }
+    throw new ServerError('passkey_failed', err instanceof Error ? err.message : String(err));
+  }
+  if (signal?.aborted) throw new ServerError('aborted');
+  const { status, body } = await postJson(
+    f,
+    serverUrl + '/api/device/passkey/login',
+    { challengeId, credential, device_name: deviceName, scope: DEVICE_SCOPE },
+    signal,
+  );
+  if (status === 200) return toToken(body);
+  if (status === 401) throw new ServerError('passkey_failed', String(body.message ?? 'passkey sign-in failed'), status);
+  throw errorFor(status, body);
 }

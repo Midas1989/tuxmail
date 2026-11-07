@@ -136,6 +136,10 @@ dependencies {
     implementation "androidx.core:core-ktx:$androidxCoreVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation "androidx.biometric:biometric:$androidxBiometricVersion"
+    // Passkeys (PasskeyPlugin.kt). foss: system credential providers (Android 14+) only;
+    // play: also Android 9-13 through Google Play services.
+    implementation "androidx.credentials:credentials:$androidxCredentialsVersion"
+    playImplementation "androidx.credentials:credentials-play-services-auth:$androidxCredentialsVersion"
     implementation project(':capacitor-android')
     implementation project(':capacitor-cordova-android-plugins')
 

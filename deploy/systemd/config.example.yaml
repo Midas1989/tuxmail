@@ -50,6 +50,12 @@ auth:
   passkeys:
     # enabled: true
     rp_name: "TuxMail"
+    # Android apps that may use this server's passkeys directly (Credential
+    # Manager). Published in /.well-known/assetlinks.json; empty = the app
+    # signs in through the browser (device approval, also with a passkey).
+    # android_apps:
+    #   - package_name: org.tuxmail.app
+    #     sha256_cert_fingerprints: ["14:6D:E9:...:E5"]
   oidc:
     enabled: false
     issuer: ""

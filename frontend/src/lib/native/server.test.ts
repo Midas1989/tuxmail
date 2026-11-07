@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (C) 2026 Midas Wollinger and TuxMail contributors
 import { describe, expect, it, vi } from 'vitest';
-import { ServerError, directLogin, pollDeviceToken, safeVerificationUrl, startDeviceAuthorization, validateServer, type DeviceGrant } from './server';
+import { ServerError, directLogin, passkeyLogin, pollDeviceToken, secondFactor, safeVerificationUrl, startDeviceAuthorization, validateServer, type DeviceGrant } from './server';
 
 type Route = (url: string, init?: RequestInit) => { status: number; body?: unknown } | Promise<{ status: number; body?: unknown }>;
 
@@ -20,7 +20,7 @@ describe('validateServer', () => {
       return { status: 404 };
     });
     const info = await validateServer('mail.example.org/', f);
-    expect(info).toEqual({ serverUrl: 'https://mail.example.org', version: '1.2.0', oidcEnabled: true, registration: 'invite', maxUploadMB: 50 });
+    expect(info).toEqual({ serverUrl: 'https://mail.example.org', version: '1.2.0', oidcEnabled: true, registration: 'invite', maxUploadMB: 50, passkeyAppLogin: false });
     expect(f).toHaveBeenCalledTimes(2);
     expect(f.mock.calls[0][1]).toMatchObject({ credentials: 'omit' });
   });
@@ -31,7 +31,7 @@ describe('validateServer', () => {
       if (url.endsWith('/api/auth/config')) return { status: 200, body: { product: 'tuxmail', oidcEnabled: false, registration: 'disabled', maxUploadMB: 50 } };
       return { status: 404 };
     });
-    expect(await validateServer('mail.example.org', f)).toEqual({ serverUrl: 'https://mail.example.org', version: '', oidcEnabled: false, registration: 'disabled', maxUploadMB: 50 });
+    expect(await validateServer('mail.example.org', f)).toEqual({ serverUrl: 'https://mail.example.org', version: '', oidcEnabled: false, registration: 'disabled', maxUploadMB: 50, passkeyAppLogin: false });
     // A foreign server without marker and version is still refused.
     const foreign = fakeFetch((url) => (url.endsWith('/healthz') ? { status: 200, body: { status: 'ok' } } : { status: 200, body: { hello: 'world' } }));
     await expect(validateServer('other.example', foreign)).rejects.toMatchObject({ code: 'not_tuxmail' });
@@ -137,5 +137,65 @@ describe('safeVerificationUrl', () => {
     expect(safeVerificationUrl('https://s.example', 'javascript:alert(1)')).toBeNull();
     expect(safeVerificationUrl('https://s.example', 'http://s.example/device')).toBeNull();
     expect(safeVerificationUrl('http://localhost:8080', 'http://localhost:8080/device')).toBe('http://localhost:8080/device');
+  });
+});
+
+describe('second factor field', () => {
+  it('six digits are TOTP, anything else a recovery code', () => {
+    expect(secondFactor('123456')).toEqual({ totpCode: '123456' });
+    expect(secondFactor(' 123 456 ')).toEqual({ totpCode: '123456' });
+    expect(secondFactor('abcd-efgh-1234')).toEqual({ recoveryCode: 'abcd-efgh-1234' });
+    expect(secondFactor('1234567')).toEqual({ recoveryCode: '1234567' });
+    expect(secondFactor('')).toEqual({});
+    expect(secondFactor(undefined)).toEqual({});
+  });
+
+  it('directLogin sends a recovery code as recovery_code', async () => {
+    const f = fakeFetch(() => ({ status: 200, body: { access_token: 't' } }));
+    await directLogin('https://s', { username: 'a', password: 'p', ...secondFactor('wxyz-1234'), deviceName: 'X' }, f);
+    const sent = JSON.parse(String(f.mock.calls[0][1].body));
+    expect(sent).toMatchObject({ recovery_code: 'wxyz-1234' });
+    expect(sent.totp_code).toBeUndefined();
+  });
+});
+
+describe('passkeyLogin (Credential Manager)', () => {
+  const options = { challenge: 'Y2hhbGxlbmdl', rpId: 'mail.example.org', userVerification: 'required', timeout: 300000 };
+  const assertion = { id: 'cred', rawId: 'cred', type: 'public-key', response: { clientDataJSON: 'x', authenticatorData: 'y', signature: 'z' } };
+
+  it('begin -> bridge -> login, token like the password login', async () => {
+    const f = fakeFetch((url, init) => {
+      if (url === 'https://s/api/device/passkey/begin') return { status: 200, body: { challengeId: 'c1', publicKey: options } };
+      if (url === 'https://s/api/device/passkey/login') {
+        const b = JSON.parse(String(init?.body));
+        expect(b).toEqual({ challengeId: 'c1', credential: assertion, device_name: 'TuxMail Android (Pixel)', scope: 'data' });
+        return { status: 200, body: { access_token: 'tok', expires_in: 60, session_id: 7, user: { username: 'anna' } } };
+      }
+      return { status: 404 };
+    });
+    const get = vi.fn(async (req: string) => {
+      expect(JSON.parse(req)).toEqual(options); // the options go to Credential Manager unchanged
+      return JSON.stringify(assertion);
+    });
+    const res = await passkeyLogin('https://s', { available: async () => true, get }, 'TuxMail Android (Pixel)', f);
+    expect(res).toMatchObject({ token: 'tok', sessionId: 7, user: { username: 'anna' } });
+    expect(f.mock.calls.every((c: unknown[]) => (c[1] as RequestInit).credentials === 'omit')).toBe(true);
+  });
+
+  it('maps cancel, missing passkey and refusals', async () => {
+    const { PasskeyError } = await import('./passkey');
+    const begin = fakeFetch((url) => (url.endsWith('/begin') ? { status: 200, body: { challengeId: 'c', publicKey: options } } : { status: 401, body: { error: 'invalid_credentials', message: 'passkey sign-in failed' } }));
+    const bridge = (err: unknown) => ({ available: async () => true, get: async () => Promise.reject(err) });
+    await expect(passkeyLogin('https://s', bridge(new PasskeyError('cancelled')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_cancelled' });
+    await expect(passkeyLogin('https://s', bridge(new PasskeyError('no_credential')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_unavailable' });
+    await expect(passkeyLogin('https://s', bridge(new Error('boom')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_failed' });
+    // The server refuses the assertion: never "wrong password".
+    const ok = { available: async () => true, get: async () => JSON.stringify(assertion) };
+    await expect(passkeyLogin('https://s', ok, 'X', begin)).rejects.toMatchObject({ code: 'passkey_failed', status: 401 });
+    // Throttled networks and switched-off passkeys keep their own codes.
+    const throttled = fakeFetch(() => ({ status: 429, body: { error: 'throttled' } }));
+    await expect(passkeyLogin('https://s', ok, 'X', throttled)).rejects.toMatchObject({ code: 'throttled' });
+    const off = fakeFetch(() => ({ status: 404, body: { error: 'passkeys_disabled', message: 'off' } }));
+    await expect(passkeyLogin('https://s', ok, 'X', off)).rejects.toMatchObject({ code: 'server_error' });
   });
 });

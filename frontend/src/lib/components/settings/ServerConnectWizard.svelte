@@ -3,7 +3,10 @@
   "Mit TuxMail-Server verbinden": desktop auto-setup against a TuxMail server.
   Device flow (RFC 8628): POST /api/device/authorize -> user confirms in the
   browser -> poll POST /api/device/token. Alternative: direct login with
-  username, password and TOTP. The core keeps all tokens; the UI only sees
+  username, password and TOTP or recovery code (one field, split by the core).
+  The browser page accepts passkeys; a passkey directly in this window is not
+  offered: WebView2/WebKitGTK would bind it to the app's own origin
+  (wails.localhost), never to the server's RP ID. The core keeps all tokens; the UI only sees
   the provisioning profile and decides the mode and what to set up.
   Also used for "sign in again" (purpose reauth) and for changing to the mode
   "Auf diesem Gerät" (purpose switchLocal). It always talks to the local core.
@@ -309,7 +312,7 @@
       <label><span class="label">{t('onboarding.account.password')}</span><input class="input" type="password" bind:value={password} autocomplete="current-password" /></label>
       <label>
         <span class="label">{t('onboarding.connect.totp')}</span>
-        <input class="input totp" bind:value={totp} inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]*" placeholder="123456" />
+        <input class="input totp" bind:value={totp} autocapitalize="off" spellcheck="false" autocomplete="one-time-code" maxlength="40" placeholder="123456" />
       </label>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
       <div class="row-actions">
@@ -454,9 +457,9 @@
     font-size: 13px;
   }
   .totp {
-    width: 140px;
+    width: 220px;
     font-family: var(--tm-mono);
-    letter-spacing: 0.2em;
+    letter-spacing: 0.1em;
   }
   .ok {
     display: flex;
