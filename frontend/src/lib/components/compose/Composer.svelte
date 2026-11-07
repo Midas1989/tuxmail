@@ -571,8 +571,15 @@
   }
   .unclear-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     margin-top: 8px;
+  }
+  .unclear-actions .btn {
+    height: auto;
+    min-height: 32px;
+    white-space: normal;
+    text-align: left;
   }
   .outbox-reason p {
     margin: 0;

@@ -71,10 +71,15 @@ func GenerateKey(opts GenerateOptions) (*Key, error) {
 		DefaultHash:   crypto.SHA256,
 		DefaultCipher: packet.CipherAES256,
 	}
-	if !opts.Now.IsZero() {
-		now := opts.Now
-		cfg.Time = func() time.Time { return now }
+	// The library rounds the creation time to the nearest second, so a key made
+	// in the second half of a second would lie up to half a second in the
+	// future and be unusable right away. Truncate instead.
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
 	}
+	now = now.Truncate(time.Second)
+	cfg.Time = func() time.Time { return now }
 	if opts.Lifetime > 0 {
 		secs := opts.Lifetime / time.Second
 		if secs > math.MaxUint32 {

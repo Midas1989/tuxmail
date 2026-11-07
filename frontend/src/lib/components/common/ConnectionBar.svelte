@@ -40,8 +40,8 @@
     display: flex;
     align-items: center;
     gap: 8px;
-    height: 34px;
-    padding: 0 12px;
+    min-height: 34px;
+    padding: 4px 12px;
     font-size: 13px;
     background: color-mix(in srgb, var(--tm-warn) 18%, var(--tm-surface));
     color: var(--tm-fg);
@@ -53,9 +53,7 @@
   .text {
     flex: 1;
     min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    line-height: 1.3;
   }
   .count {
     font-weight: 600;

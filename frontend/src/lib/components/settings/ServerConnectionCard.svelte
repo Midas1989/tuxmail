@@ -354,6 +354,16 @@
     min-width: 0;
     overflow-wrap: anywhere;
   }
+  /* Narrow window: label above value, so a date or device name is not torn apart. */
+  @media (max-width: 560px) {
+    dl {
+      grid-template-columns: 1fr;
+      gap: 0;
+    }
+    dd {
+      margin-bottom: 8px;
+    }
+  }
   .admin-note {
     margin: 0 0 12px;
     font-size: 12.5px;

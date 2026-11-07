@@ -59,6 +59,7 @@
     color: var(--tm-muted);
     border-bottom: 2px solid transparent;
     white-space: nowrap;
+    flex: none;
     cursor: pointer;
   }
   .tabs .tab[aria-selected='true'] {
@@ -81,6 +82,7 @@
     font: inherit;
     font-size: 12px;
     white-space: nowrap;
+    flex: none;
     cursor: pointer;
     color: var(--tm-fg);
   }

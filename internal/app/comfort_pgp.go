@@ -503,6 +503,12 @@ func (a *App) putPGPKey(ctx context.Context, k *pgp.Key, source pgp.KeySource) (
 	return a.pgpInfo(ctx, stored, row), nil
 }
 
+// pgpClockSkew backdates the creation time of a new key. A clock that steps
+// back a little (time sync) or a different clock at the other end must not
+// make a key unusable right after it was made: the user would see "no key"
+// for a key they just created.
+const pgpClockSkew = 5 * time.Minute
+
 // GeneratePGPKey creates an own Curve25519 key, with its own passphrase if one
 // is given; the secret store protects it either way.
 func (a *App) GeneratePGPKey(ctx context.Context, in PGPGenerateInput) (PGPKeyInfo, error) {
@@ -516,7 +522,7 @@ func (a *App) GeneratePGPKey(ctx context.Context, in PGPGenerateInput) (PGPKeyIn
 		}
 	}
 	k, err := pgp.GenerateKey(pgp.GenerateOptions{UserIDs: []pgp.UserIDSpec{{Name: strings.TrimSpace(in.Name), Email: email}}, Algorithm: pgp.AlgoCurve25519,
-		Passphrase: []byte(in.Passphrase), Now: a.now()})
+		Passphrase: []byte(in.Passphrase), Now: a.now().Add(-pgpClockSkew)})
 	if err != nil {
 		return PGPKeyInfo{}, invalid("the name or address cannot be used for a key")
 	}

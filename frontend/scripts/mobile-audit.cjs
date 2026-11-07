@@ -12,10 +12,14 @@
 const { chromium } = (() => {
   try {
     return require('playwright');
-  } catch {
-    const root = require('child_process').execSync('npm root -g').toString().trim();
+  } catch {}
+  try {
+    const root = require('child_process').execSync('npm root -g', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
     return require(require('path').join(root, 'playwright'));
-  }
+  } catch {}
+  console.error('mobile-audit: playwright not found (neither local nor global).');
+  console.error('Install it without touching package.json:  npm i --no-save playwright && npx playwright install chromium');
+  process.exit(2);
 })();
 const fs = require('fs');
 const path = require('path');
