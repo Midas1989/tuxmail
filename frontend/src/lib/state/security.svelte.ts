@@ -10,6 +10,7 @@
 import type { Api } from '../api/api';
 import type { AuthMe, AuthProfileUpdate } from '../api/security';
 import { onMfaSetupRequired } from '../mfaGate';
+import { isDesktopServerMode } from '../desktop/bridge';
 import { isNativeShell } from '../platform';
 
 export interface SecurityDeps {
@@ -34,7 +35,8 @@ export class SecurityState {
 
   constructor(api: Api, deps: SecurityDeps = {}) {
     this.api = api;
-    this.web = deps.web ?? (api.kind === 'http' && !isNativeShell());
+    // The desktop app in server mode talks HTTP too, but with a device token: account security stays in the browser.
+    this.web = deps.web ?? (api.kind === 'http' && !isNativeShell() && !isDesktopServerMode());
     this.subscribe = deps.subscribe ?? onMfaSetupRequired;
     this.reload = deps.reload ?? (() => location.reload());
   }

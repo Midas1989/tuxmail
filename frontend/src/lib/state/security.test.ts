@@ -7,6 +7,7 @@ import type { AuthMe } from '../api/security';
 import { MockTransport } from '../api/mock';
 import { notifyMfaSetupRequired, onMfaSetupRequired } from '../mfaGate';
 import { platformHttpOptions } from '../session';
+import { setDesktopServerModeForTest } from '../desktop/bridge';
 import { SecurityState } from './security.svelte';
 
 function me(over: Partial<AuthMe> = {}): AuthMe {
@@ -129,5 +130,17 @@ describe('own profile', () => {
     await s.refresh();
     await expect(s.updateProfile({ displayName: 'x' })).rejects.toThrow('invalid_input');
     expect(s.me?.user.displayName).toBe('Root');
+  });
+});
+
+describe('desktop app in server mode', () => {
+  it('offers no account security pages: they stay in the browser', () => {
+    setDesktopServerModeForTest(true);
+    try {
+      expect(new SecurityState(fakeApi(async () => me())).available).toBe(false);
+    } finally {
+      setDesktopServerModeForTest(false);
+    }
+    expect(new SecurityState(fakeApi(async () => me())).available).toBe(true);
   });
 });
