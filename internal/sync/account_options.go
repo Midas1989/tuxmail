@@ -69,6 +69,9 @@ type contentRule struct {
 	// and the server searched; the older body policies (and the default)
 	// behave exactly as before.
 	release bool
+	// setting: the rule comes from the day count set by the user (also
+	// "all completely"): downloads it causes are throttled and can be paused.
+	setting bool
 }
 
 // cutoff is the date before which mails are kept with header only (zero:
@@ -111,9 +114,9 @@ func (w *Worker) contentRule() contentRule {
 	}
 	days := func(n int) contentRule {
 		if n == 0 {
-			return contentRule{policy: BodiesAll}
+			return contentRule{policy: BodiesAll, setting: true}
 		}
-		return contentRule{policy: BodiesRecent, days: n, release: true}
+		return contentRule{policy: BodiesRecent, days: n, release: true, setting: true}
 	}
 	if n, ok := ParseHeadersOnlyDays(w.extra(ExtraHeadersOnlyDays)); ok {
 		return days(n)

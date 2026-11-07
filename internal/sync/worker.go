@@ -45,6 +45,8 @@ type Worker struct {
 	nextToken   int64
 	bodyFailed  map[int64]bool
 	moreBodies  bool
+	// bodyResumeAt: throttled downloads of the day count continue then.
+	bodyResumeAt time.Time
 	// lastProgress is when the last progress update was published.
 	lastProgress time.Time
 }
@@ -356,6 +358,9 @@ func (w *Worker) nextDue(ctx context.Context) time.Duration {
 			next = n
 		}
 	}
+	if r := w.bodyResumeAt; r.After(now) && r.Before(next) {
+		next = r
+	}
 	w.mu.Unlock()
 	if due, ok, err := w.m.st.NextAccountOpDue(ctx, w.acc.ID, opKinds...); err == nil && ok && due.Before(next) {
 		next = due
@@ -388,9 +393,15 @@ func (w *Worker) cycle(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// Folders synced without error in this cycle: only their mails may have
+	// their bodies released (headersonly.go).
+	syncedOK := make([]int64, 0, len(folders))
 	for _, f := range folders {
 		w.setState(StateSyncing, f.RemoteID)
 		err := w.syncFolder(ctx, f)
+		if err == nil {
+			syncedOK = append(syncedOK, f.ID)
+		}
 		w.mu.Lock()
 		if err == nil || !IsNetworkError(err) {
 			w.lastSync[f.ID] = w.m.now()
@@ -427,7 +438,7 @@ func (w *Worker) cycle(ctx context.Context) error {
 		// release of bodies older than the day count.
 		var mp, mr bool
 		if mp, err = w.backfillPreviews(ctx); err == nil {
-			mr, err = w.releaseBodies(ctx)
+			mr, err = w.releaseBodies(ctx, syncedOK)
 		}
 		more = more || mp || mr
 	}

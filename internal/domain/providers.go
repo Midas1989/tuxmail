@@ -45,6 +45,16 @@ type TextSearcher interface {
 	SearchText(ctx context.Context, folderRemoteID, text string, limit int) ([]string, error)
 }
 
+// ExistenceChecker is implemented by providers that can confirm cheaply that
+// messages still exist on the server. Before a locally stored body is
+// released (mails kept with header only), the sync engine asks it; state is
+// the folder's stored sync state, so that a changed folder identity (IMAP
+// UIDVALIDITY) confirms nothing. Ids not in the result do not exist (or
+// are marked deleted).
+type ExistenceChecker interface {
+	ConfirmExisting(ctx context.Context, folderRemoteID string, state SyncState, ids []string) (map[string]bool, error)
+}
+
 // OutgoingMessage is a fully rendered RFC 5322 message ready for submission.
 type OutgoingMessage struct {
 	From       Address

@@ -7,7 +7,7 @@
 import { HttpTransport } from './http';
 import { WailsTransport, type WailsWindow } from './wails';
 import { desktopHttpOptions, type DesktopWin } from '../desktop/bridge';
-import type { DeviceAuthorization, DeviceTokenResult, MailStorageSettings, ProvisioningImport, ServerLoginInput, VaultStatus } from '../types';
+import type { DeviceAuthorization, DeviceTokenResult, MailStorageEstimate, MailStorageSettings, ProvisioningImport, ServerLoginInput, VaultStatus } from '../types';
 
 export class DesktopServerTransport extends HttpTransport {
   private readonly local: WailsTransport;
@@ -39,7 +39,11 @@ export class DesktopServerTransport extends HttpTransport {
   override getMailStorageSettings(): Promise<MailStorageSettings> {
     return this.local.getMailStorageSettings();
   }
-  override setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'>): Promise<MailStorageSettings> {
+  override setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'> & { downloadPaused?: boolean }): Promise<MailStorageSettings> {
     return this.local.setMailStorageSettings(settings);
+  }
+  /** The read cache downloads nothing ahead: nothing to estimate. */
+  override estimateMailStorage(_days: number): Promise<MailStorageEstimate> {
+    return Promise.resolve({ messages: 0, bytes: 0 });
   }
 }

@@ -222,3 +222,45 @@ func TestHeadersOnlyNotOnServer(t *testing.T) {
 		t.Error("account day count accepted on the server")
 	}
 }
+
+// Before switching to "all" or a larger day count the interface asks with an
+// estimate; the download can be paused.
+func TestHeadersOnlyEstimateAndPause(t *testing.T) {
+	old := time.Now().AddDate(0, 0, -200)
+	f := newDesktopFixture(t, app.ModeDesktop, 30, func(s *devserver.Server) {
+		for i, subj := range []string{"Alt eins", "Alt zwei"} {
+			if _, err := s.Append(devserver.AnnaAddr, "INBOX", oldMail(old, "est"+strconv.Itoa(i)+"@tuxmail.test", subj, "Inhalt "+subj), nil, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+	})
+	ctx := context.Background()
+	f.waitMessage(t, "Alt zwei")
+	est := must[app.MailStorageEstimate](t)(f.a.EstimateMailStorage(ctx, 0))
+	if est.Messages < 2 || est.Bytes <= 0 {
+		t.Errorf("estimate for all = %+v", est)
+	}
+	if e30 := must[app.MailStorageEstimate](t)(f.a.EstimateMailStorage(ctx, 30)); e30.Messages >= est.Messages {
+		t.Errorf("estimate for 30 days %+v not smaller than for all %+v", e30, est)
+	}
+	if _, err := f.a.EstimateMailStorage(ctx, -5); err == nil {
+		t.Error("invalid estimate accepted")
+	}
+	st := must[app.MailStorageSettings](t)(f.a.SetMailStorageSettings(ctx, app.MailStorageSettings{HeadersOnlyOlderThanDays: 0, DownloadPaused: true}))
+	if !st.DownloadPaused || st.Pending < 2 {
+		t.Errorf("paused = %+v", st)
+	}
+	time.Sleep(500 * time.Millisecond)
+	if st = must[app.MailStorageSettings](t)(f.a.GetMailStorageSettings(ctx)); st.Pending < 2 {
+		t.Errorf("downloaded while paused: %+v", st)
+	}
+	st = must[app.MailStorageSettings](t)(f.a.SetMailStorageSettings(ctx, app.MailStorageSettings{HeadersOnlyOlderThanDays: 0}))
+	deadline := time.Now().Add(15 * time.Second)
+	for st.Pending > 0 && time.Now().Before(deadline) {
+		time.Sleep(100 * time.Millisecond)
+		st = must[app.MailStorageSettings](t)(f.a.GetMailStorageSettings(ctx))
+	}
+	if st.Pending != 0 || st.DownloadPaused {
+		t.Errorf("after resuming: %+v", st)
+	}
+}

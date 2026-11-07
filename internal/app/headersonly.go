@@ -38,13 +38,66 @@ type MailStorageSettings struct {
 	// stored with header only and with content (informational).
 	HeadersOnly int `json:"headersOnly"`
 	Complete    int `json:"complete"`
+	// Pending and PendingBytes estimate what is still to be downloaded under
+	// the current setting (output only); DownloadPaused pauses that download.
+	Pending        int   `json:"pending"`
+	PendingBytes   int64 `json:"pendingBytes"`
+	DownloadPaused bool  `json:"downloadPaused"`
 }
+
+// MailStorageEstimate is what a day count would download (Rückfrage before
+// switching to "all" or a larger count).
+type MailStorageEstimate struct {
+	Messages int   `json:"messages"`
+	Bytes    int64 `json:"bytes"`
+}
+
+const keyHeadersOnlyPaused = "mail.headersOnlyDownloadPaused"
+
+// legacyBodyDays is the age limit before the day count existed (sync default).
+const legacyBodyDays = 30
+
+// downloadWindow is the date since which bodies are downloaded for a day
+// count (-1: as before, 0: all = zero time).
+func (a *App) downloadWindow(days int) time.Time {
+	switch {
+	case days == 0:
+		return time.Time{}
+	case days < 0:
+		return a.now().AddDate(0, 0, -legacyBodyDays)
+	}
+	return a.now().AddDate(0, 0, -days)
+}
+
+// maxSyncBody is the sync limit of a body (tsync default).
+const maxSyncBody = 50 << 20
+
+// EstimateMailStorage estimates how many mails (and bytes) a day count would
+// download that are not stored yet.
+func (a *App) EstimateMailStorage(ctx context.Context, days int) (MailStorageEstimate, error) {
+	if days < -1 || days > tsync.MaxHeadersOnlyDays {
+		return MailStorageEstimate{}, invalid("days must be -1 or between 0 and %d", tsync.MaxHeadersOnlyDays)
+	}
+	n, b, err := a.st.PendingBodies(ctx, a.downloadWindow(days), maxSyncBody)
+	return MailStorageEstimate{Messages: n, Bytes: b}, err
+}
+
+// EstimateMailStorage is the Wails binding.
+func (x *Api) EstimateMailStorage(days int) (MailStorageEstimate, error) {
+	return r1(x.app.EstimateMailStorage(x.ctx, days))
+}
+
+func (a *App) downloadPaused() bool { return a.hoPaused.Load() }
 
 // headersOnlyDays is the global day count (-1 = not set, 0 = all); the
 // sync engine reads it through Config.HeadersOnlyDays.
 func (a *App) headersOnlyDays() int { return int(a.hoDays.Load()) }
 
 func (a *App) loadHeadersOnlyDays(ctx context.Context) {
+	var paused bool
+	if ok, err := a.st.GetAppSetting(ctx, keyHeadersOnlyPaused, &paused); err == nil && ok {
+		a.hoPaused.Store(paused)
+	}
 	a.hoDays.Store(-1)
 	var n int
 	if ok, err := a.st.GetAppSetting(ctx, store.KeyHeadersOnlyDays, &n); err == nil && ok && n >= 0 && n <= tsync.MaxHeadersOnlyDays {
@@ -62,7 +115,13 @@ func (a *App) headersOnlyAvailable(kind domain.AccountKind) bool {
 
 // GetMailStorageSettings returns the storage settings of this device.
 func (a *App) GetMailStorageSettings(ctx context.Context) (MailStorageSettings, error) {
-	out := MailStorageSettings{HeadersOnlyOlderThanDays: a.headersOnlyDays(), Available: a.opts.Mode != ModeServer}
+	out := MailStorageSettings{HeadersOnlyOlderThanDays: a.headersOnlyDays(), Available: a.opts.Mode != ModeServer, DownloadPaused: a.downloadPaused()}
+	if out.Available && out.HeadersOnlyOlderThanDays >= 0 { // only downloads the setting causes
+		var err error
+		if out.Pending, out.PendingBytes, err = a.st.PendingBodies(ctx, a.downloadWindow(out.HeadersOnlyOlderThanDays), maxSyncBody); err != nil {
+			return out, err
+		}
+	}
 	accs, err := a.st.ListAccounts(ctx)
 	if err != nil {
 		return out, err
@@ -100,6 +159,12 @@ func (a *App) SetMailStorageSettings(ctx context.Context, in MailStorageSettings
 		return MailStorageSettings{}, err
 	}
 	a.hoDays.Store(int64(n))
+	if in.DownloadPaused != a.downloadPaused() {
+		if err := a.st.SetAppSetting(ctx, keyHeadersOnlyPaused, in.DownloadPaused); err != nil {
+			return MailStorageSettings{}, err
+		}
+		a.hoPaused.Store(in.DownloadPaused)
+	}
 	if a.mgr != nil {
 		a.mgr.HeadersOnlyChanged()
 	}

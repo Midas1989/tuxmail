@@ -74,10 +74,14 @@ func (s *Store) SetContentTime(ctx context.Context, id int64, at time.Time) erro
 	return err
 }
 
-// ReleaseCandidate is a message whose body may be released.
+// ReleaseCandidate is a message whose body may be released, with the server
+// location it can be loaded again from (in a folder synced without error).
 type ReleaseCandidate struct {
-	MessageID int64
-	BlobHash  string
+	MessageID      int64
+	BlobHash       string
+	FolderID       int64
+	FolderRemoteID string
+	RemoteRef      string
 }
 
 // Locations that can never be loaded again from the server: local folders
@@ -96,8 +100,14 @@ const notRefetchableLocation = `(substr(f.remote_id, 1, 6) = 'local/' OR COALESC
 // or import or with a pending operation, mails whose attachments are stored
 // separately and mails that are or were encrypted (PGP/S-MIME: decrypted
 // index entries, encrypted parts, an S/MIME status). The caller also checks
-// the body itself (MayReleaseBody).
-func (s *Store) ReleasableBodies(ctx context.Context, accountID int64, before, loadedBefore time.Time, limit int) ([]ReleaseCandidate, error) {
+// the body itself (size, encryption) and confirms on the server that the
+// message still exists. Only mails larger than maxSize (they could not be
+// loaded again) and only locations in okFolders (synced without error in
+// the current cycle) count.
+func (s *Store) ReleasableBodies(ctx context.Context, accountID int64, before, loadedBefore time.Time, maxSize int64, okFolders []int64, limit int) ([]ReleaseCandidate, error) {
+	if len(okFolders) == 0 {
+		return nil, nil
+	}
 	args := []any{accountID}
 	kinds := ""
 	for i, k := range HeadersOnlyKinds {
@@ -107,14 +117,21 @@ func (s *Store) ReleasableBodies(ctx context.Context, accountID int64, before, l
 		kinds += "?"
 		args = append(args, k)
 	}
-	args = append(args, before.Unix(), loadedBefore.Unix(), int64(FlagDraft), limit)
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.blob_hash FROM messages m
+	args = append(args, before.Unix(), loadedBefore.Unix(), int64(FlagDraft), maxSize, maxSize)
+	for _, f := range okFolders {
+		args = append(args, f)
+	}
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.blob_hash, f0.id, f0.remote_id, MIN(l0.remote_ref) FROM messages m
 		JOIN accounts a ON a.id = m.account_id
+		JOIN message_locations l0 ON l0.message_id = m.id
+		JOIN folders f0 ON f0.id = l0.folder_id
 		WHERE m.account_id = ? AND a.kind IN (`+kinds+`) AND m.state = 'live' AND m.blob_hash IS NOT NULL
 		  AND COALESCE(m.sent_at, m.received_at, 0) > 0 AND COALESCE(m.sent_at, m.received_at, 0) < ?
 		  AND m.keep_body = 0 AND (m.content_at IS NULL OR m.content_at <= ?)
 		  AND (m.flags & ?) = 0
-		  AND EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id)
+		  AND (? <= 0 OR m.size <= ?)
+		  AND f0.id IN (`+placeholders(len(okFolders))+`)
 		  AND NOT EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id
 		                  WHERE l.message_id = m.id AND `+notRefetchableLocation+`)
 		  AND NOT EXISTS (SELECT 1 FROM attachments t WHERE t.message_id = m.id AND (t.blob_hash IS NOT NULL
@@ -122,13 +139,14 @@ func (s *Store) ReleasableBodies(ctx context.Context, accountID int64, before, l
 		  AND NOT EXISTS (SELECT 1 FROM fts_docs d WHERE d.message_id = m.id AND d.encrypted = 1)
 		  AND NOT EXISTS (SELECT 1 FROM message_insights i WHERE i.message_id = m.id AND COALESCE(i.smime, '') NOT IN ('', 'null', '{}'))
 		  AND COALESCE(m.snippet, '') NOT LIKE '%BEGIN PGP%'
+		GROUP BY m.id
 		ORDER BY COALESCE(m.sent_at, m.received_at, 0), m.id LIMIT ?`, args...)
 	if err != nil {
 		return nil, err
 	}
 	return collect(rows, func(sc scanner) (ReleaseCandidate, error) {
 		var c ReleaseCandidate
-		return c, sc.Scan(&c.MessageID, &c.BlobHash)
+		return c, sc.Scan(&c.MessageID, &c.BlobHash, &c.FolderID, &c.FolderRemoteID, &c.RemoteRef)
 	})
 }
 
@@ -253,4 +271,26 @@ func (s *Store) ReleaseRemoteCachedBodies(ctx context.Context, release func(id i
 		}
 		return nil
 	})
+}
+
+// PendingBodies counts the mails of HeadersOnlyKinds accounts without a
+// stored body dated since notBefore (zero: all) that the sync would download
+// (at most maxSize, with a server location), and their size.
+func (s *Store) PendingBodies(ctx context.Context, notBefore time.Time, maxSize int64) (count int, bytes int64, err error) {
+	args := []any{}
+	kinds := ""
+	for i, k := range HeadersOnlyKinds {
+		if i > 0 {
+			kinds += ","
+		}
+		kinds += "?"
+		args = append(args, k)
+	}
+	args = append(args, unixOrZero(notBefore), maxSize, maxSize)
+	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(m.size), 0) FROM messages m JOIN accounts a ON a.id = m.account_id
+		WHERE a.kind IN (`+kinds+`) AND a.enabled = 1 AND m.state = 'live' AND m.blob_hash IS NULL
+		  AND COALESCE(m.sent_at, m.received_at, 0) >= ? AND (? <= 0 OR m.size <= ?)
+		  AND EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id
+		              WHERE l.message_id = m.id AND substr(l.remote_ref, 1, 1) <> '~' AND substr(f.remote_id, 1, 6) <> 'local/')`, args...).Scan(&count, &bytes)
+	return
 }

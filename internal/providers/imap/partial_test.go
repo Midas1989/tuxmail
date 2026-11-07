@@ -69,3 +69,42 @@ func TestFetchPartialAndSearchText(t *testing.T) {
 		})
 	}
 }
+
+// Before a body is released the server confirms the message: same
+// UIDVALIDITY, still there, not \Deleted.
+func TestConfirmExisting(t *testing.T) {
+	ts := newTestServer(t, capsFull)
+	p := ts.provider(t)
+	ctx := context.Background()
+	r1, err := p.Append(ctx, "INBOX", strings.NewReader("Subject: a\r\nMessage-ID: <a@x>\r\n\r\na\r\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := p.Append(ctx, "INBOX", strings.NewReader("Subject: b\r\nMessage-ID: <b@x>\r\n\r\nb\r\n"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, st, err := p.Sync(ctx, "INBOX", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := p.ConfirmExisting(ctx, "INBOX", st, []string{r1.ID, r2.ID, "999"})
+	if err != nil || !got[r1.ID] || !got[r2.ID] || got["999"] {
+		t.Fatalf("confirm = %v %v", got, err)
+	}
+	if err := p.Delete(ctx, []domain.RemoteRef{r2}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := p.ConfirmExisting(ctx, "INBOX", st, []string{r1.ID, r2.ID}); !got[r1.ID] || got[r2.ID] {
+		t.Errorf("after delete = %v", got)
+	}
+	// Another UIDVALIDITY (or no state): nothing is confirmed.
+	fs, _ := decodeState(st)
+	fs.UIDValidity++
+	if got, _ := p.ConfirmExisting(ctx, "INBOX", fs.encode(), []string{r1.ID}); len(got) != 0 {
+		t.Errorf("other UIDVALIDITY = %v", got)
+	}
+	if got, _ := p.ConfirmExisting(ctx, "INBOX", "", []string{r1.ID}); len(got) != 0 {
+		t.Errorf("no state = %v", got)
+	}
+}

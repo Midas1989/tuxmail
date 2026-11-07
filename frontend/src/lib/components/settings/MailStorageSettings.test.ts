@@ -14,6 +14,7 @@ import de from '$locales/de.json';
 const m = vi.hoisted(() => ({
   state: { headersOnlyOlderThanDays: -1, available: true, headersOnly: 3, complete: 40 } as Settings,
   set: vi.fn(),
+  estimate: { messages: 0, bytes: 0 },
   serverMode: false,
 }));
 
@@ -22,11 +23,12 @@ vi.mock('../../state', () => ({
     api: {
       kind: 'wails',
       getMailStorageSettings: async () => ({ ...m.state }),
-      setMailStorageSettings: async (s: { headersOnlyOlderThanDays: number }) => {
+      setMailStorageSettings: async (s: { headersOnlyOlderThanDays: number; downloadPaused?: boolean }) => {
         m.set(s);
-        m.state = { ...m.state, headersOnlyOlderThanDays: s.headersOnlyOlderThanDays };
+        m.state = { ...m.state, headersOnlyOlderThanDays: s.headersOnlyOlderThanDays, downloadPaused: !!s.downloadPaused };
         return { ...m.state };
       },
+      estimateMailStorage: async () => ({ ...m.estimate }),
     },
   },
   connection: {
@@ -41,6 +43,7 @@ import MailStorageSettings from './MailStorageSettings.svelte';
 beforeEach(() => {
   vi.clearAllMocks();
   m.state = { headersOnlyOlderThanDays: -1, available: true, headersOnly: 3, complete: 40 };
+  m.estimate = { messages: 0, bytes: 0 };
   m.serverMode = false;
 });
 afterEach(cleanup);
@@ -74,17 +77,17 @@ describe('MailStorageSettings', () => {
     flushSync();
     expect(root.textContent).toContain(en.settings.storage.on.replace('{days}', '45'));
     button(root, en.common.action.save).click();
-    await until(() => expect(m.set).toHaveBeenCalledWith({ headersOnlyOlderThanDays: 45 }));
+    await until(() => expect(m.set).toHaveBeenCalledWith({ headersOnlyOlderThanDays: 45, downloadPaused: false }));
     await until(() => expect(root.textContent).toContain(en.settings.storage.saved));
     radio(root, 'all').click();
     flushSync();
     expect(root.textContent).toContain(en.settings.storage.all);
     button(root, en.common.action.save).click();
-    await until(() => expect(m.set).toHaveBeenLastCalledWith({ headersOnlyOlderThanDays: 0 }));
+    await until(() => expect(m.set).toHaveBeenLastCalledWith({ headersOnlyOlderThanDays: 0, downloadPaused: false }));
     radio(root, 'default').click();
     flushSync();
     button(root, en.common.action.save).click();
-    await until(() => expect(m.set).toHaveBeenLastCalledWith({ headersOnlyOlderThanDays: -1 }));
+    await until(() => expect(m.set).toHaveBeenLastCalledWith({ headersOnlyOlderThanDays: -1, downloadPaused: false }));
   });
 
   it('refuses an invalid day count', async () => {
@@ -98,6 +101,31 @@ describe('MailStorageSettings', () => {
     flushSync();
     expect(button(root, en.common.action.save).disabled).toBe(true);
     expect(days.getAttribute('aria-invalid')).toBe('true');
+  });
+
+  it('asks with an estimate before downloading more, and shows a pausable progress', async () => {
+    m.estimate = { messages: 1234, bytes: 500 * 1024 * 1024 };
+    const root = render(MailStorageSettings, {});
+    await until(() => expect(radio(root, 'all')).toBeTruthy());
+    radio(root, 'all').click();
+    flushSync();
+    button(root, en.common.action.save).click();
+    await until(() => expect(q(root, '[data-testid="storage-confirm"]')).toBeTruthy());
+    expect(m.set).not.toHaveBeenCalled();
+    expect(root.textContent).toMatch(/1,234|1.234/);
+    button(root, en.settings.storage.confirmNo).click();
+    flushSync();
+    expect(q(root, '[data-testid="storage-confirm"]')).toBeNull();
+    expect(m.set).not.toHaveBeenCalled();
+    button(root, en.common.action.save).click();
+    await until(() => expect(q(root, '[data-testid="storage-confirm"]')).toBeTruthy());
+    m.state = { ...m.state, pending: 1234, pendingBytes: 500 * 1024 * 1024 };
+    button(root, en.settings.storage.confirmYes).click();
+    await until(() => expect(m.set).toHaveBeenCalledWith({ headersOnlyOlderThanDays: 0, downloadPaused: false }));
+    await until(() => expect(q(root, '[data-testid="storage-progress"]')).toBeTruthy());
+    button(root, en.settings.storage.pause).click();
+    await until(() => expect(m.set).toHaveBeenLastCalledWith({ headersOnlyOlderThanDays: 0, downloadPaused: true }));
+    await until(() => expect(button(root, en.settings.storage.resume)).toBeTruthy());
   });
 
   it('mentions the read cache in the mode "Über den Server"', async () => {

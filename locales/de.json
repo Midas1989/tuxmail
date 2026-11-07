@@ -1761,7 +1761,14 @@
         "all": "Alle Mails vollständig speichern",
         "days": "Nur Kopf und Vorschau für Mails, die älter sind als"
       },
-      "all": "Alle Mails werden vollständig gespeichert; ältere Inhalte lädt TuxMail im Hintergrund nach."
+      "all": "Alle Mails werden vollständig gespeichert; ältere Inhalte lädt TuxMail im Hintergrund nach.",
+      "confirm": "Damit lädt TuxMail etwa {count} Mails ({size}) nach – gedrosselt im Hintergrund, mit Pausen zwischen den Abschnitten. Fortfahren?",
+      "confirmYes": "Nachladen",
+      "confirmNo": "Abbrechen",
+      "progress": "Noch etwa {count} Mails ({size}) werden nachgeladen.",
+      "progressPaused": "Nachladen angehalten – noch etwa {count} Mails ({size}).",
+      "pause": "Anhalten",
+      "resume": "Fortsetzen"
     }
   },
   "search": {

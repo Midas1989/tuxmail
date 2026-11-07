@@ -75,7 +75,10 @@ func sourceName(s autoconfig.Source) string {
 	}
 }
 
-func discoverRanked(ctx context.Context, d *autoconfig.Discoverer, email, password string) DiscoveryResult {
+func discoverRanked(ctx context.Context, d *autoconfig.Discoverer, email, password string, log *slog.Logger) DiscoveryResult {
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
 	res := DiscoveryResult{Source: "none", Kind: string(domain.KindIMAP), Candidates: []DiscoveryCandidate{}}
 	_, dom, err := autoconfig.SplitAddress(email)
 	if err != nil {
@@ -94,8 +97,6 @@ func discoverRanked(ctx context.Context, d *autoconfig.Discoverer, email, passwo
 		}
 		dc := DiscoveryCandidate{Source: sourceName(r.Source), Kind: string(r.Kind), EASURL: r.EASURL, Verified: r.Verified,
 			Insecure: r.Insecure, Score: r.Score, In: discoveryCheck(r.In), Out: discoveryCheck(r.Out)}
-		slog.Debug("app: discovery candidate", "domain", dom, "source", dc.Source, "kind", dc.Kind, "incoming", serverAddr(dc.Incoming),
-			"outgoing", serverAddr(dc.Outgoing), "in", checkSummary(dc.In), "out", checkSummary(dc.Out), "score", dc.Score)
 		if r.Kind != domain.KindEAS {
 			in := r.Incoming
 			dc.Incoming = &in
@@ -104,6 +105,9 @@ func discoverRanked(ctx context.Context, d *autoconfig.Discoverer, email, passwo
 				dc.Outgoing = &out
 			}
 		}
+		// Diagnosis at debug level only, filtered like the wizard (no foreign domains).
+		log.Debug("app: discovery candidate", "domain", dom, "source", dc.Source, "kind", dc.Kind, "incoming", serverAddr(dc.Incoming),
+			"outgoing", serverAddr(dc.Outgoing), "in", checkSummary(dc.In), "out", checkSummary(dc.Out), "score", dc.Score)
 		res.Candidates = append(res.Candidates, dc)
 	}
 	best := ranked[0]

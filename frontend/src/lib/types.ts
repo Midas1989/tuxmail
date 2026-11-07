@@ -2608,4 +2608,14 @@ export interface MailStorageSettings {
   /** Mails of this device's own accounts with header only / with content. */
   headersOnly: number;
   complete: number;
+  /** Still to download under the current setting (estimate) and whether that download is paused. */
+  pending?: number;
+  pendingBytes?: number;
+  downloadPaused?: boolean;
+}
+
+/** What a day count would download (asked before switching to "all" or a larger count). */
+export interface MailStorageEstimate {
+  messages: number;
+  bytes: number;
 }

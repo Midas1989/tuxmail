@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -82,11 +83,11 @@ func (a *App) ListPersons(ctx context.Context) ([]Person, error) {
 const EnvISPDBURL = "TUXMAIL_ISPDB_URL"
 
 // autoconfigDiscoverer is the default Discoverer (internal/autoconfig).
-type autoconfigDiscoverer struct{}
+type autoconfigDiscoverer struct{ log *slog.Logger }
 
-func (autoconfigDiscoverer) Discover(ctx context.Context, email, password string) (DiscoveryResult, error) {
+func (a autoconfigDiscoverer) Discover(ctx context.Context, email, password string) (DiscoveryResult, error) {
 	d := newDiscoverer(password)
-	res := discoverRanked(ctx, d, email, password)
+	res := discoverRanked(ctx, d, email, password, a.log)
 	if res.Source == "none" {
 		if j := discoverJMAP(ctx, d, email, password); j != nil { // mailproto.go
 			return *j, nil

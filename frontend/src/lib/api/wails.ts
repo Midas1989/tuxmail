@@ -940,8 +940,11 @@ export class WailsTransport implements Api {
   getMailStorageSettings(): Promise<MailStorageSettings> {
     return this.call('GetMailStorageSettings');
   }
-  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'>): Promise<MailStorageSettings> {
-    return this.call('SetMailStorageSettings', { headersOnlyOlderThanDays: settings.headersOnlyOlderThanDays, available: true, headersOnly: 0, complete: 0 });
+  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'> & { downloadPaused?: boolean }): Promise<MailStorageSettings> {
+    return this.call('SetMailStorageSettings', { headersOnlyOlderThanDays: settings.headersOnlyOlderThanDays, downloadPaused: !!settings.downloadPaused, available: true, headersOnly: 0, complete: 0 });
+  }
+  estimateMailStorage(days: number): Promise<MailStorageEstimate> {
+    return this.call('EstimateMailStorage', days);
   }
 }
 
@@ -951,6 +954,6 @@ import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, Me
 import type * as IO from '../types';
 
 // --- Account edit ---
-import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity, MailStorageSettings } from '../types';
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity, MailStorageEstimate, MailStorageSettings } from '../types';
 // --- Diagnostics ---
 import type { AccountSyncStatus, DiagnosticsInfo } from '../types';

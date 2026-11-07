@@ -111,6 +111,13 @@ type Config struct {
 	// app; nil switches the day count off, including the accounts' own (the
 	// server behaves as before).
 	HeadersOnlyDays func() int
+	// DownloadPaused reports whether the user paused the downloads caused by
+	// the day count (optional).
+	DownloadPaused func() bool
+	// BackfillPause is the pause between two download batches caused by the
+	// day count, so that switching to "all" or a larger count never floods
+	// the connection (default 20 s).
+	BackfillPause time.Duration
 	// ReleaseBatch is the number of bodies released per worker cycle (default 200).
 	ReleaseBatch int
 	// ReleaseGrace is how long a body loaded on opening is kept before it may
@@ -182,6 +189,7 @@ func (c *Config) defaults() error {
 		c.Bodies = BodiesRecent
 	}
 	setInt(&c.ReleaseBatch, 200)
+	setDur(&c.BackfillPause, 20*time.Second)
 	setDur(&c.ReleaseGrace, 24*time.Hour)
 	setInt(&c.RecentBodyDays, 30)
 	if c.MaxBodySize <= 0 {

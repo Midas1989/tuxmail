@@ -2,8 +2,8 @@
 <!-- Settings › Mail › Speicher & offline: keep older mails with header and preview only (mail.headersOnlyOlderThanDays, this device only). -->
 <script lang="ts">
   import { app, connection } from '../../state';
-  import { formatNumber, t } from '../../i18n/index.svelte';
-  import type { MailStorageSettings } from '../../types';
+  import { formatNumber, formatSize, t } from '../../i18n/index.svelte';
+  import type { MailStorageEstimate, MailStorageSettings } from '../../types';
 
   const MAX_DAYS = 36500;
   type Mode = 'default' | 'all' | 'days';
@@ -15,6 +15,8 @@
   let saving = $state(false);
   let message = $state<string | null>(null);
   let error = $state<string | null>(null);
+  /** Rückfrage: what the new value would download. */
+  let confirm = $state<MailStorageEstimate | null>(null);
 
   function modeOf(n: number): Mode {
     return n < 0 ? 'default' : n === 0 ? 'all' : 'days';
@@ -36,7 +38,10 @@
   const wanted = $derived(mode === 'default' ? -1 : mode === 'all' ? 0 : days);
   const dirty = $derived(!!current && wanted !== current.headersOnlyOlderThanDays);
 
-  async function save() {
+  /** Mails of the last days stored completely under a value (-1: as before = 30, 0: all). */
+  const windowDays = (n: number) => (n === 0 ? Infinity : n < 0 ? 30 : n);
+
+  async function save(confirmed = false) {
     if (mode === 'days' && !daysValid) {
       error = t('settings.storage.invalid');
       return;
@@ -45,7 +50,16 @@
     error = null;
     message = null;
     try {
-      current = await app.api.setMailStorageSettings({ headersOnlyOlderThanDays: wanted });
+      // "All" or a larger count downloads more: ask first, with an estimate.
+      if (!confirmed && current && windowDays(wanted) > windowDays(current.headersOnlyOlderThanDays)) {
+        const est = await app.api.estimateMailStorage(wanted);
+        if (est.messages > 0) {
+          confirm = est;
+          return;
+        }
+      }
+      confirm = null;
+      current = await app.api.setMailStorageSettings({ headersOnlyOlderThanDays: wanted, downloadPaused: current?.downloadPaused ?? false });
       message = t('settings.storage.saved');
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -53,6 +67,27 @@
       saving = false;
     }
   }
+
+  async function togglePause() {
+    if (!current) return;
+    try {
+      current = await app.api.setMailStorageSettings({ headersOnlyOlderThanDays: current.headersOnlyOlderThanDays, downloadPaused: !current.downloadPaused });
+    } catch (err) {
+      error = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  // Progress of a running download: refreshed every few seconds.
+  $effect(() => {
+    if (!current?.pending || current.downloadPaused) return;
+    const timer = setInterval(() => {
+      void app.api.getMailStorageSettings().then(
+        (s) => (current = s),
+        () => undefined,
+      );
+    }, 5000);
+    return () => clearInterval(timer);
+  });
 </script>
 
 <section class="card" id="set-storage" aria-labelledby="set-storage-h">
@@ -98,8 +133,25 @@
         </p>
         <button class="btn btn-primary" type="submit" disabled={!dirty || saving || (mode === 'days' && !daysValid)}>{t('common.action.save')}</button>
       </div>
+      {#if confirm}
+        <div class="confirm" role="alertdialog" aria-labelledby="set-storage-confirm" data-testid="storage-confirm">
+          <p id="set-storage-confirm">{t('settings.storage.confirm', { count: formatNumber(confirm.messages), size: formatSize(confirm.bytes) })}</p>
+          <div class="confirm-actions">
+            <button class="btn" type="button" onclick={() => (confirm = null)}>{t('settings.storage.confirmNo')}</button>
+            <button class="btn btn-primary" type="button" disabled={saving} onclick={() => void save(true)}>{t('settings.storage.confirmYes')}</button>
+          </div>
+        </div>
+      {/if}
       {#if error}<p class="error" role="alert">{error}</p>{/if}
     </form>
+    {#if current.pending}
+      <div class="progress" role="status" data-testid="storage-progress">
+        <span>
+          {t(current.downloadPaused ? 'settings.storage.progressPaused' : 'settings.storage.progress', { count: formatNumber(current.pending), size: formatSize(current.pendingBytes ?? 0) })}
+        </span>
+        <button class="btn" type="button" onclick={togglePause}>{current.downloadPaused ? t('settings.storage.resume') : t('settings.storage.pause')}</button>
+      </div>
+    {/if}
     <ul class="help">
       <li>{t('settings.storage.release')}</li>
       <li>{t('settings.storage.exceptions')}</li>
@@ -180,6 +232,31 @@
   .ok {
     margin-left: 8px;
     color: var(--tm-success, #15803d);
+  }
+  .confirm,
+  .progress {
+    margin: 10px 0 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: color-mix(in srgb, var(--tm-warn, #f59e0b) 12%, var(--tm-surface));
+    font-size: 13px;
+  }
+  .confirm p {
+    margin: 0 0 8px;
+  }
+  .confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: color-mix(in srgb, var(--tm-accent) 8%, var(--tm-surface));
+  }
+  .progress span {
+    flex: 1;
   }
   .help {
     margin: 12px 0 0;

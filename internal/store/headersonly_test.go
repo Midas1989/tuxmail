@@ -70,7 +70,8 @@ func TestReleasableBodiesExceptions(t *testing.T) {
 	_, err = s.db.ExecContext(ctx, `UPDATE messages SET snippet = '-----BEGIN PGP MESSAGE----- hQEM' WHERE id = ?`, inline)
 	noErr(t, err)
 
-	got := must[[]ReleaseCandidate](t)(s.ReleasableBodies(ctx, imapAcc, now.AddDate(0, 0, -30), now.Add(-time.Hour), 100))
+	all := []int64{inbox, drafts, localArch, popInbox, localInbox}
+	got := must[[]ReleaseCandidate](t)(s.ReleasableBodies(ctx, imapAcc, now.AddDate(0, 0, -30), now.Add(-time.Hour), 1000, all, 100))
 	var ids []int64
 	for _, c := range got {
 		ids = append(ids, c.MessageID)
@@ -80,11 +81,26 @@ func TestReleasableBodiesExceptions(t *testing.T) {
 			ids, ok, recent, draft, draftFlag, inLocal, imported, pending, pgpAtt, decrypted, smime, kept, justLoaded, inline)
 	}
 	for _, acc := range []int64{popAcc, localAcc} {
-		if got := must[[]ReleaseCandidate](t)(s.ReleasableBodies(ctx, acc, now, now, 100)); len(got) != 0 {
+		if got := must[[]ReleaseCandidate](t)(s.ReleasableBodies(ctx, acc, now, now, 0, all, 100)); len(got) != 0 {
 			t.Errorf("account %d (POP3/local): %v", acc, got)
 		}
 	}
 	_, _ = pop, local
+	if c := got[0]; c.FolderID != inbox || c.RemoteRef != "1" || c.FolderRemoteID != "INBOX" {
+		t.Errorf("location = %+v", c)
+	}
+	// Only folders synced without error in this cycle count.
+	if got := must[[]ReleaseCandidate](t)(s.ReleasableBodies(ctx, imapAcc, now.AddDate(0, 0, -30), now.Add(-time.Hour), 1000, []int64{drafts}, 100)); len(got) != 0 {
+		t.Errorf("folder not synced: %v", got)
+	}
+	// Larger than the sync limit: could not be loaded again, never released.
+	_, err = s.db.ExecContext(ctx, `UPDATE messages SET size = 5000 WHERE id = ?`, ok)
+	noErr(t, err)
+	if got := must[[]ReleaseCandidate](t)(s.ReleasableBodies(ctx, imapAcc, now.AddDate(0, 0, -30), now.Add(-time.Hour), 1000, all, 100)); len(got) != 0 {
+		t.Errorf("oversize mail releasable: %v", got)
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE messages SET size = 0 WHERE id = ?`, ok)
+	noErr(t, err)
 
 	// Releasing keeps header, preview and attachment names.
 	noErr(t, s.SetMessageAttachments(ctx, ok, []MessageAttachment{{Filename: "plan.pdf", MIMEType: "application/pdf", Size: 10}}))
@@ -168,7 +184,7 @@ func TestMigration0070ForwardAndBack(t *testing.T) {
 	if m.Snippet != "Vorschau" || m.BlobHash == "" {
 		t.Errorf("message after migrating: %+v", m)
 	}
-	if got := must[[]ReleaseCandidate](t)(s.ReleasableBodies(ctx, acc, time.Now().Add(time.Hour), time.Now(), 10)); len(got) != 1 {
+	if got := must[[]ReleaseCandidate](t)(s.ReleasableBodies(ctx, acc, time.Now().Add(time.Hour), time.Now(), 0, []int64{f}, 10)); len(got) != 1 {
 		t.Errorf("after forward: %v (content_at reset to NULL)", got)
 	}
 }

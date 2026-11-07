@@ -678,11 +678,27 @@ func (m *Manager) mailEvent(ctx context.Context, typ events.Type, msg store.Mess
 func (w *Worker) backfillBodies(ctx context.Context) (bool, error) {
 	cfg := &w.m.cfg
 	var notBefore time.Time
-	switch rule := w.contentRule(); rule.policy {
+	rule := w.contentRule()
+	switch rule.policy {
 	case BodiesOnDemand:
 		return false, nil
 	case BodiesRecent:
 		notBefore = rule.cutoff(w.m.now())
+	}
+	if rule.setting {
+		// Downloads caused by the day count: pausable and throttled.
+		if cfg.DownloadPaused != nil && cfg.DownloadPaused() {
+			return false, nil
+		}
+		w.mu.Lock()
+		wait := w.bodyResumeAt.After(w.m.now())
+		if !wait {
+			w.bodyResumeAt = time.Time{}
+		}
+		w.mu.Unlock()
+		if wait {
+			return false, nil
+		}
 	}
 	tasks, err := w.m.st.MessagesWithoutBody(ctx, w.acc.ID, notBefore, cfg.MaxBodySize, placeholderPrefix, cfg.BackfillBatch+len(w.failedBodies()))
 	if err != nil {
@@ -694,7 +710,7 @@ func (w *Worker) backfillBodies(ctx context.Context) (bool, error) {
 			continue
 		}
 		if done >= cfg.BackfillBatch {
-			return true, nil
+			break
 		}
 		raw, err := w.fetchRaw(ctx, domain.RemoteRef{FolderRemoteID: t.FolderRemoteID, ID: t.RemoteRef})
 		if err != nil {
@@ -716,7 +732,15 @@ func (w *Worker) backfillBodies(ctx context.Context) (bool, error) {
 		}
 		done++
 	}
-	return done >= cfg.BackfillBatch, nil
+	more := done >= cfg.BackfillBatch
+	if more && rule.setting {
+		// Pause before the next batch (nextDue wakes the worker then).
+		w.mu.Lock()
+		w.bodyResumeAt = w.m.now().Add(cfg.BackfillPause)
+		w.mu.Unlock()
+		return false, nil
+	}
+	return more, nil
 }
 
 func (w *Worker) failedBodies() map[int64]bool {

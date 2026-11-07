@@ -292,7 +292,12 @@ func TestHeadersOnlyNeverForPOP3(t *testing.T) {
 	if got, _ := st.GetMessage(ctx, msg.ID); got.BlobHash == "" {
 		t.Fatal("POP3 body released")
 	}
-	if c, _ := st.ReleasableBodies(ctx, accID, time.Now(), time.Now(), 10); len(c) != 0 {
+	folders, _ := st.ListFolders(ctx, accID)
+	var fids []int64
+	for _, f := range folders {
+		fids = append(fids, f.ID)
+	}
+	if c, _ := st.ReleasableBodies(ctx, accID, time.Now(), time.Now(), 0, fids, 10); len(c) != 0 {
 		t.Fatalf("POP3 candidates: %v", c)
 	}
 }
@@ -371,5 +376,135 @@ func TestHeadersOnlyNoExtraDownloadsWithoutSetting(t *testing.T) {
 	}
 	if got := e.mgr.ServerSearch(ctx, nil, "alter", 10); len(got) != 0 {
 		t.Errorf("server search without the setting: %v", got)
+	}
+}
+
+// A body larger than the sync limit (e.g. a sent copy stored by Append)
+// could not be loaded again: it is never released.
+func TestHeadersOnlyKeepsOversizeBodies(t *testing.T) {
+	srv := newTestServer(t, "Archive")
+	var days atomic.Int64
+	days.Store(-1)
+	e := newEnv(t, srv, func(c *Config) {
+		reg := NewRegistry()
+		reg.Register(domain.KindIMAP, IMAPFactory)
+		c.Providers = reg
+		c.HeadersOnlyDays = func() int { return int(days.Load()) }
+		c.ReleaseGrace = time.Nanosecond
+		c.MaxBodySize = 8 << 10
+	})
+	e.eventually("idle", e.idle)
+	arch := e.folder("Archive")
+	old := time.Now().AddDate(0, 0, -100)
+	big := mail("big@x", "Alice <alice@example.org>", "Bob <bob@example.org>", "Big", old, "", strings.Repeat("bigword ", 4000))
+	small := mail("small@x", "Alice <alice@example.org>", "Bob <bob@example.org>", "Small", old, "", "small body")
+	for _, raw := range []string{big, small} {
+		if _, err := e.mgr.Actions().Append(e.ctx, arch.ID, []byte(raw), nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	e.eventually("on server", func() bool { return e.inFolder("big@x", "Archive") && e.inFolder("small@x", "Archive") })
+	e.eventually("idle", e.idle)
+	if e.msg("big@x").BlobHash == "" {
+		t.Fatal("no body")
+	}
+	days.Store(30)
+	e.mgr.HeadersOnlyChanged()
+	e.eventually("small body released", func() bool { return e.msg("small@x").BlobHash == "" })
+	e.eventually("idle", e.idle)
+	if e.msg("big@x").BlobHash == "" {
+		t.Fatal("oversize body released")
+	}
+}
+
+// A mail deleted on the server (another client) is never released before
+// the sync noticed it: the folder is synced in the same cycle and the server
+// confirms each mail right before its body is removed.
+func TestHeadersOnlyNeverReleasesMailsGoneOnServer(t *testing.T) {
+	srv := newTestServer(t, "Archive")
+	ctx := context.Background()
+	ext := srv.ext(t)
+	old := time.Now().AddDate(0, 0, -100)
+	appendMail(t, ctx, ext, "Archive", mail("gone@x", "Carol <carol@example.org>", "Alice <alice@example.org>", "Gone", old, "", "gonebody"))
+	appendMail(t, ctx, ext, "Archive", mail("stay@x", "Carol <carol@example.org>", "Alice <alice@example.org>", "Stay", old, "", "staybody"))
+	var days atomic.Int64
+	days.Store(0)
+	e := newEnv(t, srv, func(c *Config) {
+		reg := NewRegistry()
+		reg.Register(domain.KindIMAP, IMAPFactory)
+		c.Providers = reg
+		c.HeadersOnlyDays = func() int { return int(days.Load()) }
+		c.ReleaseGrace = time.Nanosecond
+		c.PollInterval = time.Hour
+	})
+	e.eventually("bodies", func() bool {
+		return e.has("gone@x") && e.has("stay@x") && e.msg("gone@x").BlobHash != "" && e.msg("stay@x").BlobHash != ""
+	})
+	e.eventually("idle", e.idle)
+	ref, _, ok := serverMessage(ctx, ext, "Archive", "gone@x")
+	if !ok {
+		t.Fatal("not on server")
+	}
+	if err := ext.Delete(ctx, []domain.RemoteRef{ref}); err != nil {
+		t.Fatal(err)
+	}
+	days.Store(30)
+	e.mgr.HeadersOnlyChanged()
+	e.eventually("existing mail released", func() bool { return e.msg("stay@x").BlobHash == "" })
+	if m := e.msg("gone@x"); m.State == store.StateLive && m.BlobHash == "" {
+		t.Fatal("released although gone on the server")
+	}
+}
+
+// Switching to "all completely" (or a larger count) downloads throttled:
+// a pause between batches, and not at all while the user paused it.
+func TestHeadersOnlyDownloadThrottledAndPausable(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := context.Background()
+	ext := srv.ext(t)
+	old := time.Now().AddDate(0, 0, -200)
+	ids := []string{"t1@x", "t2@x", "t3@x", "t4@x", "t5@x"}
+	for _, id := range ids {
+		appendMail(t, ctx, ext, "INBOX", mail(id, "Carol <carol@example.org>", "Alice <alice@example.org>", "Alt", old, "", "alter Inhalt"))
+	}
+	var days atomic.Int64
+	days.Store(-1)
+	var paused atomic.Bool
+	const pause = 400 * time.Millisecond
+	e := newEnv(t, srv, func(c *Config) {
+		c.HeadersOnlyDays = func() int { return int(days.Load()) }
+		c.DownloadPaused = paused.Load
+		c.BackfillPause = pause
+		c.BackfillBatch = 2
+	})
+	e.eventually("synced", func() bool { return e.has("t5@x") })
+	e.eventually("idle", e.idle)
+	stored := func() int {
+		n := 0
+		for _, id := range ids {
+			if e.msg(id).BlobHash != "" {
+				n++
+			}
+		}
+		return n
+	}
+	if n := stored(); n != 0 {
+		t.Fatalf("%d bodies before the setting", n)
+	}
+	paused.Store(true)
+	days.Store(0)
+	e.mgr.HeadersOnlyChanged()
+	e.eventually("idle", e.idle)
+	time.Sleep(200 * time.Millisecond)
+	if n := stored(); n != 0 {
+		t.Fatalf("%d bodies downloaded while paused", n)
+	}
+	start := time.Now()
+	paused.Store(false)
+	e.mgr.HeadersOnlyChanged()
+	e.eventually("all bodies", func() bool { return stored() == len(ids) })
+	// 5 mails in batches of 2: at least two pauses in between.
+	if d := time.Since(start); d < 2*pause {
+		t.Errorf("downloaded in %v, want at least %v (throttled)", d, 2*pause)
 	}
 }

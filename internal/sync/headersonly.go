@@ -55,7 +55,24 @@ func cleanPreview(s string) string {
 
 // HeadersOnlyChanged tells the workers that the global day count of this
 // device changed: they download or release bodies accordingly.
-func (m *Manager) HeadersOnlyChanged() { m.pokeAll() }
+func (m *Manager) HeadersOnlyChanged() {
+	m.pokeAll()
+	m.syncAllNow()
+}
+
+// syncAllNow asks every worker for a full sync (the release of bodies only
+// considers folders synced without error in the same cycle).
+func (m *Manager) syncAllNow() {
+	m.mu.Lock()
+	ws := make([]*Worker, 0, len(m.workers))
+	for _, w := range m.workers {
+		ws = append(ws, w)
+	}
+	m.mu.Unlock()
+	for _, w := range ws {
+		w.requestSync()
+	}
+}
 
 // pokeAll wakes every worker.
 func (m *Manager) pokeAll() {
@@ -165,32 +182,76 @@ func (m *Manager) refreshConvs(ctx context.Context, set map[int64]bool) {
 }
 
 // releaseBodies releases a batch of bodies of mails older than the day
-// count. It reports whether more remain.
-func (w *Worker) releaseBodies(ctx context.Context) (bool, error) {
+// count. Only mails located in folders synced without error in this cycle
+// count, and only after the server confirmed that they still exist there
+// (domain.ExistenceChecker, same UIDVALIDITY); providers that cannot confirm
+// never release. It reports whether more remain.
+func (w *Worker) releaseBodies(ctx context.Context, syncedOK []int64) (bool, error) {
 	rule := w.contentRule()
-	if !rule.release {
+	if !rule.release || len(syncedOK) == 0 {
 		return false, nil
 	}
 	cfg := &w.m.cfg
 	now := w.m.now()
-	cands, err := w.m.st.ReleasableBodies(ctx, w.acc.ID, rule.cutoff(now), now.Add(-cfg.ReleaseGrace), cfg.ReleaseBatch)
+	cands, err := w.m.st.ReleasableBodies(ctx, w.acc.ID, rule.cutoff(now), now.Add(-cfg.ReleaseGrace), cfg.MaxBodySize, syncedOK, cfg.ReleaseBatch)
 	if err != nil || len(cands) == 0 {
 		return false, err
 	}
-	released := 0
+	var ec domain.ExistenceChecker
+	if err := w.withProvider(ctx, func(p domain.MailProvider) error {
+		ec, _ = p.(domain.ExistenceChecker)
+		return nil
+	}); err != nil || ec == nil {
+		return false, err
+	}
+	byFolder := map[int64][]store.ReleaseCandidate{}
+	var order []int64
 	for _, c := range cands {
-		if err := ctx.Err(); err != nil {
-			return false, err
-		}
 		if w.isProtectedMsg(c.MessageID) {
 			continue // an operation on its way to the server: later
 		}
-		ok, err := w.m.releaseBody(ctx, c)
-		if err != nil {
+		if _, ok := byFolder[c.FolderID]; !ok {
+			order = append(order, c.FolderID)
+		}
+		byFolder[c.FolderID] = append(byFolder[c.FolderID], c)
+	}
+	released := 0
+	for _, fid := range order {
+		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		if ok {
-			released++
+		batch := byFolder[fid]
+		state, err := w.m.st.FolderSyncState(ctx, fid)
+		if err != nil || strings.HasPrefix(string(state), partialPrefix) || state == "" {
+			continue // initial sync not complete: nothing is confirmed
+		}
+		ids := make([]string, len(batch))
+		for i, c := range batch {
+			ids[i] = c.RemoteRef
+		}
+		var exists map[string]bool
+		if err := w.withProvider(ctx, func(p domain.MailProvider) error {
+			var err error
+			exists, err = ec.ConfirmExisting(ctx, batch[0].FolderRemoteID, state, ids)
+			return err
+		}); err != nil {
+			if ctx.Err() != nil || IsNetworkError(err) {
+				return false, err
+			}
+			w.log.Info("sync: confirming messages before releasing failed", "folder", batch[0].FolderRemoteID, "err", err)
+			continue
+		}
+		for _, c := range batch {
+			if !exists[c.RemoteRef] {
+				continue // gone or moved on the server: the sync handles it, the body stays
+			}
+			ok, err := w.m.releaseBody(ctx, c)
+			if err != nil {
+				return false, err
+			}
+			if ok {
+				released++
+			}
 		}
 	}
 	if released > 0 {
@@ -205,12 +266,13 @@ func (w *Worker) releaseBodies(ctx context.Context) (bool, error) {
 func (m *Manager) releaseBody(ctx context.Context, c store.ReleaseCandidate) (bool, error) {
 	m.blobMu.Lock()
 	defer m.blobMu.Unlock()
-	enc, err := m.blobEncrypted(c.BlobHash)
+	enc, size, err := m.blobEncrypted(c.BlobHash)
 	if err != nil {
 		m.log.Info("sync: checking a body before releasing it failed", "message", c.MessageID, "err", err)
 		return false, m.st.KeepBody(ctx, c.MessageID)
 	}
-	if enc {
+	if enc || size > m.cfg.MaxBodySize {
+		// Encrypted, or too large to be loaded again (sync limit): kept for good.
 		return false, m.st.KeepBody(ctx, c.MessageID)
 	}
 	ok, err := m.st.ReleaseBody(ctx, c.MessageID, c.BlobHash)
@@ -247,13 +309,29 @@ var encryptedMarkers = [][]byte{
 }
 
 // blobEncrypted scans a stored body for encrypted parts.
-func (m *Manager) blobEncrypted(hash string) (bool, error) {
+func (m *Manager) blobEncrypted(hash string) (bool, int64, error) {
 	rc, err := m.cfg.Blobs.Open(hash)
 	if err != nil {
-		return false, err
+		return false, 0, err
 	}
 	defer rc.Close()
-	return looksEncrypted(rc)
+	cr := &countingReader{r: rc}
+	enc, err := looksEncrypted(cr)
+	if err != nil || enc {
+		return enc, cr.n, err
+	}
+	return false, cr.n, nil
+}
+
+type countingReader struct {
+	r io.Reader
+	n int64
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	c.n += int64(n)
+	return n, err
 }
 
 func looksEncrypted(r io.Reader) (bool, error) {

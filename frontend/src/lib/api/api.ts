@@ -593,7 +593,7 @@ export interface Api {
 // "Konto bearbeiten" (Settings -> Konten; Go: internal/app/account_edit.go),
 // another part of the Api interface (declaration merging).
 
-import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity, MailStorageSettings } from '../types';
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity, MailStorageEstimate, MailStorageSettings } from '../types';
 
 export interface Api {
   getAccountSettings(accountId: number): Promise<AccountSettings>;
@@ -618,7 +618,9 @@ export interface Api {
    * answer `available: false`).
    */
   getMailStorageSettings(): Promise<MailStorageSettings>;
-  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'>): Promise<MailStorageSettings>;
+  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'> & { downloadPaused?: boolean }): Promise<MailStorageSettings>;
+  /** How many mails (bytes) a day count would download that are not stored yet. */
+  estimateMailStorage(days: number): Promise<MailStorageEstimate>;
 }
 
 // --- Account security ---

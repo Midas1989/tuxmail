@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
@@ -120,4 +121,64 @@ func (p *Provider) SearchText(ctx context.Context, folderRemoteID, text string, 
 		return nil
 	})
 	return out, err
+}
+
+var _ domain.ExistenceChecker = (*Provider)(nil)
+
+// ConfirmExisting implements domain.ExistenceChecker: SELECT (the
+// UIDVALIDITY must equal the one of state) and UID FETCH (UID FLAGS) of the
+// UIDs; messages flagged \Deleted do not count.
+func (p *Provider) ConfirmExisting(ctx context.Context, folderRemoteID string, state domain.SyncState, ids []string) (map[string]bool, error) {
+	st, err := decodeState(state)
+	if err != nil || st.UIDValidity == 0 {
+		return map[string]bool{}, nil
+	}
+	var uids []uint32
+	for _, id := range ids {
+		if u, err := parseUID(domain.RemoteRef{FolderRemoteID: folderRemoteID, ID: id}); err == nil {
+			uids = append(uids, uint32(u))
+		}
+	}
+	out := make(map[string]bool, len(uids))
+	if len(uids) == 0 {
+		return out, nil
+	}
+	err = p.do(ctx, func(c *imapclient.Client) error {
+		sel, err := selectMailbox(c, folderRemoteID, false)
+		if err != nil {
+			return err
+		}
+		if sel.UIDValidity != st.UIDValidity || sel.NumMessages == 0 {
+			return nil
+		}
+		for _, batch := range batches(uids, min(p.cfg.FetchBatchSize, 250)) {
+			msgs, err := collectFetch(c, c.Fetch(uidSet(batch), &imap.FetchOptions{UID: true, Flags: true}), maxFetchSection, maxFetchTotal, 2*len(batch)+100)
+			if err != nil {
+				return fmt.Errorf("imap: confirm messages: %w", err)
+			}
+			want := make(map[uint32]bool, len(batch))
+			for _, u := range batch {
+				want[u] = true
+			}
+			for _, m := range msgs {
+				if m.UID == 0 || !want[uint32(m.UID)] {
+					continue
+				}
+				deleted := false
+				for _, f := range m.Flags {
+					if strings.EqualFold(string(f), `\Deleted`) {
+						deleted = true
+					}
+				}
+				if !deleted {
+					out[strconv.FormatUint(uint64(m.UID), 10)] = true
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
 }

@@ -1762,7 +1762,14 @@
         "all": "Store all mails completely",
         "days": "Header and preview only for mails older than"
       },
-      "all": "All mails are stored completely; TuxMail downloads older contents in the background."
+      "all": "All mails are stored completely; TuxMail downloads older contents in the background.",
+      "confirm": "TuxMail will then download about {count} mails ({size}) – throttled in the background, with pauses between batches. Continue?",
+      "confirmYes": "Download",
+      "confirmNo": "Cancel",
+      "progress": "About {count} mails ({size}) are still being downloaded.",
+      "progressPaused": "Download paused – about {count} mails ({size}) left.",
+      "pause": "Pause",
+      "resume": "Resume"
     }
   },
   "search": {

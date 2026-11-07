@@ -3,8 +3,10 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -48,11 +50,17 @@ func TestDiscoveryPrefersWorkingCandidate(t *testing.T) {
 	defer ispdb.Close()
 
 	d := &autoconfig.Discoverer{HTTPClient: ispdb.Client(), ISPDBURL: ispdb.URL + "/v1.1/", AlwaysHeuristics: true, Timeout: 3 * time.Second}
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	res := discoverRanked(ctx, d, devserver.AnnaAddr, devserver.DefaultPassword)
+	res := discoverRanked(ctx, d, devserver.AnnaAddr, devserver.DefaultPassword, logger)
 	if res.Incoming == nil || net.JoinHostPort(res.Incoming.Host, fmt.Sprint(res.Incoming.Port)) != srv.IMAPAddr() {
 		t.Fatalf("chose %+v, want %s (candidates %+v)", res.Incoming, srv.IMAPAddr(), res.Candidates)
+	}
+	// The debug log names the servers of each shown candidate (not empty), no raw errors.
+	if l := logBuf.String(); !strings.Contains(l, "incoming="+srv.IMAPAddr()) || strings.Contains(l, "incoming=\"\"") || strings.Contains(l, "connection refused") {
+		t.Errorf("debug log: %s", l)
 	}
 	if !res.Verified || len(res.Candidates) < 2 {
 		t.Fatalf("result %+v", res)
@@ -67,7 +75,7 @@ func TestDiscoveryPrefersWorkingCandidate(t *testing.T) {
 
 	// A wrong password is reported per candidate (login failed), the
 	// reachable server is still preferred over the dead one.
-	res = discoverRanked(ctx, d, devserver.AnnaAddr, "wrong")
+	res = discoverRanked(ctx, d, devserver.AnnaAddr, "wrong", logger)
 	if res.Incoming == nil || res.Incoming.Port == deadAddr.Port || res.Candidates[0].In.Login != "failed" {
 		t.Errorf("wrong password: %+v", res.Candidates)
 	}

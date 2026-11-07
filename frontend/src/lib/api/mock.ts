@@ -2842,10 +2842,16 @@ export class MockTransport implements Api {
     return this.run(() => {
       const all = [...this.messages.values()];
       const h = all.filter((m) => this.isHeadersOnly(m)).length;
-      return { headersOnlyOlderThanDays: this.mailStorageDays, available: true, headersOnly: h, complete: all.length - h };
+      return { headersOnlyOlderThanDays: this.mailStorageDays, available: true, headersOnly: h, complete: all.length - h, pending: 0, pendingBytes: 0, downloadPaused: this.mailStorageDownloadPaused };
     });
   }
-  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'>): Promise<MailStorageSettings> {
+  estimateMailStorage(days: number): Promise<MailStorageEstimate> {
+    // Demo: as if the server held about 4,000 older mails not stored yet.
+    return this.reply(days === 0 ? { messages: 4210, bytes: 1_840_000_000 } : days > 30 ? { messages: Math.round(days * 11), bytes: days * 4_800_000 } : { messages: 0, bytes: 0 });
+  }
+  private mailStorageDownloadPaused = false;
+  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'> & { downloadPaused?: boolean }): Promise<MailStorageSettings> {
+    this.mailStorageDownloadPaused = !!settings.downloadPaused;
     const n = settings.headersOnlyOlderThanDays;
     if (!Number.isInteger(n) || n < -1 || n > 36500) return Promise.reject(new ApiError('headersOnlyOlderThanDays must be -1 or between 0 and 36500', 400, 'invalid_input'));
     this.mailStorageDays = n;
@@ -2871,7 +2877,7 @@ import { MockIO } from './mockIO';
 
 // --- Account edit ---
 import { MockAccountEdit } from './mockAccountEdit';
-import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, MailStorageSettings } from '../types';
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, MailStorageEstimate, MailStorageSettings } from '../types';
 // --- Diagnostics ---
 import type { AccountSyncStatus, DiagnosticsInfo } from '../types';
 const messengerKinds = new Set(['signal', 'whatsapp', 'telegram', 'matrix_bridge']);
