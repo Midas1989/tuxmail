@@ -75,7 +75,15 @@
   <section>
     <h2>{t('native.settings.server')}</h2>
     <p class="muted">{t('native.settings.signedInAs', { server: ctl.serverLabel, user: ctl.userLabel })}</p>
-    {#if confirmLeave}<p class="warn" role="alert" data-testid="leave-outbox">{t('connection.leave.outbox', { count: waiting })} {t('native.offline.leaveConfirm')}</p>{/if}
+    {#if confirmLeave}
+      <div class="warn" role="alert" data-testid="leave-outbox">
+        <p>{t('connection.leave.outbox', { count: waiting })}</p>
+        <ul>
+          {#each connection.status.outbox as o (o.id)}<li>{o.kind === 'send' ? o.title || t('connection.outbox.noSubject') : t('connection.outbox.mark') + (o.title ? ': ' + o.title : '')}</li>{/each}
+        </ul>
+        <p>{t('native.offline.leaveConfirm')}</p>
+      </div>
+    {/if}
     <div class="col">
       <button class="btn" onclick={() => leave('switch')}><Server size={16} />{t('native.settings.switchServer')}</button>
       <button class="btn danger" onclick={() => leave('signOut')}><LogOut size={16} />{t('native.settings.signOut')}</button>
@@ -191,6 +199,14 @@
   }
   .small {
     font-size: 12px;
+  }
+  .warn p,
+  .warn ul {
+    margin: 0;
+  }
+  .warn ul {
+    padding-left: 18px;
+    overflow-wrap: anywhere;
   }
   .warn {
     margin: 0;

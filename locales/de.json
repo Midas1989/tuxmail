@@ -2629,7 +2629,16 @@
       "clearHint": "Löscht die gespeicherten Inhalte auf diesem Gerät. Wartende Mails bleiben erhalten.",
       "cleared": "Geleert. Beim nächsten Abgleich lädt die App das Wichtigste neu.",
       "leaveConfirm": "Tippe noch einmal, um trotzdem fortzufahren.",
-      "leaveNote": "Beim Abmelden und beim Wechsel des Servers werden die auf diesem Gerät gespeicherten Inhalte gelöscht."
+      "leaveNote": "Beim Abmelden und beim Wechsel des Servers werden die auf diesem Gerät gespeicherten Inhalte gelöscht.",
+      "lockRecommended": "Empfehlung: Schalte unten die App-Sperre ein. Die gespeicherten Inhalte liegen unverschlüsselt im geschützten Speicher der App; die Sperre hält sie von anderen Personen am Gerät fern.",
+      "foreignWaiting": "Von einem anderen Konto warten noch {count} Elemente auf dem Gerät.",
+      "foreignWaiting_one": "Von einem anderen Konto wartet noch {count} Element auf dem Gerät.",
+      "foreignTitle": "Von einem anderen Konto warten noch {count} Elemente:",
+      "foreignTitle_one": "Von einem anderen Konto wartet noch {count} Element:",
+      "foreignHint": "Sie werden gesendet, sobald du dich wieder mit diesem Konto anmeldest. Alles andere dieses Kontos ist bereits gelöscht.",
+      "foreignConfirm": "Tippe noch einmal: Diese Elemente werden dann endgültig gelöscht und nicht gesendet.",
+      "foreignDiscard": "Wartende Elemente löschen",
+      "lockRecommendedShort": "Tipp: Schalte die App-Sperre ein. Mails liegen zum Offline-Lesen auf diesem Gerät."
     }
   },
   "cloud": {
@@ -4233,7 +4242,10 @@
       "conflictRefused": "Nicht ausgeführt: Der Server hat diese Aktion abgelehnt. Prüfe die Mail, wenn wieder eine Verbindung besteht.",
       "understood": "Verstanden",
       "sentLater": "Eine wartende Mail wurde gesendet.",
-      "blockedToast": "Eine wartende Mail wurde nicht gesendet: Die Versandprüfung möchte, dass du sie dir ansiehst."
+      "blockedToast": "Eine wartende Mail wurde nicht gesendet: Die Versandprüfung möchte, dass du sie dir ansiehst.",
+      "discardedSent": "Die verworfene Mail war schon unterwegs und wurde gesendet.",
+      "discardedUnclear": "Verworfen, aber vielleicht schon gesendet: Die Mail war unterwegs, als du sie verworfen hast. Schau unter „Gesendet“ nach.",
+      "discardedNotSent": "Verworfen. Die Mail wurde nicht gesendet."
     },
     "log": {
       "title": "Protokoll des Abgleichs",

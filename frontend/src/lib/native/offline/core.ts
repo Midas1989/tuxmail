@@ -52,6 +52,8 @@ export type CoreEvent =
   | { type: 'conflict'; item: StoredOutboxItem }
   | { type: 'blocked'; item: StoredOutboxItem }
   | { type: 'sent'; id: string }
+  /** Discarded while on its way: what became of it. */
+  | { type: 'discarded'; id: string; outcome: 'sent' | 'unclear' | 'not_sent' }
   /** What is on screen came from the store or changed at the server: load it again. */
   | { type: 'reload' };
 
@@ -143,6 +145,9 @@ const gatewayDown = (status: number) => status === 502 || status === 503 || stat
 export class OfflineCore {
   private st: CoreState;
   private flushing: Promise<void> | null = null;
+  /** The outbox entry on its way to the server, and entries discarded meanwhile. */
+  private sending: string | null = null;
+  private readonly discarded = new Set<string>();
   private syncing: Promise<void> | null = null;
   private seq = 0;
   private written = 0;
@@ -253,11 +258,16 @@ export class OfflineCore {
   }
 
   /** Keeps an answer and indexes the mails in it. */
-  async keep(u: URL, ct: string, disp: string, body: Body): Promise<void> {
+  async keep(u: URL, ct: string, disp: string, body: Body, storedAt?: number): Promise<void> {
     const size = bodySize(body);
     if (size > MAX_ENTRY) return;
     const now = this.now();
     const key = cacheKey(u);
+    if (storedAt !== undefined) {
+      // An answer loaded in the background earlier must not replace a newer one.
+      const have = await this.d.db.getEntry(key);
+      if (have && have.meta.storedAt >= storedAt) return;
+    }
     const msgId = messageOfPath(u.pathname);
     let msgDate: string | undefined;
     if (msgId !== undefined) msgDate = (await this.d.db.getMessage(msgId))?.date;
@@ -268,7 +278,7 @@ export class OfflineCore {
         /* other shape */
       }
     }
-    const meta: EntryMeta = { key, path: u.pathname, size, at: now, storedAt: now, ct: ct || undefined, disp: disp || undefined, msgId, msgDate };
+    const meta: EntryMeta = { key, path: u.pathname, size, at: now, storedAt: storedAt ?? now, ct: ct || undefined, disp: disp || undefined, msgId, msgDate };
     await this.d.db.putEntry(meta, body);
     if (typeof body === 'string') await this.index(u, body);
     this.written += size;
@@ -718,6 +728,7 @@ export class OfflineCore {
   }
 
   private async keepState(it: StoredOutboxItem, state: StoredOutboxItem['state'], error?: string): Promise<void> {
+    if (this.discarded.has(it.id)) return;
     it.state = state;
     if (error) it.error = error;
     else delete it.error;
@@ -744,19 +755,30 @@ export class OfflineCore {
       uploaded.push(tok);
     }
     it.body = JSON.stringify(doc);
-    await this.d.db.putOutbox(it);
+    if (!this.discarded.has(it.id)) await this.d.db.putOutbox(it);
     return { uploaded, status: 0 };
   }
 
   /** Replays one action; false when the replay has to stop. */
   private async flushOne(it: StoredOutboxItem): Promise<boolean> {
-    // However often it fails: a mail is not repeated without end.
+    // Only answers of the server count as attempts: a dead spot is no reason to give up on a mail.
     if (it.kind === 'send' && it.attempts >= MAX_OUTBOX_ATTEMPTS) {
       await this.keepState(it, 'in_doubt', 'too many attempts');
       return true;
     }
-    it.attempts++;
-    await this.d.db.putOutbox(it);
+    this.sending = it.id;
+    try {
+      return await this.flushSend(it);
+    } finally {
+      this.sending = null;
+      if (this.discarded.has(it.id)) {
+        this.discarded.delete(it.id);
+        await this.d.db.deleteOutbox(it.id).catch(() => {});
+      }
+    }
+  }
+
+  private async flushSend(it: StoredOutboxItem): Promise<boolean> {
     const h: Record<string, string> = { Accept: 'application/json', 'Content-Type': 'application/json' };
     let uploaded: string[] = [];
     try {
@@ -797,6 +819,14 @@ export class OfflineCore {
       return false;
     }
     this.seen();
+    it.attempts++;
+    if (this.discarded.has(it.id)) {
+      // Discarded while it was on its way: say what became of it, keep nothing.
+      const sent = r.status >= 200 && r.status < 300 && !(typeof r.body === 'string' && /"blocked"\s*:\s*true/.test(r.body));
+      const unclear = it.kind === 'send' && (r.status >= 500 || idemConflict(r.body) !== null);
+      if (it.kind === 'send') this.d.onEvent?.({ type: 'discarded', id: it.id, outcome: sent ? 'sent' : unclear ? 'unclear' : 'not_sent' });
+      return true;
+    }
     if (r.status >= 200 && r.status < 300) {
       if (it.kind === 'send' && typeof r.body === 'string') {
         let res: { blocked?: boolean; findings?: unknown[] } = {};
@@ -821,7 +851,11 @@ export class OfflineCore {
       await this.keepState(it, 'in_doubt', 'the server may have sent this mail already');
       return true;
     }
-    if (idem) return false; // still running at the server: next round
+    if (idem) {
+      // Still running at the server: next round, counted (only server answers count).
+      await this.keepState(it, 'pending');
+      return false;
+    }
     if (r.status >= 500 && it.kind === 'send') {
       await this.keepState(it, 'in_doubt', `server error (${r.status})`);
       return true;
@@ -863,19 +897,25 @@ export class OfflineCore {
   async outboxDiscard(id: string): Promise<void> {
     const it = (await this.outbox()).find((x) => x.id === id);
     if (!it) return;
+    // On its way right now: it cannot be called back; the answer decides what the user is told.
+    if (this.sending === id) this.discarded.add(id);
     await this.drop(it);
     this.d.onChange?.();
   }
 
   /**
-   * Tries again what needed a decision. A mail in doubt gets a new key: the
-   * user decided to risk sending it a second time. A mail stopped by the send
-   * checks goes with those warnings confirmed.
+   * Tries again what needed a decision. A mail in doubt keeps its key unless
+   * the server itself reports the key as doubtful: then only a new key can
+   * send it, and the user decided to risk a second delivery. Done or still
+   * running at the server: the same key replays the server's answer, nothing
+   * goes out twice. A mail stopped by the send checks goes with those
+   * warnings confirmed (nothing was sent; the changed mail needs a new key).
    */
   async outboxRetry(id: string): Promise<void> {
     const it = (await this.outbox()).find((x) => x.id === id);
     if (!it) return;
-    let body = withLocalUploads(it.body);
+    let body = it.body;
+    let key = it.id;
     if (it.state === 'blocked') {
       let checks: string[] = [];
       try {
@@ -883,14 +923,36 @@ export class OfflineCore {
       } catch {
         /* none */
       }
-      const doc = JSON.parse(body) as Record<string, unknown>;
+      const doc = JSON.parse(withLocalUploads(body)) as Record<string, unknown>;
       doc.confirmChecks = checks;
       body = JSON.stringify(doc);
-    }
-    await this.d.db.deleteOutbox(it.id);
-    await this.d.db.putOutbox({ ...it, id: newOutboxId(), body, state: 'pending', error: undefined, attempts: 0 });
+      key = newOutboxId();
+    } else if (it.kind === 'send' && it.state === 'in_doubt') {
+      const st = await this.keyStatus(it.id);
+      if (st === 'doubt' || st === 'unsupported') {
+        body = withLocalUploads(body);
+        key = newOutboxId();
+      } else if (st === 'unknown') body = withLocalUploads(body); // refused and freed: nothing went out
+      // done / pending / no answer (offline): same key, same request - the server decides.
+    } else body = withLocalUploads(body);
+    if (key !== it.id) await this.d.db.deleteOutbox(it.id);
+    await this.d.db.putOutbox({ ...it, id: key, body, state: 'pending', error: undefined, attempts: 0 });
     this.d.onChange?.();
     void this.flush();
+  }
+
+  /** What the server knows of an Idempotency-Key (GET /api/idempotency/{key}); "offline" without an answer. */
+  async keyStatus(key: string): Promise<'done' | 'pending' | 'doubt' | 'unknown' | 'unsupported' | 'offline'> {
+    if (this.st !== 'online') return 'offline';
+    try {
+      const r = await this.net('GET', `/api/idempotency/${encodeURIComponent(key)}`, { Accept: 'application/json' }, undefined, this.timeouts.read);
+      if (r.status === 404 || r.status === 405) return 'unsupported'; // a server before this check
+      if (r.status !== 200 || typeof r.body !== 'string') return 'offline';
+      const s = (JSON.parse(r.body) as { state?: string }).state;
+      return s === 'done' || s === 'pending' || s === 'doubt' || s === 'unknown' ? s : 'offline';
+    } catch {
+      return 'offline';
+    }
   }
 
   // ==== reconnecting ============================================================
@@ -1007,7 +1069,7 @@ export class OfflineCore {
         continue;
       }
       if (!cacheable(u.pathname) || !u.pathname.startsWith('/api/')) continue;
-      await this.keep(u, e.contentType ?? 'application/json', '', e.body);
+      await this.keep(u, e.contentType ?? 'application/json', '', e.body, e.storedAt ?? 0);
       n++;
     }
     if (n) {

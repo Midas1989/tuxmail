@@ -42,7 +42,8 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : Worker(con
             Result.success()
         } catch (e: Exception) {
             Log.w(TAG, "offline sync failed: ${e.message}")
-            Result.retry()
+            // A few retries with WorkManager's backoff, then wait for the next period (or push).
+            if (runAttemptCount >= MAX_RETRIES) Result.success() else Result.retry()
         }
     }
 
@@ -118,6 +119,7 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : Worker(con
         private const val DAY = 24L * 60 * 60 * 1000
         private const val MAX_BODY = 4 * 1024 * 1024
         private const val MAX_DETAILS = 60
+        private const val MAX_RETRIES = 3
         private val BASE = listOf(
             "/api/auth/me", "/api/identities", "/api/signatures", "/api/persons", "/api/preferences", "/api/tags",
             "/api/calendars", "/api/tasks", "/api/addressbooks", "/api/contacts", "/api/contact-groups", "/api/chat-folders",

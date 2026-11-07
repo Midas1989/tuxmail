@@ -21,7 +21,7 @@ import { OPEN_FILE_EVENT } from '../files';
 import type { KeyValueStore, ServerProfile } from '../profiles';
 import type { AppPlugin, TuxMailPlugin } from '../plugins';
 import { OfflineCore, type CoreEvent } from './core';
-import { IdbDb, deleteOtherStores, deleteStore, openIdb, type OfflineDb } from './db';
+import { IdbDb, deleteStore, openIdb, sweepOtherStores, type ForeignStore, type OfflineDb } from './db';
 import { outboxEntries, settingsFromJson, settingsToJson, RE_MESSAGE_PART, type OfflineSettings } from './rules';
 
 export const settingsKey = (profileId: string) => `offline.settings.${profileId}`;
@@ -33,8 +33,11 @@ export interface OfflineHandle {
   syncNow(): Promise<void>;
   clearCache(): Promise<void>;
   stop(): void;
-  /** Sign-out and profile switch: everything kept on the device goes, waiting mails included. */
+  /** Sign-out and profile switch (confirmed by the user): everything kept on the device goes, waiting mails included. */
   destroy(): Promise<void>;
+  /** Stores of other profiles/users that still hold waiting items (never deleted without confirmation). */
+  foreign(): ForeignStore[];
+  discardForeign(name: string): Promise<void>;
 }
 
 export interface StartOptions {
@@ -43,18 +46,27 @@ export interface StartOptions {
   prefs: KeyValueStore;
   plugin: TuxMailPlugin;
   appPlugin: AppPlugin;
-  /** "Neu anmelden" after the server rejected the device: the app's own sign-in, data stays. */
+  /** "Neu anmelden" after the server rejected the device: the app's own sign-in. */
   reauth: () => void;
+  /**
+   * The server revoked the device (401): what was kept for reading is already
+   * deleted, waiting items stay for the same user's next sign-in. The app
+   * asks for the app lock (if set up) and shows the sign-in.
+   */
+  revoked: () => void;
   /** Tests: another store. */
   db?: OfflineDb;
 }
 
 const iso = (ms?: number) => (ms ? new Date(ms).toISOString() : undefined);
 
-/** Deletes the stores of all profiles except the active one (sign-out, profile switch, leftovers). */
-export async function dropOfflineStores(keep: string | null): Promise<void> {
-  if (typeof indexedDB === 'undefined') return;
-  await deleteOtherStores(keep).catch(() => {});
+/**
+ * Stores of all profiles except `keep` (sign-out, profile switch, leftovers):
+ * reading data goes; stores with waiting items stay and are returned.
+ */
+export async function dropOfflineStores(keep: string | null): Promise<ForeignStore[]> {
+  if (typeof indexedDB === 'undefined') return [];
+  return sweepOtherStores(keep).catch(() => []);
 }
 
 export async function startOffline(o: StartOptions): Promise<OfflineHandle | null> {
@@ -66,7 +78,16 @@ export async function startOffline(o: StartOptions): Promise<OfflineHandle | nul
     console.warn('offline store unavailable', err);
     return null;
   }
-  void dropOfflineStores(o.profile.id);
+  let foreign: ForeignStore[] = [];
+  void dropOfflineStores(o.profile.id).then((f) => {
+    foreign = f;
+    if (f.length) {
+      // Waiting items of another account: said once at the start, decided in the settings.
+      const n = f.reduce((a, x) => a + x.waiting.length, 0);
+      const wait = () => (app.ready ? app.toast(t('native.offline.foreignWaiting', { count: n }), { label: t('connection.attentionOpen'), run: () => (location.hash = '#/native-settings') }) : setTimeout(wait, 500));
+      wait();
+    }
+  });
   let settings = settingsFromJson(await o.prefs.get(settingsKey(o.profile.id)).catch(() => null));
   const listeners = new Set<() => void>();
   const changed = () => listeners.forEach((l) => l());
@@ -95,6 +116,11 @@ export async function startOffline(o: StartOptions): Promise<OfflineHandle | nul
   function onCoreEvent(e: CoreEvent): void {
     switch (e.type) {
       case 'state':
+        if (e.state === 'expired') {
+          // Revoked by the server: nothing readable stays on the device, waiting items do.
+          void core.clearCache().finally(() => o.revoked());
+          break;
+        }
         if (e.state === 'offline') scheduleProbe(true);
         if (e.state === 'online') {
           void core.flush().then(() => scheduleSync(2000));
@@ -106,6 +132,9 @@ export async function startOffline(o: StartOptions): Promise<OfflineHandle | nul
         break;
       case 'sent':
         app.toast(t('connection.outbox.sentLater'));
+        break;
+      case 'discarded':
+        app.toast(e.outcome === 'sent' ? t('connection.outbox.discardedSent') : e.outcome === 'unclear' ? t('connection.outbox.discardedUnclear') : t('connection.outbox.discardedNotSent'), undefined, e.outcome === 'unclear' ? 'error' : 'info');
         break;
       case 'conflict':
         app.toast(e.item.error === 'gone' ? t('connection.outbox.conflictGone') : t('connection.outbox.conflictRefused'), { label: t('connection.attentionOpen'), run: () => (location.hash = '#/native-settings') }, 'error');
@@ -313,6 +342,12 @@ export async function startOffline(o: StartOptions): Promise<OfflineHandle | nul
     syncNow,
     clearCache: () => core.clearCache(),
     stop,
+    foreign: () => foreign,
+    async discardForeign(name) {
+      await deleteStore(name);
+      foreign = foreign.filter((f) => f.name !== name);
+      changed();
+    },
     async destroy() {
       stop();
       await db.clear().catch(() => {});

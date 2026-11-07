@@ -31,6 +31,8 @@ function fakeServer() {
     fail500: false,
     blockNext: false,
     tokenOk: true,
+    /** While set, /api/send waits for it. */
+    hold: null as Promise<void> | null,
     delivered: [] as { key: string | null; subject: string; attachments: unknown[] }[],
     idem: new Map<string, { status: number; body: string }>(),
     uploads: new Map<string, string>(),
@@ -77,7 +79,13 @@ function fakeServer() {
       if (p === '/api/messages/move') for (const x of s.msgs) if (b.ids.includes(x.id)) x.folder = b.folderId!;
       return new Response(null, { status: 204 });
     }
+    const idem = /^\/api\/idempotency\/(.+)$/.exec(p);
+    if (idem) {
+      const r = s.idem.get(idem[1]);
+      return json(200, { state: !r ? 'unknown' : r.status >= 500 ? 'doubt' : 'done' });
+    }
     if (p === '/api/send') {
+      if (s.hold) await s.hold;
       const key = h.get('Idempotency-Key');
       const body = String(init?.body);
       if (key && s.idem.has(key)) {
@@ -384,6 +392,100 @@ describe('offline store: outbox', () => {
   });
 });
 
+describe('outbox: review findings', () => {
+  it('dead spots are no attempts: after many network failures the mail is still simply waiting', async () => {
+    const t = setup();
+    t.goOffline();
+    await t.post('/api/send', mail('Funkloch'));
+    for (let i = 0; i < 15; i++) {
+      t.s.offline = false;
+      await t.core.probe();
+      t.s.offline = true;
+      await t.core.flush();
+    }
+    const [it] = await t.core.outbox();
+    expect(it).toMatchObject({ state: 'pending', attempts: 0 });
+    await t.goOnline();
+    await t.core.flush();
+    expect(t.s.delivered).toHaveLength(1);
+  });
+
+  it('"send again" on an unclear mail asks the server first: a key it has done keeps the key, nothing goes out twice', async () => {
+    const t = setup();
+    t.goOffline();
+    await t.post('/api/send', mail('Schon raus'));
+    await t.goOnline();
+    await t.core.flush();
+    expect(t.s.delivered).toHaveLength(1);
+    // The client lost track (e.g. an old outbox) and holds it as unclear with the same key.
+    const key = t.s.delivered[0].key!;
+    await t.db.putOutbox({ id: key, seq: 1, kind: 'send', method: 'POST', path: '/api/send', body: JSON.stringify(mail('Schon raus')), state: 'in_doubt', attempts: 3, createdAt: '' });
+    await t.core.outboxRetry(key);
+    await t.core.flush();
+    expect(t.s.delivered).toHaveLength(1);
+    expect(t.s.calls).toContain(`GET /api/idempotency/${key}`);
+    expect(await t.core.outbox()).toEqual([]);
+  });
+
+  it('only a key the server itself holds in doubt gets a new one on "send anyway"', async () => {
+    const t = setup();
+    t.s.fail500 = true;
+    const doc = await (await t.post('/api/send', mail('Zweifel'))).json();
+    expect(await t.core.keyStatus(doc.outboxId)).toBe('doubt');
+    await t.core.outboxRetry(doc.outboxId);
+    await t.core.flush();
+    expect(t.s.delivered.map((d) => d.key)).toEqual([doc.outboxId, expect.not.stringMatching(doc.outboxId)]);
+  });
+
+  it('offline, "send again" keeps the key: the server answers when the connection is back', async () => {
+    const t = setup();
+    t.s.fail500 = true;
+    const doc = await (await t.post('/api/send', mail('Später'))).json();
+    t.goOffline();
+    await t.core.outboxRetry(doc.outboxId);
+    expect((await t.core.outbox())[0]).toMatchObject({ id: doc.outboxId, state: 'pending' });
+    await t.goOnline();
+    await t.core.flush();
+    expect(t.s.delivered).toHaveLength(1); // the server keeps its doubt: 409, back to the user
+    expect((await t.core.outbox())[0].state).toBe('in_doubt');
+  });
+
+  it('discarded while on its way: a server error says "maybe sent", nothing comes back', async () => {
+    const t = setup();
+    t.goOffline();
+    await t.post('/api/send', mail('Unterwegs'));
+    let release!: () => void;
+    t.s.hold = new Promise((r) => (release = r));
+    t.s.fail500 = true;
+    t.s.offline = false;
+    await t.core.probe();
+    const flushing = t.core.flush();
+    await new Promise((r) => setTimeout(r, 10));
+    const [it] = await t.core.outbox();
+    await t.core.outboxDiscard(it.id);
+    release();
+    await flushing;
+    expect(await t.core.outbox()).toEqual([]);
+    expect(t.events).toContainEqual({ type: 'discarded', id: it.id, outcome: 'unclear' });
+  });
+});
+
+it('revoked by the server: what is readable can be wiped, waiting mails stay for the next sign-in', async () => {
+  const t = setup();
+  await t.get('/api/messages?scope=folder&folderId=11&offset=0&limit=50');
+  await t.get('/api/messages/1');
+  t.goOffline();
+  await t.post('/api/send', mail('Bleibt'));
+  t.s.offline = false;
+  t.s.tokenOk = false;
+  await t.core.probe();
+  expect(t.events).toContainEqual({ type: 'state', state: 'expired', was: 'offline' });
+  await t.core.clearCache(); // bridge.ts on "expired"
+  expect(await t.db.listEntryMetas()).toEqual([]);
+  expect(await t.db.allMessages()).toEqual([]);
+  expect((await t.core.outbox()).map((i) => i.title)).toEqual(['Bleibt']);
+});
+
 describe('headers-only rule (mail.headersOnlyOlderThanDays)', () => {
   it('decides by the date of the mail; empty or 0 means everything in full', () => {
     expect(fullContentAllowed(new Date(NOW - 10 * DAY).toISOString(), 30, NOW)).toBe(true);
@@ -452,6 +554,14 @@ describe('headers-only rule (mail.headersOnlyOlderThanDays)', () => {
 });
 
 describe('staged answers of the background work', () => {
+  it('an older background answer does not replace a newer one', async () => {
+    const t = setup();
+    await t.get('/api/accounts'); // stored now
+    await t.core.importStaged([{ key: '/api/accounts', body: '[{"id":99}]', storedAt: NOW - DAY }]);
+    t.goOffline();
+    expect(await (await t.get('/api/accounts')).json()).toEqual([{ id: 1 }]);
+  });
+
   it('are taken over into the store', async () => {
     const t = setup();
     const n = await t.core.importStaged([

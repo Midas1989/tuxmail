@@ -188,7 +188,7 @@ export function queueable(method: string, path: string): QueueKind {
 export const OFFLINE_TOKEN_PREFIX = 'offline_';
 export const MAX_OFFLINE_UPLOAD = 25 * MiB;
 export const MAX_OFFLINE_UPLOADS = 100 * MiB;
-/** A server error (not network) on an action is retried this often; a mail this often at all. */
+/** Answers of the server (never network failures) that leave a mail waiting count as attempts; after this many the user decides. */
 export const MAX_OUTBOX_ATTEMPTS = 10;
 
 export interface StoredOutboxItem {

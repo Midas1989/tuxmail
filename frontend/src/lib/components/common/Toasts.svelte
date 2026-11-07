@@ -78,12 +78,29 @@
     }
   }
 
-  /* Phones: toasts sit at the top so they never cover the message field, the bottom bar or the keyboard. */
+  /* Phones: toasts sit at the top so they never cover the message field, the bottom bar or the keyboard.
+     They stack as one column of slim rows of the same width, never on top of each other. */
   @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .toasts {
       bottom: auto;
       top: calc(12px + var(--tm-safe-top));
-      max-width: calc(100vw - 24px);
+      width: calc(100vw - 24px);
+      align-items: stretch;
+      gap: 6px;
+    }
+    .toast {
+      padding: 4px 4px 4px 12px;
+      min-height: 44px;
+    }
+    .toast span {
+      flex: 1;
+      min-width: 0;
+    }
+    /* An open sheet, dialog or the composer owns the top (title, sender): toasts go to the bottom,
+       above its action row, instead of covering its head. */
+    :global(body:has([aria-modal='true'], .composer)) .toasts {
+      top: auto;
+      bottom: calc(84px + var(--tm-safe-bottom));
     }
   }
 </style>

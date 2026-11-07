@@ -176,7 +176,7 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
     // NG-08: from here on only the active server may be contacted / load images (a second meta CSP can only narrow).
     applyNativeServerCsp(document, active.serverUrl);
     // Offline store: the app opens with what was loaded last, also without a network.
-    offline = await startOffline({ profile: active, token: () => activeToken, prefs: prefsStore, plugin: TuxMail, appPlugin: App, reauth: signInAgain }).catch(() => null);
+    offline = await startOffline({ profile: active, token: () => activeToken, prefs: prefsStore, plugin: TuxMail, appPlugin: App, reauth: signInAgain, revoked: () => void onRevoked() }).catch(() => null);
     mountApp();
     rotateActiveToken();
     void App.addListener('appStateChange', ({ isActive }) => {
@@ -318,7 +318,14 @@ function onUnauthorized(): void {
   signInAgain();
 }
 
-/** The server rejected the device token: back to the sign-in of this profile. Kept data and waiting mails stay. */
+/** Revoked by the server: the owner proves themselves with the app lock (if set up) before the sign-in shows. */
+async function onRevoked(): Promise<void> {
+  const lock = await loadLockSettings(prefsStore).catch(() => null);
+  if (lock?.enabled) await showLock();
+  signInAgain();
+}
+
+/** The server rejected the device token: back to the sign-in of this profile. Waiting mails stay for the same user. */
 function signInAgain(): void {
   if (unauthorizedOnce || !active) return;
   unauthorizedOnce = true;
@@ -348,6 +355,7 @@ export async function startNative(): Promise<void> {
   installNativeSettingsRoute();
   installOpenFileHandler();
   void autoRegisterPush();
+  void recommendAppLock();
   // Splash: wait for the first data (or give up after 2.5 s).
   const started = Date.now();
   const waitReady = () => {
@@ -359,6 +367,16 @@ export async function startNative(): Promise<void> {
 
 function phoneLayout(): boolean {
   return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px), (pointer: coarse) and (max-height: 500px)').matches;
+}
+
+/** Mail is kept on the device for offline reading: once after the set-up, the app lock is recommended. */
+async function recommendAppLock(): Promise<void> {
+  if (!offline) return;
+  const key = 'offline.lockHint';
+  if ((await prefsStore.get(key).catch(() => '1')) || (await loadLockSettings(prefsStore).catch(() => null))?.enabled) return;
+  await prefsStore.set(key, '1').catch(() => {});
+  const show = () => (app.ready ? app.toast(t('native.offline.lockRecommendedShort'), { label: t('connection.attentionOpen'), run: () => (location.hash = '#/native-settings') }) : setTimeout(show, 500));
+  show();
 }
 
 async function installBackButton(): Promise<void> {
@@ -575,6 +593,9 @@ export function controller(): NativeController {
           save: (s) => offline!.saveSettings(s),
           syncNow: () => offline!.syncNow(),
           clear: () => offline!.clearCache(),
+          foreign: () => offline!.foreign(),
+          discardForeign: (name) => offline!.discardForeign(name),
+          lockEnabled: async () => !!(await loadLockSettings(prefsStore).catch(() => null))?.enabled,
         }
       : null,
     lockSettings: () => loadLockSettings(prefsStore),

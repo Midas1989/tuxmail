@@ -29,6 +29,26 @@
   let cleared = $state(false);
   let error = $state<string | null>(null);
   const st = $derived(connection.status);
+  let foreign = $state(load2());
+  function load2() {
+    return ctl.foreign();
+  }
+  let lockOn = $state(true);
+  $effect(() => {
+    void ctl.lockEnabled().then((v) => (lockOn = v));
+  });
+  let confirmForeign = $state<string | null>(null);
+  function discardForeign(name: string) {
+    if (confirmForeign !== name) {
+      confirmForeign = name;
+      return;
+    }
+    void run(async () => {
+      await ctl.discardForeign(name);
+      foreign = ctl.foreign();
+      confirmForeign = null;
+    });
+  }
 
   async function run(fn: () => Promise<void>) {
     busy = true;
@@ -62,6 +82,18 @@
 <section data-testid="offline-settings" aria-labelledby="ns-offline">
   <h2 id="ns-offline">{t('native.offline.title')}</h2>
   <p class="muted">{t('native.offline.intro')}</p>
+  {#if !lockOn}<p class="hint" data-testid="lock-recommended">{t('native.offline.lockRecommended')}</p>{/if}
+
+  {#each foreign as f (f.name)}
+    <div class="foreign" role="alert" data-testid="foreign-waiting">
+      <p>{t('native.offline.foreignTitle', { count: f.waiting.length })}</p>
+      <ul>
+        {#each f.waiting as w (w.id)}<li>{w.kind === 'send' ? w.title || t('connection.outbox.noSubject') : t('connection.outbox.mark') + (w.title ? ': ' + w.title : '')}{#if w.recipients}<small> · {w.recipients}</small>{/if}</li>{/each}
+      </ul>
+      <p class="hint">{confirmForeign === f.name ? t('native.offline.foreignConfirm') : t('native.offline.foreignHint')}</p>
+      <button class="btn danger" disabled={busy} onclick={() => discardForeign(f.name)}>{t('native.offline.foreignDiscard')}</button>
+    </div>
+  {/each}
 
   <dl>
     <dt>{t('native.offline.state')}</dt>
@@ -132,6 +164,26 @@
   h2 {
     margin: 0 0 8px;
     font-size: 14px;
+  }
+  .foreign {
+    border: 1px solid var(--tm-danger);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+  }
+  .foreign p,
+  .foreign ul {
+    margin: 0;
+  }
+  .foreign ul {
+    padding-left: 18px;
+    overflow-wrap: anywhere;
+  }
+  .danger {
+    color: var(--tm-danger);
   }
   dl {
     display: grid;

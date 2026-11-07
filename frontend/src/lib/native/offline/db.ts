@@ -216,13 +216,44 @@ export async function openIdb(profileId: string, factory: IDBFactory = indexedDB
   return new IdbDb(await req(open));
 }
 
-/** Removes the stores of every profile except `keep` (sign-out, profile switch, leftovers). */
-export async function deleteOtherStores(keep: string | null, factory: IDBFactory = indexedDB): Promise<void> {
+/** A store of another profile that still holds waiting mails or actions. */
+export interface ForeignStore {
+  name: string;
+  profileId: string;
+  waiting: { id: string; kind: string; title?: string; recipients?: string; state?: string }[];
+}
+
+/**
+ * Stores of every profile except `keep`: what was kept for reading goes, a
+ * store without waiting items goes entirely. Waiting items are never deleted
+ * without the user's confirmation: their stores stay (reading data removed)
+ * and are returned, to be listed and discarded on purpose.
+ */
+export async function sweepOtherStores(keep: string | null, factory: IDBFactory = indexedDB): Promise<ForeignStore[]> {
   const list = typeof factory.databases === 'function' ? await factory.databases().catch(() => []) : [];
   const keepName = keep ? dbName(keep) : null;
+  const out: ForeignStore[] = [];
   for (const d of list) {
-    if (d.name?.startsWith(DB_PREFIX) && d.name !== keepName) await deleteStore(d.name, factory);
+    if (!d.name?.startsWith(DB_PREFIX) || d.name === keepName) continue;
+    const profileId = d.name.slice(DB_PREFIX.length);
+    let db: IdbDb | null = null;
+    try {
+      db = await openIdb(profileId, factory);
+      const waiting = await db.listOutbox<OutboxRecord & ForeignStore['waiting'][number]>();
+      if (!waiting.length) {
+        db.db.close();
+        await deleteStore(d.name, factory);
+        continue;
+      }
+      await db.clearReading();
+      out.push({ name: d.name, profileId, waiting: waiting.map(({ id, kind, title, recipients, state }) => ({ id, kind, title, recipients, state })) });
+    } catch {
+      /* unreadable: leave it */
+    } finally {
+      db?.db.close();
+    }
   }
+  return out;
 }
 
 export function deleteStore(name: string, factory: IDBFactory = indexedDB): Promise<void> {
@@ -330,6 +361,12 @@ export class IdbDb implements OfflineDb {
   async setMeta(k: string, v: unknown) {
     const tx = this.tx('meta', 'readwrite');
     tx.objectStore('meta').put(v, k);
+    await done(tx);
+  }
+  /** Everything kept for reading goes; waiting items and their attachments stay. */
+  async clearReading() {
+    const tx = this.tx(['entries', 'bodies', 'messages', 'meta'], 'readwrite');
+    for (const s of ['entries', 'bodies', 'messages', 'meta'] as const) tx.objectStore(s).clear();
     await done(tx);
   }
   async clear() {

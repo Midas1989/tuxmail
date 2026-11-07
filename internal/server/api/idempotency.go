@@ -130,3 +130,21 @@ func idempotent(route string, next AppHandler) AppHandler {
 		}
 	}
 }
+
+// idempotencyStatus answers GET /api/idempotency/{key}: what became of a key
+// (done, pending, doubt, unknown). A client whose mail ended unclear asks this
+// before it decides between repeating the same key and a new one; the answer
+// carries no content of the request or response.
+func idempotencyStatus(w http.ResponseWriter, r *http.Request, a *app.App) {
+	key := r.PathValue("key")
+	if !idempotencyKeyRe.MatchString(key) {
+		badRequest(w, "invalid Idempotency-Key")
+		return
+	}
+	state, err := a.Store().IdempotencyStatus(r.Context(), key)
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"state": state})
+}

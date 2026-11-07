@@ -91,6 +91,26 @@ func (s *Store) DoubtIdempotency(ctx context.Context, key string) error {
 	return checkAffected(s.db.ExecContext(ctx, `UPDATE idempotency_keys SET state = 'doubt' WHERE idem_key = ?`, key))
 }
 
+// IdempotencyStatus tells a client what became of a key, without running
+// anything: "done" (the stored answer replays), "pending" (an attempt runs or
+// died midway), "doubt" (failed in a way that may have had an effect) or
+// "unknown" (never seen, refused and freed, or older than the retention).
+func (s *Store) IdempotencyStatus(ctx context.Context, key string) (string, error) {
+	var state string
+	err := s.db.QueryRowContext(ctx, `SELECT state FROM idempotency_keys WHERE idem_key = ?`, key).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "unknown", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("store: idempotency status: %w", err)
+	}
+	switch state {
+	case "done", "doubt":
+		return state, nil
+	}
+	return "pending", nil
+}
+
 // ReleaseIdempotency forgets a key whose request failed without an effect, so that it can be retried.
 func (s *Store) ReleaseIdempotency(ctx context.Context, key string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM idempotency_keys WHERE idem_key = ?`, key)
