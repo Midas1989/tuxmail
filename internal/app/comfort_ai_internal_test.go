@@ -78,19 +78,30 @@ func TestAiRefinerRespectsAccess(t *testing.T) {
 		spam    bool
 		want    string // "" = no request
 		without string
+		role    domain.FolderRole
+		ferr    bool
 	}{
-		{AiLevelOff, inbox, false, "", ""},
-		{AiLevelMetadata, inbox, false, "SUBJECTMARK", "BODYMARK"},
-		{AiLevelContent, inbox, false, "BODYMARK", ""},
-		{AiLevelContent, junk, false, "", ""},
-		{AiLevelContent, inbox, true, "", ""},
+		{AiLevelOff, inbox, false, "", "", "", false},
+		{AiLevelMetadata, inbox, false, "SUBJECTMARK", "BODYMARK", "", false},
+		{AiLevelContent, inbox, false, "BODYMARK", "", "", false},
+		{AiLevelContent, junk, false, "", "", "", false},
+		{AiLevelContent, inbox, true, "", "", "", false},
+		{AiLevelContent, inbox, false, "", "", "", true},            // folder lookup failed
+		{AiLevelContent, -1, false, "", "", "", false},              // no folder, no role
+		{AiLevelContent, -1, false, "", "", domain.RoleJunk, false}, // no folder, junk role
+		{AiLevelContent, -1, false, "BODYMARK", "", domain.RoleInbox, false},
 	} {
 		rec.prompts = nil
 		if _, err := a.SaveAiSettings(ctx, AiSettings{Provider: "ollama", AccessVersion: 2,
 			Sources: map[string]AiSourceAccess{aiAccountKey(acc): {Level: c.level}}}); err != nil {
 			t.Fatal(err)
 		}
-		res, _ := aiRefiner{a: a, account: acc, folders: []int64{c.folder}, spam: c.spam}.Refine(ctx, m, categorize.Result{})
+		r := aiRefiner{a: a, account: acc, folders: []int64{c.folder}, spam: c.spam}
+		if c.folder < 0 { // location not stored yet: the role of the sync engine decides
+			r.folders, r.role = nil, c.role
+		}
+		r.foldersErr = c.ferr
+		res, _ := r.Refine(ctx, m, categorize.Result{})
 		got := strings.Join(rec.prompts, "\n")
 		if c.want == "" {
 			if got != "" || res.Source == "ai" {

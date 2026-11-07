@@ -340,3 +340,56 @@ func TestAiAccessMigration(t *testing.T) {
 		}
 	}
 }
+
+// Downgrade: every account - also one created after the last save, without
+// the settings being read again - has an explicit "false" for TuxMail 1.0.1.
+func TestAiAccessLegacyEntryForNewAccounts(t *testing.T) {
+	ctx := context.Background()
+	e := newAiEnv(t, "")
+	e.save(t, map[string]app.AiSourceAccess{key(e.d.WorkAccount): {Level: app.AiLevelContent}})
+	acc := must[int64](t)(e.st.CreateAccount(ctx, domain.Account{Kind: domain.KindIMAP, DisplayName: "Neu", Enabled: true}))
+	var stored struct {
+		AccountPermissions map[string]bool `json:"accountPermissions"`
+		Sources            map[string]app.AiSourceAccess
+	}
+	if _, err := e.st.GetAppSetting(ctx, "ai", &stored); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := stored.AccountPermissions[strconv.FormatInt(acc, 10)]; !ok || v {
+		t.Fatalf("new account: %v %v", v, ok)
+	}
+	if !stored.AccountPermissions[strconv.FormatInt(e.d.WorkAccount, 10)] || len(stored.Sources) == 0 {
+		t.Fatalf("other entries kept: %+v", stored)
+	}
+	// stored settings without the field (written by hand or very old): created, too
+	if err := e.st.SetAppSetting(ctx, "ai", map[string]any{"provider": "custom", "accessVersion": 2}); err != nil {
+		t.Fatal(err)
+	}
+	acc2 := must[int64](t)(e.st.CreateAccount(ctx, domain.Account{Kind: domain.KindSignal, DisplayName: "S2"}))
+	stored.AccountPermissions = nil
+	if _, err := e.st.GetAppSetting(ctx, "ai", &stored); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := stored.AccountPermissions[strconv.FormatInt(acc2, 10)]; !ok || v {
+		t.Fatalf("created map: %+v", stored.AccountPermissions)
+	}
+	// loading fills every known account that is missing
+	must[app.AiSettings](t)(e.a.GetAiSettings(ctx))
+	stored.AccountPermissions = nil
+	if _, err := e.st.GetAppSetting(ctx, "ai", &stored); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []int64{e.d.WorkAccount, e.d.PersonalAccount, acc, acc2} {
+		if v, ok := stored.AccountPermissions[strconv.FormatInt(id, 10)]; !ok || v {
+			t.Errorf("account %d after load: %v %v", id, v, ok)
+		}
+	}
+	// without stored AI settings nothing is written
+	if err := e.st.DeleteAppSetting(ctx, "ai"); err != nil {
+		t.Fatal(err)
+	}
+	must[int64](t)(e.st.CreateAccount(ctx, domain.Account{Kind: domain.KindIMAP, DisplayName: "N3"}))
+	if found, _ := e.st.GetAppSetting(ctx, "ai", &stored); found {
+		t.Fatal("ai settings created")
+	}
+}

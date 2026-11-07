@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
@@ -50,13 +51,42 @@ func (s *Store) CreateAccount(ctx context.Context, a domain.Account) (int64, err
 	if err != nil {
 		return 0, err
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO accounts(kind, display_name, color, config_json, secret_ref, enabled, sort_order)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `INSERT INTO accounts(kind, display_name, color, config_json, secret_ref, enabled, sort_order)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		a.Kind, a.DisplayName, nullString(a.Color), cfg, nullString(a.SecretRef), boolInt(a.Enabled), a.SortOrder)
 	if err != nil {
 		return 0, fmt.Errorf("store: create account: %w", err)
 	}
-	return res.LastInsertId()
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	if err := denyLegacyAI(ctx, tx, id); err != nil {
+		return 0, err
+	}
+	return id, tx.Commit()
+}
+
+// denyLegacyAI marks a new account as not shared in the AI settings of
+// TuxMail <= 1.0.1 ("accountPermissions", absent = allowed): an older
+// version opening this data after a downgrade must not send its content,
+// which starts "off" here (internal/app/ai_access.go). Without stored AI
+// settings nothing is configured and nothing is written.
+func denyLegacyAI(ctx context.Context, tx *sql.Tx, id int64) error {
+	k := strconv.FormatInt(id, 10)
+	_, err := tx.ExecContext(ctx, `UPDATE app_settings SET value_json = CASE
+		WHEN json_type(value_json, '$.accountPermissions') = 'object' THEN json_set(value_json, '$.accountPermissions."' || ? || '"', json('false'))
+		ELSE json_set(value_json, '$.accountPermissions', json_object(?, json('false'))) END
+		WHERE key = 'ai' AND json_valid(value_json)`, k, k)
+	if err != nil {
+		return fmt.Errorf("store: create account: ai settings: %w", err)
+	}
+	return nil
 }
 
 // UpdateAccount overwrites all fields of the account a.ID.

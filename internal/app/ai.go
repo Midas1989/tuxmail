@@ -37,19 +37,30 @@ func (a *App) loadAiSettings(ctx context.Context) (AiSettings, error) {
 	if err != nil {
 		return s, err
 	}
-	if s.AccessVersion < aiAccessVersion {
+	if found {
 		accs, err := a.st.ListAccounts(ctx)
 		if err != nil {
 			return s, err
 		}
-		if migrateAiAccess(&s, found, accs) && !a.opts.ReadOnly {
+		changed := migrateAiAccess(&s, found, accs)
+		// every account has an explicit version-1 entry, so an older TuxMail
+		// opening this data never treats a missing one as allowed
+		if s.AccountPermissions == nil {
+			s.AccountPermissions = map[string]bool{}
+		}
+		for id, v := range legacyAccountPermissions(s, accs) {
+			if old, ok := s.AccountPermissions[id]; !ok || old != v {
+				s.AccountPermissions[id], changed = v, true
+			}
+		}
+		if changed && !a.opts.ReadOnly {
 			s.APIKey, s.APIKeySet = "", false
 			if err := a.st.SetAppSetting(ctx, keyAI, s); err != nil {
 				return s, err
 			}
 		}
-	} else if s.Sources == nil {
-		s.Sources = map[string]AiSourceAccess{}
+	} else {
+		migrateAiAccess(&s, false, nil)
 	}
 	s.APIKey = ""
 	_, err = a.opts.Secrets.Get(aiSecretRef)

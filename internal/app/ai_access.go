@@ -187,6 +187,15 @@ func (sc *aiScope) accountLevel(ctx context.Context, accountID int64, folderIDs 
 	return l
 }
 
+// roleAllowed reports whether a mail in a folder of this role may be sent
+// when only the role is known: an unknown role is not ("" = refuse).
+func (sc *aiScope) roleAllowed(accountID int64, role domain.FolderRole) bool {
+	if role == "" {
+		return false
+	}
+	return sc.s.Sources[aiAccountKey(accountID)].AllowJunkTrash || (role != domain.RoleJunk && role != domain.RoleTrash)
+}
+
 // itemLevel returns the level of a conversation item; encrypted and
 // deleted items are never sent.
 func (sc *aiScope) itemLevel(ctx context.Context, it ConversationItem) string {

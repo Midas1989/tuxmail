@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/categorize"
+	"github.com/Midas1989/Mailclient/internal/domain"
 )
 
 // aiRefiner lets a local AI model refine uncertain smart categories
@@ -20,7 +21,11 @@ type aiRefiner struct {
 	a       *App
 	account int64
 	folders []int64
-	spam    bool
+	// role: folder role reported by the sync engine, used while the mail
+	// has no stored location yet; without both the mail is not sent.
+	role       domain.FolderRole
+	foldersErr bool
+	spam       bool
 }
 
 // Refine implements categorize.Refiner.
@@ -32,7 +37,11 @@ func (r aiRefiner) Refine(ctx context.Context, m categorize.Mail, res categorize
 	if err != nil || p == nil || !isLocalAI(s) {
 		return res, errAI
 	}
-	level := r.a.newAiScope(s).accountLevel(ctx, r.account, r.folders)
+	sc := r.a.newAiScope(s)
+	level := sc.accountLevel(ctx, r.account, r.folders)
+	if r.foldersErr || (len(r.folders) == 0 && !sc.roleAllowed(r.account, r.role)) {
+		level = AiLevelOff
+	}
 	if level == AiLevelOff {
 		return res, errAINoAccess
 	}

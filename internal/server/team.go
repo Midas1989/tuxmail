@@ -184,6 +184,7 @@ func (s *Server) newTeamRuntime(ctx context.Context, mb team.Mailbox, st *store.
 		WorkflowActions: []workflow.ActionType{team.AssignActionType(s.team.svc, mb.ID, resolve)},
 		Notifier:        &teamWorkflowNotifier{s: s, mailboxID: mb.ID}}
 	opts.OAuth = s.oauthAppOptions()
+	opts.AIMaxLevel = s.aiMaxLevel() // admin cap of the AI access, as for users (apps.go)
 	if s.teamAppOptions != nil {
 		s.teamAppOptions(mb.ID, &opts)
 	}
