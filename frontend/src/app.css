@@ -456,6 +456,13 @@
   }
 }
 
+/* Phone held sideways: a slimmer bottom bar (icons only) leaves room for the content. */
+@media (pointer: coarse) and (max-height: 500px) {
+  :root {
+    --tm-bar-h: 48px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   :root {
     --tm-dur: 0ms;

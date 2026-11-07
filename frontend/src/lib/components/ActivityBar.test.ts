@@ -6,7 +6,7 @@ import { flushSync } from 'svelte';
 
 // Phone viewport for the shared MediaQuery (max-width: 639px).
 vi.hoisted(() => {
-  window.matchMedia = ((q: string) => ({ matches: true, media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })) as never;
+  window.matchMedia = ((q: string) => ({ matches: q !== '(pointer: coarse) and (max-height: 500px)', media: q, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, onchange: null, dispatchEvent: () => false })) as never;
 });
 
 const nav = vi.hoisted(() => ({ calls: [] as string[] }));

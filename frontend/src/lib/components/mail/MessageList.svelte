@@ -263,6 +263,7 @@
           class:unread
           class:selected
           class:checked={isChecked}
+          class:selecting={app.checked.length > 0}
           role="option"
           aria-selected={selected}
           aria-posinset={index + 1}
@@ -297,7 +298,7 @@
           />
           <span class="unread-dot" aria-hidden="true"></span>
           {#if prefs.density !== 'compact'}
-            <Avatar name={showRecipients ? (m.to[0]?.name ?? m.to[0]?.email ?? '?') : who(m)} seed={showRecipients ? m.to[0]?.email : m.from[0]?.email} size={34} />
+            <span class="av"><Avatar name={showRecipients ? (m.to[0]?.name ?? m.to[0]?.email ?? '?') : who(m)} seed={showRecipients ? m.to[0]?.email : m.from[0]?.email} size={34} /></span>
           {/if}
           <div class="body">
             <div class="l1">
@@ -601,6 +602,10 @@
     margin: 0;
     font-size: 12.5px;
   }
+  .av {
+    flex: none;
+    display: inline-flex;
+  }
   .bulk-more {
     display: none;
   }
@@ -628,6 +633,10 @@
       flex: 0 1 auto;
       overflow: hidden;
     }
+    /* room below the last row so the floating button never hides it */
+    .spacer {
+      margin-bottom: 80px;
+    }
     .row {
       touch-action: pan-y;
       user-select: none;
@@ -636,8 +645,14 @@
     .check {
       opacity: 0;
     }
+    /* Selecting: the checkbox takes the place of the avatar (and the unread dot) and sits centred on it. */
+    .row.selecting .av,
+    .row.selecting .unread-dot {
+      visibility: hidden;
+    }
     .check.show {
-      left: 8px;
+      left: calc(var(--tm-pad-x) + 4px + 6px);
+      top: calc(var(--tm-pad-y) + 17px);
       width: 22px;
       height: 22px;
     }
@@ -662,6 +677,9 @@
   /* Phone held sideways: keep the height for the rows. */
   @media (pointer: coarse) and (max-height: 500px) {
     .list-head:not(.bulk) {
+      display: none;
+    }
+    .fab {
       display: none;
     }
   }

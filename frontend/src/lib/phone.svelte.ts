@@ -8,6 +8,9 @@ import { MediaQuery } from 'svelte/reactivity';
 export const phone: { readonly current: boolean } =
   typeof matchMedia === 'undefined' ? { current: false } : new MediaQuery('(max-width: 639px), (pointer: coarse) and (max-height: 500px)');
 
+/** A phone held sideways: the bar is compact and holds the compose button. */
+export const landscape: { readonly current: boolean } = typeof matchMedia === 'undefined' ? { current: false } : new MediaQuery('(pointer: coarse) and (max-height: 500px)');
+
 /**
  * Text scale the user chose in the system (Android font size / WebView text zoom). Fixed pixel heights do not grow
  * with it, so lists with a fixed row height multiply their height by this factor. 1 = normal.

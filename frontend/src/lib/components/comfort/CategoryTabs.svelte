@@ -101,4 +101,11 @@
     font-size: 11px;
     text-align: center;
   }
+
+  /* Phone held sideways: the rows need the height more than the category tabs. */
+  @media (pointer: coarse) and (max-height: 500px) {
+    .tabs {
+      display: none;
+    }
+  }
 </style>

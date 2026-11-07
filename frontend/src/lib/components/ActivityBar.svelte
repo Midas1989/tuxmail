@@ -10,7 +10,8 @@
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import AccountMenu from './AccountMenu.svelte';
   import Ellipsis from '@lucide/svelte/icons/ellipsis';
-  import { phone } from '../phone.svelte';
+  import { landscape, phone } from '../phone.svelte';
+  import SquarePen from '@lucide/svelte/icons/square-pen';
   import { app, prefs } from '../state';
   import { t, i18n } from '../i18n/index.svelte';
 
@@ -116,6 +117,11 @@
   </ul>
   <div class="spacer"></div>
   {#if phone.current}
+    {#if landscape.current && app.route === 'mail' && !(app.route === 'mail' && !app.messageListView && app.selectedConversationId != null)}
+      <button class="item compose" onclick={() => app.openCompose()} title={t('common.action.compose')} aria-label={t('common.action.compose')}>
+        <SquarePen size={22} strokeWidth={1.8} aria-hidden="true" />
+      </button>
+    {/if}
     <button bind:this={moreBtn} class="item more" aria-current={moreActive ? 'page' : undefined} aria-haspopup="dialog" aria-expanded={moreOpen} onclick={() => (moreOpen = !moreOpen)} title={t('nav.more')}>
       <Ellipsis size={21} strokeWidth={1.8} aria-hidden="true" />
       <span class="lbl">{t('nav.more')}</span>
@@ -351,6 +357,21 @@
       background: var(--tm-accent-soft);
       color: var(--tm-accent-text);
       font-weight: 600;
+    }
+  }
+
+  /* Phone held sideways: icons only, 48 px bar (targets stay 44 px). */
+  @media (pointer: coarse) and (max-height: 500px) {
+    .rail .lbl {
+      display: none;
+    }
+    .item {
+      height: 44px;
+      min-height: 44px;
+    }
+    .item.compose {
+      flex: 1 1 0;
+      min-width: 0;
     }
   }
 </style>
