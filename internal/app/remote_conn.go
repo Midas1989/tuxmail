@@ -3,6 +3,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdh"
 	"encoding/json"
@@ -12,7 +13,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -82,12 +82,13 @@ type ConnTiming struct {
 	SettingsSync time.Duration // settings synchronisation in "local" mode
 	RotateAfter  time.Duration // age at which the device token is replaced
 	RotateRetry  time.Duration // pause after a failed rotation
+	TotalTimeout time.Duration // one whole exchange, however slowly the bytes trickle
 }
 
 func defaultConnTiming() ConnTiming {
 	return ConnTiming{Heartbeat: 60 * time.Second, RetryMin: 5 * time.Second, RetryMax: time.Minute, ProbeTimeout: 5 * time.Second,
 		ReadTimeout: 15 * time.Second, WriteTimeout: 2 * time.Minute, DataEvery: 15 * time.Minute, SettingsSync: 5 * time.Minute,
-		RotateAfter: 30 * 24 * time.Hour, RotateRetry: 24 * time.Hour}
+		RotateAfter: 30 * 24 * time.Hour, RotateRetry: 24 * time.Hour, TotalTimeout: 5 * time.Minute}
 }
 
 // connRuntime is the in-memory state of the connection.
@@ -360,15 +361,20 @@ const maxConnBody = 110 << 20
 var errConnNetwork = errors.New("server not reachable")
 
 // connDo sends one request with the device token. Errors wrap errConnNetwork
-// for "no answer" or are errConnLocked; every HTTP answer is a result.
-// wait bounds the time until the headers arrive, so a dead network never
-// blocks the UI for long; a body may take longer.
+// for "no (complete) answer" or are errConnLocked; every HTTP answer is a
+// result. wait bounds the silence: until the headers arrive and between parts
+// of the body. A whole exchange is bounded too, so that a dead or stalling path
+// never blocks anything for long and shows as offline.
 func (a *App) connDo(ctx context.Context, base, method, pathQuery string, hdr http.Header, body []byte, wait time.Duration) (*connResponse, error) {
-	ctx, cancel := context.WithCancel(ctx)
+	total := a.cr.timing.TotalTimeout
+	if total <= 0 {
+		total = 5 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(ctx, max(total, 2*wait))
 	defer cancel()
 	var rd io.Reader
 	if body != nil {
-		rd = strings.NewReader(string(body))
+		rd = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, base+pathQuery, rd)
 	if err != nil {
@@ -382,9 +388,7 @@ func (a *App) connDo(ctx context.Context, base, method, pathQuery string, hdr ht
 	}
 	timer := time.AfterFunc(wait, cancel)
 	defer timer.Stop()
-	// Redirects are not followed: an answer from elsewhere must never see the token.
-	hc := &http.Client{Transport: a.opts.HTTPClient.Transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	res, err := hc.Do(req)
+	res, err := (&http.Client{Transport: a.opts.HTTPClient.Transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}).Do(req)
 	if err != nil {
 		var ue *url.Error
 		if errors.As(err, &ue) {
@@ -393,15 +397,23 @@ func (a *App) connDo(ctx context.Context, base, method, pathQuery string, hdr ht
 		return nil, fmt.Errorf("%w: %w", errConnNetwork, err)
 	}
 	defer res.Body.Close()
-	timer.Stop()
-	data, err := io.ReadAll(io.LimitReader(res.Body, maxConnBody+1))
-	if err != nil {
-		return nil, fmt.Errorf("%w: %w", errConnNetwork, err)
+	var buf bytes.Buffer
+	chunk := make([]byte, 32<<10)
+	for {
+		timer.Reset(wait)
+		n, rerr := res.Body.Read(chunk)
+		buf.Write(chunk[:n])
+		if buf.Len() > maxConnBody {
+			return &connResponse{Status: http.StatusRequestEntityTooLarge, Header: http.Header{}, Body: []byte(`{"error":"too_large","message":"answer too large"}`)}, nil
+		}
+		if rerr == io.EOF {
+			break
+		}
+		if rerr != nil {
+			return nil, fmt.Errorf("%w: %w", errConnNetwork, rerr)
+		}
 	}
-	if len(data) > maxConnBody {
-		return &connResponse{Status: http.StatusRequestEntityTooLarge, Header: http.Header{}, Body: []byte(`{"error":"too_large","message":"answer too large"}`)}, nil
-	}
-	return &connResponse{Status: res.StatusCode, Header: res.Header, Body: data}, nil
+	return &connResponse{Status: res.StatusCode, Header: res.Header, Body: buf.Bytes()}, nil
 }
 
 // connGatewayDown: a reverse proxy answers, the server behind it does not.
@@ -459,6 +471,12 @@ func (a *App) connLoop(ctx context.Context) {
 	a.cr.startCtx = ctx
 	a.cr.mu.Unlock()
 	defer a.connStopStream()
+	// Short sessions never reach the measuring in cacheResponse.
+	if a.connCurrent() != nil {
+		if _, err := a.st.PruneRemoteCache(ctx, a.remoteCacheMax()); err != nil {
+			a.log.Warn("app: trimming the read cache failed", "err", err)
+		}
+	}
 	for {
 		wait := time.Hour
 		if c := a.connCurrent(); c != nil {
@@ -553,6 +571,9 @@ func (a *App) connPauseLocal() {
 	if a.mgr != nil {
 		a.mgr.Stop()
 	}
+	if a.msgr != nil {
+		a.msgr.StopPlugins()
+	}
 }
 
 // connResumeLocal is called when the device syncs for itself again.
@@ -567,6 +588,9 @@ func (a *App) connResumeLocal() {
 		if err := a.mgr.Start(ctx); err != nil {
 			a.log.Warn("app: resuming sync failed", "err", err)
 		}
+	}
+	if a.msgr != nil {
+		a.msgr.Start() // Start connects what is not connected yet
 	}
 }
 
@@ -592,6 +616,8 @@ type ConnectionStatus struct {
 	CacheBytes       int64              `json:"cacheBytes"`
 	Outbox           []OutboxEntry      `json:"outbox"`
 	SettingsLog      []SettingsLogEntry `json:"settingsLog"`
+	// What the settings synchronisation will not do without the user.
+	Attention SettingsAttention `json:"attention"`
 }
 
 func unixRFC3339(sec int64) string {
@@ -603,7 +629,7 @@ func unixRFC3339(sec int64) string {
 
 // ServerConnectionStatus returns the current status.
 func (a *App) ServerConnectionStatus(ctx context.Context) (ConnectionStatus, error) {
-	st := ConnectionStatus{State: ConnStateNone, Outbox: []OutboxEntry{}, SettingsLog: []SettingsLogEntry{}}
+	st := ConnectionStatus{State: ConnStateNone, Outbox: []OutboxEntry{}, SettingsLog: []SettingsLogEntry{}, Attention: emptyAttention()}
 	c := a.connCurrent()
 	if c == nil {
 		return st, nil
@@ -623,6 +649,7 @@ func (a *App) ServerConnectionStatus(ctx context.Context) (ConnectionStatus, err
 		return st, err
 	}
 	st.SettingsLog = a.settingsLog(ctx)
+	st.Attention = a.settingsAttentionNow(ctx)
 	return st, nil
 }
 
@@ -840,7 +867,7 @@ func (a *App) ServerDisconnect(ctx context.Context, in DisconnectInput) (Disconn
 	}
 	a.connDeleteSecrets(c.URL)
 	a.dropSession(c.URL)
-	for _, key := range []string{keySettingsMap, keySettingsLog} {
+	for _, key := range []string{keySettingsMap, keySettingsLog, keySettingsAttention} {
 		if err := a.st.DeleteAppSetting(ctx, key); err != nil {
 			return res, err
 		}

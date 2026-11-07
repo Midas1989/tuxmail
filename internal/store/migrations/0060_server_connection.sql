@@ -7,7 +7,7 @@ CREATE TABLE idempotency_keys (
   idem_key     TEXT    PRIMARY KEY,
   route        TEXT    NOT NULL,
   request_hash TEXT    NOT NULL,
-  state        TEXT    NOT NULL, -- pending | done
+  state        TEXT    NOT NULL, -- pending | done | doubt
   status       INTEGER NOT NULL DEFAULT 0,
   content_type TEXT    NOT NULL DEFAULT '',
   body         BLOB,
@@ -57,7 +57,7 @@ CREATE TABLE remote_outbox (
   body       BLOB,
   title      TEXT    NOT NULL DEFAULT '',
   recipients TEXT    NOT NULL DEFAULT '',
-  state      TEXT    NOT NULL DEFAULT 'pending', -- pending | failed | in_doubt
+  state      TEXT    NOT NULL DEFAULT 'pending', -- pending | failed | in_doubt | blocked
   last_error TEXT    NOT NULL DEFAULT '',
   attempts   INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
@@ -73,5 +73,17 @@ CREATE TABLE remote_outbox_uploads (
   created_at INTEGER NOT NULL
 );
 
--- "Newer state wins" of the settings synchronisation needs a time per signature.
+-- Settings synchronisation: only an explicit record of a deletion deletes on
+-- the other side; something just missing from an answer never does.
+CREATE TABLE settings_tombstones (
+  kind       TEXT    NOT NULL,
+  item_id    TEXT    NOT NULL,
+  deleted_at INTEGER NOT NULL,
+  PRIMARY KEY (kind, item_id)
+) WITHOUT ROWID;
+
+-- "Newer state wins" of the settings synchronisation needs a time per
+-- signature. Existing ones: when they last changed is unknown, the time of
+-- this migration keeps them from losing against every other copy.
 ALTER TABLE signatures ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0;
+UPDATE signatures SET updated_at = CAST(strftime('%s', 'now') AS INTEGER);

@@ -715,6 +715,11 @@ func (e *Engine) runSub(ctx context.Context, parent *RunContext, id string) (Out
 	if c == nil {
 		return nil, Permanent(fmt.Errorf("workflow %q not found", id))
 	}
+	// A switched-off rule never acts, also not through another rule: switching
+	// on (with the confirmation of external effects) is the one way to arm it.
+	if !c.wf.Enabled {
+		return nil, Permanent(fmt.Errorf("workflow %q is switched off", id))
+	}
 	if parent.depth+1 > parent.Workflow.Options.maxDepth() {
 		return nil, Permanent(errors.New(reasonDepth))
 	}

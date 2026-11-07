@@ -395,6 +395,9 @@ func Routes(opts Options) []Route {
 		})},
 		{"DELETE /api/search-folders/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DeleteSearchFolder(r.Context(), id)) })},
 
+		// Settings synchronisation of the desktop app: deletions on purpose.
+		{"GET /api/settings-sync/tombstones", func(w w, r r, a A) { send(w)(a.Store().ListSettingsTombstones(r.Context())) }},
+
 		// Workflows
 		{"GET /api/workflows/schema", func(w w, r r, a A) { send(w)(a.DescribeWorkflows(r.Context())) }},
 		{"GET /api/workflows", func(w w, r r, a A) { send(w)(a.ListWorkflows(r.Context(), qInt64(r, "projectId"))) }},

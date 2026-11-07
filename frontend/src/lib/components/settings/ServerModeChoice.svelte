@@ -44,6 +44,7 @@
   {/if}
   {#if mode === 'thin'}
     <p class="note">{t('connection.mode.thinLocalAccounts')}</p>
+    <p class="note">{t('connection.mode.thinCache')}</p>
   {/if}
 </fieldset>
 

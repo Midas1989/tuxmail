@@ -38,6 +38,7 @@
 </script>
 
 <script lang="ts">
+  import { connection } from '../../state/connection.svelte';
   import { untrack } from 'svelte';
   import Bold from '@lucide/svelte/icons/letter-b';
   import Italic from '@lucide/svelte/icons/italic';
@@ -79,12 +80,15 @@
   let identityId = $state<number>(start.identityId ?? app.defaultIdentity()?.id ?? 0);
   let to = $state<Address[]>(start.to ?? []);
   let cc = $state<Address[]>(start.cc ?? []);
-  let bcc = $state<Address[]>([]);
+  let bcc = $state<Address[]>(start.outbox?.bcc ?? []);
   let showCc = $state((start.cc?.length ?? 0) > 0);
-  let showBcc = $state(false);
+  let showBcc = $state((start.outbox?.bcc?.length ?? 0) > 0);
   let subject = $state(start.subject ?? '');
   let attachments = $state<DraftAttachment[]>(
-    (start.forwardAttachments ?? []).map((a) => ({ key: 'fwd' + a.id, filename: a.filename, mimeType: a.mimeType, size: a.size, delivery: 'attach' as const, existingId: a.id })),
+    [
+      ...(start.forwardAttachments ?? []).map((a) => ({ key: 'fwd' + a.id, filename: a.filename, mimeType: a.mimeType, size: a.size, delivery: 'attach' as const, existingId: a.id })),
+      ...(start.outbox?.attachments ?? []).map((a) => ({ key: 'out' + a.uploadToken, uploadToken: a.uploadToken, filename: a.filename, mimeType: a.mimeType, size: a.size ?? 0, delivery: (a.delivery ?? 'attach') as AttachmentDelivery })),
+    ],
   );
   let editor = $state<HTMLDivElement>();
   let fileInput = $state<HTMLInputElement>();
@@ -140,7 +144,7 @@
     editor.dataset.ready = '1';
     const sig = signatureHtml(identityId);
     editor.innerHTML =
-      (start.bodyHtml || '<p><br></p>') + (sig ? `<div data-signature="1" class="sig">${sig}</div>` : '') + (start.quoteHtml ? `<div data-quote="1">${start.quoteHtml}</div>` : '');
+      (start.bodyHtml || '<p><br></p>') + (sig && !start.outbox ? `<div data-signature="1" class="sig">${sig}</div>` : '') + (start.quoteHtml ? `<div data-quote="1">${start.quoteHtml}</div>` : '');
     rememberSignature();
   });
 
@@ -362,6 +366,8 @@
           app.toast(t('compose.passwordCopyFailed'), undefined, 'error');
         }
       }
+      // The copy in the outbox has served its purpose only now: never lost in between.
+      if (start.outbox) await connection.outboxDiscard(start.outbox.id).catch(() => {});
       app.toast(res.offline ? t('connection.sendLater') : res.queued ? t('compose.queued') : t('compose.sent'));
       onclose();
     } catch (err) {
@@ -393,6 +399,12 @@
 </script>
 
 <Modal {title} onclose={onclose} width="860px">
+  {#if start.outbox}
+    <div class="outbox-reason" role="status" data-testid="draft-reason">
+      <p>{t('connection.outbox.draftNotice')}</p>
+      {#each start.outbox.reasons as r, i (i)}<p>{r}</p>{/each}
+    </div>
+  {/if}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="composer"
@@ -525,6 +537,17 @@
 {/if}
 
 <style>
+  .outbox-reason {
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    font-size: 13px;
+    background: color-mix(in srgb, var(--tm-warn) 16%, transparent);
+    border: 1px solid var(--tm-warn);
+  }
+  .outbox-reason p {
+    margin: 0;
+  }
   .composer {
     position: relative;
     display: flex;

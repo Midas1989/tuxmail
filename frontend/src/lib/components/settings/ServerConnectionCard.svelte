@@ -11,8 +11,9 @@
   import ArrowLeftRight from '@lucide/svelte/icons/arrow-left-right';
   import KeyRound from '@lucide/svelte/icons/key-round';
   import { connection as defaultConnection, type ConnectionState } from '../../state/connection.svelte';
-  import { t, fmt, formatSize, type MessageKey } from '../../i18n/index.svelte';
-  import type { ClientMode, SettingsLogEntry } from '../../types';
+  import { app } from '../../state';
+  import { i18n, t, fmt, formatSize, type MessageKey } from '../../i18n/index.svelte';
+  import type { ClientMode, OutboxEntry, SettingsLogEntry } from '../../types';
   import { openExternal } from '../../platform';
   import Modal from '../common/Modal.svelte';
   import ServerModeChoice from './ServerModeChoice.svelte';
@@ -37,6 +38,34 @@
     } finally {
       busy = false;
     }
+  }
+
+  const attn = $derived(s.attention);
+
+  function reasons(o: OutboxEntry): string[] {
+    return (o.findings ?? []).map((f) => f.localized?.[i18n.locale] ?? f.message);
+  }
+
+  /** Back to the composer, with the reason; the copy stays in the outbox until it is sent. */
+  async function openDraft(o: OutboxEntry) {
+    const m = await conn.outboxMessage(o.id);
+    app.openCompose({
+      mode: 'new',
+      identityId: m.identityId,
+      to: m.to,
+      cc: m.cc,
+      subject: m.subject,
+      bodyHtml: m.html || `<p>${escapeHtml(m.text)}</p>`,
+      inReplyToMessageId: m.inReplyToMessageId,
+      forwardOfMessageId: m.forwardOfMessageId,
+      outbox: { id: o.id, reasons: reasons(o), bcc: m.bcc, attachments: m.attachments },
+    });
+  }
+
+  function escapeHtml(text: string): string {
+    const d = document.createElement('div');
+    d.textContent = text ?? '';
+    return d.innerHTML.replace(/\n/g, '<br>');
   }
 
   const when = (iso?: string) => (iso ? fmt().dateTime(iso) : t('connection.never'));
@@ -158,11 +187,69 @@
               {#if o.recipients}<small>{o.recipients}</small>{/if}
               {#if o.state === 'failed'}<small class="bad">{t('connection.outbox.failed', { error: o.error ?? '' })}</small>{/if}
               {#if o.state === 'in_doubt'}<small class="bad">{t('connection.outbox.inDoubt')}</small>{/if}
+              {#if o.state === 'blocked'}
+                <small class="bad">{t('connection.outbox.blocked')}</small>
+                {#each reasons(o) as r, i (i)}<small class="bad">{r}</small>{/each}
+              {/if}
             </span>
+            {#if o.state !== 'pending' && o.kind === 'send'}
+              <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => openDraft(o))}>{t('connection.outbox.asDraft')}</button>
+            {/if}
             {#if o.state !== 'pending'}
-              <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.outboxRetry(o.id))}>{o.state === 'in_doubt' ? t('connection.outbox.sendAgain') : t('connection.outbox.retry')}</button>
+              <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.outboxRetry(o.id))}>{o.state === 'failed' ? t('connection.outbox.retry') : t('connection.outbox.sendAgain')}</button>
             {/if}
             <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.outboxDiscard(o.id))}>{t('connection.outbox.discard')}</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+
+    {#if attn?.pendingWorkflows.length}
+      <h3 data-testid="pending-title">{t('connection.rules.waiting', { count: attn.pendingWorkflows.length })}</h3>
+      <p class="sub">{t('connection.rules.why')}</p>
+      <ul class="outbox" data-testid="pending-rules">
+        {#each attn.pendingWorkflows as w (w.id)}
+          <li>
+            <span class="what">
+              <b>{w.name} · {w.isNew ? t('connection.rules.isNew') : t('connection.rules.changed')}</b>
+              {#if w.before}<small>{t('connection.rules.before', { actions: w.before.join(', ') })}</small>{/if}
+              <small>{t('connection.rules.after', { actions: w.after.join(', ') })}</small>
+              {#if w.wasEnabled}<small class="bad">{t('connection.rules.wasOn')}</small>{/if}
+              {#if w.external}<small class="bad">{t('connection.rules.external')}</small>{/if}
+            </span>
+            <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowApprove(w.id))}>{t('connection.rules.approve')}</button>
+            <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowDismiss(w.id))}>{t('connection.rules.keepOff')}</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if attn?.conflicts.length}
+      <h3>{t('connection.rules.conflictTitle')}</h3>
+      <ul class="outbox" data-testid="rule-conflicts">
+        {#each attn.conflicts as w (w.id)}
+          <li>
+            <span class="what">
+              <b>{w.name}</b>
+              <small>{t('connection.rules.here', { actions: w.local.join(', ') })}</small>
+              <small>{t('connection.rules.onServer', { actions: w.server.join(', ') })}</small>
+            </span>
+            <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowResolve(w.id, true))}>{t('connection.rules.keepMine')}</button>
+            <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowResolve(w.id, false))}>{t('connection.rules.takeServer')}</button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+    {#if attn?.deletes.some((d) => !d.decided)}
+      <h3>{t('connection.deletes.title')}</h3>
+      <ul class="outbox" data-testid="mass-deletes">
+        {#each attn.deletes.filter((d) => !d.decided) as d (d.kind)}
+          <li>
+            <span class="what">
+              <b>{t('connection.deletes.what', { count: d.names.length, kind: t(`connection.log.kind.${d.kind}`) })}</b>
+              <small>{d.names.join(', ')}</small>
+            </span>
+            <button class="btn btn-ghost danger" disabled={busy} onclick={() => void run(() => conn.settingsDeletes(d.kind, true))}>{t('connection.deletes.approve')}</button>
+            <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.settingsDeletes(d.kind, false))}>{t('connection.deletes.keep')}</button>
           </li>
         {/each}
       </ul>
@@ -319,6 +406,11 @@
   h3 {
     margin: 16px 0 6px;
     font-size: 13.5px;
+  }
+  .sub {
+    margin: 0 0 6px;
+    font-size: 12.5px;
+    color: var(--tm-muted);
   }
   .outbox {
     list-style: none;

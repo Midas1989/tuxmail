@@ -59,7 +59,7 @@ func TestMigration0060ForwardAndBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	var n int
-	if err := s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE name IN ('remote_cache', 'remote_cache_messages', 'remote_outbox', 'remote_outbox_uploads', 'idempotency_keys')`).Scan(&n); err != nil || n != 0 {
+	if err := s.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE name IN ('remote_cache', 'remote_cache_messages', 'remote_outbox', 'remote_outbox_uploads', 'idempotency_keys', 'settings_tombstones')`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("tables left after down: %d %v", n, err)
 	}
 	// Forward with data in place.
@@ -67,7 +67,7 @@ func TestMigration0060ForwardAndBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	sig, err := s.GetSignature(ctx, sigID)
-	if err != nil || sig.Name != "Alt" || sig.UpdatedAt != 0 {
+	if err != nil || sig.Name != "Alt" || sig.UpdatedAt == 0 {
 		t.Fatalf("signature after migrating: %+v %v", sig, err)
 	}
 	if err := s.AddRemoteOutbox(ctx, RemoteOutboxItem{ID: "x", Kind: "send", Method: "POST", Path: "/api/send", CreatedAt: time.Now()}); err != nil {

@@ -144,6 +144,14 @@ func (a *App) forwardWrite(ctx context.Context, c *serverConnection, method stri
 		}
 		return a.enqueue(ctx, method, u, body, q, "")
 	}
+	// Attachments kept while offline first have to reach the server: the outbox knows how.
+	if q == queueSend && len(outboxUploads(body)) > 0 {
+		res, err := a.enqueue(ctx, method, u, body, q, "")
+		if err == nil {
+			a.connKick()
+		}
+		return res, err
+	}
 	// Sending carries a key from the first try on: if the answer gets lost,
 	// the replay of the same key cannot send twice.
 	id := ""

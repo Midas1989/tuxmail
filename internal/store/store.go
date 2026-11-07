@@ -37,6 +37,9 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		"journal_mode(WAL)",
 		"busy_timeout(10000)",
 		"synchronous(NORMAL)",
+		// Deleted data is overwritten: "delete" also means gone from the disk
+		// (read cache of the server mode, remote.go).
+		"secure_delete(ON)",
 	} {
 		q.Add("_pragma", p)
 	}

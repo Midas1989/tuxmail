@@ -568,7 +568,7 @@ func TestSubWorkflowAndOtherActions(t *testing.T) {
 	e, st, _ := newEngine(t, r)
 	for _, y := range []string{`id: child
 name: Child
-enabled: false
+enabled: true
 trigger: {event: manual}
 condition: vars.who != ""
 actions:
@@ -630,6 +630,37 @@ actions:
 	}
 	if got := r.Calls(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("calls:\n%s", strings.Join(got, "\n"))
+	}
+	// A switched-off rule does not act through another rule.
+	offChild := mustParse(t, `id: offchild
+name: Off
+enabled: false
+trigger: {event: manual}
+actions: [{type: notify, channel: "signal:me", title: "Off", text: "x"}]
+`)
+	if err := e.Save(ctx, offChild, true); err != nil {
+		t.Fatal(err)
+	}
+	callsBefore := len(r.Calls())
+	callerWf := mustParse(t, `id: caller
+name: Caller
+enabled: true
+trigger: {event: manual}
+actions: [{type: run_workflow, id: offchild}]
+`)
+	if err := e.Save(ctx, callerWf, true); err != nil {
+		t.Fatal(err)
+	}
+	cid, err := e.RunManual(ctx, "caller", events.Event{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	drain(t, e)
+	if run, _ := st.GetWorkflowRun(ctx, cid); run.Status != store.RunFailed || !strings.Contains(run.Error, "switched off") {
+		t.Fatalf("run of a switched-off rule: %+v", run)
+	}
+	if got := r.Calls(); len(got) != callsBefore {
+		t.Fatalf("the switched-off rule acted: %v", got[callsBefore:])
 	}
 	// Recursion is stopped.
 	id, err := e.RunManual(ctx, "selfref", events.Event{})

@@ -337,7 +337,11 @@ func (a *App) DeleteSearchProfile(ctx context.Context, id string) error {
 	if err != nil {
 		return errNotFound
 	}
-	return a.st.DeleteSearchProfile(ctx, n)
+	if err := a.st.DeleteSearchProfile(ctx, n); err != nil {
+		return err
+	}
+	a.noteDeleted(ctx, settingsKindProfile, id)
+	return nil
 }
 
 const (

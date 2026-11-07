@@ -4092,7 +4092,7 @@
   },
   "connection": {
     "notAvailableOffline": "Not available without a connection to the server.",
-    "sendLater": "Saved. The mail will be sent as soon as there is a connection again.",
+    "sendLater": "Saved. The mail will be sent as soon as there is a connection again. If the send checks object, it comes back to you as a draft.",
     "settingsOffline": "You are offline. These settings live on the server and can be changed again once there is a connection.",
     "filesOffline": "You are offline. Files from the cloud are available again once there is a connection.",
     "never": "never",
@@ -4120,7 +4120,7 @@
       "locked": "Secret store locked"
     },
     "bar": {
-      "offline": "Offline: you see what was last loaded. Mails you write now go out when the connection is back.",
+      "offline": "Offline: you see what was last loaded. New mails are sent when the connection is back.",
       "offlineLocal": "Server not reachable. Your accounts keep working; settings will be synchronised later.",
       "expired": "Sign-in expired. Your local data is kept.",
       "locked": "Secret store locked: unlock it to connect to the server again.",
@@ -4139,7 +4139,8 @@
       "local4": "Server and device fetch separately: what you read or sort here reaches the server through the mail account.",
       "both": "The web interface and the Android app keep working with both.",
       "pop3": "Careful: at least one account uses POP3. If the server and this device both fetch and then delete, each side only sees part of the mail. Set one side to keep mail on the mail server.",
-      "thinLocalAccounts": "If you have accounts of your own on this device: they pause and come back unchanged when you disconnect."
+      "thinLocalAccounts": "If you have accounts of your own on this device: they pause and come back unchanged when you disconnect.",
+      "thinCache": "Content for reading offline stays unencrypted on this device, like local mail; disconnecting can remove it securely."
     },
     "outbox": {
       "title": "Waiting for the connection",
@@ -4149,7 +4150,10 @@
       "inDoubt": "It is unclear whether this mail was already sent. Check the \"Sent\" folder before sending it again.",
       "retry": "Try again",
       "sendAgain": "Send anyway",
-      "discard": "Discard"
+      "discard": "Discard",
+      "asDraft": "Open as draft",
+      "blocked": "Not sent: the send checks want you to look at this.",
+      "draftNotice": "This mail was not sent:"
     },
     "log": {
       "title": "Synchronisation log",
@@ -4181,6 +4185,32 @@
       "notRevoked": "The server could not be reached, so this device is still in its device list. Remove it in the web interface under Security > Sessions. The sign-in data on this device has been deleted."
     },
     "adminBrowser": "Server administration is only available in the browser.",
-    "openInBrowser": "Open in browser"
+    "openInBrowser": "Open in browser",
+    "attention": "Something from the sync with the server is waiting for your decision.",
+    "attentionOpen": "View",
+    "rules": {
+      "waiting": "{count} rules waiting for approval",
+      "waiting_one": "{count} rule waiting for approval",
+      "why": "Rules can forward or delete mail. What comes from the server stays off here until you have seen it.",
+      "isNew": "new",
+      "changed": "changed",
+      "before": "Before: {actions}",
+      "after": "Now: {actions}",
+      "wasOn": "Was switched on and is now off because of this.",
+      "external": "Acts outside TuxMail, for example by forwarding.",
+      "approve": "Approve",
+      "keepOff": "Keep off",
+      "conflictTitle": "Same rule, different content",
+      "here": "Here: {actions}",
+      "onServer": "On the server: {actions}",
+      "keepMine": "Keep mine",
+      "takeServer": "Take the server version"
+    },
+    "deletes": {
+      "title": "A lot deleted at once",
+      "what": "{count} entries: {kind}",
+      "approve": "Delete everywhere",
+      "keep": "Keep"
+    }
   }
 }

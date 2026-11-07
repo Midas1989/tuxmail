@@ -404,6 +404,7 @@ func (a *App) DeleteWorkflow(ctx context.Context, id string) error {
 	if err := a.wf.Delete(ctx, id); err != nil {
 		return err
 	}
+	a.noteDeleted(ctx, settingsKindWorkflow, id)
 	a.workflowChanged(ctx, id, "delete", nil)
 	a.sieveSyncSoon() // mailproto.go
 	return nil

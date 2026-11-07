@@ -4091,7 +4091,7 @@
   },
   "connection": {
     "notAvailableOffline": "Ohne Verbindung zum Server nicht verfügbar.",
-    "sendLater": "Gespeichert. Die Mail wird gesendet, sobald wieder eine Verbindung besteht.",
+    "sendLater": "Gespeichert. Die Mail wird gesendet, sobald wieder eine Verbindung besteht. Beanstandet die Versandprüfung etwas, kommt sie als Entwurf zu dir zurück.",
     "settingsOffline": "Du bist offline. Diese Einstellungen liegen auf dem Server und lassen sich erst wieder ändern, wenn eine Verbindung besteht.",
     "filesOffline": "Du bist offline. Dateien aus der Cloud sind wieder verfügbar, sobald eine Verbindung besteht.",
     "never": "noch nie",
@@ -4119,7 +4119,7 @@
       "locked": "Schlüsselspeicher gesperrt"
     },
     "bar": {
-      "offline": "Offline: Du siehst die zuletzt geladenen Inhalte. Mails, die du jetzt schreibst, gehen beim Wiederverbinden raus.",
+      "offline": "Offline: Du siehst die zuletzt geladenen Inhalte. Neue Mails werden beim Wiederverbinden gesendet.",
       "offlineLocal": "Server nicht erreichbar. Deine Konten laufen normal weiter, die Einstellungen werden später abgeglichen.",
       "expired": "Anmeldung abgelaufen. Deine lokalen Daten bleiben erhalten.",
       "locked": "Schlüsselspeicher gesperrt: Entsperre ihn, um dich wieder mit dem Server zu verbinden.",
@@ -4138,7 +4138,8 @@
       "local4": "Server und Gerät holen getrennt: Was hier gelesen oder sortiert wird, sieht der Server über das Mailkonto.",
       "both": "Die Web-Oberfläche und die Android-App laufen bei beiden Arten weiter.",
       "pop3": "Achtung: Mindestens ein Konto nutzt POP3. Wenn Server und dieses Gerät beide abrufen und danach löschen, sieht jede Seite nur einen Teil der Mails. Stelle bei einer Seite ein, dass Mails auf dem Mailserver bleiben.",
-      "thinLocalAccounts": "Falls du auf diesem Gerät eigene Konten hast: Sie pausieren und kommen unverändert zurück, wenn du trennst."
+      "thinLocalAccounts": "Falls du auf diesem Gerät eigene Konten hast: Sie pausieren und kommen unverändert zurück, wenn du trennst.",
+      "thinCache": "Zum Offline-Lesen bleiben Inhalte wie lokale Mails unverschlüsselt auf diesem Gerät; beim Trennen lassen sie sich sicher entfernen."
     },
     "outbox": {
       "title": "Wartet auf die Verbindung",
@@ -4148,7 +4149,10 @@
       "inDoubt": "Unklar, ob diese Mail schon gesendet wurde. Prüfe den Ordner „Gesendet“, bevor du sie noch einmal sendest.",
       "retry": "Erneut versuchen",
       "sendAgain": "Trotzdem senden",
-      "discard": "Verwerfen"
+      "discard": "Verwerfen",
+      "asDraft": "Als Entwurf öffnen",
+      "blocked": "Nicht gesendet: Die Versandprüfung möchte, dass du dir das ansiehst.",
+      "draftNotice": "Diese Mail wurde nicht gesendet:"
     },
     "log": {
       "title": "Protokoll des Abgleichs",
@@ -4180,6 +4184,32 @@
       "notRevoked": "Der Server war nicht erreichbar, deshalb steht dieses Gerät dort noch in der Geräteliste. Entferne es in der Web-Oberfläche unter Sicherheit > Sitzungen. Auf diesem Gerät sind die Anmeldedaten gelöscht."
     },
     "adminBrowser": "Die Serververwaltung ist nur im Browser verfügbar.",
-    "openInBrowser": "Im Browser öffnen"
+    "openInBrowser": "Im Browser öffnen",
+    "attention": "Eine Sache vom Abgleich mit dem Server wartet auf deine Entscheidung.",
+    "attentionOpen": "Ansehen",
+    "rules": {
+      "waiting": "{count} Regeln warten auf Freigabe",
+      "waiting_one": "{count} Regel wartet auf Freigabe",
+      "why": "Regeln können Mails weiterleiten oder löschen. Was vom Server kommt, bleibt hier aus, bis du es ansiehst.",
+      "isNew": "neu",
+      "changed": "geändert",
+      "before": "Bisher: {actions}",
+      "after": "Jetzt: {actions}",
+      "wasOn": "War eingeschaltet und ist deshalb jetzt aus.",
+      "external": "Wirkt außerhalb von TuxMail, zum Beispiel durch Weiterleiten.",
+      "approve": "Freigeben",
+      "keepOff": "Aus lassen",
+      "conflictTitle": "Gleiche Regel, anderer Inhalt",
+      "here": "Hier: {actions}",
+      "onServer": "Auf dem Server: {actions}",
+      "keepMine": "Meine behalten",
+      "takeServer": "Serverfassung übernehmen"
+    },
+    "deletes": {
+      "title": "Viel auf einmal gelöscht",
+      "what": "{count} Einträge: {kind}",
+      "approve": "Überall löschen",
+      "keep": "Behalten"
+    }
   }
 }

@@ -8,7 +8,7 @@
 import { ApiError } from '../api/api';
 import { WailsTransport, type WailsWindow } from '../api/wails';
 import type { DesktopWin } from '../desktop/bridge';
-import type { ClientMode, ConnectionStatus, DisconnectInput, DisconnectResult, ProvisioningProfile } from '../types';
+import type { ClientMode, ConnectionStatus, DisconnectInput, DisconnectResult, OutgoingMessage, ProvisioningProfile } from '../types';
 
 export type ConnectionWizard = { purpose: 'connect' } | { purpose: 'reauth'; serverUrl: string } | { purpose: 'switchLocal'; serverUrl: string };
 
@@ -19,6 +19,8 @@ export class ConnectionState {
   wizard = $state<ConnectionWizard | null>(null);
   /** Things the settings synchronisation changed: the app reloads what it shows. */
   onSettingsSynced: (() => void) | null = null;
+  /** More things wait for the user than before: the app says so once. */
+  onAttention: (() => void) | null = null;
   private off: (() => void) | undefined;
   private readonly win: DesktopWin;
   private readonly reload: () => void;
@@ -72,8 +74,10 @@ export class ConnectionState {
   get waitingMails(): number {
     return this.status.outbox.filter((o) => o.kind === 'send').length;
   }
+  /** Things only the user can decide. */
   get needsAttention(): number {
-    return this.status.outbox.filter((o) => o.state !== 'pending').length;
+    const a = this.status.attention;
+    return this.status.outbox.filter((o) => o.state !== 'pending').length + (a?.pendingWorkflows.length ?? 0) + (a?.conflicts.length ?? 0) + (a?.deletes.filter((d) => !d.decided).length ?? 0);
   }
 
   /** The local core for signing in, also while the interface uses the server. */
@@ -97,7 +101,9 @@ export class ConnectionState {
 
   async refresh(): Promise<void> {
     try {
+      const before = this.needsAttention;
       this.status = await this.call<ConnectionStatus>('ServerConnectionStatus');
+      if (this.needsAttention > before) this.onAttention?.();
     } catch {
       /* keep the last status */
     }
@@ -130,6 +136,25 @@ export class ConnectionState {
   }
   async outboxDiscard(id: string): Promise<void> {
     await this.call<void>('ServerOutboxDiscard', id);
+    await this.refresh();
+  }
+  outboxMessage(id: string): Promise<OutgoingMessage> {
+    return this.call<OutgoingMessage>('ServerOutboxMessage', id);
+  }
+  async workflowApprove(id: string): Promise<void> {
+    await this.call<void>('ServerWorkflowApprove', id);
+    await this.refresh();
+  }
+  async workflowDismiss(id: string): Promise<void> {
+    await this.call<void>('ServerWorkflowDismiss', id);
+    await this.refresh();
+  }
+  async workflowResolve(id: string, keepLocal: boolean): Promise<void> {
+    await this.call<void>('ServerWorkflowResolve', id, keepLocal);
+    await this.refresh();
+  }
+  async settingsDeletes(kind: string, approve: boolean): Promise<void> {
+    await this.call<void>('ServerSettingsDeletes', kind, approve);
     await this.refresh();
   }
   async outboxRetry(id: string): Promise<void> {

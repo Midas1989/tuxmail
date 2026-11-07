@@ -639,9 +639,10 @@ export interface OutboxEntry {
   kind: 'send' | 'action';
   title?: string;
   recipients?: string;
-  /** pending: goes out by itself; failed: the server refused; in_doubt: the server may have sent it. */
-  state: 'pending' | 'failed' | 'in_doubt';
+  /** pending: goes out by itself; failed: the server refused; in_doubt: the server may have sent it; blocked: the send checks want a decision. */
+  state: 'pending' | 'failed' | 'in_doubt' | 'blocked';
   error?: string;
+  findings?: SendFinding[];
   createdAt: string;
 }
 
@@ -673,6 +674,39 @@ export interface ConnectionStatus {
   cacheBytes: number;
   outbox: OutboxEntry[];
   settingsLog: SettingsLogEntry[];
+  /** Absent while not connected. */
+  attention?: SettingsAttention;
+}
+
+/** A rule from the server: switched off here until the user has seen it. */
+export interface PendingWorkflow {
+  id: string;
+  name: string;
+  isNew: boolean;
+  wasEnabled?: boolean;
+  trigger?: string;
+  before?: string[];
+  after: string[];
+  external?: boolean;
+}
+
+export interface WorkflowConflict {
+  id: string;
+  name: string;
+  local: string[];
+  server: string[];
+}
+
+export interface DeleteDecision {
+  kind: SettingsLogEntry['kind'];
+  names: string[];
+  decided?: 'approve' | 'reject';
+}
+
+export interface SettingsAttention {
+  pendingWorkflows: PendingWorkflow[];
+  conflicts: WorkflowConflict[];
+  deletes: DeleteDecision[];
 }
 
 export interface DisconnectInput {

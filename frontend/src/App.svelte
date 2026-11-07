@@ -44,6 +44,7 @@
     void desktopWindow.init();
     const stopSecurity = security.start(); // web client: forced two-factor set-up for administrators
     const stopConnection = connection.start(); // desktop app: connection to a TuxMail server
+    connection.onAttention = () => app.toast(t('connection.attention'), { label: t('connection.attentionOpen'), run: () => (location.hash = '#/settings/accounts/server') });
     connection.onSettingsSynced = () => {
       void prefs.connect(app.api);
       void app.reloadAfterReconnect();

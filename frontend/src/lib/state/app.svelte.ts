@@ -106,6 +106,13 @@ export interface ComposerInit {
   inReplyToMessageId?: number;
   forwardOfMessageId?: number;
   forwardAttachments?: Attachment[];
+  /** A mail from the outbox of the desktop app, continued as a draft. */
+  outbox?: {
+    id: string;
+    reasons: string[];
+    bcc?: Address[];
+    attachments?: { uploadToken: string; filename: string; mimeType: string; size?: number; delivery?: string }[];
+  };
 }
 
 /** An in-app mail window (MailWindows.svelte). */

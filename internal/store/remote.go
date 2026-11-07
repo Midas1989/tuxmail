@@ -25,6 +25,7 @@ const (
 	IdempotencyDone                             // finished: replay the stored response
 	IdempotencyPending                          // another attempt runs, or it died midway
 	IdempotencyMismatch                         // key reused for a different request
+	IdempotencyDoubt                            // failed in a way that may have had an effect
 )
 
 // IdempotencyRecord is the stored result of a key.
@@ -65,6 +66,8 @@ func (s *Store) BeginIdempotency(ctx context.Context, key, route, requestHash st
 			out.State = IdempotencyMismatch
 		case state == "done":
 			out.State = IdempotencyDone
+		case state == "doubt":
+			out.State = IdempotencyDoubt
 		default:
 			out.State = IdempotencyPending
 		}
@@ -80,6 +83,12 @@ func (s *Store) BeginIdempotency(ctx context.Context, key, route, requestHash st
 func (s *Store) FinishIdempotency(ctx context.Context, key string, status int, contentType string, body []byte) error {
 	return checkAffected(s.db.ExecContext(ctx, `UPDATE idempotency_keys SET state = 'done', status = ?, content_type = ?, body = ? WHERE idem_key = ?`,
 		status, contentType, body, key))
+}
+
+// DoubtIdempotency records that a request failed without certainty that nothing
+// happened: the key is not free again, only a person can decide to repeat it.
+func (s *Store) DoubtIdempotency(ctx context.Context, key string) error {
+	return checkAffected(s.db.ExecContext(ctx, `UPDATE idempotency_keys SET state = 'doubt' WHERE idem_key = ?`, key))
 }
 
 // ReleaseIdempotency forgets a key whose request failed without an effect, so that it can be retried.
@@ -185,9 +194,10 @@ func (s *Store) PruneRemoteCache(ctx context.Context, max int64) (int, error) {
 	}
 }
 
-// ClearRemoteCache deletes the whole read cache.
+// ClearRemoteCache deletes the whole read cache, also from the disk: the pages
+// are overwritten (secure_delete, Open) and the WAL holding the old ones is emptied.
 func (s *Store) ClearRemoteCache(ctx context.Context) error {
-	return s.withTx(ctx, func(tx *sql.Tx) error {
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		for _, q := range []string{`DELETE FROM remote_cache`, `DELETE FROM remote_cache_messages`} {
 			if _, err := tx.ExecContext(ctx, q); err != nil {
 				return err
@@ -195,6 +205,25 @@ func (s *Store) ClearRemoteCache(ctx context.Context) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	return s.truncateWAL(ctx)
+}
+
+// truncateWAL moves everything into the database file and empties the WAL.
+func (s *Store) truncateWAL(ctx context.Context) error {
+	var busy, logPages, done int
+	for range 20 {
+		if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logPages, &done); err != nil {
+			return fmt.Errorf("store: checkpoint: %w", err)
+		}
+		if busy == 0 {
+			return nil
+		}
+		time.Sleep(50 * time.Millisecond) // a reader is still on an old snapshot
+	}
+	return errors.New("store: checkpoint: database busy")
 }
 
 // RemoteCachedMessage is a loaded message in the search and list index.
@@ -299,6 +328,7 @@ const (
 	OutboxPending = "pending"
 	OutboxFailed  = "failed"   // the server refused it: the user decides
 	OutboxInDoubt = "in_doubt" // the server may have sent it: never retried automatically
+	OutboxBlocked = "blocked"  // the send checks want a decision; last_error holds the findings as JSON
 )
 
 // RemoteOutboxItem is an action waiting for the connection.
@@ -363,7 +393,7 @@ func (s *Store) DeleteRemoteOutbox(ctx context.Context, id string, uploadTokens 
 
 // ClearRemoteOutbox deletes all waiting actions and uploads.
 func (s *Store) ClearRemoteOutbox(ctx context.Context) error {
-	return s.withTx(ctx, func(tx *sql.Tx) error {
+	err := s.withTx(ctx, func(tx *sql.Tx) error {
 		for _, q := range []string{`DELETE FROM remote_outbox`, `DELETE FROM remote_outbox_uploads`} {
 			if _, err := tx.ExecContext(ctx, q); err != nil {
 				return err
@@ -371,6 +401,52 @@ func (s *Store) ClearRemoteOutbox(ctx context.Context) error {
 		}
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	return s.truncateWAL(ctx)
+}
+
+// PurgeRemoteUploads removes attachments of mails that were never sent
+// (composer closed offline), keeping those still referenced.
+func (s *Store) PurgeRemoteUploads(ctx context.Context, before time.Time, keep []string) error {
+	q := `DELETE FROM remote_outbox_uploads WHERE created_at < ?`
+	args := []any{before.Unix()}
+	if len(keep) > 0 {
+		q += ` AND token NOT IN (` + placeholders(len(keep)) + `)`
+		for _, k := range keep {
+			args = append(args, k)
+		}
+	}
+	_, err := s.db.ExecContext(ctx, q, args...)
+	return err
+}
+
+// ==== Tombstones ===============================================================
+
+// AddSettingsTombstone records that a synchronised setting was deleted on purpose.
+func (s *Store) AddSettingsTombstone(ctx context.Context, kind, id string, now time.Time) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO settings_tombstones(kind, item_id, deleted_at) VALUES (?, ?, ?)
+		ON CONFLICT(kind, item_id) DO UPDATE SET deleted_at = excluded.deleted_at`, kind, id, now.Unix())
+	return err
+}
+
+// ListSettingsTombstones returns the deleted ids by kind.
+func (s *Store) ListSettingsTombstones(ctx context.Context) (map[string][]string, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT kind, item_id FROM settings_tombstones ORDER BY kind, item_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var k, id string
+		if err := rows.Scan(&k, &id); err != nil {
+			return nil, err
+		}
+		out[k] = append(out[k], id)
+	}
+	return out, rows.Err()
 }
 
 // RemoteUpload is an attachment of a mail written offline.

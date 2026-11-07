@@ -33,4 +33,19 @@ func (x *Api) ServerOutboxDiscard(id string) error {
 func (x *Api) ServerOutboxRetry(id string) error {
 	return werr(x.app.ServerOutboxRetry(x.ctx, id))
 }
+func (x *Api) ServerOutboxMessage(id string) (OutgoingMessage, error) {
+	return r1(x.app.ServerOutboxMessage(x.ctx, id))
+}
+func (x *Api) ServerWorkflowApprove(id string) error {
+	return werr(x.app.ServerWorkflowApprove(x.ctx, id))
+}
+func (x *Api) ServerWorkflowDismiss(id string) error {
+	return werr(x.app.ServerWorkflowDismiss(x.ctx, id))
+}
+func (x *Api) ServerWorkflowResolve(id string, keepLocal bool) error {
+	return werr(x.app.ServerWorkflowResolve(x.ctx, id, keepLocal))
+}
+func (x *Api) ServerSettingsDeletes(kind string, approve bool) error {
+	return werr(x.app.ServerSettingsDeletes(x.ctx, kind, approve))
+}
 func (x *Api) ServerClearCache() error { return werr(x.app.st.ClearRemoteCache(x.ctx)) }

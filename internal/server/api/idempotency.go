@@ -25,8 +25,11 @@ import (
 //   - first use: the request runs to its end, also if the client disconnects;
 //   - key known and finished: the stored answer, marked Idempotent-Replayed;
 //   - key known and still running: 409 idempotency_in_progress (try later);
-//   - a run that died midway (crash): 409 idempotency_in_doubt, because nobody
-//     knows whether the mail went out. Only the user may decide to send again;
+//   - a run that died midway (crash) or failed with a server error (a mail
+//     relay may have taken the mail and then lost the connection): 409
+//     idempotency_in_doubt, because nobody knows whether the mail went out.
+//     Only the user may decide to send again;
+//   - refused (4xx), nothing was accepted: the key is free again;
 //   - same key, other request: 422 idempotency_key_reused;
 //   - without the header: nothing changes.
 const (
@@ -98,6 +101,9 @@ func idempotent(route string, next AppHandler) AppHandler {
 		case store.IdempotencyMismatch:
 			writeJSON(w, http.StatusUnprocessableEntity, errorBody{Error: "idempotency_key_reused", Message: "this key was used for a different request"})
 			return
+		case store.IdempotencyDoubt:
+			writeJSON(w, http.StatusConflict, errorBody{Error: "idempotency_in_doubt", Message: "an earlier attempt failed; it may have been sent"})
+			return
 		case store.IdempotencyPending:
 			if now.Sub(rec.CreatedAt) > idempotencyStale {
 				writeJSON(w, http.StatusConflict, errorBody{Error: "idempotency_in_doubt", Message: "an earlier attempt ended unexpectedly; it may have been sent"})
@@ -111,9 +117,12 @@ func idempotent(route string, next AppHandler) AppHandler {
 		r2 := r.WithContext(ctx)
 		r2.Body = io.NopCloser(bytes.NewReader(body))
 		next(rw, r2, a)
-		if rw.status/100 == 2 {
+		switch {
+		case rw.status/100 == 2:
 			err = st.FinishIdempotency(ctx, key, rw.status, rw.Header().Get("Content-Type"), rw.buf.Bytes())
-		} else {
+		case rw.status >= 500 && rw.status != http.StatusNotImplemented:
+			err = st.DoubtIdempotency(ctx, key)
+		default:
 			err = st.ReleaseIdempotency(ctx, key) // refused: nothing happened, a retry may run
 		}
 		if err != nil {

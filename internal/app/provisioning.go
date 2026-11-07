@@ -68,8 +68,16 @@ func normalizeServerURL(s string) (string, error) {
 		s = "https://" + s
 	}
 	u, err := url.Parse(s)
-	if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+	if err != nil || u.Host == "" || u.User != nil || (u.Scheme != "https" && u.Scheme != "http") {
 		return "", invalid("invalid server URL")
+	}
+	// Password and token never travel unencrypted; the Android app refuses it too.
+	if u.Scheme == "http" {
+		switch u.Hostname() {
+		case "localhost", "127.0.0.1", "::1":
+		default:
+			return "", invalid("please enter an https address")
+		}
 	}
 	return u.Scheme + "://" + u.Host + strings.TrimRight(u.Path, "/"), nil
 }
@@ -92,6 +100,13 @@ func (a *App) session(serverURL string, create bool) (*remoteSession, error) {
 	return s, nil
 }
 
+// noRedirectClient is the only HTTP client that may carry a password or the
+// device token: a redirect would hand them to wherever it points.
+func (a *App) noRedirectClient() *http.Client {
+	return &http.Client{Transport: a.opts.HTTPClient.Transport, Timeout: a.opts.HTTPClient.Timeout,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+}
+
 func (a *App) remoteCall(ctx context.Context, method, u, token string, body, out any) (int, error) {
 	var r io.Reader
 	if body != nil {
@@ -112,11 +127,14 @@ func (a *App) remoteCall(ctx context.Context, method, u, token string, body, out
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	res, err := a.opts.HTTPClient.Do(req)
+	res, err := a.noRedirectClient().Do(req)
 	if err != nil {
 		return 0, Errorf(http.StatusBadGateway, "network", "server not reachable: %v", err)
 	}
 	defer res.Body.Close()
+	if res.StatusCode/100 == 3 {
+		return res.StatusCode, Errorf(http.StatusBadGateway, "redirect", "the server redirects to another address; please enter that address")
+	}
 	data, err := io.ReadAll(io.LimitReader(res.Body, 8<<20))
 	if err != nil {
 		return res.StatusCode, err

@@ -99,6 +99,46 @@ describe('status', () => {
   });
 });
 
+describe('what waits for the user', () => {
+  const rule = { id: 'r1', name: 'Sortieren', isNew: false, wasEnabled: true, before: ['archive'], after: ['delete', 'run_workflow'], external: true };
+  it('shows rules waiting for approval, with the change, and releases them only on request', async () => {
+    const approve = vi.fn(async () => {});
+    const { c } = conn({ ...base, mode: 'local', attention: { pendingWorkflows: [rule], conflicts: [], deletes: [] } }, { ServerWorkflowApprove: approve });
+    const root = render(ServerConnectionCard, { conn: c });
+    expect(root.querySelector('[data-testid="pending-title"]')?.textContent).toContain('1 rule waiting');
+    const box = root.querySelector('[data-testid="pending-rules"]') as HTMLElement;
+    expect(box.textContent).toContain('delete, run_workflow');
+    expect(box.textContent).toContain('archive');
+    expect(box.textContent).toContain(en.connection.rules.wasOn);
+    expect(approve).not.toHaveBeenCalled();
+    click(button(box, en.connection.rules.approve));
+    await until(() => expect(approve).toHaveBeenCalledWith('r1'));
+  });
+  it('asks on a conflict of the first sync', async () => {
+    const resolve = vi.fn(async () => {});
+    const { c } = conn({ ...base, mode: 'local', attention: { pendingWorkflows: [], conflicts: [{ id: 'r1', name: 'Sortieren', local: ['archive'], server: ['delete'] }], deletes: [] } }, { ServerWorkflowResolve: resolve });
+    const box = render(ServerConnectionCard, { conn: c }).querySelector('[data-testid="rule-conflicts"]') as HTMLElement;
+    click(button(box, en.connection.rules.keepMine));
+    await until(() => expect(resolve).toHaveBeenCalledWith('r1', true));
+  });
+  it('asks before deleting a lot at once', async () => {
+    const decide = vi.fn(async () => {});
+    const { c } = conn({ ...base, mode: 'local', attention: { pendingWorkflows: [], conflicts: [], deletes: [{ kind: 'signature', names: ['A', 'B', 'C'] }] } }, { ServerSettingsDeletes: decide });
+    const box = render(ServerConnectionCard, { conn: c }).querySelector('[data-testid="mass-deletes"]') as HTMLElement;
+    expect(box.textContent).toContain('A, B, C');
+    click(button(box, en.connection.deletes.keep));
+    await until(() => expect(decide).toHaveBeenCalledWith('signature', false));
+  });
+  it('a mail stopped by the send checks shows why and can go back as a draft', () => {
+    const f = { check: 'forgotten_attachment', severity: 'warn' as const, key: 'k', message: 'Attachment forgotten?' };
+    const { c } = conn({ ...base, outbox: [{ id: 'a', kind: 'send', title: 'Hallo', state: 'blocked', findings: [f], createdAt: '2026-01-01T00:00:00Z' }] });
+    const box = render(ServerConnectionCard, { conn: c }).querySelector('[data-testid="outbox"]') as HTMLElement;
+    expect(box.textContent).toContain('Attachment forgotten?');
+    expect(box.textContent).toContain(en.connection.outbox.asDraft);
+    expect(box.textContent).toContain(en.connection.outbox.sendAgain);
+  });
+});
+
 describe('disconnect', () => {
   it('asks first and says what stays; then removes the connection and reloads', async () => {
     const disconnect = vi.fn(async () => ({ revoked: true }));
@@ -144,6 +184,9 @@ describe('the choice of the mode', () => {
     expect(text).toContain(en.connection.mode.both);
     expect(text).toContain(en.connection.mode.thin3);
     expect(text).toContain(en.connection.mode.local4);
+  });
+  it('says in one sentence that the offline content is unencrypted', () => {
+    expect(render(ServerModeChoice, { mode: 'thin' }).textContent).toContain(en.connection.mode.thinCache);
   });
   it('warns about POP3 only where it matters', () => {
     expect(render(ServerModeChoice, { mode: 'thin', pop3: true }).querySelector('[data-testid="pop3-warning"]')).toBeNull();

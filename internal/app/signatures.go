@@ -3,6 +3,7 @@
 package app
 
 import (
+	"strconv"
 	"bytes"
 	"context"
 	"errors"
@@ -88,6 +89,7 @@ func (a *App) DeleteSignature(ctx context.Context, id int64) error {
 	if err := a.st.DeleteSignature(ctx, id); err != nil {
 		return err
 	}
+	a.noteDeleted(ctx, settingsKindSignature, strconv.FormatInt(id, 10))
 	a.dropUnreferencedBlobs(ctx, hashes)
 	a.hub.Publish(Event{Type: EventAccountUpdated})
 	return nil

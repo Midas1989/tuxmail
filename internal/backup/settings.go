@@ -93,6 +93,7 @@ var userStoreTables = map[string]TableClass{
 	"remote_outbox":                TablePurge,
 	"remote_outbox_uploads":        TablePurge,
 	"idempotency_keys":             TablePurge,
+	"settings_tombstones":          TablePurge,
 
 	// Mail.
 	"messages":               TablePurge,

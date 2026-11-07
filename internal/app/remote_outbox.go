@@ -62,7 +62,9 @@ type OutboxEntry struct {
 	Recipients string `json:"recipients,omitempty"`
 	State      string `json:"state"`
 	Error      string `json:"error,omitempty"`
-	CreatedAt  string `json:"createdAt"`
+	// Findings: why the send checks stopped it (state "blocked").
+	Findings  []SendFinding `json:"findings,omitempty"`
+	CreatedAt string        `json:"createdAt"`
 }
 
 func (a *App) outboxEntries(ctx context.Context) ([]OutboxEntry, error) {
@@ -72,7 +74,14 @@ func (a *App) outboxEntries(ctx context.Context) ([]OutboxEntry, error) {
 	}
 	out := make([]OutboxEntry, 0, len(items))
 	for _, it := range items {
-		out = append(out, OutboxEntry{ID: it.ID, Kind: it.Kind, Title: it.Title, Recipients: it.Recipients, State: it.State, Error: it.LastError, CreatedAt: rfc3339(it.CreatedAt)})
+		e := OutboxEntry{ID: it.ID, Kind: it.Kind, Title: it.Title, Recipients: it.Recipients, State: it.State, Error: it.LastError, CreatedAt: rfc3339(it.CreatedAt)}
+		if it.State == store.OutboxBlocked {
+			e.Error = ""
+			if err := json.Unmarshal([]byte(it.LastError), &e.Findings); err != nil {
+				a.log.Warn("app: reading the send check result failed", "err", err)
+			}
+		}
+		out = append(out, e)
 	}
 	return out, nil
 }
@@ -221,6 +230,14 @@ func (a *App) flushOutbox(ctx context.Context) {
 		return
 	}
 	changed := false
+	// Attachments of mails that were never finished do not stay for ever.
+	var inUse []string
+	for i := range items {
+		inUse = append(inUse, outboxUploads(items[i].Body)...)
+	}
+	if err := a.st.PurgeRemoteUploads(ctx, a.now().AddDate(0, 0, -30), inUse); err != nil {
+		a.log.Warn("app: cleaning up kept attachments failed", "err", err)
+	}
 	defer func() {
 		if changed {
 			a.connNotify()
@@ -248,8 +265,16 @@ func (a *App) flushOne(ctx context.Context, c *serverConnection, it *store.Remot
 			a.log.Warn("app: updating the outbox failed", "err", err)
 		}
 	}
+	// However often it fails: a mail is not repeated without end.
+	if it.Kind == "send" && it.Attempts >= maxOutboxAttempts {
+		keep(store.OutboxInDoubt, "too many attempts")
+		return true
+	}
 	netFail := func(err error) bool {
 		if errors.Is(err, errConnNetwork) || errors.Is(err, errConnLocked) {
+			if errors.Is(err, errConnNetwork) {
+				keep(store.OutboxPending, "")
+			}
 			a.connMarkOffline(err)
 		} else {
 			a.log.Warn("app: replaying an action failed", "kind", it.Kind, "err", err)
@@ -285,7 +310,9 @@ func (a *App) flushOne(ctx context.Context, c *serverConnection, it *store.Remot
 		return netFail(err)
 	}
 	switch {
-	case connGatewayDown(res.Status):
+	case connGatewayDown(res.Status) && !isServerAnswer(res):
+		// From a proxy in front of the server: the key answers the next try.
+		keep(store.OutboxPending, "")
 		a.connMarkOffline(errConnNetwork)
 		return false
 	case connIsTokenRejected(res):
@@ -295,8 +322,13 @@ func (a *App) flushOne(ctx context.Context, c *serverConnection, it *store.Remot
 		if it.Kind == "send" {
 			var r SendResult
 			if json.Unmarshal(res.Body, &r) == nil && r.Blocked {
-				// The send checks want a decision: nothing was sent.
-				keep(store.OutboxFailed, "blocked by send checks")
+				// The send checks want a decision: nothing was sent. The mail
+				// stays, with the reason, for the user to look at.
+				js, err := json.Marshal(r.Findings)
+				if err != nil {
+					js = []byte("[]")
+				}
+				keep(store.OutboxBlocked, string(js))
 				return true
 			}
 		}
@@ -315,6 +347,12 @@ func (a *App) flushOne(ctx context.Context, c *serverConnection, it *store.Remot
 			return true
 		}
 		return false // still running at the server: next round
+	case res.Status >= 500 && it.Kind == "send":
+		// The server failed, possibly after the mail relay took the mail.
+		// Trying again could deliver it twice: the user decides.
+		a.log.Warn("app: the server failed on a replayed mail", "status", res.Status)
+		keep(store.OutboxInDoubt, fmt.Sprintf("server error (%d)", res.Status))
+		return true
 	case res.Status >= 500:
 		a.log.Warn("app: the server refused a replayed action", "status", res.Status)
 		if it.Attempts+1 >= maxOutboxAttempts {
@@ -343,6 +381,32 @@ func (a *App) flushOne(ctx context.Context, c *serverConnection, it *store.Remot
 	}
 }
 
+// isServerAnswer tells an error of the server itself from one of a proxy in front of it.
+func isServerAnswer(res *connResponse) bool {
+	var e struct {
+		Error string `json:"error"`
+	}
+	return json.Unmarshal(res.Body, &e) == nil && e.Error != ""
+}
+
+// ServerOutboxMessage returns a waiting mail, to continue it as a draft.
+func (a *App) ServerOutboxMessage(ctx context.Context, id string) (OutgoingMessage, error) {
+	items, err := a.st.ListRemoteOutbox(ctx)
+	if err != nil {
+		return OutgoingMessage{}, err
+	}
+	for _, it := range items {
+		if it.ID == id && it.Kind == "send" {
+			var m OutgoingMessage
+			if err := json.Unmarshal(it.Body, &m); err != nil {
+				return OutgoingMessage{}, err
+			}
+			return m, nil
+		}
+	}
+	return OutgoingMessage{}, errNotFound
+}
+
 // ServerOutboxDiscard removes a waiting action.
 func (a *App) ServerOutboxDiscard(ctx context.Context, id string) error {
 	items, err := a.st.ListRemoteOutbox(ctx)
@@ -363,7 +427,40 @@ func (a *App) ServerOutboxDiscard(ctx context.Context, id string) error {
 
 // ServerOutboxRetry tries an action again that needed a decision. A mail in
 // doubt gets a new key: the user decided to risk sending it a second time.
+// A mail stopped by the send checks goes with those warnings confirmed, as if
+// the user pressed "send anyway" in the composer.
 func (a *App) ServerOutboxRetry(ctx context.Context, id string) error {
+	items, err := a.st.ListRemoteOutbox(ctx)
+	if err != nil {
+		return err
+	}
+	for _, it := range items {
+		if it.ID != id || it.State != store.OutboxBlocked {
+			continue
+		}
+		var findings []SendFinding
+		var doc map[string]json.RawMessage
+		if err := json.Unmarshal([]byte(it.LastError), &findings); err != nil {
+			return err
+		}
+		if err := json.Unmarshal(it.Body, &doc); err != nil {
+			return err
+		}
+		checks := []string{}
+		for _, f := range findings {
+			checks = append(checks, f.Check)
+		}
+		if doc["confirmChecks"], err = json.Marshal(checks); err != nil {
+			return err
+		}
+		body, err := json.Marshal(doc)
+		if err != nil {
+			return err
+		}
+		if err := a.st.SetRemoteOutboxBody(ctx, id, body); err != nil {
+			return err
+		}
+	}
 	if err := a.st.RequeueRemoteOutbox(ctx, id, newID("out_")); err != nil {
 		return err
 	}

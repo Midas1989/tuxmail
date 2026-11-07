@@ -2,6 +2,7 @@
 -- else depends on these tables. Run by hand with the program stopped; the
 -- store itself only migrates forward (a newer database is refused by an
 -- older program, ErrSchemaTooNew). Covered by TestMigration0060ForwardAndBack.
+DROP TABLE IF EXISTS settings_tombstones;
 DROP TABLE IF EXISTS remote_outbox_uploads;
 DROP TABLE IF EXISTS remote_outbox;
 DROP TABLE IF EXISTS remote_cache_message_folders;
