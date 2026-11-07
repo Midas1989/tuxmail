@@ -38,6 +38,7 @@ Account,
   LinkPreview,
   DeviceAuthorization,
   DeviceTokenResult,
+  DiscoveryCandidate,
   DiscoveryResult,
   Flag,
   Folder,
@@ -721,7 +722,15 @@ export class MockTransport implements Api {
         outgoing: { host: 'smtp.office365.com', port: 587, tls: 'starttls', auth: 'oauth2', username: email } });
     }
     const [inHost, outHost, inPort, outPort, outTls] = k ?? [`imap.${domain}`, `smtp.${domain}`, 993, 587, 'starttls'];
+    // Like the core: only servers of the mail domain (and the proposed one), reason codes instead of raw errors.
+    const srv = (host: string, port: number, tls: 'tls' | 'starttls') => ({ host, port, tls, auth: 'password' as const, username: email });
+    const candidates: DiscoveryCandidate[] = [
+      { source: k ? 'autoconfig' : 'guess', kind: 'imap', incoming: srv(inHost, inPort, 'tls'), outgoing: srv(outHost, outPort, outTls), in: { reachable: true, login: 'ok' }, out: { reachable: true, login: 'ok' }, verified: true, score: 300 },
+      { source: 'guess', kind: 'imap', incoming: srv(`mail.${domain}`, 143, 'starttls'), outgoing: srv(`mail.${domain}`, 587, 'starttls'), in: { reachable: false, error: 'dns' }, out: { reachable: false, error: 'dns' }, verified: false, score: 100 },
+    ];
     return this.reply({
+      candidates,
+      verified: true,
       source: k ? 'autoconfig' : 'guess',
       kind: 'imap',
       displayName: domain,

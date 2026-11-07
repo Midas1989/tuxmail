@@ -2333,7 +2333,7 @@
         "autodiscover": "Einstellungen über Autodiscover gefunden",
         "guess": "Einstellungen geschätzt – bitte prüfen",
         "none": "Keine Einstellungen gefunden",
-        "srv": "Einstellungen über DNS-SRV gefunden"
+        "srv": "Einstellungen über DNS-Einträge der Domain gefunden"
       },
       "step1": "Anmeldedaten",
       "step2": "Gefundene Einstellungen",
@@ -2350,18 +2350,29 @@
         "deleteLocal": "Vom Server löschen, wenn in TuxMail gelöscht",
         "hint": "POP3 kennt nur einen Posteingang. Mails lassen sich in lokale Ordner verschieben; sie bleiben auf diesem Gerät, auch wenn die Serverkopie gelöscht wird."
       },
-      "others": "Andere gefundene Einstellungen ({count})",
-      "others_one": "Andere gefundene Einstellungen (1)",
       "useThis": "Diese verwenden",
       "check": {
         "verified": "geprüft",
         "reachable": "erreichbar",
         "loginOk": "Anmeldung erfolgreich",
         "loginFailed": "Anmeldung abgelehnt (Passwort oder Benutzername?)",
-        "unreachable": "nicht erreichbar: {error}",
+        "unreachable": "nicht erreichbar ({reason})",
         "unknown": "nicht geprüft",
-        "noneWorking": "Keiner der gefundenen Server konnte bestätigt werden. Prüfen Sie das Passwort oder geben Sie die Einstellungen manuell ein."
-      }
+        "noneWorking": "Keiner der gefundenen Server konnte bestätigt werden. Prüfen Sie das Passwort oder geben Sie die Einstellungen manuell ein.",
+        "reason": {
+          "dns": "Server-Name unbekannt",
+          "timeout": "keine Antwort",
+          "refused": "Verbindung abgelehnt",
+          "tls": "Zertifikat oder Verschlüsselung fehlerhaft",
+          "auth": "Anmeldung abgelehnt",
+          "other": "Verbindungsfehler"
+        }
+      },
+      "found": "Gefunden: {provider}",
+      "report": "Prüfbericht",
+      "reportSource": "Herkunft",
+      "reportSecurity": "Sicherheit",
+      "alternatives": "Weitere Möglichkeiten"
     },
     "connect": {
       "cardText": "Verbinde diese App mit deinem TuxMail-Server. Du wählst danach, ob die Mails über den Server oder direkt auf dieses Gerät kommen.",

@@ -490,6 +490,7 @@ export interface DiscoveryCheck {
   reachable: boolean;
   /** "ok", "failed" (password rejected) or absent (not tried). */
   login?: 'ok' | 'failed';
+  /** Reason code, never a raw error text: dns | timeout | refused | tls | auth | other. */
   error?: string;
 }
 

@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -60,7 +61,7 @@ func TestDiscoveryPrefersWorkingCandidate(t *testing.T) {
 	if !best.In.Reachable || best.In.Login != "ok" || best.Out.Login != "ok" {
 		t.Errorf("best not verified with login: %+v", best)
 	}
-	if bad.In.Reachable || bad.In.Error == "" {
+	if bad.In.Reachable || bad.In.Error == "" || strings.ContainsAny(bad.In.Error, " .:") { // a reason code, no raw text
 		t.Errorf("dead candidate should report its error: %+v", bad)
 	}
 
@@ -98,5 +99,46 @@ func TestRankPrefersEncryptionAndIMAP(t *testing.T) {
 	unreachable.In.Reachable = false
 	if autoconfig.Score(unreachable, o) >= autoconfig.Score(mk(domain.KindIMAP, domain.TLSNone, "x.example"), o) {
 		t.Error("an unreachable server must rank below a working one")
+	}
+}
+
+// The wizard never shows servers of other domains (an MX pointing to a
+// hoster must not reveal the hoster's other hosts) nor raw DNS errors.
+func TestDiscoveryHidesForeignDomainsAndRawErrors(t *testing.T) {
+	best := autoconfig.Ranked{Candidate: autoconfig.Candidate{Kind: domain.KindIMAP,
+		Incoming: domain.ServerConfig{Host: "imap.example.org"}, Outgoing: domain.ServerConfig{Host: "smtp.mailhost.example.net"}}}
+	own := ownDomains("example.org", best)
+	mk := func(in, out string) autoconfig.Ranked {
+		return autoconfig.Ranked{Candidate: autoconfig.Candidate{Kind: domain.KindIMAP, Incoming: domain.ServerConfig{Host: in}, Outgoing: domain.ServerConfig{Host: out}}}
+	}
+	for _, c := range []struct {
+		r    autoconfig.Ranked
+		want bool
+	}{
+		{best, true},
+		{mk("mail.example.org", "mail.example.org"), true},
+		{mk("imap2.mailhost.example.net", ""), true}, // domain of the proposed server
+		{mk("imap.hoster-mx.example", "smtp.example.org"), false},
+		{mk("mail.example.org", "smtp.other.example"), false},
+		{autoconfig.Ranked{Candidate: autoconfig.Candidate{Kind: domain.KindEAS, EASURL: "https://autodiscover.fremd.example/Microsoft-Server-ActiveSync"}}, false},
+	} {
+		if got := candidateOwn(c.r, own); got != c.want {
+			t.Errorf("%s/%s/%s: %v, want %v", c.r.Incoming.Host, c.r.Outgoing.Host, c.r.EASURL, got, c.want)
+		}
+	}
+	for msg, want := range map[string]string{
+		"dial tcp: lookup imap.example.org on 127.0.0.53:53: no such host":                      "dns",
+		"dial tcp 10.0.0.1:993: i/o timeout":                                                    "timeout",
+		"dial tcp 127.0.0.1:1: connect: connection refused":                                     "refused",
+		"tls: failed to verify certificate: x509: certificate is valid for mail.hoster.example": "tls",
+		"something else": "other",
+	} {
+		c := discoveryCheck(autoconfig.Check{Error: msg})
+		if c.Error != want || strings.Contains(c.Error, ".") {
+			t.Errorf("%q -> %q, want %q", msg, c.Error, want)
+		}
+	}
+	if c := discoveryCheck(autoconfig.Check{Reachable: true, Login: "failed", Error: "NO [AUTHENTICATIONFAILED] at mx.hoster.example"}); c.Error != "auth" {
+		t.Errorf("login failed -> %q", c.Error)
 	}
 }

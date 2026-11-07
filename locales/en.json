@@ -2334,7 +2334,7 @@
         "autodiscover": "Settings found via Autodiscover",
         "guess": "Settings guessed – please check",
         "none": "No settings found",
-        "srv": "Settings found via DNS SRV"
+        "srv": "Settings found in the domain's DNS entries"
       },
       "step1": "Credentials",
       "step2": "Detected settings",
@@ -2351,18 +2351,29 @@
         "deleteLocal": "Delete from the server when deleted in TuxMail",
         "hint": "POP3 only has an inbox. You can move mails into local folders; they stay on this device even after the server copy is deleted."
       },
-      "others": "Other settings found ({count})",
-      "others_one": "Other settings found (1)",
       "useThis": "Use these",
       "check": {
         "verified": "checked",
         "reachable": "reachable",
         "loginOk": "login successful",
         "loginFailed": "login rejected (password or user name?)",
-        "unreachable": "not reachable: {error}",
+        "unreachable": "not reachable ({reason})",
         "unknown": "not checked",
-        "noneWorking": "None of the found servers could be verified. Check the password or enter the settings manually."
-      }
+        "noneWorking": "None of the found servers could be verified. Check the password or enter the settings manually.",
+        "reason": {
+          "dns": "server name unknown",
+          "timeout": "no answer",
+          "refused": "connection refused",
+          "tls": "certificate or encryption problem",
+          "auth": "sign-in rejected",
+          "other": "connection error"
+        }
+      },
+      "found": "Found: {provider}",
+      "report": "Check report",
+      "reportSource": "Source",
+      "reportSecurity": "Security",
+      "alternatives": "Other options"
     },
     "connect": {
       "cardText": "Connect this app to your TuxMail server. You then choose whether mail comes through the server or directly to this device.",

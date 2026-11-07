@@ -20,7 +20,7 @@
   import Server from '@lucide/svelte/icons/server';
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import { app } from '../../state';
-  import { t } from '../../i18n/index.svelte';
+  import { t, type MessageKey } from '../../i18n/index.svelte';
   import type { AccountKind, AuthMethod, DiscoveryCandidate, DiscoveryCheck, DiscoveryResult, Pop3Options, ServerConfig } from '../../types';
   import CircleX from '@lucide/svelte/icons/circle-x';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
@@ -72,10 +72,15 @@
 
   function checkText(c: DiscoveryCheck, srv?: ServerConfig): string {
     if (!srv) return t('onboarding.account.check.unknown');
-    if (!c.reachable) return t('onboarding.account.check.unreachable', { error: c.error ?? '' });
+    if (!c.reachable) return t('onboarding.account.check.unreachable', { reason: reasonText(c.error) });
     if (c.login === 'ok') return t('onboarding.account.check.loginOk');
     if (c.login === 'failed') return t('onboarding.account.check.loginFailed');
     return t('onboarding.account.check.reachable');
+  }
+  /** The core sends a reason code, never a raw error (DNS answers, foreign host names). */
+  function reasonText(code?: string): string {
+    const known = ['dns', 'timeout', 'refused', 'tls', 'auth', 'other'];
+    return t(`onboarding.account.check.reason.${code && known.includes(code) ? code : 'other'}` as MessageKey);
   }
   function candOk(c: DiscoveryCandidate): boolean {
     return c.kind === 'eas' || (c.in.reachable && c.in.login !== 'failed' && (!c.outgoing || (c.out.reachable && c.out.login !== 'failed')));
@@ -236,7 +241,7 @@
       {#if discovery.candidates?.length && !candOk(discovery.candidates[chosen])}
         <p class="warn-line"><TriangleAlert size={18} /> {t('onboarding.account.check.noneWorking')}</p>
       {:else}
-        <p class="ok"><CircleCheck size={18} /> {t(`onboarding.account.source.${discovery.source}`)}{discovery.verified ? ' · ' + t('onboarding.account.check.verified') : ''}</p>
+        <p class="ok"><CircleCheck size={18} /> {t('onboarding.account.found', { provider: discovery.displayName || email.split('@')[1] || '' })}{discovery.verified ? ' · ' + t('onboarding.account.check.verified') : ''}</p>
       {/if}
       <dl>
         <dt>{t('onboarding.account.incoming')}</dt>
@@ -248,31 +253,40 @@
         <dt>{t('onboarding.account.username')}</dt>
         <dd>{incoming.username}</dd>
       </dl>
-      {#if discovery.candidates?.[chosen]}
+      {#if discovery.candidates?.length}
         {@const cur = discovery.candidates[chosen]}
-        <ul class="checks">
-          <li class:bad={!cur.in.reachable || cur.in.login === 'failed'}>{t('onboarding.account.incoming')}: {checkText(cur.in, cur.incoming)}</li>
-          {#if cur.outgoing}<li class:bad={!cur.out.reachable || cur.out.login === 'failed'}>{t('onboarding.account.outgoing')}: {checkText(cur.out, cur.outgoing)}</li>{/if}
-        </ul>
-      {/if}
-      {#if (discovery.candidates?.length ?? 0) > 1}
-        <button class="others-toggle" aria-expanded={othersOpen} onclick={() => (othersOpen = !othersOpen)} data-testid="wizard-others">
-          <ChevronRight size={14} class={othersOpen ? 'rot' : ''} /> {t('onboarding.account.others', { count: discovery.candidates!.length - 1 })}
+        <button class="others-toggle" aria-expanded={othersOpen} onclick={() => (othersOpen = !othersOpen)} data-testid="wizard-report">
+          <ChevronRight size={14} class={othersOpen ? 'rot' : ''} /> {t('onboarding.account.report')}
         </button>
         {#if othersOpen}
-          <ul class="cands">
-            {#each discovery.candidates! as c, i (i)}
-              <li class:sel={i === chosen}>
-                <span class="ci">{#if candOk(c)}<CircleCheck size={15} />{:else}<CircleX size={15} />{/if}</span>
-                <span class="cb">
-                  <span class="cl">{c.kind === 'eas' ? `ActiveSync · ${c.easUrl ?? ''}` : srvLine(c.kind, c.incoming)}</span>
-                  {#if c.outgoing}<span class="cl">{srvLine('smtp', c.outgoing)}</span>{/if}
-                  <span class="cs">{t(`onboarding.account.source.${c.source}` as 'onboarding.account.source.autoconfig')}{c.kind !== 'eas' ? ' · ' + checkText(c.in, c.incoming) : ''}{c.outgoing && c.kind !== 'eas' ? ' · ' + checkText(c.out, c.outgoing) : ''}</span>
-                </span>
-                {#if i !== chosen}<button class="btn btn-ghost" onclick={() => useCandidate(i)}>{t('onboarding.account.useThis')}</button>{/if}
-              </li>
-            {/each}
-          </ul>
+          <div class="report" data-testid="wizard-report-body">
+            <ul class="checks">
+              <li>{t('onboarding.account.reportSource')}: {t(`onboarding.account.source.${cur.source}` as 'onboarding.account.source.autoconfig')}</li>
+              {#if cur.kind !== 'eas'}
+                <li class:bad={!cur.in.reachable || cur.in.login === 'failed'}>{t('onboarding.account.incoming')}: {checkText(cur.in, cur.incoming)}</li>
+                {#if cur.outgoing}<li class:bad={!cur.out.reachable || cur.out.login === 'failed'}>{t('onboarding.account.outgoing')}: {checkText(cur.out, cur.outgoing)}</li>{/if}
+                <li>{t('onboarding.account.reportSecurity')}: {t(`settings.tls.${incoming.tls}`)}{needsOutgoing ? ' / ' + t(`settings.tls.${outgoing.tls}`) : ''}</li>
+              {/if}
+            </ul>
+            {#if discovery.candidates.length > 1}
+              <p class="alt-h">{t('onboarding.account.alternatives')}</p>
+              <ul class="cands">
+                {#each discovery.candidates as c, i (i)}
+                  {#if i !== chosen}
+                    <li>
+                      <span class="ci">{#if candOk(c)}<CircleCheck size={15} />{:else}<CircleX size={15} />{/if}</span>
+                      <span class="cb">
+                        <span class="cl">{c.kind === 'eas' ? 'ActiveSync' : srvLine(c.kind, c.incoming)}</span>
+                        {#if c.outgoing}<span class="cl">{srvLine('smtp', c.outgoing)}</span>{/if}
+                        {#if c.kind !== 'eas'}<span class="cs">{checkText(c.in, c.incoming)}</span>{/if}
+                      </span>
+                      <button class="btn btn-ghost" onclick={() => useCandidate(i)}>{t('onboarding.account.useThis')}</button>
+                    </li>
+                  {/if}
+                {/each}
+              </ul>
+            {/if}
+          </div>
         {/if}
       {/if}
       {#if discovery.oauthAvailable}<p class="hint">{t('onboarding.account.oauthHint')}</p>{/if}
@@ -413,6 +427,11 @@
   .others-toggle :global(.rot) {
     transform: rotate(90deg);
   }
+  .alt-h {
+    margin: 10px 0 4px;
+    font-size: 12.5px;
+    font-weight: 600;
+  }
   .cands {
     list-style: none;
     margin: 4px 0 8px;
@@ -431,9 +450,6 @@
     border: 1px solid var(--tm-line);
     border-radius: var(--tm-radius);
     font-size: 12.5px;
-  }
-  .cands li.sel {
-    border-color: var(--tm-accent);
   }
   .ci {
     display: inline-flex;
