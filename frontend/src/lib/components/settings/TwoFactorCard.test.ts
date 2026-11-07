@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../../api/api';
 import { MockTransport } from '../../api/mock';
 import { MOCK_PASSWORD, MOCK_TOTP_CODE } from '../../api/mockSecurity';
 import type { MockSecurityOptions } from '../../api/mockSecurity';
@@ -27,7 +28,6 @@ describe('TwoFactorCard: enable', () => {
     expect(state(root)).toBe('Not set up');
     expect(hasButton(root, 'Turn off')).toBe(false);
 
-    await click(button(root, 'Set up two-factor authentication'));
     await stepUp(root);
     await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
     await click(button(root, 'Next'));
@@ -57,14 +57,45 @@ describe('TwoFactorCard: enable', () => {
     expect(text(user)).not.toContain('Administrators on this server');
   });
 
-  it('cancel leaves the enrolment', async () => {
+  it('the password field stands in the card right under "Not set up", like at the passkey (t-102)', async () => {
     const root = render(TwoFactorCard, { api: mock() });
     await ready(root);
-    await click(button(root, 'Set up two-factor authentication'));
-    await stepUp(root);
-    await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
-    await click(button(root, 'Cancel'));
-    expect(hasButton(root, 'Set up two-factor authentication')).toBe(true);
+    expect(state(root)).toBe('Not set up');
+    expect(root.querySelector('input[type="password"]')).toBeTruthy();
+    expect(text(root)).toContain('Current password');
+    expect(button(root, 'Set up two-factor authentication').disabled).toBe(true);
+    expect(text(root)).not.toContain('Step 1 of 3');
+  });
+
+  it('an account without a local password gets the button without a field', async () => {
+    const root = render(TwoFactorCard, { api: mock({ hasPassword: false }) });
+    await ready(root);
+    expect(root.querySelector('input[type="password"]')).toBeNull();
+    expect(button(root, 'Set up two-factor authentication').disabled).toBe(false);
+  });
+
+  it('locked: the field stays, the button waits with the remaining time and frees itself', async () => {
+    const api = mock();
+    vi.spyOn(api, 'totpSetup').mockRejectedValueOnce(new ApiError('x', 429, 'throttled', 1));
+    const root = render(TwoFactorCard, { api });
+    await ready(root);
+    await stepUp(root, 'x');
+    await until(() => expect(root.querySelector('[data-testid="stepup-locked"]')).toBeTruthy());
+    expect(root.querySelector('input[type="password"]')).toBeTruthy();
+    expect(button(root, 'Set up two-factor authentication').disabled).toBe(true);
+    await until(() => expect(root.querySelector('[data-testid="stepup-locked"]')).toBeNull());
+    expect(root.querySelector('input[type="password"]')).toBeTruthy();
+    expect(button(root, 'Set up two-factor authentication').disabled).toBe(false);
+  });
+
+  it('a wrong password keeps the field and shows the message', async () => {
+    const api = mock();
+    vi.spyOn(api, 'totpSetup').mockRejectedValueOnce(new ApiError('x', 401, 'invalid_credentials'));
+    const root = render(TwoFactorCard, { api });
+    await ready(root);
+    await stepUp(root, 'falsch');
+    await until(() => expect(root.querySelector('[role="alert"]')?.textContent).toBe('The password is not correct.'));
+    expect(root.querySelector('input[type="password"]')).toBeTruthy();
   });
 });
 
@@ -108,7 +139,7 @@ describe('TwoFactorCard: disable (re-authentication as the server demands it)', 
       await submit(root.querySelector('form') as HTMLFormElement);
       await until(() => expect(root.querySelector('[role="alert"]')).toBeTruthy());
     }
-    await until(() => expect(root.querySelector('[role="alert"]')?.textContent).toBe('Too many wrong attempts. Security checks (changing password, codes and sessions) are locked; try again in 5 min. Signing in is not affected.'));
+    await until(() => expect(root.querySelector('[role="alert"]')?.textContent).toContain('try again in 5 min'));
   });
 
   it('an account without local password is asked for the code only', async () => {

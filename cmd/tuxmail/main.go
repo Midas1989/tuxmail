@@ -7,7 +7,7 @@
 //	tuxmail version
 //	tuxmail serve        --config /etc/tuxmail/config.yaml
 //	tuxmail check-config --config /etc/tuxmail/config.yaml
-//	tuxmail user add|list|disable|enable|reset-password|reset-2fa|set-role|delete --config ...
+//	tuxmail user add|list|disable|enable|reset-password|reset-2fa|unlock|set-role|delete --config ...
 //	tuxmail import|export|backup|restore [--data-dir DIR | --user NAME] ...  (see io.go)
 //	tuxmail backup-settings --data-dir DIR --out DIR
 //	tuxmail mail folders|list|read|send|reply|search|mark|move ...  (see mail.go)
@@ -142,6 +142,7 @@ func (c *cli) usage() {
   tuxmail user enable         USERNAME
   tuxmail user reset-password USERNAME [--password-stdin]
   tuxmail user reset-2fa      USERNAME               (removes TOTP, recovery codes and passkeys)
+  tuxmail user unlock         USERNAME               (clears the sign-in lock and the lock of the security checks)
   tuxmail user set-role       USERNAME ROLE          (admin | user | readonly)
   tuxmail user delete         USERNAME --yes [--keep-data]
   tuxmail audit   verify [--json]   (checks the audit chain; exit status 1 if it is broken)

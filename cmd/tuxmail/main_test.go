@@ -156,6 +156,12 @@ func TestUserCommands(t *testing.T) {
 	if code, _, _ := runCLI(t, "", "user", "reset-2fa", "--config", p, "bob"); code != 0 {
 		t.Fatal(code)
 	}
+	if code, out, _ := runCLI(t, "", "user", "unlock", "--config", p, "bob"); code != 0 || !strings.Contains(out, "cleared") {
+		t.Fatal(code, out)
+	}
+	if code, _, _ := runCLI(t, "", "user", "unlock", "--config", p, "nobody"); code != 1 {
+		t.Fatal("unlock of an unknown user", code)
+	}
 	if code, _, errs := runCLI(t, "", "user", "disable", "--config", p, "nobody"); code != 1 || !strings.Contains(errs, "not found") {
 		t.Fatal(code, errs)
 	}

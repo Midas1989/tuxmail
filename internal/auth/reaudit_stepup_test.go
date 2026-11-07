@@ -98,3 +98,50 @@ func TestReauditNA05ChangePasswordGuessingLocks(t *testing.T) {
 		t.Fatalf("password guessing via ChangePassword is not locked: %v", err)
 	}
 }
+
+// t-102: an empty request (an opened form) neither counts nor extends a lock;
+// a wrong password while locked does not extend it either; UnlockLogin lifts
+// the step-up lock together with the sign-in lock.
+func TestStepUpEmptyRequestAndUnlock(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestService(t)
+	u := mustUser(t, s, "dora", RoleUser, goodPW)
+	sess := &Session{LoginMethod: MethodPassword, CreatedAt: s.now()}
+	counter := func() (fails int, until int64) {
+		s.db.QueryRow(`SELECT failures, locked_until FROM login_throttle WHERE key = ?`, stepUpKey(u.ID)).Scan(&fails, &until)
+		return
+	}
+	// Empty requests: never counted.
+	for range 20 {
+		if err := s.verifyStepUp(ctx, u, sess, "", "", ""); !errors.Is(err, ErrReauthRequired) {
+			t.Fatal(err)
+		}
+	}
+	if f, _ := counter(); f != 0 {
+		t.Fatalf("empty requests were counted: %d", f)
+	}
+	for range stepUpFreeFails {
+		s.verifyStepUp(ctx, u, sess, "wrong password!", "", "")
+	}
+	f, until := counter()
+	if until == 0 {
+		t.Fatalf("not locked after %d wrong passwords (%d)", stepUpFreeFails, f)
+	}
+	// Locked: empty and wrong requests change nothing.
+	for _, pw := range []string{"", "wrong password!"} {
+		err := s.verifyStepUp(ctx, u, sess, pw, "", "")
+		if pw == "" && !errors.Is(err, ErrReauthRequired) || pw != "" && !errors.Is(err, ErrThrottled) {
+			t.Fatalf("pw=%q: %v", pw, err)
+		}
+	}
+	if f2, u2 := counter(); f2 != f || u2 != until {
+		t.Fatalf("lock changed while locked: %d/%d -> %d/%d", f, until, f2, u2)
+	}
+	s.UnlockLogin(ctx, "DORA")
+	if f, _ := counter(); f != 0 {
+		t.Fatal("UnlockLogin left the step-up counter")
+	}
+	if err := s.verifyStepUp(ctx, u, sess, goodPW, "", ""); err != nil {
+		t.Fatalf("owner still locked: %v", err)
+	}
+}

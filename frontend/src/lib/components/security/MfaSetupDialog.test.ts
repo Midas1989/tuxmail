@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '../../api/api';
 import { MockTransport } from '../../api/mock';
 import { MOCK_TOTP_CODE } from '../../api/mockSecurity';
 import MfaSetupDialog from './MfaSetupDialog.svelte';
@@ -59,5 +60,28 @@ describe('MfaSetupDialog (forced set-up for administrators)', () => {
     await until(() => expect(button(root, 'Finish').disabled).toBe(false));
     await click(button(root, 'Finish'));
     expect(onfinished).toHaveBeenCalledTimes(1);
+  });
+
+  it('the password field is there at once; a lock keeps it, disables the button and frees it again (t-102)', async () => {
+    const api = mock();
+    vi.spyOn(api, 'totpSetup').mockRejectedValueOnce(new ApiError('x', 429, 'throttled', 1));
+    const root = render(MfaSetupDialog, { api, onfinished: () => {}, onsignout: async () => {} });
+    await until(() => expect(root.querySelector('input[type="password"]')).toBeTruthy());
+    expect(text(root)).not.toContain('Try again');
+    await stepUp(root, 'x');
+    await until(() => expect(root.querySelector('[data-testid="stepup-locked"]')).toBeTruthy());
+    expect(root.querySelector('input[type="password"]')).toBeTruthy();
+    expect(button(root, 'Set up two-factor authentication').disabled).toBe(true);
+    await until(() => expect(button(root, 'Set up two-factor authentication').disabled).toBe(false));
+  });
+
+  it('an account without a password: button, no field; a refusal offers "Sign in again"', async () => {
+    const api = new MockTransport({ latencyMs: 0, security: { admin: true, hasPassword: false } });
+    vi.spyOn(api, 'totpSetup').mockRejectedValueOnce(new ApiError('x', 403, 'reauth_required'));
+    const root = render(MfaSetupDialog, { api, onfinished: () => {}, onsignout: async () => {} });
+    await until(() => expect(hasButton(root, 'Set up two-factor authentication')).toBe(true));
+    await until(() => expect(root.querySelector('input[type="password"]')).toBeNull());
+    await click(button(root, 'Set up two-factor authentication'));
+    await until(() => expect(hasButton(root, 'Sign in again')).toBe(true));
   });
 });

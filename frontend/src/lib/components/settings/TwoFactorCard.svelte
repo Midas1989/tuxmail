@@ -17,7 +17,7 @@
   import type { Api } from '../../api/api';
   import type { AuthMe, Reauth } from '../../api/security';
   import { t } from '../../i18n/index.svelte';
-  import { securityErrorMessage } from '../../security';
+  import { lockUntilOf, securityErrorMessage } from '../../security';
   import TotpEnrollment from '../security/TotpEnrollment.svelte';
   import RecoveryCodes from '../security/RecoveryCodes.svelte';
   import StepUpForm from '../security/StepUpForm.svelte';
@@ -29,12 +29,13 @@
   let { api: apiProp }: Props = $props();
   const api = $derived(apiProp ?? app.api);
 
-  type View = 'status' | 'enroll' | 'disable' | 'regenerate' | 'codes';
+  type View = 'status' | 'disable' | 'regenerate' | 'codes';
   let view = $state<View>('status');
   let me = $state<AuthMe | null>(null);
   let loadError = $state<string | null>(null);
   let error = $state<string | null>(null);
   let busy = $state(false);
+  let lockUntil = $state<number | null>(null);
   let codes = $state<string[]>([]);
   let stored = $state(false);
 
@@ -57,6 +58,7 @@
 
   function show(v: View) {
     error = null;
+    lockUntil = null;
     view = v;
   }
 
@@ -78,6 +80,7 @@
       app.toast(t('security.twofactor.disabledToast'));
     } catch (err) {
       error = securityErrorMessage(err, t);
+      lockUntil = lockUntilOf(err);
     } finally {
       busy = false;
     }
@@ -93,6 +96,7 @@
       void load();
     } catch (err) {
       error = securityErrorMessage(err, t);
+      lockUntil = lockUntilOf(err);
     } finally {
       busy = false;
     }
@@ -133,25 +137,21 @@
         </div>
       {:else}
         {#if me.mfaSetupRequired}<p class="required" role="status">{t('security.twofactor.required')}</p>{/if}
-        <div class="row">
-          <button class="btn btn-primary" onclick={() => show('enroll')}><ShieldCheck size={14} /> {t('security.twofactor.enable')}</button>
+        <div class="panel">
+          <TotpEnrollment {api} hasPassword={me.user.hasPassword} onfinished={() => void enrolled()} />
         </div>
       {/if}
-    {:else if view === 'enroll'}
-      <div class="panel">
-        <TotpEnrollment {api} onfinished={() => void enrolled()} oncancel={() => show('status')} />
-      </div>
     {:else if view === 'regenerate'}
       <div class="panel">
         <h3>{t('security.twofactor.regenerateTitle')}</h3>
         <p class="muted">{t('security.twofactor.regenerateText')}</p>
-        <StepUpForm hasPassword={me.user.hasPassword} submitLabel={t('security.twofactor.regenerateSubmit')} {busy} {error} onsubmit={(r) => void regenerate(r)} oncancel={() => show('status')} />
+        <StepUpForm hasPassword={me.user.hasPassword} submitLabel={t('security.twofactor.regenerateSubmit')} {busy} {error} {lockUntil} onsubmit={(r) => void regenerate(r)} oncancel={() => show('status')} />
       </div>
     {:else if view === 'disable'}
       <div class="panel">
         <h3>{t('security.twofactor.disableTitle')}</h3>
         <p class="muted">{t('security.twofactor.disableText')}</p>
-        <StepUpForm hasPassword={me.user.hasPassword} submitLabel={t('security.twofactor.disableSubmit')} danger {busy} {error} onsubmit={(r) => void disable(r)} oncancel={() => show('status')} />
+        <StepUpForm hasPassword={me.user.hasPassword} submitLabel={t('security.twofactor.disableSubmit')} danger {busy} {error} {lockUntil} onsubmit={(r) => void disable(r)} oncancel={() => show('status')} />
       </div>
     {:else if view === 'codes'}
       <div class="panel">

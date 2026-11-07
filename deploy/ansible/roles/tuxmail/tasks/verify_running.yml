@@ -1,0 +1,36 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Abschlusspruefung: Der laufende Dienst muss die Version des installierten Binarys melden.
+# Verhindert, dass ein Rollout "gruen" endet, obwohl nach dem Neustart noch ein altes Binary laeuft
+# (z. B. weil ein Versionsverzeichnis nicht aktualisiert wurde).
+
+- name: Adresse des laufenden Dienstes bestimmen
+  ansible.builtin.include_tasks: healthcheck_url.yml
+
+- name: Version des laufenden Dienstes abfragen (GET /healthz?deep=1, nur von diesem Rechner)
+  ansible.builtin.uri:
+    url: "{{ tuxmail_healthcheck_url }}"
+    unix_socket: "{{ tuxmail_socket_path if tuxmail_listen_is_socket | bool else omit }}"
+    method: GET
+    status_code: [200, 503]
+    validate_certs: false
+    return_content: true
+  register: tuxmail_running
+  until: tuxmail_running.status | default(0) in [200, 503] and (tuxmail_running.json | default({})).version is defined
+  retries: "{{ tuxmail_healthcheck_retries | int }}"
+  delay: "{{ tuxmail_healthcheck_delay | int }}"
+  changed_when: false
+  check_mode: false
+
+- name: Laufende Version entspricht dem installierten Binary
+  ansible.builtin.assert:
+    that: tuxmail_expected_version in tuxmail_running_version
+    quiet: true
+    fail_msg: >-
+      Nach dem Neustart meldet der Dienst die Version "{{ tuxmail_running_version }}", erwartet war
+      "{{ tuxmail_expected_version }}" ({{ tuxmail_version_binary }}). Vermutlich laeuft noch ein altes Binary
+      oder das Versionsverzeichnis {{ tuxmail_version_dir }} enthaelt nicht das gewuenschte Archiv.
+      Pruefe: readlink {{ tuxmail_install_dir }}/current, systemctl status {{ tuxmail_service_name }}.
+  vars:
+    tuxmail_expected_version: "{{ tuxmail_version_output.stdout | trim | regex_replace('^TuxMail\\s+', '') }}"
+    tuxmail_running_version: "{{ tuxmail_running.json.version | string }}"

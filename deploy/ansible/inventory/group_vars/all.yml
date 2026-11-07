@@ -15,7 +15,11 @@
 # ============================================================================
 # Grundeinstellungen
 # ============================================================================
-tuxmail_version: "0.1.0"
+# Version fuer den Release-Download (waehlt versions/<v> und das Archiv auf GitHub). Mit
+# -e tuxmail_binary_src=/pfad/tuxmail_<v>_linux_<arch>.tar.gz bestimmt dagegen der Dateiname des Archivs die
+# Version (diese Zeile ist dann egal). Nach dem Neustart prueft das Playbook, dass der Dienst die Version
+# des installierten Binarys meldet, und bricht sonst ab.
+tuxmail_version: "1.0.1"
 tuxmail_domain: "mail.example.org"
 
 # nginx: new | existing | none
