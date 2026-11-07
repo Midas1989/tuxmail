@@ -24,7 +24,7 @@
 
 - name: Laufende Version entspricht dem installierten Binary
   ansible.builtin.assert:
-    that: tuxmail_expected_version in tuxmail_running_version
+    that: tuxmail_expected_version == tuxmail_running_version
     quiet: true
     fail_msg: >-
       Nach dem Neustart meldet der Dienst die Version "{{ tuxmail_running_version }}", erwartet war

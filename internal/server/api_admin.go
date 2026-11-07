@@ -235,6 +235,12 @@ func (s *Server) handleAdminUnlock(w http.ResponseWriter, r *http.Request, a *au
 	if !ok {
 		return
 	}
+	if id == a.User.ID {
+		// A stolen administrator session could otherwise lift the lock of the
+		// security checks after every 5 guesses. Another administrator or the CLI unlocks.
+		writeError(w, http.StatusForbidden, "forbidden", "you cannot unlock your own account here; ask another administrator or use 'tuxmail user unlock' on the server")
+		return
+	}
 	u, err := s.auth.GetUser(r.Context(), id)
 	if err != nil {
 		s.writeAuthError(w, err)
