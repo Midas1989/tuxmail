@@ -3,7 +3,7 @@
 Stand: 2026-11-07, Release 1.0.0. Bezug: Basis `spec/PARAMETER.md`, `spec/AUTH.md`, `spec/WEB.md`, `spec/KRYPTO.md`,
 `spec/BETRIEB.md`. Hier steht, wo TuxMail bewusst anders handelt, und warum.
 
-## Entschieden (Midas über die Koordination, 2026-11-07)
+## Entschieden (Koordination, technische Entscheidungen von Midas übertragen, 2026-11-07)
 
 | # | Vorgabe | TuxMail | Grund |
 |---|---|---|---|
