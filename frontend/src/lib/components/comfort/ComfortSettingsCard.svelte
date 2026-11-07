@@ -126,7 +126,11 @@
             <option value="teams">{t('comfort.meeting.provider.teams')}</option>
           </select>
         </label>
-        <label class="field"><span class="label">{t('comfort.settings.jitsiUrl')}</span><input class="input" bind:value={s.meeting.jitsiBaseUrl} spellcheck="false" /></label>
+        {#if s.meeting.defaultProvider === 'jitsi'}
+          <label class="field"><span class="label">{t('comfort.settings.jitsiUrl')}</span><input class="input" bind:value={s.meeting.jitsiBaseUrl} spellcheck="false" /></label>
+        {:else}
+          <p class="hint" data-testid="meeting-hint">{t(`comfort.meeting.hint.${s.meeting.defaultProvider}`)}</p>
+        {/if}
       </fieldset>
 
       <fieldset>

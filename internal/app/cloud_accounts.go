@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -135,11 +136,18 @@ func cloudErr(err error) error {
 		return &Error{Code: CodeNotSupported, Status: http.StatusNotImplemented, Message: err.Error(), Err: err}
 	case errors.Is(err, cloud.ErrInsufficient):
 		return &Error{Code: "cloud_quota", Status: http.StatusInsufficientStorage, Message: "not enough storage on the cloud server", Err: err}
+	case errors.Is(err, vaultwarden.ErrNotAPI):
+		return &Error{Code: "cloud_not_api", Status: http.StatusBadGateway, Message: "the server did not answer with the expected API (got a web page)", Err: err}
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return err
 	}
 	if AsError(err).Code != CodeInternal {
 		return err
+	}
+	var ne net.Error
+	var ue *url.Error
+	if errors.As(err, &ne) || errors.As(err, &ue) {
+		return &Error{Code: "cloud_unreachable", Status: http.StatusBadGateway, Message: "the cloud server is not reachable", Err: err}
 	}
 	return &Error{Code: "cloud_error", Status: http.StatusBadGateway, Message: err.Error(), Err: err}
 }

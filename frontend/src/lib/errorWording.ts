@@ -10,6 +10,20 @@ export function errorWording(code: string): string | undefined {
       return t('errors.deviceTokenForbidden');
     case 'password_required':
       return t('errors.passwordRequired');
+    case 'cloud_not_api':
+      return t('errors.cloudNotApi');
+    case 'cloud_auth':
+      return t('errors.cloudAuth');
+    case 'cloud_forbidden':
+      return t('errors.cloudForbidden');
+    case 'cloud_quota':
+      return t('errors.cloudQuota');
+    case 'cloud_unreachable':
+      return t('errors.cloudUnreachable');
+    case 'cloud_error':
+      return t('errors.cloudError');
+    case 'notify_unavailable':
+      return t('errors.notifyUnavailable');
     default:
       return undefined;
   }

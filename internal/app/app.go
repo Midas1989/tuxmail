@@ -61,7 +61,10 @@ type Options struct {
 	Renderer   MessageRenderer // default: basic go-message renderer (text only)
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
-	AI         AIFactory       // default: no provider (ai_not_configured)
+	// DesktopNotify shows a native notification on the desktop (default:
+	// the operating system's service, desktopnotify.go); mainly for tests.
+	DesktopNotify func(ctx context.Context, title, body string) error
+	AI            AIFactory // default: no provider (ai_not_configured)
 	// Messenger enables the messenger plugins (messenger_wiring.go).
 	Messenger *MessengerOptions
 	OAuth     *OAuthOptions // OAuth clients/redirect (default: environment), oauth_app.go

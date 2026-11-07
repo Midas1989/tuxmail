@@ -138,9 +138,11 @@ export class WailsTransport implements Api {
       return (await fn(...args)) as T;
     } catch (err) {
       // Wails rejects with the Go error string; the core encodes it as {"code","message"}.
-      const text = typeof err === 'string' ? err : String(err);
+      // WebView2 may hand over an Error object or prefix the text with `Error: `.
+      const text = typeof err === 'string' ? err : err instanceof Error ? err.message : String(err);
       try {
-        const j = JSON.parse(text) as { code?: string; message?: string };
+        const brace = text.indexOf('{');
+        const j = JSON.parse(brace > 0 ? text.slice(brace) : text) as { code?: string; message?: string };
         if (j && typeof j.code === 'string') throw new ApiError(j.message ?? j.code, 0, j.code);
       } catch (e) {
         if (e instanceof ApiError) throw e;

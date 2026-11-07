@@ -240,6 +240,10 @@
     grid-template-columns: minmax(320px, 400px) 1fr;
     grid-template-rows: minmax(0, 1fr);
   }
+  /* The terminal view is a single child (list and reader live inside it) and takes the whole width. */
+  .panes[data-mode='terminal'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .panes[data-mode='hybrid'] {
     grid-template-columns: minmax(280px, 340px) 1fr;
   }

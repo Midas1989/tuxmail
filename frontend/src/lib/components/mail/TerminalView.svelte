@@ -19,6 +19,48 @@
   let history: string[] = [];
   let historyPos = -1;
   let listEl = $state<HTMLElement>();
+  let panesEl = $state<HTMLElement>();
+
+  // Width of the list in percent of the view; adjustable by dragging or with the arrow keys on the divider.
+  const SPLIT_KEY = 'tuxmail.term.listPct';
+  const clampPct = (n: number) => Math.max(25, Math.min(75, Math.round(n)));
+  function loadPct(): number {
+    try {
+      const v = Number(localStorage.getItem(SPLIT_KEY));
+      return v ? clampPct(v) : 50;
+    } catch {
+      return 50;
+    }
+  }
+  let listPct = $state(loadPct());
+  function setPct(n: number) {
+    listPct = clampPct(n);
+    try {
+      localStorage.setItem(SPLIT_KEY, String(listPct));
+    } catch {
+      /* private mode: keep the value for this session */
+    }
+  }
+  function dragSplit(e: PointerEvent) {
+    const box = panesEl?.getBoundingClientRect();
+    if (!box || !box.width) return;
+    const el = e.currentTarget as HTMLElement;
+    el.setPointerCapture?.(e.pointerId);
+    const move = (ev: PointerEvent) => setPct(((ev.clientX - box.left) / box.width) * 100);
+    const up = () => {
+      el.removeEventListener('pointermove', move);
+      el.removeEventListener('pointerup', up);
+    };
+    el.addEventListener('pointermove', move);
+    el.addEventListener('pointerup', up);
+  }
+  function splitKey(e: KeyboardEvent) {
+    const d = e.key === 'ArrowLeft' ? -5 : e.key === 'ArrowRight' ? 5 : 0;
+    if (!d) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setPct(listPct + d);
+  }
   let inputEl = $state<HTMLInputElement>();
 
   const message = $derived(app.message);
@@ -83,7 +125,7 @@
 </script>
 
 <div class="term" class:has-message={message != null}>
-  <div class="panes">
+  <div class="panes" bind:this={panesEl} style:--term-list="{listPct}%">
     <div
       class="list"
       bind:this={listEl}
@@ -112,6 +154,19 @@
         <p class="empty">{app.search ? t('mail.list.noResults') : t('mail.list.empty')}</p>
       {/each}
     </div>
+    <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions: the divider is an ARIA separator with keys -->
+    <div
+      class="split"
+      role="separator"
+      tabindex="0"
+      aria-orientation="vertical"
+      aria-label={t('mail.terminal.splitLabel')}
+      aria-valuemin="25"
+      aria-valuemax="75"
+      aria-valuenow={listPct}
+      onpointerdown={dragSplit}
+      onkeydown={splitKey}
+    ></div>
     <div class="reader" aria-label={t('mail.terminal.readerLabel')} role="region">
       {#if message}
         <div class="actions" role="toolbar" aria-label={t('mail.terminal.actionsLabel')}>
@@ -190,11 +245,20 @@
     display: flex;
   }
   .list {
-    flex: 0 0 45%;
+    flex: 0 0 var(--term-list, 50%);
     min-width: 0;
     overflow-y: auto;
-    border-right: 1px solid var(--tm-line);
     outline-offset: -2px;
+  }
+  .split {
+    flex: 0 0 6px;
+    cursor: col-resize;
+    background: var(--tm-line);
+    touch-action: none;
+  }
+  .split:hover,
+  .split:focus-visible {
+    background: var(--tm-accent);
   }
   .row {
     display: flex;
@@ -327,9 +391,11 @@
   }
   @media (max-width: 899px) {
     /* Phones and small windows: list or message, like the classic view. */
+    .split {
+      display: none;
+    }
     .list {
       flex: 1;
-      border-right: none;
     }
     .reader {
       display: none;

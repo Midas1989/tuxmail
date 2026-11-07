@@ -52,6 +52,15 @@ const MaxDeletionDays = 31
 // ErrTwoFactorRequired is returned by Login when a second factor is needed.
 var ErrTwoFactorRequired = errors.New("vaultwarden: two-factor code required")
 
+// ErrNotAPI means the server answered with something that is not the
+// Bitwarden API (typically the web vault HTML page, a login page of a
+// reverse proxy, or an error page): wrong address, or the proxy does not
+// forward /identity and /api to Vaultwarden.
+var ErrNotAPI = errors.New("vaultwarden: the server did not answer with the Bitwarden API")
+
+// userAgent is sent on every request; some proxies and WAFs reject the Go default.
+const userAgent = "TuxMail (Bitwarden-compatible client)"
+
 // TwoFactorError lists the providers the server offers.
 type TwoFactorError struct{ Providers []string }
 
@@ -149,7 +158,15 @@ func (c *Client) Session() (Session, bool) {
 	return *c.session, true
 }
 
+func looksLikeHTML(b []byte) bool {
+	t := strings.ToLower(strings.TrimSpace(string(b[:min(len(b), 512)])))
+	return strings.HasPrefix(t, "<") || strings.Contains(t, "<html")
+}
+
 func (c *Client) do(req *http.Request, out any) error {
+	if req.Header.Get("User-Agent") == "" {
+		req.Header.Set("User-Agent", userAgent)
+	}
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return err
@@ -164,7 +181,7 @@ func (c *Client) do(req *http.Request, out any) error {
 				Message string `json:"message"`
 			} `json:"errorModel"`
 		}
-		msg := string(raw)
+		msg := ""
 		if json.Unmarshal(raw, &e) == nil {
 			for _, m := range []string{e.Model.Message, e.Message, e.Error} {
 				if m != "" {
@@ -172,11 +189,17 @@ func (c *Client) do(req *http.Request, out any) error {
 					break
 				}
 			}
+		} else if looksLikeHTML(raw) {
+			return fmt.Errorf("%s %s: HTTP %d: %w", req.Method, req.URL.Path, resp.StatusCode, ErrNotAPI)
+		} else {
+			msg = string(raw)
 		}
 		return cloud.StatusError(req.Method+" "+req.URL.Path, resp.StatusCode, msg)
 	}
 	if out != nil && len(raw) > 0 {
-		return json.Unmarshal(raw, out)
+		if err := json.Unmarshal(raw, out); err != nil {
+			return fmt.Errorf("%s %s: %w", req.Method, req.URL.Path, ErrNotAPI)
+		}
 	}
 	return nil
 }
@@ -192,13 +215,15 @@ func (c *Client) Prelogin(ctx context.Context, email string) (KDFParams, error) 
 			return k, err
 		}
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("User-Agent", userAgent)
 		if lastErr = c.do(req, &k); lastErr == nil {
 			if k.Iterations == 0 {
 				k.Iterations = 600000
 			}
 			return k, nil
 		}
-		if !errors.Is(lastErr, cloud.ErrNotFound) {
+		if !errors.Is(lastErr, cloud.ErrNotFound) && !errors.Is(lastErr, ErrNotAPI) {
 			break
 		}
 	}
@@ -265,6 +290,7 @@ func (c *Client) Login(ctx context.Context, email, password string, o LoginOptio
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Auth-Email", base64.RawURLEncoding.EncodeToString([]byte(email)))
 	req.Header.Set("Device-Type", strconv.Itoa(DeviceType))
+	req.Header.Set("User-Agent", userAgent)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		return Session{}, err
@@ -281,7 +307,9 @@ func (c *Client) Login(ctx context.Context, email, password string, o LoginOptio
 				Message string `json:"Message"`
 			} `json:"ErrorModel"`
 		}
-		_ = json.Unmarshal(raw, &e)
+		if json.Unmarshal(raw, &e) != nil && looksLikeHTML(raw) {
+			return Session{}, fmt.Errorf("login: HTTP %d: %w", resp.StatusCode, ErrNotAPI)
+		}
 		if len(e.Providers) > 0 || len(e.Providers2) > 2 {
 			te := &TwoFactorError{}
 			for _, p := range e.Providers {
@@ -300,7 +328,7 @@ func (c *Client) Login(ctx context.Context, email, password string, o LoginOptio
 	}
 	var tr tokenResponse
 	if err := json.Unmarshal(raw, &tr); err != nil {
-		return Session{}, fmt.Errorf("vaultwarden: token response: %w", err)
+		return Session{}, fmt.Errorf("login: %w", ErrNotAPI)
 	}
 	encKey := tr.Key
 	if encKey == "" {
