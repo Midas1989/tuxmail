@@ -2,6 +2,9 @@
 <!-- Messenger-style chat list: search, filter pills, archived row, pinned on top. -->
 <script lang="ts">
   import ViewSwitcher from '../ViewSwitcher.svelte';
+  import Modal from '../common/Modal.svelte';
+  import SlidersHorizontal from '@lucide/svelte/icons/sliders-horizontal';
+  import { phone } from '../../phone.svelte';
   import { comfort } from '../../state';
   import CategoryTabs from '../comfort/CategoryTabs.svelte';
   import TeamSection from '../team/TeamSection.svelte';
@@ -113,6 +116,10 @@
     ];
   }
 
+  // Phones: one chip row (filter button + status chips); category and tag filters live in a sheet.
+  let filterOpen = $state(false);
+  const activeExtra = $derived((comfort.category !== 'all' ? 1 : 0) + (app.chatTagId != null ? 1 : 0));
+
   function openMenu(c: Conversation, x: number, y: number) {
     menu = { x, y, conv: c };
   }
@@ -188,20 +195,31 @@
     {#if app.focusActive}
       <div class="focus-banner" role="status"><Target size={14} /> {t('chat.focus.active')}</div>
     {/if}
-    <div class="pills" role="radiogroup" aria-label={t('chat.filterLabel')}>
-      {#each FILTERS as f (f)}
-        <button class="pill" role="radio" aria-checked={app.chatFilter === f} onclick={() => app.setChatFilter(f)}>{t(`chat.filter.${f}`)}</button>
-      {/each}
-    </div>
-    <CategoryTabs variant="pills" />
-    {#if app.tags.length}
-      <div class="pills tag-pills" role="group" aria-label={t('organize.tags.filter')}>
-        {#each app.tags.filter((x) => x.total > 0) as x (x.tag.id)}
-          <button class="pill tag-pill" style:--c={x.tag.color} aria-pressed={app.chatTagId === x.tag.id} onclick={() => app.setChatTag(app.chatTagId === x.tag.id ? null : x.tag.id)} title={x.tag.path}>
-            <span class="tdot"></span>{x.tag.name}
-          </button>
+    {#if phone.current}
+      <div class="pills" role="radiogroup" aria-label={t('chat.filterLabel')}>
+        <button class="pill filter-chip" aria-haspopup="dialog" aria-expanded={filterOpen} onclick={() => (filterOpen = true)}>
+          <SlidersHorizontal size={14} aria-hidden="true" />{t('chat.filterButton')}{#if activeExtra}<span class="tab-count">{activeExtra}</span>{/if}
+        </button>
+        {#each FILTERS as f (f)}
+          <button class="pill" role="radio" aria-checked={app.chatFilter === f} onclick={() => app.setChatFilter(f)}>{t(`chat.filter.${f}`)}</button>
         {/each}
       </div>
+    {:else}
+    <div class="pills" role="radiogroup" aria-label={t('chat.filterLabel')}>
+        {#each FILTERS as f (f)}
+          <button class="pill" role="radio" aria-checked={app.chatFilter === f} onclick={() => app.setChatFilter(f)}>{t(`chat.filter.${f}`)}</button>
+        {/each}
+      </div>
+      <CategoryTabs variant="pills" />
+      {#if app.tags.length}
+        <div class="pills tag-pills" role="group" aria-label={t('organize.tags.filter')}>
+          {#each app.tags.filter((x) => x.total > 0) as x (x.tag.id)}
+            <button class="pill tag-pill" style:--c={x.tag.color} aria-pressed={app.chatTagId === x.tag.id} onclick={() => app.setChatTag(app.chatTagId === x.tag.id ? null : x.tag.id)} title={x.tag.path}>
+              <span class="tdot"></span>{x.tag.name}
+            </button>
+          {/each}
+        </div>
+      {/if}
     {/if}
   {/if}
 
@@ -249,6 +267,21 @@
     <p class="grouping-hint">{t('chat.groupedByTopic')}</p>
   {/if}
 </section>
+
+{#if phone.current && filterOpen}
+  <Modal title={t('chat.filterButton')} onclose={() => (filterOpen = false)}>
+    <CategoryTabs variant="pills" />
+    {#if app.tags.length}
+      <div class="pills tag-pills" role="group" aria-label={t('organize.tags.filter')}>
+        {#each app.tags.filter((x) => x.total > 0) as x (x.tag.id)}
+          <button class="pill tag-pill" style:--c={x.tag.color} aria-pressed={app.chatTagId === x.tag.id} onclick={() => app.setChatTag(app.chatTagId === x.tag.id ? null : x.tag.id)} title={x.tag.path}>
+            <span class="tdot"></span>{x.tag.name}
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </Modal>
+{/if}
 
 {#snippet chatRow(c: Conversation)}
   {@const selected = c.id === app.selectedConversationId}
@@ -771,5 +804,12 @@
     font-size: 11.5px;
     color: var(--tm-faint);
     border-top: 1px solid var(--tm-line);
+  }
+  .filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    flex: none;
   }
 </style>

@@ -19,6 +19,7 @@
   import { highlight, isEmojiOnly, linkify } from '../../richtext';
   import { hueFor } from '../../conversation';
   import { longpress } from '../../actions';
+  import { phone } from '../../phone.svelte';
   import ChannelIcon from '../common/ChannelIcon.svelte';
   import AttachmentCard from '../common/AttachmentCard.svelte';
   import Avatar from '../common/Avatar.svelte';
@@ -148,7 +149,14 @@
     aria-label={label}
     tabindex={focused ? 0 : -1}
     onfocus={() => onfocusitem(item.id)}
-    onclick={() => onfocusitem(item.id)}
+    onclick={(e) => {
+      onfocusitem(item.id);
+      // Phones: a tap on the bubble opens the action sheet (reply, react, forward ...); links, images and buttons keep their own tap.
+      if (phone.current && !(e.target as HTMLElement).closest('a, button, input, select, textarea, summary, img, video, audio, iframe')) {
+        const r = e.currentTarget.getBoundingClientRect();
+        onmenu(item, r.left, r.bottom);
+      }
+    }}
     ondblclick={(e) => openWindow(e)}
     {onkeydown}
     use:longpress={(x, y) => onmenu(item, x, y)}
@@ -917,5 +925,13 @@
   .reaction small {
     font-size: 11px;
     color: var(--tm-muted);
+  }
+
+  /* Phones: no always-visible small buttons on the bubble; tap or long-press opens the action sheet. */
+  @media (max-width: 639px) {
+    .menu-btn,
+    .mail-tools {
+      display: none;
+    }
   }
 </style>

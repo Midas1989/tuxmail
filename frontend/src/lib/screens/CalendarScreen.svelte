@@ -8,6 +8,7 @@
   import { app, prefs } from '../state';
   import { fmt, t } from '../i18n/index.svelte';
   import { tk } from '../calendar/i18n';
+  import { phone } from '../phone.svelte';
   import type { CalendarEvent, EventInput, PimCalendar, RecurrenceScope } from '../types';
   import { dayKeyIn, rangeOf, stepAnchor, viewDays, zonedInstant, type CalendarView, type DayKey } from '../calendar/datemath';
   import { parseQuick } from '../calendar/quickparse';
@@ -58,7 +59,8 @@
     }
   });
 
-  const view = $derived<CalendarView>(mode === 'tasks' ? 'week' : mode);
+  // Phones show three days instead of seven narrow columns; the stored choice stays "week".
+  const view = $derived<CalendarView>(mode === 'tasks' ? 'week' : phone.current && (mode === 'week' || mode === 'workweek') ? 'threeday' : mode);
   const days = $derived(viewDays(view, anchor, weekStart));
   const colors = $derived(Object.fromEntries(calendars.map((c) => [c.id, c.color])));
   const marked = $derived(new Set(events.map((e) => (e.allDay ? e.start : dayKeyIn(new Date(e.start), tz)))));
@@ -114,6 +116,22 @@
 
   function go(dir: number) {
     anchor = stepAnchor(view, anchor, dir);
+  }
+
+  // Phones: swipe left/right moves the shown range (not in the task list or while a dialog is open).
+  let swipe: { x: number; y: number } | null = null;
+  function swipeStart(e: TouchEvent) {
+    const p = e.touches[0];
+    swipe = e.touches.length === 1 && mode !== 'tasks' && !dialog ? { x: p.clientX, y: p.clientY } : null;
+  }
+  function swipeEnd(e: TouchEvent) {
+    const s = swipe;
+    swipe = null;
+    if (!s || !phone.current) return;
+    const p = e.changedTouches[0];
+    const dx = p.clientX - s.x;
+    const dy = p.clientY - s.y;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) go(dx < 0 ? 1 : -1);
   }
 
   function onkey(e: KeyboardEvent) {
@@ -246,7 +264,7 @@
     {/if}
     <div class="seg views" role="radiogroup" aria-label={t('calendar.viewLabel')}>
       {#each MODES as m (m)}
-        <button role="radio" aria-checked={mode === m} class:hide-narrow={m === 'workweek'} onclick={() => (mode = m)}>{tk(`calendar.view.${m}`)}</button>
+        <button role="radio" aria-checked={mode === m} class:hide-narrow={m === 'workweek'} onclick={() => (mode = m)}>{tk(`calendar.view.${m === 'week' && phone.current ? 'threeday' : m}`)}</button>
       {/each}
     </div>
     {#if mode !== 'tasks'}
@@ -267,7 +285,8 @@
         />
       </aside>
     {/if}
-    <div class="main" class:loading>
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div class="main" class:loading ontouchstart={swipeStart} ontouchend={swipeEnd}>
       {#if mode === 'tasks'}
         <TasksView {calendars} {tz} {weekStart} {reloadKey} />
       {:else if mode === 'month'}

@@ -255,6 +255,7 @@
     "archived": "Archived",
     "newChat": "New chat",
     "searchPlaceholder": "Search or start a new chat",
+    "filterButton": "Filter",
     "filterLabel": "Filter chats",
     "filter": {
       "all": "All",
@@ -589,6 +590,7 @@
       "day": "Day",
       "workweek": "Work week",
       "week": "Week",
+      "threeday": "3 days",
       "month": "Month",
       "agenda": "Agenda",
       "tasks": "Tasks"

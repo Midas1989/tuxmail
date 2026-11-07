@@ -378,6 +378,8 @@
   html:root:root .seg button {
     min-width: 44px;
     justify-content: center;
+    white-space: nowrap;
+    padding-inline: 8px;
   }
   html:root:root .icon-btn svg {
     min-width: 20px;

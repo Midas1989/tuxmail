@@ -83,10 +83,13 @@
 </script>
 
 <div class="backdrop" role="presentation" onmousedown={close} oncontextmenu={(e) => (e.preventDefault(), close())}></div>
+<!-- aria-modal: lets the Android back button find and close the open menu (native/capacitor.ts) -->
+<!-- svelte-ignore a11y_role_supports_aria_props -->
 <div
   class="menu"
   bind:this={menu}
   role="menu"
+  aria-modal="true"
   tabindex="-1"
   aria-label={label}
   style:left="{pos.left}px"
@@ -156,5 +159,28 @@
   }
   .item:disabled {
     opacity: 0.45;
+  }
+
+  /* Phones: the menu is a bottom sheet (full width, 48 px rows, clear of the navigation bar). */
+  @media (max-width: 639px) {
+    .backdrop {
+      background: rgb(10 14 22 / 0.4);
+    }
+    .menu {
+      left: 0 !important;
+      right: 0;
+      top: auto !important;
+      bottom: 0;
+      width: auto !important;
+      max-height: calc(100dvh - var(--tm-safe-top) - 16px);
+      overflow-y: auto;
+      padding: 8px 8px calc(8px + var(--tm-safe-bottom));
+      border-radius: 16px 16px 0 0;
+      border-bottom: none;
+    }
+    .item {
+      height: 48px;
+      font-size: 15px;
+    }
   }
 </style>
