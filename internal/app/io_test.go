@@ -343,7 +343,8 @@ func TestBackupRestoreViaApp(t *testing.T) {
 
 	// Schedules.
 	target := t.TempDir()
-	s, err := e.a.SaveBackupSchedule(ctx, app.BackupScheduleInput{Schedule: backup.Schedule{Name: "Daily", Enabled: true, Frequency: "daily", Hour: 2,
+	// Twelve hours away: the app's timer must not add a run of its own in this test.
+	s, err := e.a.SaveBackupSchedule(ctx, app.BackupScheduleInput{Schedule: backup.Schedule{Name: "Daily", Enabled: true, Frequency: "daily", Hour: (time.Now().Hour() + 12) % 24,
 		Scope: backup.Scope{Mode: backup.ModeFull}, Target: backup.TargetConfig{Kind: "local", Path: target}, Incremental: true}, Passphrase: "pw"})
 	if err != nil || s.NextRun.IsZero() || s.PassphraseRef == "" {
 		t.Fatalf("schedule: %+v %v", s, err)

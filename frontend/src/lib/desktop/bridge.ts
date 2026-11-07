@@ -27,6 +27,13 @@ interface ProxyResponse {
   body?: string;
 }
 
+let lastUnclearId: string | null = null;
+
+/** The outbox entry of the mail whose sending just ended unclear. */
+export function lastUnclearOutboxId(): string | null {
+  return lastUnclearId;
+}
+
 let serverMode = false;
 let bootState = 'none';
 
@@ -97,6 +104,11 @@ export function bridgeFetch(win: DesktopWin = currentWin()): typeof fetch {
     if (res.status === 503 && bytes && new TextDecoder().decode(bytes).includes('"offline"')) {
       // Whatever screen ends up showing it: a sentence for people.
       bytes = new TextEncoder().encode(JSON.stringify({ error: 'offline', message: t('connection.notAvailableOffline') }));
+    }
+    if (res.status === 409 && bytes && new TextDecoder().decode(bytes).includes('"send_unclear"')) {
+      const doc = JSON.parse(new TextDecoder().decode(bytes)) as { outboxId?: string };
+      lastUnclearId = doc.outboxId ?? null;
+      bytes = new TextEncoder().encode(JSON.stringify({ ...doc, message: t('connection.unclear.text') }));
     }
     const empty = res.status === 204 || res.status === 304 || res.status === 205;
     return new Response(empty ? null : bytes, { status: res.status, headers: res.headers });

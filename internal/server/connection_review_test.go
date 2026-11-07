@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -93,7 +94,7 @@ func TestReviewChangedServerRuleWaitsForRelease(t *testing.T) {
 		t.Fatalf("not waiting: %+v", s.Attention)
 	}
 	p := s.Attention.PendingWorkflows[0]
-	if p.IsNew || !p.WasEnabled || p.Before[0] != "archive" || p.After[0] != "delete" {
+	if p.IsNew || !p.WasEnabled || !strings.Contains(strings.Join(p.Before, " "), "DO archive") || !strings.Contains(strings.Join(p.After, " "), `DO delete {"permanent":true}`) {
 		t.Fatalf("change not shown: %+v", p)
 	}
 	// Keeping it off stops the asking, the rule stays off.
@@ -130,7 +131,7 @@ func TestReviewFirstSyncConflictKeepsLocalRule(t *testing.T) {
 			if !got.Enabled || got.Actions[0].Type != "archive" {
 				t.Fatalf("local rule overwritten: %+v", got)
 			}
-			if len(s.Attention.Conflicts) != 1 || s.Attention.Conflicts[0].ServerAfter[0] != "delete" {
+			if len(s.Attention.Conflicts) != 1 || !strings.Contains(strings.Join(s.Attention.Conflicts[0].ServerAfter, " "), "DO delete") {
 				t.Fatalf("no conflict shown: %+v", s.Attention)
 			}
 			if err := d.a.ServerWorkflowResolve(ctx, own.ID, keepLocal); err != nil {
@@ -472,6 +473,10 @@ func TestReviewMissingWithoutTombstoneComesBack(t *testing.T) {
 	if err := c.srvApp.Store().DeleteSignature(ctx, sig.ID); err != nil {
 		t.Fatal(err)
 	}
+	syncNow(t, d) // once proves nothing: nothing happens yet
+	if list, _ := c.srvApp.ListSignatures(ctx); slices.ContainsFunc(list, func(x domain.Signature) bool { return x.Name == "Firma" }) {
+		t.Fatalf("restored too early: %+v", list)
+	}
 	syncNow(t, d)
 	if list, _ := d.a.ListSignatures(ctx); len(list) != 1 {
 		t.Fatalf("deleted here: %+v", list)
@@ -781,5 +786,369 @@ func TestReviewRotationAnswerLost(t *testing.T) {
 	}
 	if st, _, h := d.request("GET", "/api/accounts", nil); st != 200 || h["X-Tuxmail-Offline"] != "1" {
 		t.Fatalf("local data gone: %d", st)
+	}
+}
+
+// Second review.
+
+// Online, the server fails after it took the mail: unclear, one delivery, same
+// mail again goes nowhere, and only a clear decision sends it again.
+func TestReviewOnlineFailureIsUnclear(t *testing.T) {
+	s := &ambiguousSender{err: errors.New("smtp: connection reset after DATA")}
+	c := envWithSender(t, s)
+	d := newDesktop(t)
+	d.connect(c.url, "anna", app.ConnModeThin)
+	d.waitState(app.ConnStateOnline)
+	mail := c.mail(t, "Rechnung")
+	for range 3 {
+		st, raw, _ := d.request("POST", "/api/send", mail)
+		if st != 409 || !strings.Contains(string(raw), "send_unclear") {
+			t.Fatalf("%d %s", st, raw)
+		}
+	}
+	if n := s.count(); n != 1 {
+		t.Fatalf("delivered %d times", n)
+	}
+	o := d.status().Outbox
+	if len(o) != 1 || o[0].State != store.OutboxInDoubt {
+		t.Fatalf("outbox: %+v", o)
+	}
+	d.restart() // still unclear afterwards, not sent by itself
+	time.Sleep(300 * time.Millisecond)
+	if n := s.count(); n != 1 {
+		t.Fatalf("after restart %d", n)
+	}
+	s.mu.Lock()
+	s.err = nil
+	s.mu.Unlock()
+	if err := d.a.ServerOutboxRetry(context.Background(), o[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	d.waitOutboxEmpty()
+	if n := s.count(); n != 2 {
+		t.Fatalf("after the decision %d", n)
+	}
+}
+
+// A refusal (4xx) is clear: sending again is direct.
+func TestReviewOnlineRefusalAllowsResend(t *testing.T) {
+	c := newConnEnv(t)
+	d := newDesktop(t)
+	d.connect(c.url, "anna", app.ConnModeThin)
+	d.waitState(app.ConnStateOnline)
+	mail := c.mail(t, "Direkt")
+	bad := map[string]any{}
+	for k, v := range mail {
+		bad[k] = v
+	}
+	bad["to"], bad["cc"], bad["bcc"] = []any{}, []any{}, []any{}
+	if st, _, _ := d.request("POST", "/api/send", bad); st/100 != 4 {
+		t.Fatalf("refusal: %d", st)
+	}
+	if len(d.status().Outbox) != 0 {
+		t.Fatalf("outbox: %+v", d.status().Outbox)
+	}
+	if st, _, _ := d.request("POST", "/api/send", mail); st != 200 || c.sender.count("Direkt") != 1 {
+		t.Fatalf("again: %d %d", st, c.sender.count("Direkt"))
+	}
+}
+
+// A second change before the release: what the user compares and that it was on stays.
+func TestReviewSecondChangeKeepsComparison(t *testing.T) {
+	c := newConnEnv(t)
+	d := newDesktop(t)
+	ctx := context.Background()
+	connectLocal(t, c, d, app.ProvisioningImport{})
+	saved, err := c.srvApp.SaveWorkflow(ctx, app.Workflow{Name: "Weiter", Trigger: app.WorkflowTrigger{Event: "mail.received"},
+		Actions: []app.WorkflowAction{{Type: "delete", Params: map[string]any{"permanent": false}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	syncNow(t, d)
+	if err := d.a.ServerWorkflowApprove(ctx, saved.ID); err != nil {
+		t.Fatal(err)
+	}
+	syncNow(t, d)
+	change := func(a app.WorkflowAction) {
+		t.Helper()
+		time.Sleep(1100 * time.Millisecond)
+		w, _ := c.srvApp.GetWorkflow(ctx, saved.ID)
+		w.Actions = append([]app.WorkflowAction{}, a)
+		if _, err := c.srvApp.SaveWorkflow(ctx, w); err != nil {
+			t.Fatal(err)
+		}
+	}
+	change(app.WorkflowAction{Type: "delete", Params: map[string]any{"permanent": true}})
+	s := syncNow(t, d)
+	p1 := s.Attention.PendingWorkflows[0]
+	if !strings.Contains(strings.Join(p1.Before, " "), `"permanent":false`) || !strings.Contains(strings.Join(p1.After, " "), `"permanent":true`) {
+		t.Fatalf("parameter change not visible: %+v", p1)
+	}
+	change(app.WorkflowAction{Type: "archive", Params: map[string]any{}})
+	s = syncNow(t, d)
+	p2 := s.Attention.PendingWorkflows[0]
+	if !p2.WasEnabled || !strings.Contains(strings.Join(p2.Before, " "), `"permanent":false`) || !strings.Contains(strings.Join(p2.After, " "), "DO archive") {
+		t.Fatalf("second change: %+v", p2)
+	}
+	// Releasing what the user saw before does not release what came after.
+	if err := d.a.ServerWorkflowApproveVersion(ctx, saved.ID, p1.Hash); err == nil {
+		t.Fatal("old version released")
+	}
+	if got, _ := d.a.GetWorkflow(ctx, saved.ID); got.Enabled {
+		t.Fatal("rule on")
+	}
+}
+
+func uploadKept(t *testing.T, d *desktop) string {
+	t.Helper()
+	res, err := d.a.ServerRequest(context.Background(), app.ServerProxyRequest{Method: "POST", Path: "/api/uploads", Headers: map[string]string{"X-Filename": "a.txt", "Content-Type": "text/plain"},
+		Body: base64.StdEncoding.EncodeToString([]byte("hello"))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := base64.StdEncoding.DecodeString(res.Body)
+	var up struct {
+		UploadToken string `json:"uploadToken"`
+	}
+	json.Unmarshal(raw, &up)
+	return up.UploadToken
+}
+
+// Draft from a failed mail with a kept attachment: discarding the old entry
+// does not take the attachment from the new mail.
+func TestReviewDraftKeepsAttachment(t *testing.T) {
+	s := &ambiguousSender{}
+	c := envWithSender(t, s)
+	d := newDesktop(t)
+	d.connect(c.url, "anna", app.ConnModeThin)
+	d.waitState(app.ConnStateOnline)
+	m := c.mail(t, "MitAnhang")
+	c.g.down.Store(true)
+	d.waitState(app.ConnStateOffline)
+	m["attachments"] = []map[string]any{{"uploadToken": uploadKept(t, d), "filename": "a.txt", "mimeType": "text/plain"}}
+	d.request("POST", "/api/send", m)
+	next := c.g.handler()
+	var refuse, slow atomic.Bool
+	refuse.Store(true)
+	c.g.setHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/uploads" {
+			if refuse.Load() {
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(413)
+				w.Write([]byte(`{"error":"too_large","message":"x"}`))
+				return
+			}
+			if slow.Load() {
+				time.Sleep(300 * time.Millisecond)
+			}
+		}
+		next.ServeHTTP(w, r)
+	}))
+	c.g.down.Store(false)
+	d.waitState(app.ConnStateOnline)
+	e := waitOutboxState(t, d, store.OutboxFailed)
+	ctx := context.Background()
+	draft, err := d.a.ServerOutboxMessage(ctx, e.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	refuse.Store(false)
+	slow.Store(true)
+	if st, out, _ := d.request("POST", "/api/send", draft); st != 200 {
+		t.Fatalf("%d %s", st, out)
+	}
+	if err := d.a.ServerOutboxDiscard(ctx, e.ID); err != nil {
+		t.Fatal(err)
+	}
+	d.waitOutboxEmpty()
+	if n := s.count(); n != 1 {
+		t.Fatalf("delivered %d", n)
+	}
+}
+
+// Blocked for longer than the server keeps uploads: the kept copy goes up again.
+func TestReviewBlockedKeepsAttachmentOverTime(t *testing.T) {
+	s := &ambiguousSender{block: true}
+	c := envWithSender(t, s)
+	d := newDesktop(t)
+	d.connect(c.url, "anna", app.ConnModeThin)
+	d.waitState(app.ConnStateOnline)
+	m := c.mail(t, "Anlage")
+	c.g.down.Store(true)
+	d.waitState(app.ConnStateOffline)
+	m["attachments"] = []map[string]any{{"uploadToken": uploadKept(t, d), "filename": "a.txt", "mimeType": "text/plain"}}
+	d.request("POST", "/api/send", m)
+	c.g.down.Store(false)
+	d.waitState(app.ConnStateOnline)
+	e := waitOutboxState(t, d, store.OutboxBlocked)
+	ctx := context.Background()
+	if _, err := c.srvApp.Store().PurgeUploads(ctx, time.Now().Add(time.Hour)); err != nil {
+		t.Fatal(err) // what happens at the server after 24 h
+	}
+	if err := d.a.ServerOutboxRetry(ctx, e.ID); err != nil {
+		t.Fatal(err)
+	}
+	d.waitOutboxEmpty()
+	if n := s.count(); n != 1 {
+		t.Fatalf("delivered %d, outbox %+v", n, d.status().Outbox)
+	}
+}
+
+// "No" to a mass deletion, then the connection breaks in the restore: nothing is deleted, also later.
+func TestReviewRefusedDeletionSurvivesFailures(t *testing.T) {
+	for name, fail := range map[string]func(w http.ResponseWriter){
+		"network": func(http.ResponseWriter) { panic(http.ErrAbortHandler) },
+		"server": func(w http.ResponseWriter) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(500)
+			w.Write([]byte(`{"error":"internal","message":"x"}`))
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := newConnEnv(t)
+			d := newDesktop(t)
+			ctx := context.Background()
+			connectLocal(t, c, d, app.ProvisioningImport{})
+			var ids []string
+			for _, n := range []string{"A", "B", "C"} {
+				s, err := c.srvApp.SaveWorkflow(ctx, archiveRule(n, false))
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids = append(ids, s.ID)
+			}
+			syncNow(t, d)
+			for _, id := range ids {
+				if err := c.srvApp.DeleteWorkflow(ctx, id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if s := syncNow(t, d); len(s.Attention.Deletes) != 1 {
+				t.Fatalf("not asked: %+v", s.Attention)
+			}
+			next := c.g.handler()
+			var failing atomic.Bool
+			var puts atomic.Int32
+			failing.Store(true)
+			c.g.setHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if failing.Load() && r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/api/workflows/") && puts.Add(1) >= 2 {
+					fail(w)
+					return
+				}
+				next.ServeHTTP(w, r)
+			}))
+			_ = d.a.ServerSettingsDeletes(ctx, "workflow", false)
+			failing.Store(false)
+			d.waitState(app.ConnStateOnline)
+			for range 2 {
+				syncNow(t, d)
+			}
+			for _, id := range ids {
+				if _, err := d.a.GetWorkflow(ctx, id); err != nil {
+					t.Errorf("refused deletion of %s carried out", id)
+				}
+				if _, err := c.srvApp.GetWorkflow(ctx, id); err != nil {
+					t.Errorf("%s not restored on the server", id)
+				}
+			}
+			if s := syncNow(t, d); len(s.Attention.Deletes) != 0 {
+				t.Fatalf("still open: %+v", s.Attention)
+			}
+		})
+	}
+}
+
+// An empty but valid answer once: nothing is overwritten or doubled.
+func TestReviewEmptyListOnceChangesNothing(t *testing.T) {
+	c := newConnEnv(t)
+	d := newDesktop(t)
+	ctx := context.Background()
+	connectLocal(t, c, d, app.ProvisioningImport{})
+	saved, err := c.srvApp.SaveWorkflow(ctx, archiveRule("A", false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	sig, err := c.srvApp.SaveSignature(ctx, domain.Signature{Name: "Firma", HTML: "<p>x</p>", Plain: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	syncNow(t, d)
+	sigsBefore, _ := c.srvApp.ListSignatures(ctx)
+	time.Sleep(1100 * time.Millisecond)
+	w, _ := c.srvApp.GetWorkflow(ctx, saved.ID)
+	w.Actions = []app.WorkflowAction{{Type: "delete", Params: map[string]any{}}}
+	if _, err := c.srvApp.SaveWorkflow(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	next := c.g.handler()
+	var empty atomic.Bool
+	empty.Store(true)
+	c.g.setHandler(http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
+		if empty.Load() && r.Method == "GET" && r.URL.Path == "/api/workflows" {
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write([]byte(`[]`))
+			return
+		}
+		if empty.Load() && r.Method == "GET" && r.URL.Path == "/api/provisioning/profile" {
+			rec := httptest.NewRecorder()
+			next.ServeHTTP(rec, r)
+			var doc map[string]any
+			json.Unmarshal(rec.Body.Bytes(), &doc)
+			doc["signatures"] = []any{}
+			b, _ := json.Marshal(doc)
+			rw.Header().Set("Content-Type", "application/json")
+			rw.Write(b)
+			return
+		}
+		next.ServeHTTP(rw, r)
+	}))
+	syncNow(t, d)
+	empty.Store(false)
+	syncNow(t, d)
+	got, _ := c.srvApp.GetWorkflow(ctx, saved.ID)
+	if got.Actions[0].Type != "delete" {
+		t.Fatalf("server rule overwritten: %+v", got.Actions)
+	}
+	sigsAfter, _ := c.srvApp.ListSignatures(ctx)
+	if len(sigsAfter) != len(sigsBefore) {
+		t.Fatalf("signature doubled: %d -> %d", len(sigsBefore), len(sigsAfter))
+	}
+	_ = sig
+}
+
+// Disconnecting during a sync: nothing of the old connection is written back.
+func TestReviewDisconnectDuringSyncLeavesNothing(t *testing.T) {
+	c := newConnEnv(t)
+	d := newDesktop(t)
+	ctx := context.Background()
+	connectLocal(t, c, d, app.ProvisioningImport{})
+	if _, err := c.srvApp.SaveWorkflow(ctx, archiveRule("A", false)); err != nil {
+		t.Fatal(err)
+	}
+	syncNow(t, d)
+	next := c.g.handler()
+	release := make(chan struct{})
+	var stall atomic.Bool
+	stall.Store(true)
+	c.g.setHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if stall.Load() && r.URL.Path == "/api/workflows" {
+			<-release
+		}
+		next.ServeHTTP(w, r)
+	}))
+	done := make(chan error, 1)
+	go func() { _, err := d.a.ServerSyncNow(ctx); done <- err }()
+	time.Sleep(200 * time.Millisecond)
+	if _, err := d.a.ServerDisconnect(ctx, app.DisconnectInput{DeleteCache: true, DiscardOutbox: true}); err != nil {
+		t.Fatal(err)
+	}
+	stall.Store(false)
+	close(release)
+	<-done
+	for _, k := range []string{"server.connection", "server.settings.map", "server.settings.log", "server.settings.attention"} {
+		var v any
+		if ok, err := d.st.GetAppSetting(ctx, k, &v); err != nil || ok {
+			t.Errorf("%s written back: %v %v", k, v, err)
+		}
 	}
 }

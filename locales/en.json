@@ -4194,23 +4194,28 @@
       "why": "Rules can forward or delete mail. What comes from the server stays off here until you have seen it.",
       "isNew": "new",
       "changed": "changed",
-      "before": "Before: {actions}",
-      "after": "Now: {actions}",
       "wasOn": "Was switched on and is now off because of this.",
       "external": "Acts outside TuxMail, for example by forwarding.",
       "approve": "Approve",
       "keepOff": "Keep off",
       "conflictTitle": "Same rule, different content",
-      "here": "Here: {actions}",
-      "onServer": "On the server: {actions}",
       "keepMine": "Keep mine",
-      "takeServer": "Take the server version"
+      "takeServer": "Take the server version",
+      "beforeLabel": "Before:",
+      "afterLabel": "Now:",
+      "hereLabel": "Here:",
+      "onServerLabel": "On the server:"
     },
     "deletes": {
       "title": "A lot deleted at once",
       "what": "{count} entries: {kind}",
       "approve": "Delete everywhere",
       "keep": "Keep"
+    },
+    "unclear": {
+      "text": "The mail may already have been sent. Check the Sent folder first.",
+      "keep": "Do not send again",
+      "sendAgain": "Send again anyway"
     }
   }
 }

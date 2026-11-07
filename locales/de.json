@@ -4193,23 +4193,28 @@
       "why": "Regeln können Mails weiterleiten oder löschen. Was vom Server kommt, bleibt hier aus, bis du es ansiehst.",
       "isNew": "neu",
       "changed": "geändert",
-      "before": "Bisher: {actions}",
-      "after": "Jetzt: {actions}",
       "wasOn": "War eingeschaltet und ist deshalb jetzt aus.",
       "external": "Wirkt außerhalb von TuxMail, zum Beispiel durch Weiterleiten.",
       "approve": "Freigeben",
       "keepOff": "Aus lassen",
       "conflictTitle": "Gleiche Regel, anderer Inhalt",
-      "here": "Hier: {actions}",
-      "onServer": "Auf dem Server: {actions}",
       "keepMine": "Meine behalten",
-      "takeServer": "Serverfassung übernehmen"
+      "takeServer": "Serverfassung übernehmen",
+      "beforeLabel": "Bisher:",
+      "afterLabel": "Jetzt:",
+      "hereLabel": "Hier:",
+      "onServerLabel": "Auf dem Server:"
     },
     "deletes": {
       "title": "Viel auf einmal gelöscht",
       "what": "{count} Einträge: {kind}",
       "approve": "Überall löschen",
       "keep": "Behalten"
+    },
+    "unclear": {
+      "text": "Vielleicht wurde die Mail schon verschickt. Schau zuerst unter Gesendet nach.",
+      "keep": "Nicht noch einmal senden",
+      "sendAgain": "Trotzdem noch einmal senden"
     }
   }
 }

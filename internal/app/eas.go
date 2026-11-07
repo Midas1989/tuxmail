@@ -125,6 +125,25 @@ type easPIM struct {
 	running map[int64]bool
 }
 
+// easPIMRetryAfter is the pause after a sync that did not complete.
+const easPIMRetryAfter = time.Minute
+
+// easPIMWithRetry runs a PIM sync a few times while it fails. The mail worker
+// may be provisioning the device at the same moment: the server then rejects
+// one of the two Provision requests, which surfaces either as an error or as
+// errors per folder (PIMResult.Errors). Both are transient.
+func easPIMWithRetry(ctx context.Context, first time.Duration, sync func() (eas.PIMResult, error)) (eas.PIMResult, error) {
+	res, err := sync()
+	for wait := first; (err != nil || len(res.Errors) > 0) && wait <= 4*first && ctx.Err() == nil; wait *= 2 {
+		select {
+		case <-ctx.Done():
+		case <-time.After(wait):
+			res, err = sync()
+		}
+	}
+	return res, err
+}
+
 // syncEASPIMDue starts a PIM sync for every EAS account whose last run is
 // older than easPIMInterval (called from the timer loop).
 func (a *App) syncEASPIMDue(ctx context.Context) {
@@ -161,21 +180,20 @@ func (a *App) syncEASPIMDue(ctx context.Context) {
 				p.running[acc.ID] = false
 				p.mu.Unlock()
 			}()
-			res, err := a.SyncEASPIM(ctx, acc)
-			// The mail worker may be provisioning the device at the same
-			// time (the server then rejects one of the two Provision
-			// requests): retry transient failures a few times.
-			for wait := time.Second; err != nil && wait <= 4*time.Second && ctx.Err() == nil; wait *= 2 {
-				select {
-				case <-ctx.Done():
-				case <-time.After(wait):
-					// Reload: a just-created account gets its secret after
-					// the first tick may already have read it.
-					if fresh, gerr := a.st.GetAccount(ctx, acc.ID); gerr == nil {
-						acc = fresh
-					}
-					res, err = a.SyncEASPIM(ctx, acc)
+			res, err := easPIMWithRetry(ctx, time.Second, func() (eas.PIMResult, error) {
+				// Reload: a just-created account gets its secret after the
+				// first tick may already have read it.
+				if fresh, gerr := a.st.GetAccount(ctx, acc.ID); gerr == nil {
+					acc = fresh
 				}
+				return a.SyncEASPIM(ctx, acc)
+			})
+			if err != nil || len(res.Errors) > 0 {
+				// Not again in easPIMInterval: an account set up a moment ago
+				// would stay without its calendars for that long.
+				p.mu.Lock()
+				p.last[acc.ID] = a.now().Add(easPIMRetryAfter - easPIMInterval)
+				p.mu.Unlock()
 			}
 			if err != nil {
 				a.log.Info("app: EAS calendar/contacts sync failed", "account", acc.ID, "err", err)

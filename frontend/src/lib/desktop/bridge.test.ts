@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { bridgeFetch, bridgeSocket, desktopHttpOptions, isDesktopServerMode, prepareDesktopBridge, setDesktopServerModeForTest, type DesktopWin } from './bridge';
+import { bridgeFetch, bridgeSocket, desktopHttpOptions, isDesktopServerMode, lastUnclearOutboxId, prepareDesktopBridge, setDesktopServerModeForTest, type DesktopWin } from './bridge';
 import { createApi, selectTransportKind } from '../api/select';
 import { DesktopServerTransport } from '../api/desktopServer';
 import { HttpTransport } from '../api/http';
@@ -138,5 +138,14 @@ describe('bridgeSocket', () => {
     const got: string[] = [];
     ws.onmessage = (e) => got.push(JSON.parse(e.data as string).state);
     await vi.waitFor(() => expect(got).toEqual(['offline']));
+  });
+});
+
+describe('a mail ending unclear', () => {
+  it('reaches the composer as send_unclear with the plain sentence, and the outbox entry is known', async () => {
+    const { win } = fakeCore(() => ({ status: 409, headers: { 'Content-Type': 'application/json' }, body: b64('{"error":"send_unclear","message":"x","outboxId":"out_1"}') }));
+    const api = new HttpTransport({ fetchImpl: bridgeFetch(win) });
+    await expect(api.send({} as never)).rejects.toMatchObject({ code: 'send_unclear', status: 409 });
+    expect(lastUnclearOutboxId()).toBe('out_1');
   });
 });

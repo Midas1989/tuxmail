@@ -212,12 +212,12 @@
           <li>
             <span class="what">
               <b>{w.name} · {w.isNew ? t('connection.rules.isNew') : t('connection.rules.changed')}</b>
-              {#if w.before}<small>{t('connection.rules.before', { actions: w.before.join(', ') })}</small>{/if}
-              <small>{t('connection.rules.after', { actions: w.after.join(', ') })}</small>
+              {#if w.before}<small>{t('connection.rules.beforeLabel')}</small><code data-testid="rule-before">{w.before.join('\n')}</code>{/if}
+              <small>{t('connection.rules.afterLabel')}</small><code data-testid="rule-after">{w.after.join('\n')}</code>
               {#if w.wasEnabled}<small class="bad">{t('connection.rules.wasOn')}</small>{/if}
               {#if w.external}<small class="bad">{t('connection.rules.external')}</small>{/if}
             </span>
-            <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowApprove(w.id))}>{t('connection.rules.approve')}</button>
+            <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowApprove(w.id, w.hash))}>{t('connection.rules.approve')}</button>
             <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowDismiss(w.id))}>{t('connection.rules.keepOff')}</button>
           </li>
         {/each}
@@ -230,8 +230,8 @@
           <li>
             <span class="what">
               <b>{w.name}</b>
-              <small>{t('connection.rules.here', { actions: w.local.join(', ') })}</small>
-              <small>{t('connection.rules.onServer', { actions: w.server.join(', ') })}</small>
+              <small>{t('connection.rules.hereLabel')}</small><code>{w.local.join('\n')}</code>
+              <small>{t('connection.rules.onServerLabel')}</small><code>{w.server.join('\n')}</code>
             </span>
             <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowResolve(w.id, true))}>{t('connection.rules.keepMine')}</button>
             <button class="btn btn-ghost" disabled={busy} onclick={() => void run(() => conn.workflowResolve(w.id, false))}>{t('connection.rules.takeServer')}</button>
@@ -441,6 +441,13 @@
   }
   .what small.bad {
     color: var(--tm-danger);
+  }
+  .what code {
+    font-family: var(--tm-mono);
+    font-size: 12px;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin-bottom: 4px;
   }
   .log {
     margin-top: 12px;

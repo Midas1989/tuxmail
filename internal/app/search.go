@@ -316,6 +316,7 @@ func (a *App) SaveSearchProfile(ctx context.Context, in SearchProfile) (SearchPr
 			return SearchProfile{}, AsConflict(err)
 		}
 	}
+	a.noteSaved(ctx, settingsKindProfile, strconv.FormatInt(p.ID, 10))
 	got, err := a.st.GetSearchProfile(ctx, p.ID)
 	if err != nil {
 		return SearchProfile{}, err

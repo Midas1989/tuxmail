@@ -141,8 +141,8 @@ export class ConnectionState {
   outboxMessage(id: string): Promise<OutgoingMessage> {
     return this.call<OutgoingMessage>('ServerOutboxMessage', id);
   }
-  async workflowApprove(id: string): Promise<void> {
-    await this.call<void>('ServerWorkflowApprove', id);
+  async workflowApprove(id: string, hash: string): Promise<void> {
+    await this.call<void>('ServerWorkflowApprove', id, hash);
     await this.refresh();
   }
   async workflowDismiss(id: string): Promise<void> {

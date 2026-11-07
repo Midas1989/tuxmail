@@ -8,12 +8,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/Midas1989/Mailclient/internal/store"
 )
 
 // Forwarding the interface's HTTP calls to the server. The UI in server mode
@@ -152,6 +155,14 @@ func (a *App) forwardWrite(ctx context.Context, c *serverConnection, method stri
 		}
 		return res, err
 	}
+	// A mail in doubt: the same mail again goes nowhere until the user has decided.
+	if q == queueSend {
+		if it, err := a.unclearMail(ctx, u, body); err != nil {
+			return nil, err
+		} else if it != nil {
+			return unclearResult(it.ID), nil
+		}
+	}
 	// Sending carries a key from the first try on: if the answer gets lost,
 	// the replay of the same key cannot send twice.
 	id := ""
@@ -183,8 +194,22 @@ func (a *App) forwardWrite(ctx context.Context, c *serverConnection, method stri
 		a.connMarkOffline(errConnNetwork)
 	case connIsTokenRejected(res):
 		a.connMarkExpired(ctx)
-	case res.Status == http.StatusConflict && q == queueSend && isIdemConflict(res.Body):
-		return resultOf(res), nil
+	case q == queueSend && (res.Status >= 500 || isIdemConflict(res.Body)):
+		// The server failed after taking the mail, perhaps after the relay took
+		// it: "try again" could deliver it twice. It stays, with its key, as
+		// unclear; the user looks into "Sent" and decides.
+		a.connSeen()
+		a.log.Warn("app: sending ended unclear", "status", res.Status)
+		it := store.RemoteOutboxItem{ID: id, Kind: "send", Method: method, Path: u.RequestURI(), Body: body, CreatedAt: a.now()}
+		describeMail(&it, body)
+		if err := a.st.AddRemoteOutbox(ctx, it); err != nil {
+			return nil, err
+		}
+		if err := a.st.SetRemoteOutboxState(ctx, id, store.OutboxInDoubt, fmt.Sprintf("server error (%d)", res.Status)); err != nil {
+			return nil, err
+		}
+		a.connNotify()
+		return unclearResult(id), nil
 	default:
 		a.connSeen()
 		return resultOf(res), nil
@@ -193,6 +218,11 @@ func (a *App) forwardWrite(ctx context.Context, c *serverConnection, method stri
 		return offlineUnavailable(), nil
 	}
 	return a.enqueue(ctx, method, u, body, q, id)
+}
+
+// unclearResult tells the composer that it cannot know whether the mail left.
+func unclearResult(id string) *connResult {
+	return jsonResult(http.StatusConflict, map[string]string{"error": "send_unclear", "message": "the mail may have been sent already", "outboxId": id}, false)
 }
 
 func resultOf(res *connResponse) *connResult {

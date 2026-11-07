@@ -39,6 +39,7 @@
 
 <script lang="ts">
   import { connection } from '../../state/connection.svelte';
+  import { lastUnclearOutboxId } from '../../desktop/bridge';
   import { untrack } from 'svelte';
   import Bold from '@lucide/svelte/icons/letter-b';
   import Italic from '@lucide/svelte/icons/italic';
@@ -93,6 +94,14 @@
   let editor = $state<HTMLDivElement>();
   let fileInput = $state<HTMLInputElement>();
   let sending = $state(false);
+  let unclear = $state(false);
+  /** Only a clear "send again" sends it again; the entry in the outbox stays with its key until then. */
+  async function unclearDecision(sendAgain: boolean) {
+    const id = lastUnclearOutboxId();
+    if (id) await (sendAgain ? connection.outboxRetry(id) : connection.outboxDiscard(id));
+    if (start.outbox) await connection.outboxDiscard(start.outbox.id).catch(() => {});
+    onclose();
+  }
   let error = $state<string | null>(null);
   let askPassword = $state(false);
   /** Findings of a send blocked by send checks (KONZEPT 8.13). */
@@ -303,6 +312,7 @@
   }
 
   function trySend() {
+    if (unclear) return;
     if (sending || !validate()) return;
     if (cloudAttachments.length) {
       const first = (to[0] ?? cc[0])?.email;
@@ -378,6 +388,11 @@
         error = t('comfort.crypto.pgpLocked');
         return;
       }
+      // Nobody knows whether it left: sending again only after a clear yes.
+      if (err instanceof ApiError && err.code === 'send_unclear') {
+        unclear = true;
+        return;
+      }
       error = t('compose.sendFailed', { error: err instanceof Error ? err.message : String(err) });
     } finally {
       sending = false;
@@ -399,6 +414,15 @@
 </script>
 
 <Modal {title} onclose={onclose} width="860px">
+  {#if unclear}
+    <div class="outbox-reason" role="alert" data-testid="send-unclear">
+      <p>{t('connection.unclear.text')}</p>
+      <div class="unclear-actions">
+        <button class="btn" onclick={() => void unclearDecision(false)}>{t('connection.unclear.keep')}</button>
+        <button class="btn" onclick={() => void unclearDecision(true)}>{t('connection.unclear.sendAgain')}</button>
+      </div>
+    </div>
+  {/if}
   {#if start.outbox}
     <div class="outbox-reason" role="status" data-testid="draft-reason">
       <p>{t('connection.outbox.draftNotice')}</p>
@@ -515,7 +539,7 @@
     {#if error}<p class="error" role="alert">{error}</p>{/if}
     <span class="hint">{identity ? identity.email : ''}</span>
     <button class="btn" onclick={onclose}>{t('compose.discard')}</button>
-    <button class="btn btn-primary" onclick={trySend} disabled={sending} title="Ctrl+Enter">
+    <button class="btn btn-primary" onclick={trySend} disabled={sending || unclear} title="Ctrl+Enter">
       <SendIcon size={15} />
       {sending ? t('compose.sending') : t('common.action.send')}
     </button>
@@ -544,6 +568,11 @@
     font-size: 13px;
     background: color-mix(in srgb, var(--tm-warn) 16%, transparent);
     border: 1px solid var(--tm-warn);
+  }
+  .unclear-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
   }
   .outbox-reason p {
     margin: 0;

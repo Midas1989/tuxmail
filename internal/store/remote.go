@@ -431,6 +431,12 @@ func (s *Store) AddSettingsTombstone(ctx context.Context, kind, id string, now t
 	return err
 }
 
+// RemoveSettingsTombstone: the thing exists again (restored, or the id reused).
+func (s *Store) RemoveSettingsTombstone(ctx context.Context, kind, id string) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM settings_tombstones WHERE kind = ? AND item_id = ?`, kind, id)
+	return err
+}
+
 // ListSettingsTombstones returns the deleted ids by kind.
 func (s *Store) ListSettingsTombstones(ctx context.Context) (map[string][]string, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT kind, item_id FROM settings_tombstones ORDER BY kind, item_id`)

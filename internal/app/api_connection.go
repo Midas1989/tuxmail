@@ -36,8 +36,8 @@ func (x *Api) ServerOutboxRetry(id string) error {
 func (x *Api) ServerOutboxMessage(id string) (OutgoingMessage, error) {
 	return r1(x.app.ServerOutboxMessage(x.ctx, id))
 }
-func (x *Api) ServerWorkflowApprove(id string) error {
-	return werr(x.app.ServerWorkflowApprove(x.ctx, id))
+func (x *Api) ServerWorkflowApprove(id, hash string) error {
+	return werr(x.app.ServerWorkflowApproveVersion(x.ctx, id, hash))
 }
 func (x *Api) ServerWorkflowDismiss(id string) error {
 	return werr(x.app.ServerWorkflowDismiss(x.ctx, id))

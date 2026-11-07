@@ -3,6 +3,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -94,18 +95,7 @@ func (a *App) enqueue(ctx context.Context, method string, u *url.URL, body []byt
 	}
 	if q == queueSend {
 		it.Kind = "send"
-		var m OutgoingMessage
-		if err := json.Unmarshal(body, &m); err == nil {
-			it.Title = m.Subject
-			var to []string
-			for _, ad := range slices.Concat(m.To, m.Cc, m.Bcc) {
-				to = append(to, ad.Email)
-			}
-			it.Recipients = strings.Join(to, ", ")
-			if it.Title == "" {
-				it.Title = truncateRunes(m.Text, 60)
-			}
-		}
+		describeMail(&it, body)
 	}
 	if err := a.st.AddRemoteOutbox(ctx, it); err != nil {
 		return nil, err
@@ -115,6 +105,38 @@ func (a *App) enqueue(ctx context.Context, method string, u *url.URL, body []byt
 		return jsonResult(http.StatusOK, map[string]any{"queued": true, "offline": true, "outboxId": it.ID}, true), nil
 	}
 	return &connResult{status: http.StatusNoContent, header: http.Header{headerOffline: {"1"}}}, nil
+}
+
+// describeMail fills what the status shows of a mail.
+func describeMail(it *store.RemoteOutboxItem, body []byte) {
+	var m OutgoingMessage
+	if err := json.Unmarshal(body, &m); err != nil {
+		return
+	}
+	it.Title = m.Subject
+	var to []string
+	for _, ad := range slices.Concat(m.To, m.Cc, m.Bcc) {
+		to = append(to, ad.Email)
+	}
+	it.Recipients = strings.Join(to, ", ")
+	if it.Title == "" {
+		it.Title = truncateRunes(m.Text, 60)
+	}
+}
+
+// unclearMail finds the same mail, already in doubt.
+func (a *App) unclearMail(ctx context.Context, u *url.URL, body []byte) (*store.RemoteOutboxItem, error) {
+	items, err := a.st.ListRemoteOutbox(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for i := range items {
+		it := &items[i]
+		if it.Kind == "send" && it.State == store.OutboxInDoubt && it.Path == u.RequestURI() && bytes.Equal(it.Body, body) {
+			return it, nil
+		}
+	}
+	return nil, nil
 }
 
 func truncateRunes(s string, n int) string {
@@ -145,26 +167,89 @@ func (a *App) offlineUpload(ctx context.Context, hdr http.Header, body []byte) (
 	return jsonResult(http.StatusCreated, UploadResult{UploadToken: token}, true), nil
 }
 
-// outboxUploads returns the local upload tokens of a queued mail.
+// keptAttachment reads the two tokens of an attachment. localToken remembers the
+// kept copy after uploading: the server forgets uploads after a day, a mail
+// waiting for a decision may wait longer. The server ignores the extra field.
+type keptAttachment struct {
+	UploadToken string `json:"uploadToken"`
+	LocalToken  string `json:"localToken,omitempty"`
+}
+
+// outboxUploads returns the kept attachments a queued mail refers to.
 func outboxUploads(body []byte) []string {
-	var m OutgoingMessage
+	var m struct {
+		Attachments []keptAttachment `json:"attachments"`
+	}
 	if json.Unmarshal(body, &m) != nil {
 		return nil
 	}
 	var out []string
 	for _, at := range m.Attachments {
-		if strings.HasPrefix(at.UploadToken, offlineTokenPref) {
+		if at.LocalToken != "" {
+			out = append(out, at.LocalToken)
+		} else if strings.HasPrefix(at.UploadToken, offlineTokenPref) {
 			out = append(out, at.UploadToken)
 		}
 	}
 	return out
 }
 
+// withLocalUploads points a mail back to its kept attachments: the next
+// attempt uploads them anew.
+func withLocalUploads(body []byte) ([]byte, error) {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, err
+	}
+	var atts []map[string]any
+	if raw, ok := doc["attachments"]; !ok || json.Unmarshal(raw, &atts) != nil {
+		return body, nil
+	}
+	changed := false
+	for _, at := range atts {
+		if tok := jsonStr(at["localToken"]); tok != "" {
+			at["uploadToken"] = tok
+			delete(at, "localToken")
+			changed = true
+		}
+	}
+	if !changed {
+		return body, nil
+	}
+	var err error
+	if doc["attachments"], err = json.Marshal(atts); err != nil {
+		return nil, err
+	}
+	return json.Marshal(doc)
+}
+
+// freeUploads leaves out kept attachments another waiting mail still needs
+// (a draft made from a mail that did not go out uses the same ones).
+func (a *App) freeUploads(ctx context.Context, id string, tokens []string) ([]string, error) {
+	if len(tokens) == 0 {
+		return nil, nil
+	}
+	items, err := a.st.ListRemoteOutbox(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var used []string
+	for _, it := range items {
+		if it.ID != id {
+			used = append(used, outboxUploads(it.Body)...)
+		}
+	}
+	return slices.DeleteFunc(slices.Clone(tokens), func(t string) bool { return slices.Contains(used, t) }), nil
+}
+
 // replaceUploads uploads local attachments and stores the rewritten mail, so
 // that retries repeat exactly the same request (idempotency compares bodies).
 func (a *App) replaceUploads(ctx context.Context, c *serverConnection, it *store.RemoteOutboxItem) (uploaded []string, status int, err error) {
-	tokens := outboxUploads(it.Body)
-	if len(tokens) == 0 {
+	needed := false
+	for _, tok := range outboxUploads(it.Body) {
+		needed = needed || tok != ""
+	}
+	if !needed || !bytes.Contains(it.Body, []byte(`"uploadToken":"`+offlineTokenPref)) {
 		return nil, 0, nil
 	}
 	var doc map[string]json.RawMessage
@@ -199,7 +284,7 @@ func (a *App) replaceUploads(ctx context.Context, c *serverConnection, it *store
 		if err := json.Unmarshal(res.Body, &ur); err != nil {
 			return nil, 0, err
 		}
-		atts[i]["uploadToken"] = ur.UploadToken
+		atts[i]["uploadToken"], atts[i]["localToken"] = ur.UploadToken, tok
 		uploaded = append(uploaded, tok)
 	}
 	if doc["attachments"], err = json.Marshal(atts); err != nil {
@@ -332,7 +417,11 @@ func (a *App) flushOne(ctx context.Context, c *serverConnection, it *store.Remot
 				return true
 			}
 		}
-		if err := a.st.DeleteRemoteOutbox(ctx, it.ID, slices.Concat(uploaded, outboxUploads(it.Body))); err != nil {
+		free, err := a.freeUploads(ctx, it.ID, slices.Concat(uploaded, outboxUploads(it.Body)))
+		if err == nil {
+			err = a.st.DeleteRemoteOutbox(ctx, it.ID, free)
+		}
+		if err != nil {
 			a.log.Warn("app: updating the outbox failed", "err", err)
 		}
 		a.connSeen()
@@ -397,8 +486,12 @@ func (a *App) ServerOutboxMessage(ctx context.Context, id string) (OutgoingMessa
 	}
 	for _, it := range items {
 		if it.ID == id && it.Kind == "send" {
+			body, err := withLocalUploads(it.Body)
+			if err != nil {
+				return OutgoingMessage{}, err
+			}
 			var m OutgoingMessage
-			if err := json.Unmarshal(it.Body, &m); err != nil {
+			if err := json.Unmarshal(body, &m); err != nil {
 				return OutgoingMessage{}, err
 			}
 			return m, nil
@@ -415,7 +508,11 @@ func (a *App) ServerOutboxDiscard(ctx context.Context, id string) error {
 	}
 	for _, it := range items {
 		if it.ID == id {
-			if err := a.st.DeleteRemoteOutbox(ctx, id, outboxUploads(it.Body)); err != nil {
+			free, err := a.freeUploads(ctx, id, outboxUploads(it.Body))
+			if err != nil {
+				return err
+			}
+			if err := a.st.DeleteRemoteOutbox(ctx, id, free); err != nil {
 				return err
 			}
 			a.connNotify()
@@ -435,7 +532,20 @@ func (a *App) ServerOutboxRetry(ctx context.Context, id string) error {
 		return err
 	}
 	for _, it := range items {
-		if it.ID != id || it.State != store.OutboxBlocked {
+		if it.ID != id {
+			continue
+		}
+		restored, err := withLocalUploads(it.Body)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(restored, it.Body) {
+			if err := a.st.SetRemoteOutboxBody(ctx, id, restored); err != nil {
+				return err
+			}
+			it.Body = restored
+		}
+		if it.State != store.OutboxBlocked {
 			continue
 		}
 		var findings []SendFinding

@@ -100,23 +100,23 @@ describe('status', () => {
 });
 
 describe('what waits for the user', () => {
-  const rule = { id: 'r1', name: 'Sortieren', isNew: false, wasEnabled: true, before: ['archive'], after: ['delete', 'run_workflow'], external: true };
+  const rule = { id: 'r1', name: 'Sortieren', isNew: false, wasEnabled: true, before: ['WHEN mail.received', 'DO delete {"permanent":false}'], after: ['WHEN mail.received', 'DO delete {"permanent":true}'], external: true, hash: 'h1' };
   it('shows rules waiting for approval, with the change, and releases them only on request', async () => {
     const approve = vi.fn(async () => {});
     const { c } = conn({ ...base, mode: 'local', attention: { pendingWorkflows: [rule], conflicts: [], deletes: [] } }, { ServerWorkflowApprove: approve });
     const root = render(ServerConnectionCard, { conn: c });
     expect(root.querySelector('[data-testid="pending-title"]')?.textContent).toContain('1 rule waiting');
     const box = root.querySelector('[data-testid="pending-rules"]') as HTMLElement;
-    expect(box.textContent).toContain('delete, run_workflow');
-    expect(box.textContent).toContain('archive');
+    expect(box.querySelector('[data-testid="rule-before"]')?.textContent).toContain('"permanent":false');
+    expect(box.querySelector('[data-testid="rule-after"]')?.textContent).toContain('"permanent":true');
     expect(box.textContent).toContain(en.connection.rules.wasOn);
     expect(approve).not.toHaveBeenCalled();
     click(button(box, en.connection.rules.approve));
-    await until(() => expect(approve).toHaveBeenCalledWith('r1'));
+    await until(() => expect(approve).toHaveBeenCalledWith('r1', 'h1'));
   });
   it('asks on a conflict of the first sync', async () => {
     const resolve = vi.fn(async () => {});
-    const { c } = conn({ ...base, mode: 'local', attention: { pendingWorkflows: [], conflicts: [{ id: 'r1', name: 'Sortieren', local: ['archive'], server: ['delete'] }], deletes: [] } }, { ServerWorkflowResolve: resolve });
+    const { c } = conn({ ...base, mode: 'local', attention: { pendingWorkflows: [], conflicts: [{ id: 'r1', name: 'Sortieren', local: ['DO archive'], server: ['DO delete'] }], deletes: [] } }, { ServerWorkflowResolve: resolve });
     const box = render(ServerConnectionCard, { conn: c }).querySelector('[data-testid="rule-conflicts"]') as HTMLElement;
     click(button(box, en.connection.rules.keepMine));
     await until(() => expect(resolve).toHaveBeenCalledWith('r1', true));

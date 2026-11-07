@@ -56,6 +56,9 @@ type settingsPair struct {
 	// Prefer holds the decision (local | server) until it is carried out.
 	Conflict bool   `json:"conflict,omitempty"`
 	Prefer   string `json:"prefer,omitempty"`
+	// Missing: absent from the last answer of the server, without a record of
+	// deleting it. Once is no reason to act: only absent again it is restored.
+	Missing bool `json:"missing,omitempty"`
 }
 
 type settingsMap map[string][]settingsPair
@@ -73,14 +76,18 @@ type SettingsLogEntry struct {
 // PendingWorkflow is a rule from the server waiting for the user's release. It
 // is switched off here until then, whatever it was before.
 type PendingWorkflow struct {
-	ID         string   `json:"id"`
-	Name       string   `json:"name"`
-	IsNew      bool     `json:"isNew"`
-	WasEnabled bool     `json:"wasEnabled,omitempty"`
-	Trigger    string   `json:"trigger,omitempty"`
-	Before     []string `json:"before,omitempty"` // action types before the change
-	After      []string `json:"after"`            // action types now
-	External   bool     `json:"external,omitempty"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	IsNew      bool   `json:"isNew"`
+	WasEnabled bool   `json:"wasEnabled,omitempty"`
+	Trigger    string `json:"trigger,omitempty"`
+	// What the rule does, line by line with all parameters: as it was when the
+	// user last released it, and now.
+	Before   []string `json:"before,omitempty"`
+	After    []string `json:"after"`
+	External bool     `json:"external,omitempty"`
+	// Hash of what the user is looking at: releasing a newer version needs a new look.
+	Hash string `json:"hash"`
 }
 
 // WorkflowConflict: same id, different content, on the first sync.
@@ -128,6 +135,13 @@ func (a *App) settingsAttentionNow(ctx context.Context) SettingsAttention {
 	return at
 }
 
+// noteSaved: it exists (again), an older deletion no longer speaks for it.
+func (a *App) noteSaved(ctx context.Context, kind, id string) {
+	if err := a.st.RemoveSettingsTombstone(ctx, kind, id); err != nil {
+		a.log.Warn("app: updating the record of deletions failed", "kind", kind, "err", err)
+	}
+}
+
 // noteDeleted records a deletion on purpose, for the other side of the
 // synchronisation. Written on the server too: a device learns of it there.
 func (a *App) noteDeleted(ctx context.Context, kind, id string) {
@@ -138,6 +152,22 @@ func (a *App) noteDeleted(ctx context.Context, kind, id string) {
 
 // ServerWorkflowApprove switches a waiting rule on: the user has seen what it does.
 func (a *App) ServerWorkflowApprove(ctx context.Context, id string) error {
+	at := a.loadAttention(ctx)
+	for _, p := range at.PendingWorkflows {
+		if p.ID == id {
+			return a.ServerWorkflowApproveVersion(ctx, id, p.Hash)
+		}
+	}
+	return Errorf(http.StatusConflict, "changed", "this rule is not waiting for approval")
+}
+
+// ServerWorkflowApproveVersion releases exactly the version the user looked at.
+func (a *App) ServerWorkflowApproveVersion(ctx context.Context, id, hash string) error {
+	at := a.loadAttention(ctx)
+	i := slices.IndexFunc(at.PendingWorkflows, func(p PendingWorkflow) bool { return p.ID == id })
+	if i < 0 || at.PendingWorkflows[i].Hash != hash {
+		return Errorf(http.StatusConflict, "changed", "this rule has changed meanwhile; please look at it again")
+	}
 	if _, err := a.SetWorkflowEnabled(ctx, id, true, true); err != nil {
 		return err
 	}
@@ -253,6 +283,20 @@ var errSkipSync = errors.New("skip")
 func (a *App) syncSettings(ctx context.Context) ([]SettingsLogEntry, error) {
 	a.cr.syncMu.Lock()
 	defer a.cr.syncMu.Unlock()
+	return a.syncSettingsLocked(ctx)
+}
+
+// syncSettingsIfFree is the timer's way in: if one runs right now, this one is
+// not due. It must not queue up and run a second time just after.
+func (a *App) syncSettingsIfFree(ctx context.Context) ([]SettingsLogEntry, error) {
+	if !a.cr.syncMu.TryLock() {
+		return nil, nil
+	}
+	defer a.cr.syncMu.Unlock()
+	return a.syncSettingsLocked(ctx)
+}
+
+func (a *App) syncSettingsLocked(ctx context.Context) ([]SettingsLogEntry, error) {
 	c := a.connCurrent()
 	if c == nil || c.Mode != ConnModeLocal || c.Expired {
 		return nil, nil
@@ -290,7 +334,7 @@ func (a *App) syncSettings(ctx context.Context) ([]SettingsLogEntry, error) {
 		failed = failed || kindFailed
 		if err != nil {
 			failed = true
-			if errors.Is(err, errConnNetwork) || errors.Is(err, errConnLocked) || errors.Is(err, errRemoteRejected) {
+			if connSyncFatal(err) {
 				fatalErr = err
 				break
 			}
@@ -301,12 +345,26 @@ func (a *App) syncSettings(ctx context.Context) ([]SettingsLogEntry, error) {
 		}
 		m[k.name] = pairs
 	}
-	if err := a.st.SetAppSetting(ctx, keySettingsMap, m); err != nil {
+	if gone, err := a.saveSyncState(ctx, m, at, before, log); err != nil || gone {
 		return log, err
+	}
+	return a.settingsSyncDone(ctx, log, fatalErr, failed)
+}
+
+// saveSyncState stores the result. Disconnected meanwhile: nothing of this
+// connection may be written back (gone).
+func (a *App) saveSyncState(ctx context.Context, m settingsMap, at SettingsAttention, before []byte, log []SettingsLogEntry) (gone bool, err error) {
+	a.cr.persistMu.Lock()
+	defer a.cr.persistMu.Unlock()
+	if a.connCurrent() == nil {
+		return true, nil
+	}
+	if err := a.st.SetAppSetting(ctx, keySettingsMap, m); err != nil {
+		return false, err
 	}
 	if after, _ := json.Marshal(at); !bytes.Equal(before, after) {
 		if err := a.st.SetAppSetting(ctx, keySettingsAttention, at); err != nil {
-			return log, err
+			return false, err
 		}
 	}
 	if len(log) > 0 {
@@ -322,10 +380,15 @@ func (a *App) syncSettings(ctx context.Context) ([]SettingsLogEntry, error) {
 			all = all[len(all)-maxSettingsLog:]
 		}
 		if err := a.st.SetAppSetting(ctx, keySettingsLog, all); err != nil {
-			return log, err
+			return false, err
 		}
 		a.hub.Publish(Event{Type: EventSettingsSynced})
 	}
+	return false, nil
+}
+
+// settingsSyncDone reports the end of a synchronisation to the rest of the app.
+func (a *App) settingsSyncDone(ctx context.Context, log []SettingsLogEntry, fatalErr error, failed bool) ([]SettingsLogEntry, error) {
 	switch {
 	case errors.Is(fatalErr, errRemoteRejected):
 		a.connMarkExpired(ctx)
@@ -357,6 +420,11 @@ func (a *App) remoteTombstones(ctx context.Context, c *serverConnection) (map[st
 	return out, err
 }
 
+// connSyncFatal: no point in going on, and nothing may be concluded from what is missing.
+func connSyncFatal(err error) bool {
+	return errors.Is(err, errConnNetwork) || errors.Is(err, errConnLocked) || errors.Is(err, errConnNoToken) || errors.Is(err, errRemoteRejected)
+}
+
 func (a *App) reconcile(ctx context.Context, k settingsKind, old []settingsPair, note func(SettingsLogEntry), at *SettingsAttention, localTombs, remoteTombs []string) ([]settingsPair, bool, error) {
 	local, err := k.listLocal(ctx)
 	if err != nil {
@@ -381,9 +449,7 @@ func (a *App) reconcile(ctx context.Context, k settingsKind, old []settingsPair,
 		a.log.Warn("app: synchronising a setting failed", "kind", k.name, "err", err)
 		return false
 	}
-	fatal := func(err error) bool {
-		return errors.Is(err, errConnNetwork) || errors.Is(err, errConnLocked) || errors.Is(err, errRemoteRejected)
-	}
+	fatal := connSyncFatal
 	pull := func(p *settingsPair, r syncObj, conflict bool) error {
 		id, err := k.putLocal(ctx, p.Local, r)
 		if err != nil {
@@ -437,10 +503,15 @@ func (a *App) reconcile(ctx context.Context, k settingsKind, old []settingsPair,
 		} else {
 			at.Deletes[di].Names = planned
 		}
-	} else if di >= 0 {
-		at.Deletes = slices.Delete(at.Deletes, di, di+1)
 	}
 	reject := decision == "reject"
+	// A decision stays until it has been carried out completely: after a "no"
+	// and a failed restore, the rest must not fall below the threshold and go.
+	finishDecision := func() {
+		if !hold && !failedAny {
+			at.Deletes = slices.DeleteFunc(at.Deletes, func(d DeleteDecision) bool { return d.Kind == k.name })
+		}
+	}
 
 	// Known pairs.
 	for _, p := range old {
@@ -462,6 +533,9 @@ func (a *App) reconcile(ctx context.Context, k settingsKind, old []settingsPair,
 			continue
 		}
 		lc, rc := hasL && l.Hash != p.LocalHash, hasR && r.Hash != p.RemoteHash
+		if hasR {
+			p.Missing = false
+		}
 		var err error
 		name := l.Name
 		if name == "" {
@@ -497,8 +571,18 @@ func (a *App) reconcile(ctx context.Context, k settingsKind, old []settingsPair,
 			// refused: it comes back. Losing it is the one thing not to do.
 			p.Local = ""
 			err = pull(&p, r, rc)
+		case !hasR && reject:
+			p.Remote, p.Missing = "", false
+			err = push(&p, l, lc)
+		case !hasR && !lc && !p.Missing:
+			// Absent once from a valid answer, no record of deleting it: wait.
+			// Restoring now could overwrite what the server really has.
+			p.Missing = true
+			out = append(out, p)
+			retry[len(out)-1] = true
+			continue
 		case !hasR:
-			p.Remote = ""
+			p.Remote, p.Missing = "", false
 			err = push(&p, l, lc)
 		case lc && rc:
 			if localNewer(l, r) {
@@ -551,7 +635,7 @@ func (a *App) reconcile(ctx context.Context, k settingsKind, old []settingsPair,
 			case k.protectFirst:
 				p.Conflict = true
 				if !slices.ContainsFunc(at.Conflicts, func(c WorkflowConflict) bool { return c.ID == rid }) {
-					at.Conflicts = append(at.Conflicts, WorkflowConflict{ID: rid, Name: l.Name, LocalAfter: workflowActionTypes(l.Data), ServerAfter: workflowActionTypes(r.Data)})
+					at.Conflicts = append(at.Conflicts, WorkflowConflict{ID: rid, Name: l.Name, LocalAfter: workflowDescribe(l.Data), ServerAfter: workflowDescribe(r.Data)})
 				}
 				note(SettingsLogEntry{Kind: k.name, Name: l.Name, Action: "skipped", Conflict: true, Detail: "same rule, different content: waiting for a decision"})
 				out = append(out, p)
@@ -603,6 +687,7 @@ func (a *App) reconcile(ctx context.Context, k settingsKind, old []settingsPair,
 		}
 		out[i].LocalHash, out[i].RemoteHash = local[out[i].Local].Hash, remote[out[i].Remote].Hash
 	}
+	finishDecision()
 	return out, failedAny, nil
 }
 
@@ -830,15 +915,42 @@ func workflowUpdated(w Workflow) int64 {
 	return 0
 }
 
-// workflowActionTypes lists what a rule does, for showing it to the user.
-func workflowActionTypes(data any) []string {
+// workflowDescribe says what a rule really does, for the user's decision: when,
+// under which condition, each step with its parameters.
+func workflowDescribe(data any) []string {
 	w, ok := data.(Workflow)
 	if !ok {
 		return []string{}
 	}
-	out := make([]string, 0, len(w.Actions))
+	js := func(v any) string {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "?"
+		}
+		return string(b)
+	}
+	when := w.Trigger.Event
+	if len(w.Trigger.Accounts)+len(w.Trigger.Folders)+len(w.Trigger.Channels) > 0 || w.Trigger.Schedule != "" || w.Trigger.Name != "" {
+		t := w.Trigger
+		t.Event = ""
+		when += " " + js(t)
+	}
+	out := []string{"WHEN " + when}
+	if w.Condition != nil {
+		out = append(out, "IF "+js(w.Condition))
+	}
 	for _, act := range w.Actions {
-		out = append(out, act.Type)
+		line := "DO " + act.Type
+		if len(act.Params) > 0 {
+			line += " " + js(act.Params)
+		}
+		if act.If != "" {
+			line += " IF " + act.If
+		}
+		out = append(out, line)
+	}
+	if len(w.Options) > 0 {
+		out = append(out, "OPTIONS "+js(w.Options))
 	}
 	return out
 }
@@ -904,15 +1016,21 @@ func (a *App) workflowKind(c *serverConnection, at *SettingsAttention) settingsK
 			// A rule from the server is off until the user has seen it, also
 			// when the rule it replaces was on: it can act on mail, forward it,
 			// delete it. neutralWorkflow leaves Enabled false.
-			pending := PendingWorkflow{ID: target, Name: n.Name, IsNew: true, Trigger: n.Trigger.Event, After: workflowActionTypes(w)}
+			pending := PendingWorkflow{ID: target, Name: n.Name, IsNew: true, Trigger: n.Trigger.Event, After: workflowDescribe(w)}
 			if prev, err := a.GetWorkflow(ctx, target); err == nil {
-				pending.IsNew, pending.WasEnabled, pending.Before = false, prev.Enabled, workflowActionTypes(prev)
+				pending.IsNew, pending.WasEnabled, pending.Before = false, prev.Enabled, workflowDescribe(prev)
+			}
+			// Changed again before the user decided: the comparison stays with
+			// what they last released, and that it was switched on is not forgotten.
+			if i := slices.IndexFunc(at.PendingWorkflows, func(p PendingWorkflow) bool { return p.ID == target }); i >= 0 {
+				old := at.PendingWorkflows[i]
+				pending.IsNew, pending.WasEnabled, pending.Before = old.IsNew, old.WasEnabled, old.Before
 			}
 			saved, err := a.SaveWorkflow(ctx, n)
 			if err != nil {
 				return "", err
 			}
-			pending.ID, pending.External = saved.ID, saved.ExternalEffects
+			pending.ID, pending.External, pending.Hash = saved.ID, saved.ExternalEffects, hashJSON(pending.After)
 			at.PendingWorkflows = slices.DeleteFunc(at.PendingWorkflows, func(p PendingWorkflow) bool { return p.ID == saved.ID })
 			at.PendingWorkflows = append(at.PendingWorkflows, pending)
 			return saved.ID, nil

@@ -758,7 +758,6 @@ func TestBackupJobRetentionAcrossFormats(t *testing.T) {
 		if rc, out := job.run(t); rc != 0 {
 			t.Fatal(rc, out)
 		}
-		time.Sleep(1100 * time.Millisecond) // file names carry seconds
 	}
 	if _, err := os.Stat(old); err == nil {
 		t.Fatalf("old plain archive kept: %v", job.archives(t))

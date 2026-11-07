@@ -688,6 +688,8 @@ export interface PendingWorkflow {
   before?: string[];
   after: string[];
   external?: boolean;
+  /** Identifies this version: releasing a newer one needs a new look. */
+  hash: string;
 }
 
 export interface WorkflowConflict {

@@ -73,6 +73,7 @@ func (a *App) SaveSignature(ctx context.Context, sig Signature) (Signature, erro
 		return Signature{}, err
 	}
 	a.dropUnreferencedBlobs(ctx, old)
+	a.noteSaved(ctx, settingsKindSignature, strconv.FormatInt(sig.ID, 10))
 	a.hub.Publish(Event{Type: EventAccountUpdated})
 	got, err := a.st.GetSignature(ctx, sig.ID)
 	return a.signatureForUI(got), err

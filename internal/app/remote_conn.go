@@ -553,7 +553,7 @@ func (a *App) connDueWork(ctx context.Context) {
 		}
 	case ConnModeLocal:
 		if a.now().Unix()-c.LastSettingsSync >= int64(a.cr.timing.SettingsSync/time.Second) {
-			if _, err := a.syncSettings(ctx); err != nil {
+			if _, err := a.syncSettingsIfFree(ctx); err != nil {
 				a.log.Warn("app: settings synchronisation failed", "err", err)
 			}
 		}
@@ -852,7 +852,11 @@ func (a *App) ServerDisconnect(ctx context.Context, in DisconnectInput) (Disconn
 	a.cr.state = ConnStateNone
 	stopData := a.cr.dataStop
 	a.cr.mu.Unlock()
-	err = a.st.DeleteAppSetting(ctx, keyConnection)
+	for _, key := range []string{keyConnection, keySettingsMap, keySettingsLog, keySettingsAttention} {
+		if derr := a.st.DeleteAppSetting(ctx, key); derr != nil && err == nil {
+			err = derr
+		}
+	}
 	a.cr.persistMu.Unlock()
 	if err != nil {
 		return res, err
@@ -867,11 +871,6 @@ func (a *App) ServerDisconnect(ctx context.Context, in DisconnectInput) (Disconn
 	}
 	a.connDeleteSecrets(c.URL)
 	a.dropSession(c.URL)
-	for _, key := range []string{keySettingsMap, keySettingsLog, keySettingsAttention} {
-		if err := a.st.DeleteAppSetting(ctx, key); err != nil {
-			return res, err
-		}
-	}
 	if err := a.st.ClearRemoteOutbox(ctx); err != nil {
 		return res, err
 	}
