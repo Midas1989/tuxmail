@@ -2827,7 +2827,8 @@ export class MockTransport implements Api {
   }
 
   // --- Einstellungen › Mail › Speicher (mail.headersOnlyOlderThanDays) ---
-  private mailStorageDays = 0;
+  /** -1 = not set (as before), 0 = all completely, n = header only when older than n days. */
+  private mailStorageDays = -1;
   getMailStorageSettings(): Promise<MailStorageSettings> {
     return this.run(() => {
       const all = [...this.messages.values()];
@@ -2837,7 +2838,7 @@ export class MockTransport implements Api {
   }
   setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'>): Promise<MailStorageSettings> {
     const n = settings.headersOnlyOlderThanDays;
-    if (!Number.isInteger(n) || n < 0 || n > 36500) return Promise.reject(new ApiError('headersOnlyOlderThanDays must be between 0 and 36500', 400, 'invalid_input'));
+    if (!Number.isInteger(n) || n < -1 || n > 36500) return Promise.reject(new ApiError('headersOnlyOlderThanDays must be -1 or between 0 and 36500', 400, 'invalid_input'));
     this.mailStorageDays = n;
     return this.getMailStorageSettings();
   }

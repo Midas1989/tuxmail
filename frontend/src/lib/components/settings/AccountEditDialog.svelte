@@ -54,7 +54,7 @@
   let jmapUrl = $state('');
   let pop3 = $state<Pop3Options>({ leaveOnServer: true, deleteAfterDays: 0, deleteOnLocalDelete: false });
   let sieve = $state<SieveConfig | null>(null);
-  let bodyPolicy = $state<BodyPolicy>('all');
+  let bodyPolicy = $state<BodyPolicy>('recent');
   // Older mails with header only (mail.headersOnlyOlderThanDays of the account).
   let hoMode = $state<'default' | 'all' | 'days'>('default');
   let hoDays = $state(90);
@@ -168,9 +168,8 @@
     if (k === 'pop3') u.pop3 = { ...pop3, deleteAfterDays: Math.max(0, Number(pop3.deleteAfterDays) || 0) };
     if (k === 'caldav' || k === 'carddav') return u;
     if (settings?.headersOnlyAvailable) {
-      // The day count replaces the older body policy on this device.
+      // The day count takes precedence over the older body policy, which stays as it is.
       u.headersOnlyOlderThanDays = hoMode === 'default' ? -1 : hoMode === 'all' ? 0 : Math.min(36500, Math.max(1, Math.round(Number(hoDays) || 1)));
-      u.bodyPolicy = 'all';
     } else {
       u.bodyPolicy = bodyPolicy;
     }
@@ -264,11 +263,16 @@
 
   const tlsModes: TLSMode[] = ['tls', 'starttls', 'none'];
   const authMethods: AuthMethod[] = ['password', 'oauth2', 'client_cert'];
-  const bodyPolicies: BodyPolicy[] = ['all', 'recent', 'on_demand'];
+  const bodyPolicies: BodyPolicy[] = ['recent', 'all', 'on_demand'];
   const hoModes = ['default', 'all', 'days'] as const;
   const hoDefaultLabel = $derived(
     t('settings.accountEdit.headersOnlyMode.default', {
-      value: globalHoDays ? t('settings.accountEdit.headersOnlyDays', { days: globalHoDays }) : t('settings.accountEdit.headersOnlyOff'),
+      value:
+        globalHoDays == null || globalHoDays < 0
+          ? t('settings.accountEdit.headersOnlyOff')
+          : globalHoDays === 0
+            ? t('settings.accountEdit.headersOnlyAll')
+            : t('settings.accountEdit.headersOnlyDays', { days: globalHoDays }),
     }),
   );
   const idleModes: IdleMode[] = ['default', 'custom', 'off'];

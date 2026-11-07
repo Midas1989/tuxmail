@@ -23,9 +23,9 @@ import (
 type BodyPolicy string
 
 const (
-	// BodiesRecent downloads messages of the last days (RecentBodyDays or
-	// mail.headersOnlyOlderThanDays); older ones are loaded on demand
-	// (Manager.FetchBody).
+	// BodiesRecent downloads messages of the last days (RecentBodyDays, the
+	// default, or mail.headersOnlyOlderThanDays); older ones are loaded on
+	// demand (Manager.FetchBody).
 	BodiesRecent BodyPolicy = "recent"
 	// BodiesAll downloads recent messages first and then backfills all
 	// others in the background (default).
@@ -99,16 +99,17 @@ type Config struct {
 	Logger *slog.Logger
 	Now    func() time.Time
 
-	// Bodies is the download policy (default BodiesAll: every body, the
-	// newest first).
+	// Bodies is the download policy (default BodiesRecent: the last
+	// RecentBodyDays completely, older ones on demand).
 	Bodies BodyPolicy
-	// RecentBodyDays is the age limit of BodiesRecent chosen as the older
-	// account body policy (default 30).
+	// RecentBodyDays is the age limit of BodiesRecent without a day count
+	// set by the user (default 30).
 	RecentBodyDays int
-	// HeadersOnlyDays returns the global default of
-	// mail.headersOnlyOlderThanDays of this device (0 = all bodies). Set
-	// only by the desktop app; nil switches the day count off, including the
-	// accounts' own (the server always loads every mail completely).
+	// HeadersOnlyDays returns the global mail.headersOnlyOlderThanDays of
+	// this device: -1 = not set (Bodies applies, as before), 0 = all bodies,
+	// n = header only for mails older than n days. Set only by the desktop
+	// app; nil switches the day count off, including the accounts' own (the
+	// server behaves as before).
 	HeadersOnlyDays func() int
 	// ReleaseBatch is the number of bodies released per worker cycle (default 200).
 	ReleaseBatch int
@@ -178,7 +179,7 @@ func (c *Config) defaults() error {
 		c.Now = time.Now
 	}
 	if c.Bodies == "" {
-		c.Bodies = BodiesAll
+		c.Bodies = BodiesRecent
 	}
 	setInt(&c.ReleaseBatch, 200)
 	setDur(&c.ReleaseGrace, 24*time.Hour)

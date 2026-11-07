@@ -66,7 +66,7 @@ type AccountSettings struct {
 	EASURL        string       `json:"easUrl,omitempty"`
 	JMAPURL       string       `json:"jmapUrl,omitempty"`
 	POP3          *POP3Options `json:"pop3,omitempty"`
-	// BodyPolicy: all (default) | recent (last 30 days) | on_demand.
+	// BodyPolicy: recent (last 30 days, default) | all | on_demand.
 	BodyPolicy string `json:"bodyPolicy"`
 	// HeadersOnlyOlderThanDays is the account's own day count of
 	// mail.headersOnlyOlderThanDays: mails older than this are kept with
@@ -295,7 +295,7 @@ func (a *App) accountSettings(ctx context.Context, acc domain.Account) (AccountS
 	}
 	out := AccountSettings{Account: acc, Email: accountEmail(acc), Status: a.accountStatus(ctx, acc.ID),
 		OAuthProvider: ex(oauth.ExtraProvider), EASURL: ex(eas.ExtraURL), JMAPURL: ex("jmapUrl"),
-		BodyPolicy: string(tsync.BodiesAll), HeadersOnlyOlderThanDays: -1, IdleMode: "default", IdleFolders: []int64{},
+		BodyPolicy: string(tsync.BodiesRecent), HeadersOnlyOlderThanDays: -1, IdleMode: "default", IdleFolders: []int64{},
 		Tests: connectionTests(acc), Editable: editableKinds[acc.Kind]}
 	if out.OAuthProvider == "" && acc.Incoming != nil && acc.Incoming.Auth == domain.AuthOAuth2 {
 		out.OAuthProvider = "oauth2"
@@ -549,7 +549,7 @@ func applyAccountUpdate(acc domain.Account, in AccountUpdate) (domain.Account, b
 			return acc, false, invalid("bodyPolicy must be recent, all or on_demand")
 		}
 		v := string(p)
-		if p == tsync.BodiesAll {
+		if p == tsync.BodiesRecent {
 			v = ""
 		}
 		set(tsync.ExtraBodyPolicy, v)

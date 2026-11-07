@@ -70,7 +70,7 @@ func TestAccountSettingsUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Email != "alice@example.org" || !s.HasPassword || s.BodyPolicy != "all" || s.IdleMode != "default" ||
+	if s.Email != "alice@example.org" || !s.HasPassword || s.BodyPolicy != "recent" || s.IdleMode != "default" ||
 		!s.Index.Content || s.Sieve == nil || !s.Editable || strings.Join(s.Tests, ",") != "imap,sieve" {
 		t.Fatalf("settings %+v", s)
 	}
@@ -89,7 +89,7 @@ func TestAccountSettingsUpdate(t *testing.T) {
 		t.Fatalf("settings %+v", s)
 	}
 	// Back to the defaults removes the overrides.
-	if _, err := e.a.UpdateAccount(ctx, e.acc, AccountUpdate{BodyPolicy: ptr("all"), PollMinutes: ptr(0), IdleMode: ptr("default")}); err != nil {
+	if _, err := e.a.UpdateAccount(ctx, e.acc, AccountUpdate{BodyPolicy: ptr("recent"), PollMinutes: ptr(0), IdleMode: ptr("default")}); err != nil {
 		t.Fatal(err)
 	}
 	acc, _ = e.st.GetAccount(ctx, e.acc)

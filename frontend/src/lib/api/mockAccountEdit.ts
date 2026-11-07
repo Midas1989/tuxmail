@@ -72,7 +72,7 @@ export class MockAccountEdit {
     let o = this.opts.get(id);
     if (!o) {
       o = {
-        bodyPolicy: 'all',
+        bodyPolicy: 'recent',
         headersOnlyOlderThanDays: -1,
         pollMinutes: 0,
         idleMode: 'default',

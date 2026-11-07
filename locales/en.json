@@ -1355,7 +1355,7 @@
       "bodyPolicy": "Download mail contents",
       "body": {
         "recent": "Last 30 days (older ones on demand)",
-        "all": "All (default)",
+        "all": "All",
         "on_demand": "Only on demand"
       },
       "pollMinutes": "Poll interval (minutes, 0 = default)",
@@ -1410,9 +1410,10 @@
         "all": "All mails completely",
         "days": "Header only when older than …"
       },
-      "headersOnlyOff": "off",
+      "headersOnlyOff": "as before",
       "headersOnlyDays": "{days} days",
-      "headersOnlyHint": "For mails older than X days, TuxMail only downloads sender, subject, date and a preview; the content is loaded when you open the mail. Saves storage; without a network these mails can only be read with their header."
+      "headersOnlyHint": "For mails older than X days, TuxMail only downloads sender, subject, date and a preview; the content is loaded when you open the mail. Saves storage; without a network these mails can only be read with their header.",
+      "headersOnlyAll": "all completely"
     },
     "passkeys": {
       "title": "Passkeys",
@@ -1741,12 +1742,11 @@
     "storage": {
       "title": "Keep older mails with header only",
       "intro": "For mails older than X days, TuxMail only downloads sender, subject, date and a preview; the content is loaded when you open the mail. Saves storage; without a network these mails can only be read with their header.",
-      "enable": "Header and preview only for mails older than",
       "days": "days",
       "daysLabel": "Number of days",
-      "off": "Off – all mails are stored completely (default).",
+      "off": "As before: mails of the last 30 days completely, older ones are loaded when opened.",
       "on": "Mails older than {days} days: header and preview only.",
-      "release": "Switching it on or making it smaller frees the content of older mails bit by bit (header and preview stay). Making it larger or switching it off downloads them again.",
+      "release": "With a number of days, TuxMail frees the contents of older mails bit by bit (header and preview stay). A larger number or “all completely” downloads them again.",
       "exceptions": "Always kept completely: POP3 accounts (the server often has no copy any more), local folders, drafts, imported mails and encrypted mails (PGP, S/MIME).",
       "opening": "Opening a mail loads its content. This does not mark it as read, sends no read receipt and loads no remote images – the rules under “Remote images” apply.",
       "search": "Search finds these mails by header and preview. When online, TuxMail also searches on the mail server (IMAP); such hits are marked “header only”.",
@@ -1755,7 +1755,14 @@
       "perAccount": "Single accounts can have their own value: Accounts › Edit › Advanced.",
       "stats": "On this device: {headersOnly} mails with header only, {complete} complete.",
       "saved": "Saved.",
-      "invalid": "Please enter a number between 1 and 36500."
+      "invalid": "Please enter a number between 1 and 36500.",
+      "modeLabel": "Contents of older mails",
+      "mode": {
+        "default": "As before (default): mails of the last 30 days completely, older ones when opened",
+        "all": "Store all mails completely",
+        "days": "Header and preview only for mails older than"
+      },
+      "all": "All mails are stored completely; TuxMail downloads older contents in the background."
     }
   },
   "search": {

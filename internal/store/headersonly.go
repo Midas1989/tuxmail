@@ -17,7 +17,8 @@ import (
 
 // KeyHeadersOnlyDays is the app setting of this device with the global
 // default: mails older than this many days are kept with their header only
-// (0 or missing: all mails completely). It is never synced to a server.
+// (0: all mails completely; missing: as before the setting existed). It is
+// never synced to a server.
 const KeyHeadersOnlyDays = "mail.headersOnlyOlderThanDays"
 
 // HeadersOnlyKinds are the account kinds whose bodies can be loaded again

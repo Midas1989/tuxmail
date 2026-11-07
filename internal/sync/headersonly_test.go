@@ -211,6 +211,12 @@ func TestHeadersOnlyAccountOverrideAndPOP3(t *testing.T) {
 			t.Errorf("%s = %+v", k, r)
 		}
 	}
+	// Global day count not set (-1): the previous behaviour.
+	m.cfg.HeadersOnlyDays = func() int { return -1 }
+	w.acc = domain.Account{Kind: domain.KindIMAP}
+	if r := w.contentRule(); r.policy != BodiesAll || r.release {
+		t.Errorf("not set = %+v", r)
+	}
 	// The server (no HeadersOnlyDays) ignores the day count.
 	m.cfg.HeadersOnlyDays = nil
 	w.acc = domain.Account{Kind: domain.KindIMAP, Extra: map[string]string{ExtraHeadersOnlyDays: "5"}}
@@ -253,7 +259,7 @@ func TestHeadersOnlyNeverForPOP3(t *testing.T) {
 	_ = sec.Set("s", []byte("pw"))
 	port := srv.ln.Addr().(*net.TCPAddr).Port
 	accID, err := st.CreateAccount(ctx, domain.Account{Kind: domain.KindPOP3, DisplayName: "Pop", SecretRef: "s", Enabled: true,
-		Extra:    map[string]string{ExtraHeadersOnlyDays: "1", pop3prov.ExtraLeaveOnServer: "false"},
+		Extra:    map[string]string{ExtraHeadersOnlyDays: "1", ExtraBodyPolicy: "all", pop3prov.ExtraLeaveOnServer: "false"},
 		Incoming: &domain.ServerConfig{Host: "127.0.0.1", Port: port, TLS: domain.TLSNone, Auth: domain.AuthPassword, Username: "u"}})
 	if err != nil {
 		t.Fatal(err)
@@ -288,5 +294,82 @@ func TestHeadersOnlyNeverForPOP3(t *testing.T) {
 	}
 	if c, _ := st.ReleasableBodies(ctx, accID, time.Now(), time.Now(), 10); len(c) != 0 {
 		t.Fatalf("POP3 candidates: %v", c)
+	}
+}
+
+// countingProvider counts downloads (FetchRaw, FetchPartial) and keeps the
+// optional interfaces of the IMAP provider visible.
+type countingProvider struct {
+	domain.MailProvider
+	raw, partial *atomic.Int32
+}
+
+func (c *countingProvider) FetchRaw(ctx context.Context, ref domain.RemoteRef) (io.ReadCloser, error) {
+	c.raw.Add(1)
+	return c.MailProvider.FetchRaw(ctx, ref)
+}
+
+func (c *countingProvider) FetchPartial(ctx context.Context, folder string, ids []string, n int64) (map[string][]byte, error) {
+	c.partial.Add(1)
+	return c.MailProvider.(domain.PartialFetcher).FetchPartial(ctx, folder, ids, n)
+}
+
+// The update does not change anything without the setting: an existing
+// database (old mails without body, one opened) gets no extra downloads, no
+// previews and no releases, exactly as before the day count existed.
+func TestHeadersOnlyNoExtraDownloadsWithoutSetting(t *testing.T) {
+	srv := newTestServer(t)
+	ctx := context.Background()
+	ext := srv.ext(t)
+	now := time.Now().Truncate(time.Second)
+	carol, alice := "Carol <carol@example.org>", "Alice <alice@example.org>"
+	appendMail(t, ctx, ext, "INBOX", mail("cur@x", carol, alice, "Aktuell", now.Add(-2*24*time.Hour), "", "aktueller Inhalt"))
+	for _, id := range []string{"alt1@x", "alt2@x", "alt3@x"} {
+		appendMail(t, ctx, ext, "INBOX", mail(id, carol, alice, "Alt", now.AddDate(0, 0, -100), "", "alter Inhalt"))
+	}
+	var raw, partial atomic.Int32
+	e := newEnv(t, srv, func(c *Config) {
+		reg := NewRegistry()
+		reg.Register(domain.KindIMAP, func(ctx context.Context, a domain.Account, cr Credentials, o ProviderOptions) (domain.MailProvider, error) {
+			p, err := IMAPFactory(ctx, a, cr, o)
+			if err != nil {
+				return nil, err
+			}
+			return &countingProvider{MailProvider: p, raw: &raw, partial: &partial}, nil
+		})
+		c.Providers = reg
+		c.HeadersOnlyDays = func() int { return -1 } // desktop, setting not set
+		c.ReleaseGrace = time.Nanosecond
+	})
+	e.eventually("synced", func() bool { return e.has("alt3@x") && e.has("cur@x") && e.msg("cur@x").BlobHash != "" })
+	e.eventually("idle", e.idle)
+	if n := raw.Load(); n != 1 {
+		t.Errorf("%d downloads, want 1 (the mail of the last 30 days)", n)
+	}
+	for _, id := range []string{"alt1@x", "alt2@x", "alt3@x"} {
+		if m := e.msg(id); m.BlobHash != "" || m.Snippet != "" {
+			t.Errorf("%s: body %q preview %q", id, m.BlobHash, m.Snippet)
+		}
+	}
+	// Opened once: loaded on demand, and kept (no release without the setting).
+	if _, err := e.mgr.FetchBody(e.ctx, e.msg("alt1@x").ID); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		e.mgr.HeadersOnlyChanged()
+		e.eventually("idle", e.idle)
+		time.Sleep(30 * time.Millisecond)
+	}
+	if n := raw.Load(); n != 2 {
+		t.Errorf("%d downloads, want 2", n)
+	}
+	if n := partial.Load(); n != 0 {
+		t.Errorf("%d preview requests without the setting", n)
+	}
+	if e.msg("alt1@x").BlobHash == "" {
+		t.Error("body released without the setting")
+	}
+	if got := e.mgr.ServerSearch(ctx, nil, "alter", 10); len(got) != 0 {
+		t.Errorf("server search without the setting: %v", got)
 	}
 }

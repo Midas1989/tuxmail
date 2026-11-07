@@ -13,7 +13,7 @@ describe('account edit (mock transport)', () => {
     const s = await api.getAccountSettings(1);
     expect(s.email).toBe('jonas.becker@posteo.de');
     expect(s.tests).toEqual(['imap', 'smtp', 'sieve']);
-    expect(s.bodyPolicy).toBe('all');
+    expect(s.bodyPolicy).toBe('recent');
     expect(s.headersOnlyAvailable).toBe(true);
     expect(s.headersOnlyOlderThanDays).toBe(-1);
     const events: string[] = [];

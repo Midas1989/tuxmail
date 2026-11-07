@@ -12,7 +12,7 @@ import en from '$locales/en.json';
 import de from '$locales/de.json';
 
 const m = vi.hoisted(() => ({
-  state: { headersOnlyOlderThanDays: 0, available: true, headersOnly: 3, complete: 40 } as Settings,
+  state: { headersOnlyOlderThanDays: -1, available: true, headersOnly: 3, complete: 40 } as Settings,
   set: vi.fn(),
   serverMode: false,
 }));
@@ -40,7 +40,7 @@ import MailStorageSettings from './MailStorageSettings.svelte';
 
 beforeEach(() => {
   vi.clearAllMocks();
-  m.state = { headersOnlyOlderThanDays: 0, available: true, headersOnly: 3, complete: 40 };
+  m.state = { headersOnlyOlderThanDays: -1, available: true, headersOnly: 3, complete: 40 };
   m.serverMode = false;
 });
 afterEach(cleanup);
@@ -48,24 +48,25 @@ afterEach(cleanup);
 const q = <T extends Element>(root: ParentNode, sel: string) => root.querySelector(sel) as T;
 
 describe('MailStorageSettings', () => {
-  it('explains the setting and is off by default', async () => {
+  const radio = (root: ParentNode, m: string) => q<HTMLInputElement>(root, `[data-testid="storage-mode-${m}"]`);
+
+  it('explains the setting and keeps the previous behaviour by default', async () => {
     const root = render(MailStorageSettings, {});
-    await until(() => expect(q<HTMLInputElement>(root, '[data-testid="storage-enabled"]')).toBeTruthy());
+    await until(() => expect(radio(root, 'default')).toBeTruthy());
     const text = root.textContent!;
     expect(text).toContain(en.settings.storage.intro);
     expect(text).toContain(en.settings.storage.off);
     expect(text).toContain(en.settings.storage.exceptions);
-    expect(q<HTMLInputElement>(root, '[data-testid="storage-enabled"]').checked).toBe(false);
+    expect(radio(root, 'default').checked).toBe(true);
     expect(q<HTMLInputElement>(root, '[data-testid="storage-days"]').disabled).toBe(true);
     expect(button(root, en.common.action.save).disabled).toBe(true);
     expect(text).not.toContain(en.settings.storage.thin);
   });
 
-  it('saves a free day count and switches it off again', async () => {
+  it('saves a free day count, "all completely" and back to the default', async () => {
     const root = render(MailStorageSettings, {});
-    await until(() => expect(q(root, '[data-testid="storage-enabled"]')).toBeTruthy());
-    const box = q<HTMLInputElement>(root, '[data-testid="storage-enabled"]');
-    box.click();
+    await until(() => expect(radio(root, 'days')).toBeTruthy());
+    radio(root, 'days').click();
     flushSync();
     const days = q<HTMLInputElement>(root, '[data-testid="storage-days"]');
     days.value = '45';
@@ -75,16 +76,21 @@ describe('MailStorageSettings', () => {
     button(root, en.common.action.save).click();
     await until(() => expect(m.set).toHaveBeenCalledWith({ headersOnlyOlderThanDays: 45 }));
     await until(() => expect(root.textContent).toContain(en.settings.storage.saved));
-    box.click();
+    radio(root, 'all').click();
     flushSync();
+    expect(root.textContent).toContain(en.settings.storage.all);
     button(root, en.common.action.save).click();
     await until(() => expect(m.set).toHaveBeenLastCalledWith({ headersOnlyOlderThanDays: 0 }));
+    radio(root, 'default').click();
+    flushSync();
+    button(root, en.common.action.save).click();
+    await until(() => expect(m.set).toHaveBeenLastCalledWith({ headersOnlyOlderThanDays: -1 }));
   });
 
   it('refuses an invalid day count', async () => {
     const root = render(MailStorageSettings, {});
-    await until(() => expect(q(root, '[data-testid="storage-enabled"]')).toBeTruthy());
-    q<HTMLInputElement>(root, '[data-testid="storage-enabled"]').click();
+    await until(() => expect(radio(root, 'days')).toBeTruthy());
+    radio(root, 'days').click();
     flushSync();
     const days = q<HTMLInputElement>(root, '[data-testid="storage-days"]');
     days.value = '0';
@@ -120,7 +126,7 @@ describe('demo transport: older mails with header only', () => {
 
   it('marks older mails in lists and search, never drafts', async () => {
     const t = api();
-    expect((await t.getMailStorageSettings()).headersOnlyOlderThanDays).toBe(0);
+    expect((await t.getMailStorageSettings()).headersOnlyOlderThanDays).toBe(-1);
     let page = await t.listMessages({ scope: { kind: 'unified', role: 'inbox' }, offset: 0, limit: 200 });
     expect(page.items.some((x) => x.headersOnly)).toBe(false);
     const s = await t.setMailStorageSettings({ headersOnlyOlderThanDays: 7 });

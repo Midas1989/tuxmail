@@ -64,9 +64,10 @@ type contentRule struct {
 	policy BodyPolicy
 	// days is the age limit of BodiesRecent.
 	days int
-	// release: bodies of older mails already stored are released again
-	// (only for the day count of mail.headersOnlyOlderThanDays, never for
-	// the older body policies).
+	// release: the rule comes from mail.headersOnlyOlderThanDays set by the
+	// user. Only then are previews requested, bodies of older mails released
+	// and the server searched; the older body policies (and the default)
+	// behave exactly as before.
 	release bool
 }
 
@@ -95,11 +96,18 @@ func headersOnlyKind(k domain.AccountKind) bool {
 
 // contentRule is the body policy of the worker's account: the account's day
 // count, else its (older) body policy, else the global day count of this
-// device, else Config.Bodies. Accounts whose bodies cannot be loaded again
-// (POP3) always keep everything.
+// device, else Config.Bodies (the behaviour before the day count existed:
+// nothing changes until the user sets it). The day count only applies to
+// accounts whose bodies can be loaded again; POP3 and local accounts keep
+// their previous behaviour and are never released.
 func (w *Worker) contentRule() contentRule {
-	if !headersOnlyKind(w.acc.Kind) {
-		return contentRule{policy: BodiesAll}
+	legacy := contentRule{policy: w.m.cfg.Bodies, days: w.m.cfg.RecentBodyDays}
+	if p := BodyPolicy(w.extra(ExtraBodyPolicy)); ValidBodyPolicy(p) {
+		legacy.policy = p
+	}
+	global := w.m.cfg.HeadersOnlyDays
+	if global == nil || !headersOnlyKind(w.acc.Kind) {
+		return legacy
 	}
 	days := func(n int) contentRule {
 		if n == 0 {
@@ -107,21 +115,16 @@ func (w *Worker) contentRule() contentRule {
 		}
 		return contentRule{policy: BodiesRecent, days: n, release: true}
 	}
-	global := w.m.cfg.HeadersOnlyDays
-	if global != nil {
-		if n, ok := ParseHeadersOnlyDays(w.extra(ExtraHeadersOnlyDays)); ok {
-			return days(n)
-		}
+	if n, ok := ParseHeadersOnlyDays(w.extra(ExtraHeadersOnlyDays)); ok {
+		return days(n)
 	}
-	if p := BodyPolicy(w.extra(ExtraBodyPolicy)); ValidBodyPolicy(p) {
-		return contentRule{policy: p, days: w.m.cfg.RecentBodyDays}
+	if ValidBodyPolicy(BodyPolicy(w.extra(ExtraBodyPolicy))) {
+		return legacy
 	}
-	if global != nil {
-		if n := global(); n > 0 && n <= MaxHeadersOnlyDays {
-			return days(n)
-		}
+	if n := global(); n >= 0 && n <= MaxHeadersOnlyDays {
+		return days(n)
 	}
-	return contentRule{policy: w.m.cfg.Bodies, days: w.m.cfg.RecentBodyDays}
+	return legacy
 }
 
 // bodyPolicy is the body download policy of the worker's account.

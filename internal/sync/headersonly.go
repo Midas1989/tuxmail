@@ -77,9 +77,10 @@ func (m *Manager) pokeAll() {
 // (providers implementing domain.PartialFetcher, i.e. IMAP). It reports
 // whether more remain.
 func (w *Worker) backfillPreviews(ctx context.Context) (bool, error) {
-	cut := w.contentRule().cutoff(w.m.now())
-	if cut.IsZero() {
-		return false, nil
+	rule := w.contentRule()
+	cut := rule.cutoff(w.m.now())
+	if cut.IsZero() || !rule.release {
+		return false, nil // only with a day count set by the user: no extra requests otherwise
 	}
 	var pf domain.PartialFetcher
 	if err := w.withProvider(ctx, func(p domain.MailProvider) error {
@@ -304,8 +305,8 @@ func (m *Manager) ServerSearch(ctx context.Context, accountIDs []int64, text str
 		if ctx.Err() != nil || len(out) >= limit {
 			break
 		}
-		if w.contentRule().cutoff(m.now()).IsZero() {
-			continue // everything is stored and indexed locally
+		if r := w.contentRule(); r.cutoff(m.now()).IsZero() || !r.release {
+			continue // everything is stored and indexed locally, or no day count set
 		}
 		for _, id := range w.serverSearch(ctx, text, limit-len(out)) {
 			if !seen[id] {

@@ -91,7 +91,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
       sec('compose', ['comfort.settings.spell', 'comfort.settings.userDictionary', 'comfort.settings.meeting', 'comfort.settings.jitsiUrl', 'comfort.settings.mergePdf', 'comfort.settings.pdfName'], { group: 'compose' }),
       sec('snippets', ['chat.snippets.title'], { group: 'compose' }),
       sec('vacation', ['settings.vacation.title', 'settings.vacation.enabled', 'settings.vacation.forwardTo'], { group: 'absence' }),
-      sec('storage', ['settings.storage.title', 'settings.storage.enable', 'settings.accountEdit.headersOnly', 'mail.reader.contentOffline'], { group: 'advanced', only: 'mailStore' }),
+      sec('storage', ['settings.storage.title', 'settings.storage.mode.days', 'settings.accountEdit.headersOnly', 'mail.reader.contentOffline'], { group: 'advanced', only: 'mailStore' }),
     ],
   },
   {

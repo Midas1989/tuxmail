@@ -306,7 +306,7 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 	} else if created {
 		// Kept with header only for now: a preview the server delivered with
 		// the header data (no extra request) is stored right away.
-		if p := m.previewOf(rm); p != "" {
+		if p := m.previewOf(rm); p != "" && w.contentRule().release {
 			if err := st.SetMessagePreview(ctx, id, p); err != nil {
 				return err
 			}

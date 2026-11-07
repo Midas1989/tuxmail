@@ -6,20 +6,26 @@
   import type { MailStorageSettings } from '../../types';
 
   const MAX_DAYS = 36500;
+  type Mode = 'default' | 'all' | 'days';
+  const modes: Mode[] = ['default', 'all', 'days'];
 
   let current = $state<MailStorageSettings | null>(null);
-  let enabled = $state(false);
+  let mode = $state<Mode>('default');
   let days = $state(90);
   let saving = $state(false);
   let message = $state<string | null>(null);
   let error = $state<string | null>(null);
 
+  function modeOf(n: number): Mode {
+    return n < 0 ? 'default' : n === 0 ? 'all' : 'days';
+  }
+
   async function load() {
     try {
       const s = await app.api.getMailStorageSettings();
       current = s;
-      enabled = s.headersOnlyOlderThanDays > 0;
-      if (enabled) days = s.headersOnlyOlderThanDays;
+      mode = modeOf(s.headersOnlyOlderThanDays);
+      if (s.headersOnlyOlderThanDays > 0) days = s.headersOnlyOlderThanDays;
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
     }
@@ -27,11 +33,11 @@
   void load();
 
   const daysValid = $derived(Number.isInteger(days) && days >= 1 && days <= MAX_DAYS);
-  const wanted = $derived(enabled ? days : 0);
+  const wanted = $derived(mode === 'default' ? -1 : mode === 'all' ? 0 : days);
   const dirty = $derived(!!current && wanted !== current.headersOnlyOlderThanDays);
 
   async function save() {
-    if (enabled && !daysValid) {
+    if (mode === 'days' && !daysValid) {
       error = t('settings.storage.invalid');
       return;
     }
@@ -60,31 +66,38 @@
         void save();
       }}
     >
+      <fieldset class="modes" aria-describedby="set-storage-intro">
+        <legend class="sr">{t('settings.storage.modeLabel')}</legend>
+        {#each modes as m (m)}
+          <label class="check">
+            <input type="radio" name="storage-mode" value={m} bind:group={mode} data-testid="storage-mode-{m}" />
+            <span>{t(`settings.storage.mode.${m}`)}</span>
+            {#if m === 'days'}
+              <input
+                class="input days"
+                type="number"
+                min="1"
+                max={MAX_DAYS}
+                step="1"
+                bind:value={days}
+                disabled={mode !== 'days'}
+                aria-label={t('settings.storage.daysLabel')}
+                aria-invalid={mode === 'days' && !daysValid}
+                aria-describedby="set-storage-state"
+                data-testid="storage-days"
+              />
+              <span>{t('settings.storage.days')}</span>
+            {/if}
+          </label>
+        {/each}
+      </fieldset>
       <div class="row">
-        <label class="check">
-          <input type="checkbox" bind:checked={enabled} aria-describedby="set-storage-intro" data-testid="storage-enabled" />
-          {t('settings.storage.enable')}
-        </label>
-        <input
-          class="input days"
-          type="number"
-          min="1"
-          max={MAX_DAYS}
-          step="1"
-          bind:value={days}
-          disabled={!enabled}
-          aria-label={t('settings.storage.daysLabel')}
-          aria-invalid={enabled && !daysValid}
-          aria-describedby="set-storage-state"
-          data-testid="storage-days"
-        />
-        <span>{t('settings.storage.days')}</span>
-        <button class="btn btn-primary" type="submit" disabled={!dirty || saving || (enabled && !daysValid)}>{t('common.action.save')}</button>
+        <p class="state" id="set-storage-state" role="status">
+          {#if mode === 'days' && daysValid}{t('settings.storage.on', { days: formatNumber(days) })}{:else if mode === 'all'}{t('settings.storage.all')}{:else if mode === 'default'}{t('settings.storage.off')}{/if}
+          {#if message}<span class="ok">{message}</span>{/if}
+        </p>
+        <button class="btn btn-primary" type="submit" disabled={!dirty || saving || (mode === 'days' && !daysValid)}>{t('common.action.save')}</button>
       </div>
-      <p class="state" id="set-storage-state" role="status">
-        {#if enabled && daysValid}{t('settings.storage.on', { days: formatNumber(days) })}{:else if !enabled}{t('settings.storage.off')}{/if}
-        {#if message}<span class="ok">{message}</span>{/if}
-      </p>
       {#if error}<p class="error" role="alert">{error}</p>{/if}
     </form>
     <ul class="help">
@@ -127,10 +140,30 @@
     align-items: center;
     gap: 8px;
   }
+  .modes {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
   .check {
-    display: inline-flex;
+    display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 8px;
+    min-height: 32px;
+  }
+  .row .state {
+    flex: 1;
   }
   .days {
     width: 6.5em;

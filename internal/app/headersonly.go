@@ -28,8 +28,9 @@ import (
 
 // MailStorageSettings is the storage section of the mail settings.
 type MailStorageSettings struct {
-	// HeadersOnlyOlderThanDays: mails older than this many days are kept with
-	// header and preview only (0 = all mails completely, the default).
+	// HeadersOnlyOlderThanDays: -1 = not set (default: as before, the last
+	// 30 days completely, older mails on opening), 0 = all mails completely,
+	// n = header and preview only for mails older than n days.
 	HeadersOnlyOlderThanDays int `json:"headersOnlyOlderThanDays"`
 	// Available: this core keeps mail itself (desktop app).
 	Available bool `json:"available"`
@@ -39,13 +40,14 @@ type MailStorageSettings struct {
 	Complete    int `json:"complete"`
 }
 
-// headersOnlyDays is the global day count (0 = off); the sync engine reads
-// it through Config.HeadersOnlyDays.
+// headersOnlyDays is the global day count (-1 = not set, 0 = all); the
+// sync engine reads it through Config.HeadersOnlyDays.
 func (a *App) headersOnlyDays() int { return int(a.hoDays.Load()) }
 
 func (a *App) loadHeadersOnlyDays(ctx context.Context) {
+	a.hoDays.Store(-1)
 	var n int
-	if ok, err := a.st.GetAppSetting(ctx, store.KeyHeadersOnlyDays, &n); err == nil && ok && n > 0 && n <= tsync.MaxHeadersOnlyDays {
+	if ok, err := a.st.GetAppSetting(ctx, store.KeyHeadersOnlyDays, &n); err == nil && ok && n >= 0 && n <= tsync.MaxHeadersOnlyDays {
 		a.hoDays.Store(int64(n))
 	}
 }
@@ -87,10 +89,10 @@ func (a *App) SetMailStorageSettings(ctx context.Context, in MailStorageSettings
 		return MailStorageSettings{}, Errorf(http.StatusForbidden, "forbidden", "the server always keeps every mail completely")
 	}
 	n := in.HeadersOnlyOlderThanDays
-	if n < 0 || n > tsync.MaxHeadersOnlyDays {
-		return MailStorageSettings{}, invalid("headersOnlyOlderThanDays must be between 0 and %d", tsync.MaxHeadersOnlyDays)
+	if n < -1 || n > tsync.MaxHeadersOnlyDays {
+		return MailStorageSettings{}, invalid("headersOnlyOlderThanDays must be -1 or between 0 and %d", tsync.MaxHeadersOnlyDays)
 	}
-	if n == 0 {
+	if n == -1 {
 		if err := a.st.DeleteAppSetting(ctx, store.KeyHeadersOnlyDays); err != nil {
 			return MailStorageSettings{}, err
 		}

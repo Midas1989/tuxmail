@@ -176,7 +176,7 @@ func TestHeadersOnlyDesktop(t *testing.T) {
 
 	// The account's own day count.
 	s := must[app.AccountSettings](t)(f.a.GetAccountSettings(ctx, f.acc.ID))
-	if !s.HeadersOnlyAvailable || s.HeadersOnlyOlderThanDays != -1 || s.BodyPolicy != "all" {
+	if !s.HeadersOnlyAvailable || s.HeadersOnlyOlderThanDays != -1 || s.BodyPolicy != "recent" {
 		t.Errorf("account settings = %+v", s)
 	}
 	seven := 7
@@ -193,8 +193,11 @@ func TestHeadersOnlyDesktop(t *testing.T) {
 	if s.HeadersOnlyOlderThanDays != -1 {
 		t.Errorf("after reset = %d", s.HeadersOnlyOlderThanDays)
 	}
-	if _, err := f.a.SetMailStorageSettings(ctx, app.MailStorageSettings{HeadersOnlyOlderThanDays: -1}); err == nil {
-		t.Error("negative global day count accepted")
+	if _, err := f.a.SetMailStorageSettings(ctx, app.MailStorageSettings{HeadersOnlyOlderThanDays: -2}); err == nil {
+		t.Error("invalid global day count accepted")
+	}
+	if st := must[app.MailStorageSettings](t)(f.a.SetMailStorageSettings(ctx, app.MailStorageSettings{HeadersOnlyOlderThanDays: -1})); st.HeadersOnlyOlderThanDays != -1 {
+		t.Errorf("reset to the default = %+v", st)
 	}
 }
 
@@ -202,6 +205,9 @@ func TestHeadersOnlyDesktop(t *testing.T) {
 func TestHeadersOnlyNotOnServer(t *testing.T) {
 	f := newDesktopFixture(t, app.ModeServer, 0, nil)
 	ctx := context.Background()
+	if st := must[app.MailStorageSettings](t)(f.a.GetMailStorageSettings(ctx)); st.HeadersOnlyOlderThanDays != -1 || st.Available {
+		t.Errorf("server settings = %+v", st)
+	}
 	_, err := f.a.SetMailStorageSettings(ctx, app.MailStorageSettings{HeadersOnlyOlderThanDays: 30})
 	var ae *app.Error
 	if !errors.As(err, &ae) || ae.Status != 403 {

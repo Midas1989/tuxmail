@@ -1354,7 +1354,7 @@
       "bodyPolicy": "Mail-Inhalte herunterladen",
       "body": {
         "recent": "Letzte 30 Tage (ältere bei Bedarf)",
-        "all": "Alle (Standard)",
+        "all": "Alle",
         "on_demand": "Nur bei Bedarf"
       },
       "pollMinutes": "Abrufintervall (Minuten, 0 = Standard)",
@@ -1409,9 +1409,10 @@
         "all": "Alle Mails vollständig",
         "days": "Nur Kopf, wenn älter als …"
       },
-      "headersOnlyOff": "aus",
+      "headersOnlyOff": "wie bisher",
       "headersOnlyDays": "{days} Tage",
-      "headersOnlyHint": "Mails, die älter als X Tage sind, lädt TuxMail nur mit Absender, Betreff, Datum und Vorschau; den Inhalt erst beim Öffnen. Spart Speicher; ohne Netz sind diese Mails nur mit Kopf lesbar."
+      "headersOnlyHint": "Mails, die älter als X Tage sind, lädt TuxMail nur mit Absender, Betreff, Datum und Vorschau; den Inhalt erst beim Öffnen. Spart Speicher; ohne Netz sind diese Mails nur mit Kopf lesbar.",
+      "headersOnlyAll": "alle vollständig"
     },
     "passkeys": {
       "title": "Passkeys",
@@ -1740,12 +1741,11 @@
     "storage": {
       "title": "Ältere Mails nur mit Kopf speichern",
       "intro": "Mails, die älter als X Tage sind, lädt TuxMail nur mit Absender, Betreff, Datum und Vorschau; den Inhalt erst beim Öffnen. Spart Speicher; ohne Netz sind diese Mails nur mit Kopf lesbar.",
-      "enable": "Nur Kopf und Vorschau für Mails, die älter sind als",
       "days": "Tage",
       "daysLabel": "Anzahl Tage",
-      "off": "Aus – alle Mails werden vollständig gespeichert (Standard).",
+      "off": "Wie bisher: Mails der letzten 30 Tage vollständig, ältere werden beim Öffnen geladen.",
       "on": "Mails älter als {days} Tage: nur Kopf und Vorschau.",
-      "release": "Einschalten oder Verkleinern gibt die Inhalte älterer Mails nach und nach frei (Kopf und Vorschau bleiben). Vergrößern oder Ausschalten lädt sie wieder herunter.",
+      "release": "Mit einer Tageszahl gibt TuxMail die Inhalte älterer Mails nach und nach frei (Kopf und Vorschau bleiben). Eine größere Zahl oder „Alle vollständig“ lädt sie wieder herunter.",
       "exceptions": "Immer vollständig bleiben: POP3-Konten (der Server hat oft keine Kopie mehr), lokale Ordner, Entwürfe, importierte Mails und verschlüsselte Mails (PGP, S/MIME).",
       "opening": "Beim Öffnen lädt TuxMail den Inhalt nach. Das markiert die Mail nicht als gelesen, sendet keine Lesebestätigung und lädt keine externen Bilder – dafür gelten die Regeln unter „Externe Bilder“.",
       "search": "Die Suche findet diese Mails über Kopf und Vorschau. Mit Netz sucht TuxMail zusätzlich auf dem Mailserver (IMAP); solche Treffer sind mit „nur Kopf“ markiert.",
@@ -1754,7 +1754,14 @@
       "perAccount": "Einzelne Konten können einen eigenen Wert haben: Konten › Bearbeiten › Erweitert.",
       "stats": "Auf diesem Gerät: {headersOnly} Mails nur mit Kopf, {complete} vollständig.",
       "saved": "Gespeichert.",
-      "invalid": "Bitte eine Zahl zwischen 1 und 36500 eingeben."
+      "invalid": "Bitte eine Zahl zwischen 1 und 36500 eingeben.",
+      "modeLabel": "Inhalte älterer Mails",
+      "mode": {
+        "default": "Wie bisher (Standard): Mails der letzten 30 Tage vollständig, ältere beim Öffnen",
+        "all": "Alle Mails vollständig speichern",
+        "days": "Nur Kopf und Vorschau für Mails, die älter sind als"
+      },
+      "all": "Alle Mails werden vollständig gespeichert; ältere Inhalte lädt TuxMail im Hintergrund nach."
     }
   },
   "search": {
