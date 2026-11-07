@@ -958,6 +958,9 @@ export class OfflineCore {
     await this.get(`/api/calendar-events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     const lists: MessageSummary[] = [];
     for (const p of AHEAD_LISTS) lists.push(...(parse<{ items?: MessageSummary[] }>(await this.get(p))?.items ?? []));
+    // The lists are fresh: that is what "loaded last" means to the user; content follows.
+    if (this.st === 'online') await this.d.db.setMeta('lastDataSyncAt', this.now());
+    this.d.onChange?.();
     // Chats: the conversations of the newest kept list.
     const convs = (await this.d.db.listBodies('/api/conversations?', 1))[0];
     const convIds = (parse<{ items?: { id: number }[] }>(convs?.body ?? null)?.items ?? []).slice(0, 20).map((c) => c.id);

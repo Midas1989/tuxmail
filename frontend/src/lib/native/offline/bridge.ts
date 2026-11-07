@@ -236,7 +236,16 @@ export async function startOffline(o: StartOptions): Promise<OfflineHandle | nul
     if (s === 'online') scheduleSync(1500);
   }
 
-  const onOnline = () => void core.probe();
+  // The device reports a network again: ask the server at once, and soon again if it is not reachable yet.
+  const onOnline = () => {
+    probeDelay = 2000;
+    void core.probe().then((st) => {
+      if (st === 'offline') {
+        probeDelay = 2000;
+        scheduleProbe(true);
+      }
+    });
+  };
   const onOffline = () => core.markOffline();
   window.addEventListener('online', onOnline);
   window.addEventListener('offline', onOffline);

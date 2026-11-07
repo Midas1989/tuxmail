@@ -65,7 +65,7 @@
 
   <dl>
     <dt>{t('native.offline.state')}</dt>
-    <dd><span class="badge" class:ok={st.state === 'online'} class:warn={st.state === 'offline'} class:fail={st.state === 'expired'} data-testid="offline-state">{stateLabel}</span></dd>
+    <dd><span class="state" class:ok={st.state === 'online'} class:warn={st.state === 'offline'} class:fail={st.state === 'expired'} data-testid="offline-state">{stateLabel}</span></dd>
     <dt>{t('connection.lastDataSync')}</dt>
     <dd data-testid="offline-last-sync">{st.lastDataSyncAt ? fmt().dateTime(st.lastDataSyncAt) : t('connection.never')}</dd>
     <dt>{t('native.offline.used')}</dt>
@@ -151,20 +151,20 @@
     margin: 8px 0 0;
     font-size: 14px;
   }
-  .badge {
+  .state {
     display: inline-block;
     padding: 1px 10px;
     border-radius: 999px;
     font-size: 13px;
     border: 1px solid var(--tm-line);
   }
-  .badge.ok {
+  .state.ok {
     color: var(--tm-success);
   }
-  .badge.warn {
+  .state.warn {
     color: var(--tm-warn);
   }
-  .badge.fail {
+  .state.fail {
     color: var(--tm-danger);
   }
   .row {

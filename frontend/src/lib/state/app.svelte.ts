@@ -1300,16 +1300,18 @@ export class AppState {
   }
 
   async initChatFeatures(): Promise<void> {
+    // One part missing (e.g. the AI settings without a connection in the apps' offline mode) must not stop the others.
+    const keep = <T>(p: Promise<T>) => p.then((v) => v, () => undefined);
     const [focus, freq, ai, snippets] = await Promise.all([
-      this.api.getFocusSettings(),
-      this.api.frequentContacts(),
-      this.api.getAiSettings(),
-      this.api.listSnippets(),
+      keep(this.api.getFocusSettings()),
+      keep(this.api.frequentContacts()),
+      keep(this.api.getAiSettings()),
+      keep(this.api.listSnippets()),
     ]);
-    this.focus = focus;
-    this.frequentIds = freq;
-    this.aiSettings ??= ai; // a save that raced this initial load wins
-    this.snippets = snippets;
+    if (focus) this.focus = focus;
+    if (freq) this.frequentIds = freq;
+    if (ai) this.aiSettings ??= ai; // a save that raced this initial load wins
+    if (snippets) this.snippets = snippets;
     await this.loadChatFolders();
     setInterval(() => (this.now = Date.now()), 60_000);
   }
