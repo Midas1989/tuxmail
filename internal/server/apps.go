@@ -123,7 +123,10 @@ func (p *appPool) openApp(ctx context.Context, userID int64) (*appEntry, error) 
 	opts := app.Options{Store: st, DataDir: dir, Mode: app.ModeServer, Version: p.s.version, Secrets: secrets,
 		Logger: p.s.log.With("user", userID), Locales: p.s.locales, LocaleDir: filepath.Join(p.s.cfg.DataDir, "locales"),
 		Push: &pushBackend{s: p.s, userID: userID}, Sync: &app.SyncOptions{}, Send: &app.SendOptions{}, Messenger: &app.MessengerOptions{}}
-	opts.OAuth = p.s.oauthAppOptions()         // oauth.go
+	opts.OAuth = p.s.oauthAppOptions() // oauth.go
+	if l := p.s.cfg.AI.MaxLevel; l != "content" {
+		opts.AIMaxLevel = l // admin cap of the AI access (ai_access.go)
+	}
 	opts.ImageSigner = p.s.imageSigner(userID) // imageproxy.go
 	p.s.configureUserApp(userID, &opts)        // team.go: team mailboxes, workflow notifier
 	if p.s.appOptions != nil {

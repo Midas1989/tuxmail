@@ -688,13 +688,53 @@ type Snippet struct {
 
 // AiSettings configure the AI assistance.
 type AiSettings struct {
-	Provider           string          `json:"provider"`
-	BaseURL            string          `json:"baseUrl"`
-	Model              string          `json:"model"`
-	APIKey             string          `json:"apiKey,omitempty"`
-	APIKeySet          bool            `json:"apiKeySet"`
+	Provider  string `json:"provider"`
+	BaseURL   string `json:"baseUrl"`
+	Model     string `json:"model"`
+	APIKey    string `json:"apiKey,omitempty"`
+	APIKeySet bool   `json:"apiKeySet"`
+	// AccountPermissions is the access of version 1 (absent = allowed). It
+	// is only read for the migration and written for older versions
+	// opening the same data (ai_access.go); Sources is authoritative.
 	AccountPermissions map[string]bool `json:"accountPermissions"`
 	MaskPersonalData   bool            `json:"maskPersonalData"`
+	// Sources: access per source ("account:<id>", "calendar:<id>",
+	// "addressbook:<id>", "cloud:<id>", "projects"); absent = off.
+	Sources map[string]AiSourceAccess `json:"sources"`
+	// AccessVersion 2 = Sources is set; clients without it send version 1.
+	AccessVersion int `json:"accessVersion,omitempty"`
+
+	// Output only: all current sources with their effective level, the
+	// admin cap ("" = none) and whether the provider runs locally/in the LAN.
+	Catalog  []AiSource `json:"catalog,omitempty"`
+	MaxLevel string     `json:"maxLevel,omitempty"`
+	Local    bool       `json:"local"`
+}
+
+// AiSourceAccess is the AI access to one source.
+type AiSourceAccess struct {
+	Level string `json:"level"` // off | metadata | content
+	// Mail accounts: folders never sent; junk and trash are excluded
+	// unless AllowJunkTrash.
+	ExcludeFolders []int64 `json:"excludeFolders,omitempty"`
+	AllowJunkTrash bool    `json:"allowJunkTrash,omitempty"`
+}
+
+// AiSource is one entry of the source list of the AI settings.
+type AiSource struct {
+	Key     string     `json:"key"`
+	Kind    string     `json:"kind"` // mail, messenger, calendar, addressbook, cloud, projects
+	Name    string     `json:"name"`
+	Detail  string     `json:"detail,omitempty"`
+	Level   string     `json:"level"` // effective level (after the admin cap)
+	Folders []AiFolder `json:"folders,omitempty"`
+}
+
+// AiFolder is a mail folder of an AI source.
+type AiFolder struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Role string `json:"role,omitempty"`
 }
 
 // AiSummary is a conversation summary.

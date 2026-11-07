@@ -58,6 +58,11 @@ type Config struct {
 	OAuth          OAuth    `yaml:"oauth"`    // oauth.go
 	Push           Push     `yaml:"push"`     // push.go
 	Security       Security `yaml:"security"` // security.go
+	// AI limits the AI assistant of all users: MaxLevel caps the access a
+	// user may give to any source ("" or content = no cap, metadata, off).
+	AI struct {
+		MaxLevel string `yaml:"max_level"`
+	} `yaml:"ai"`
 	// Monitoring: TokenFile holds the token for /api/v1/monitoring/self and
 	// /healthz?deep=1 (empty: these answer only on the machine itself).
 	Monitoring struct {
@@ -293,6 +298,11 @@ func (c *Config) Validate() error {
 	}
 	if c.Limits.BackgroundSyncMaxUsers < 1 {
 		add("limits.background_sync_max_users: must be at least 1")
+	}
+	switch c.AI.MaxLevel {
+	case "", "content", "metadata", "off":
+	default:
+		add("ai.max_level: must be content, metadata or off, got %q", c.AI.MaxLevel)
 	}
 	if _, err := c.NetPolicy(); err != nil {
 		add("security.allowed_networks: %v", err)

@@ -62,6 +62,9 @@ type Options struct {
 	Discoverer Discoverer      // default: internal/autoconfig
 	Push       PushBackend     // server mode Web Push; nil on the desktop
 	AI         AIFactory       // default: no provider (ai_not_configured)
+	// AIMaxLevel caps the AI access of every source (server: admin setting
+	// ai.max_level; "" = no cap, "metadata", "off"), ai_access.go.
+	AIMaxLevel string
 	// Messenger enables the messenger plugins (messenger_wiring.go).
 	Messenger *MessengerOptions
 	OAuth     *OAuthOptions // OAuth clients/redirect (default: environment), oauth_app.go

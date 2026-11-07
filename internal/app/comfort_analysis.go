@@ -135,7 +135,8 @@ func (a *App) analyze(ctx context.Context, msg store.Message, raw []byte) (*anal
 		cm.KnownContact = a.isKnownSender(ctx, from)
 		cc := *a.comfort.catC
 		if s.Categories.AIRefine {
-			cc.Refiner = aiRefiner{a: a}
+			folders, _ := a.st.FoldersFor(ctx, []int64{msg.ID})
+			cc.Refiner = aiRefiner{a: a, account: msg.AccountID, folders: folders[msg.ID], spam: an.verdict.Level == spam.LevelSpam}
 		}
 		if an.cat, err = cc.Classify(ctx, cm); err != nil {
 			return nil, err

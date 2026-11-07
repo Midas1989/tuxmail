@@ -40,6 +40,8 @@
   import ChannelIcon from '../common/ChannelIcon.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
   import EmojiPicker from './EmojiPicker.svelte';
+  import AiAccessNote from './AiAccessNote.svelte';
+  import { conversationSources } from '../../aiaccess';
 
   let text = $state('');
   let sending = $state(false);
@@ -98,11 +100,15 @@
     });
   });
 
-  // Reply suggestions when the last message is from the other side.
+  // Accounts of this conversation and whether the assistant may see any of them (Settings > AI assistant).
+  const convAccountIds = $derived([...new Set(app.items.filter((i) => !i.system).map((i) => i.accountId))]);
+  const aiShared = $derived(conversationSources(app.aiSettings, convAccountIds).some((s) => s.level !== 'off'));
+
+  // Reply suggestions when the last message is from the other side and the assistant may see the chat.
   $effect(() => {
     const id = app.selectedConversationId;
     const last = app.items.filter((i) => !i.scheduledFor && !i.system).at(-1);
-    if (id == null || !last || last.isOwn || !app.aiReady) {
+    if (id == null || !last || last.isOwn || !app.aiReady || !aiShared) {
       suggestions = [];
       return;
     }
@@ -462,6 +468,9 @@
         >
       {/each}
     </div>
+    <AiAccessNote accountIds={convAccountIds} />
+  {:else if app.aiReady && !aiShared && !text && app.items.at(-1) && !app.items.at(-1)?.isOwn}
+    <AiAccessNote accountIds={convAccountIds} />
   {:else if !app.aiReady && !text && app.items.at(-1) && !app.items.at(-1)?.isOwn}
     <div class="ai-chips">
       <button class="ai-hint" onclick={() => app.openAiSettings()}><Sparkles size={13} /> {t('chat.ai.enableHint')}</button>

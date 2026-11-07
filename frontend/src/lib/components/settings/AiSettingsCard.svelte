@@ -1,10 +1,12 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
-<!-- Settings -> AI: provider, model, key, per-account permissions, privacy. -->
+<!-- Settings -> AI: provider, model, key, access per source (AiAccessList), privacy. -->
 <script lang="ts">
   import ShieldCheck from '@lucide/svelte/icons/shield-check';
+  import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
+  import AiAccessList from './AiAccessList.svelte';
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
-  import type { AiProvider, AiSettings } from '../../types';
+  import type { AiProvider, AiSettings, AiSourceAccess } from '../../types';
 
   const PROVIDERS: { id: AiProvider; url: string; model: string; local?: boolean }[] = [
     { id: 'none', url: '', model: '' },
@@ -17,14 +19,21 @@
     { id: 'custom', url: 'http://localhost:8000/v1', model: '' },
   ];
 
-  let s = $state<AiSettings>({ provider: 'none', baseUrl: '', model: '', apiKeySet: false, accountPermissions: {}, maskPersonalData: true });
+  let s = $state<AiSettings>({ provider: 'none', baseUrl: '', model: '', apiKeySet: false, accountPermissions: {}, maskPersonalData: true, sources: {}, accessVersion: 2 });
+  let sources = $state<Record<string, AiSourceAccess>>({});
   let apiKey = $state('');
   let saved = $state(false);
   $effect(() => {
-    if (app.aiSettings) s = structuredClone($state.snapshot(app.aiSettings) as AiSettings);
+    if (app.aiSettings) {
+      const v = structuredClone($state.snapshot(app.aiSettings) as AiSettings);
+      sources = v.sources ?? {};
+      s = v;
+    }
     else void app.api.getAiSettings().then((v) => (app.aiSettings ??= v));
   });
   const def = $derived(PROVIDERS.find((p) => p.id === s.provider) ?? PROVIDERS[0]);
+  // The core reports whether the stored provider is local; while editing, judge by the chosen one.
+  const local = $derived(s.provider === app.aiSettings?.provider && s.baseUrl === app.aiSettings?.baseUrl ? !!app.aiSettings?.local : !!def.local);
 
   function onProvider() {
     const p = PROVIDERS.find((x) => x.id === s.provider)!;
@@ -34,7 +43,8 @@
   }
 
   async function save() {
-    await app.saveAiSettings({ ...($state.snapshot(s) as AiSettings), apiKey: apiKey || undefined });
+    const { catalog: _c, local: _l, maxLevel: _m, ...rest } = $state.snapshot(s) as AiSettings;
+    await app.saveAiSettings({ ...rest, sources: $state.snapshot(sources), accessVersion: 2, apiKey: apiKey || undefined });
     apiKey = '';
     saved = true;
     setTimeout(() => (saved = false), 2000);
@@ -72,19 +82,11 @@
     {/if}
   </div>
   {#if s.provider !== 'none'}
-    <fieldset>
-      <legend>{t('settings.ai.accounts')}</legend>
-      {#each app.accounts as a (a.id)}
-        <label class="chk">
-          <input
-            type="checkbox"
-            checked={s.accountPermissions[String(a.id)] !== false}
-            onchange={(e) => (s.accountPermissions[String(a.id)] = (e.currentTarget as HTMLInputElement).checked)}
-          />
-          {a.displayName}
-        </label>
-      {/each}
-    </fieldset>
+    <p class="note" class:warn={!local}>
+      {#if local}<ShieldCheck size={14} /> {t('settings.ai.access.local')}
+      {:else}<TriangleAlert size={14} /> {t('settings.ai.access.external', { provider: t(`settings.ai.providers.${s.provider}`) })}{/if}
+    </p>
+    <AiAccessList bind:sources catalog={s.catalog ?? []} maxLevel={s.maxLevel} />
     <label class="chk"><input type="checkbox" bind:checked={s.maskPersonalData} /> {t('settings.ai.mask')}</label>
   {/if}
   <p class="note"><ShieldCheck size={14} /> {t('settings.ai.pgpNote')}</p>
@@ -130,17 +132,6 @@
   .wide {
     grid-column: span 2;
   }
-  fieldset {
-    border: 1px solid var(--tm-line);
-    border-radius: 10px;
-    padding: 8px 12px;
-    margin: 0 0 10px;
-  }
-  legend {
-    font-size: 12.5px;
-    font-weight: 600;
-    padding: 0 4px;
-  }
   .chk {
     display: flex;
     align-items: center;
@@ -158,6 +149,13 @@
     margin: 10px 0 12px;
     font-size: 12px;
     color: var(--tm-success);
+  }
+  .note.warn {
+    color: var(--tm-warn);
+    align-items: flex-start;
+  }
+  .note :global(svg) {
+    flex-shrink: 0;
   }
   @media (max-width: 639px), (pointer: coarse) and (max-height: 500px) {
     .grid {
