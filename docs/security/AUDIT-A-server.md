@@ -65,8 +65,8 @@ Verbleibende Risiken stehen am Ende des Dokuments.
 | A-08 | Low | MFA challenge attempt counter checked and incremented non-atomically | Fixed |
 | A-09 | Low | `limits.max_upload_mb` not enforced by the server (8 GiB uploads without nginx) | Fixed |
 | A-10 | Low | Device approval: no anti-phishing hint, user-code lookup not rate limited | Fixed (hardened) |
-| I-01 | Info | Device tokens have full account scope (incl. admin API) for 365 days | Documented |
-| I-02 | Info | No idle timeout for web sessions (absolute lifetime only) | Documented |
+| I-01 | Info | Device tokens have full account scope (incl. admin API) for 365 days | Fixed: scopes, no administration, rotation, 90 days (`internal/auth/devicetokens.go`) |
+| I-02 | Info | No idle timeout for web sessions (absolute lifetime only) | Fixed: 2 h idle, 12 h absolute |
 | I-03 | Info | Sub-path deployment shares the origin with the host application | Documented |
 | I-04 | Info | Push subscription upsert by endpoint can move a subscription between users | Documented |
 | I-05 | Info | Gotenberg (admin endpoint) renders user HTML; its own egress is not covered | Documented |

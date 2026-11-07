@@ -1023,8 +1023,11 @@ export class HttpTransport implements Api {
     try {
       // Browsers cannot set headers on WebSockets: the device token travels as
       // subprotocol (server echoes "tuxmail.v1"), never in the URL/logs.
+      // With a session cookie the handshake carries the CSRF token the same way.
       const bearer = this.authToken();
-      ws = bearer ? new this.wsImpl(this.wsUrl(), ['tuxmail.v1', `tuxmail.bearer.${bearer}`]) : new this.wsImpl(this.wsUrl());
+      const csrf = readCsrfToken();
+      const protocols = bearer ? ['tuxmail.v1', `tuxmail.bearer.${bearer}`] : csrf ? ['tuxmail.v1', `tuxmail.csrf.${csrf}`] : undefined;
+      ws = protocols ? new this.wsImpl(this.wsUrl(), protocols) : new this.wsImpl(this.wsUrl());
     } catch {
       this.scheduleReconnect();
       return;

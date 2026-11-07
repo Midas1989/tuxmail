@@ -76,7 +76,11 @@ type TLS struct {
 
 // Auth configures user authentication.
 type Auth struct {
+	// SessionLifetime is the absolute limit of a web session after login and
+	// SessionIdleTimeout the limit without a request. Both can only be shortened
+	// below MaxSessionLifetime / MaxSessionIdle (Effective*).
 	SessionLifetime       Duration `yaml:"session_lifetime"`
+	SessionIdleTimeout    Duration `yaml:"session_idle_timeout"`
 	PasswordMinLength     int      `yaml:"password_min_length"`
 	Registration          string   `yaml:"registration"` // disabled | invite
 	TOTPRequiredForAdmins bool     `yaml:"totp_required_for_admins"`
@@ -108,6 +112,22 @@ type Limits struct {
 	BackgroundSyncMaxUsers int `yaml:"background_sync_max_users"`
 }
 
+// Limits of web sessions (Basis spec/PARAMETER.md, class "normal").
+const (
+	MaxSessionLifetime = 12 * time.Hour
+	MaxSessionIdle     = 2 * time.Hour
+)
+
+// EffectiveSessionLifetime is the configured lifetime, at most MaxSessionLifetime.
+func (a Auth) EffectiveSessionLifetime() time.Duration {
+	return min(a.SessionLifetime.D(), MaxSessionLifetime)
+}
+
+// EffectiveIdleTimeout is the configured idle limit, at most MaxSessionIdle.
+func (a Auth) EffectiveIdleTimeout() time.Duration {
+	return min(a.SessionIdleTimeout.D(), MaxSessionIdle)
+}
+
 // Default returns the configuration used for keys missing from the file.
 func Default() Config {
 	return Config{
@@ -118,12 +138,14 @@ func Default() Config {
 		TLS:            TLS{Mode: "none"},
 		TrustedProxies: []string{"127.0.0.1/32", "::1/128"},
 		Auth: Auth{
-			SessionLifetime:   Duration(720 * time.Hour),
-			PasswordMinLength: 12,
-			Registration:      "disabled",
-			OIDC:              OIDC{GroupsClaim: "groups"},
+			SessionLifetime:    Duration(MaxSessionLifetime),
+			SessionIdleTimeout: Duration(MaxSessionIdle),
+			PasswordMinLength:  12,
+			Registration:       "disabled",
+			OIDC:               OIDC{GroupsClaim: "groups"},
 		},
-		Limits: Limits{MaxUploadMB: 200, LoginRatePerMinute: 10, BackgroundSync: true, BackgroundSyncMaxUsers: 500},
+		Security: Security{Headers: true, HSTS: true, HSTSIncludeSubdomains: true},
+		Limits:   Limits{MaxUploadMB: 200, LoginRatePerMinute: 10, BackgroundSync: true, BackgroundSyncMaxUsers: 500},
 	}
 }
 
@@ -232,6 +254,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Auth.SessionLifetime.D() < 5*time.Minute {
 		add("auth.session_lifetime: must be at least 5m")
+	}
+	if c.Auth.SessionIdleTimeout.D() < time.Minute {
+		add("auth.session_idle_timeout: must be at least 1m")
 	}
 	if c.Auth.PasswordMinLength < 8 || c.Auth.PasswordMinLength > 1024 {
 		add("auth.password_min_length: must be between 8 and 1024")

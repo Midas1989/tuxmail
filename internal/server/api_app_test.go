@@ -198,7 +198,7 @@ func dialEvents(t *testing.T, e *env, origin string, header http.Header, protoco
 		t.Fatal(err)
 	}
 	cfg.Header = header
-	cfg.Protocol = protocols
+	cfg.Protocol = append(protocols, wsProtocols(header)...)
 	ws, err := websocket.DialConfig(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -224,11 +224,7 @@ func readEvent(t *testing.T, ws *websocket.Conn, want string) map[string]any {
 
 func TestEventsWebSocket(t *testing.T) {
 	e, b, _, d := appEnv(t)
-	u, _ := http.NewRequest("GET", e.ts.URL, nil)
-	h := http.Header{}
-	for _, c := range b.c.Jar.Cookies(u.URL) {
-		h.Add("Cookie", c.Name+"="+c.Value)
-	}
+	h := cookieHeader(t, e, b)
 	ws := dialEvents(t, e, e.ts.URL, h)
 	defer ws.Close()
 	readEvent(t, ws, "connection")
@@ -243,6 +239,7 @@ func TestEventsWebSocket(t *testing.T) {
 	// Foreign origins are rejected for cookie sessions.
 	cfg, _ := websocket.NewConfig(strings.Replace(e.ts.URL, "http", "ws", 1)+"/api/events", "https://evil.example")
 	cfg.Header = h
+	cfg.Protocol = wsProtocols(h)
 	if _, err := websocket.DialConfig(cfg); err == nil {
 		t.Fatal("cross-site WebSocket accepted")
 	}

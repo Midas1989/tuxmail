@@ -70,7 +70,9 @@ tuxmail_trusted_proxies_extra: []
 tuxmail_trusted_proxies: >-
   {{ (['127.0.0.1/32', '::1/128'] if tuxmail_nginx_mode != 'none' else []) + tuxmail_trusted_proxies_extra }}
 
-tuxmail_auth_session_lifetime: "168h"
+# Web-Sitzungen: höchstens 12 h ab Anmeldung und 2 h ohne Anfrage; nur kürzer einstellbar.
+tuxmail_auth_session_lifetime: "12h"
+tuxmail_auth_session_idle_timeout: "2h"
 tuxmail_auth_password_min_length: 12
 tuxmail_auth_registration: "disabled" # disabled | invite
 tuxmail_auth_totp_required_for_admins: true
@@ -103,9 +105,12 @@ tuxmail_security_allowed_networks_extra: []
 # true = /healthz und /api/auth/config nennen anonymen Clients die exakte Version
 # (security.expose_version). Standard: aus; angemeldete Benutzer sehen sie immer.
 tuxmail_security_expose_version: false
-# true = includeSubDomains im HSTS-Header der Anwendung (nur wenn ALLE Subdomains HTTPS nutzen;
+# Sicherheits-Header und HSTS der Anwendung. Nur abschalten, wenn ein eigener Proxy sie setzt.
+tuxmail_security_headers: true
+tuxmail_security_hsts: true
+# includeSubDomains im HSTS-Header der Anwendung (false, wenn eine Subdomain kein HTTPS nutzt;
 # "preload" wird nie gesendet). Hinter nginx gilt tuxmail_nginx_hsts_include_subdomains.
-tuxmail_security_hsts_include_subdomains: false
+tuxmail_security_hsts_include_subdomains: true
 # Der lokale Matrix-Homeserver der Bridges (nur 127.0.0.1:Port) wird automatisch erlaubt.
 tuxmail_security_allowed_networks: >-
   {{ (['127.0.0.1:' ~ (tuxmail_matrix_port | string)] if tuxmail_bridges_enabled | bool else []) + tuxmail_security_allowed_networks_extra }}

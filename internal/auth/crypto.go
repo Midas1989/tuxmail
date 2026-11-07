@@ -67,9 +67,11 @@ func LoadOrCreateMasterKey(path string) ([]byte, error) {
 	return key, nil
 }
 
-// seal encrypts plain with the master key; ad binds the ciphertext to its use.
-func (s *Service) seal(plain []byte, ad string) ([]byte, error) {
-	aead, err := chacha20poly1305.NewX(s.master)
+// sealLegacy and openLegacy are the format before bx1 (XChaCha20-Poly1305 under
+// master.key, raw bytes). New values are written by seal (keys.go); openLegacy
+// keeps old values readable and sealLegacy only serves the rollback (rollback.go).
+func sealLegacy(master, plain []byte, ad string) ([]byte, error) {
+	aead, err := chacha20poly1305.NewX(master)
 	if err != nil {
 		return nil, err
 	}
@@ -80,8 +82,8 @@ func (s *Service) seal(plain []byte, ad string) ([]byte, error) {
 	return aead.Seal(nonce, nonce, plain, []byte(ad)), nil
 }
 
-func (s *Service) open(ct []byte, ad string) ([]byte, error) {
-	aead, err := chacha20poly1305.NewX(s.master)
+func openLegacy(master, ct []byte, ad string) ([]byte, error) {
+	aead, err := chacha20poly1305.NewX(master)
 	if err != nil {
 		return nil, err
 	}

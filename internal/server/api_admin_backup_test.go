@@ -48,6 +48,7 @@ func rawDo(t *testing.T, b *browser, path string, body any) (*http.Response, []b
 	req, _ := http.NewRequest("POST", b.e.ts.URL+path, bytes.NewReader(js))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(csrfHeader, b.csrf)
+	req.Header.Set("Origin", b.e.ts.URL)
 	resp, err := b.c.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -1076,6 +1077,13 @@ func TestSettingsArchiveHoldsNoDataAndRestores(t *testing.T) {
 	}
 	if !bytes.Contains(tarball, master) {
 		t.Error("master.key is missing from the archive")
+	}
+	ring, err := os.ReadFile(filepath.Join(e.cfg.DataDir, "secretbox.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(tarball, ring) {
+		t.Error("the key ring is missing from the archive")
 	}
 
 	// Restore: unpack as a data directory, start the service, migrations run.

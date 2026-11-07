@@ -174,6 +174,8 @@ var serverDBTables = map[string]TableClass{
 	"login_known_networks":   TableKeep,
 	"passkeys":               TableKeep,
 	"passkey_users":          TableKeep,
+	"device_retired_tokens":  TableKeep,
+	"server_keys":            TableKeep,
 	"push_subscriptions":     TableKeep,
 	"notification_prefs":     TableKeep,
 	"user_settings":          TableKeep,
@@ -190,6 +192,7 @@ var serverDBTables = map[string]TableClass{
 	"oidc_states":           TablePurge,
 	"device_authorizations": TablePurge,
 	"passkey_challenges":    TablePurge,
+	"rate_limit":            TablePurge,
 }
 
 // UserStoreTables returns a copy of the classification of tuxmail.db (tests).
@@ -228,8 +231,19 @@ func CreateSettings(ctx context.Context, dataDir, outDir string) (*SettingsRepor
 	if err := cleanSnapshot(ctx, filepath.Join(dataDir, "server.db"), filepath.Join(root, "server.db"), serverDBTables, nil); err != nil {
 		return nil, fmt.Errorf("backup: server.db: %w", err)
 	}
-	if err := copyPrivate(filepath.Join(dataDir, "master.key"), filepath.Join(root, "master.key")); err != nil {
-		return nil, err
+	// The key ring and the older master.key (gone once retired). One of them must exist.
+	keys := 0
+	for _, name := range []string{"secretbox.json", "master.key"} {
+		err := copyPrivate(filepath.Join(dataDir, name), filepath.Join(root, name))
+		switch {
+		case err == nil:
+			keys++
+		case !errors.Is(err, fs.ErrNotExist):
+			return nil, err
+		}
+	}
+	if keys == 0 {
+		return nil, fmt.Errorf("backup: neither secretbox.json nor master.key found in %s", dataDir)
 	}
 	for _, optional := range []string{"vapid.json", filepath.Join("backup", "recipients.txt")} {
 		err := copyPrivate(filepath.Join(dataDir, optional), filepath.Join(root, optional))

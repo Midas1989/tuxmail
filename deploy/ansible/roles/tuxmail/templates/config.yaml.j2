@@ -34,6 +34,7 @@ trusted_proxies:
 
 auth:
   session_lifetime: {{ tuxmail_auth_session_lifetime | to_json }}
+  session_idle_timeout: {{ tuxmail_auth_session_idle_timeout | to_json }}
   password_min_length: {{ tuxmail_auth_password_min_length | int }}
   # disabled | invite
   registration: {{ tuxmail_auth_registration | to_json }}
@@ -77,6 +78,8 @@ security:
   # Exakte Version in /healthz und /api/auth/config für anonyme Clients (Standard: aus).
   expose_version: {{ tuxmail_security_expose_version | bool | to_json }}
   # HSTS der Anwendung (hinter nginx setzt nginx den Header, siehe tuxmail_nginx_hsts_*).
+  headers: {{ tuxmail_security_headers | bool | to_json }}
+  hsts: {{ tuxmail_security_hsts | bool | to_json }}
   hsts_include_subdomains: {{ tuxmail_security_hsts_include_subdomains | bool | to_json }}
 {% if tuxmail_fcm_enabled | bool %}
 

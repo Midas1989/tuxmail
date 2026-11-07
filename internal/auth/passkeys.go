@@ -3,6 +3,7 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -16,6 +17,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-webauthn/webauthn/protocol"
+	"github.com/go-webauthn/webauthn/protocol/webauthncose"
 	"github.com/go-webauthn/webauthn/webauthn"
 )
 
@@ -62,7 +64,7 @@ const (
 	passkeyChallengeTTL       = 5 * time.Minute
 	maxPasskeyNameRunes       = 64
 	maxPendingLoginChallenges = 20000 // unauthenticated begin requests; oldest are evicted beyond this
-	passkeyHandleLen          = 64
+	passkeyHandleLen          = 32    // Basis spec/AUTH.md; credentials of older versions keep their 64-byte handle
 	defaultPasskeyName        = "Passkey"
 )
 
@@ -118,6 +120,43 @@ func (s *Service) webAuthn() (*webauthn.WebAuthn, string, error) {
 		})
 	})
 	return s.wa, rpID, s.waErr
+}
+
+// allowedPasskeyAlgorithms is Basis spec/PARAMETER.md: EdDSA, ES256, RS256.
+// The library's default offers many more.
+var allowedPasskeyAlgorithms = []protocol.CredentialParameter{
+	{Type: protocol.PublicKeyCredentialType, Algorithm: webauthncose.AlgEdDSA},
+	{Type: protocol.PublicKeyCredentialType, Algorithm: webauthncose.AlgES256},
+	{Type: protocol.PublicKeyCredentialType, Algorithm: webauthncose.AlgRS256},
+}
+
+const minPasskeyRSABits = 2048
+
+// checkPasskeyKey enforces the allowed algorithms on what the authenticator
+// actually returned: the list above is only a request to the client.
+func checkPasskeyKey(cose []byte) error {
+	parsed, err := webauthncose.ParsePublicKey(cose)
+	if err != nil {
+		return errors.New("unreadable public key")
+	}
+	switch k := parsed.(type) {
+	case webauthncose.OKPPublicKeyData:
+		if webauthncose.COSEAlgorithmIdentifier(k.Algorithm) == webauthncose.AlgEdDSA {
+			return nil
+		}
+	case webauthncose.EC2PublicKeyData:
+		if webauthncose.COSEAlgorithmIdentifier(k.Algorithm) == webauthncose.AlgES256 {
+			return nil
+		}
+	case webauthncose.RSAPublicKeyData:
+		if webauthncose.COSEAlgorithmIdentifier(k.Algorithm) == webauthncose.AlgRS256 {
+			if len(bytes.TrimLeft(k.Modulus, "\x00"))*8 < minPasskeyRSABits {
+				return fmt.Errorf("RSA key shorter than %d bits", minPasskeyRSABits)
+			}
+			return nil
+		}
+	}
+	return errors.New("algorithm not allowed")
 }
 
 // webauthnUser implements webauthn.User.
@@ -235,7 +274,7 @@ func normalizePasskeyName(name string) (string, error) {
 }
 
 // passkeyHandle returns the WebAuthn user handle of a user, creating it on
-// first use: 64 random bytes without any personal data.
+// first use: random bytes without any personal data.
 func (s *Service) passkeyHandle(ctx context.Context, userID int64) ([]byte, error) {
 	var h []byte
 	err := s.db.QueryRowContext(ctx, `SELECT handle FROM passkey_users WHERE user_id = ?`, userID).Scan(&h)
@@ -424,7 +463,7 @@ func (s *Service) BeginPasskeyRegistration(ctx context.Context, userID int64) (s
 		display = u.Username
 	}
 	wu := &webauthnUser{handle: handle, name: u.Username, displayName: display}
-	creation, sd, err := wa.BeginRegistration(wu, webauthn.WithExclusions(exclude))
+	creation, sd, err := wa.BeginRegistration(wu, webauthn.WithExclusions(exclude), webauthn.WithCredentialParameters(allowedPasskeyAlgorithms))
 	if err != nil {
 		return "", nil, fmt.Errorf("auth: begin passkey registration: %w", err)
 	}
@@ -477,6 +516,9 @@ func (s *Service) FinishPasskeyRegistration(ctx context.Context, userID int64, c
 	}
 	if !cred.Flags.UserVerified {
 		return fail("user verification missing", ErrPasskeyInvalid)
+	}
+	if err := checkPasskeyKey(cred.PublicKey); err != nil {
+		return fail("key refused: "+err.Error(), ErrPasskeyInvalid)
 	}
 	now := s.now()
 	var id int64

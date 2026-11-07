@@ -36,7 +36,7 @@ type ServerOptions struct {
 
 // ServerWarning is printed by the CLI: the archive contains master.key,
 // which decrypts every user's stored credentials.
-const ServerWarning = "the archive contains master.key, which decrypts all stored user credentials: keep it as safe as the server itself"
+const ServerWarning = "the archive contains the server keys (secretbox.json, master.key), which decrypt all stored user credentials: keep it as safe as the server itself"
 
 // CreateServer writes an admin full-server backup: every SQLite database
 // (snapshotted with VACUUM INTO) and every other file of the data
@@ -204,6 +204,7 @@ func RestoreServer(ctx context.Context, src Source, passphrase, dataDir string) 
 		return nil, err
 	}
 	_ = os.Chmod(filepath.Join(dataDir, "master.key"), 0o600)
+	_ = os.Chmod(filepath.Join(dataDir, "secretbox.json"), 0o600)
 	return m, nil
 }
 

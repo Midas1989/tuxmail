@@ -4,6 +4,7 @@ package auth
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -41,8 +42,9 @@ type AuditEntry struct {
 	Details string    `json:"details,omitempty"`
 }
 
-// Audit writes an audit log entry; the actor is taken from ctx. Failures to
-// write are ignored by callers on purpose (they are returned for tests).
+// Audit writes an audit log entry; the actor is taken from ctx. A failure to
+// write is an error (Basis spec/BETRIEB.md): it is returned and always logged,
+// since most callers go on with the action.
 func (s *Service) Audit(ctx context.Context, action, target string, success bool, details string) error {
 	a := ActorFrom(ctx)
 	var actorID any
@@ -52,6 +54,9 @@ func (s *Service) Audit(ctx context.Context, action, target string, success bool
 	_, err := s.db.ExecContext(context.WithoutCancel(ctx),
 		`INSERT INTO audit_log(at, actor_id, actor, action, target, ip, success, details) VALUES (?,?,?,?,?,?,?,?)`,
 		s.now().Unix(), actorID, truncate(a.Name, 100), action, truncate(target, 320), a.IP, success, truncate(details, 1000))
+	if err != nil {
+		slog.Error("auth: audit entry not written", "action", action, "err", err)
+	}
 	return err
 }
 

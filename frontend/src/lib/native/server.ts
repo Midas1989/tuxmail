@@ -146,8 +146,11 @@ function errorFor(status: number, body: Record<string, unknown>): ServerError {
   return new ServerError('server_error', msg, status);
 }
 
+/** The app works on the user's own data; it never provisions other clients (server: internal/auth/devicetokens.go). */
+const DEVICE_SCOPE = 'data';
+
 export async function startDeviceAuthorization(serverUrl: string, clientName: string, f: Fetch = fetch, signal?: AbortSignal): Promise<DeviceGrant> {
-  const { status, body } = await postJson(f, serverUrl + '/api/device/authorize', { client_name: clientName }, signal);
+  const { status, body } = await postJson(f, serverUrl + '/api/device/authorize', { client_name: clientName, scope: DEVICE_SCOPE }, signal);
   if (status !== 200) throw errorFor(status, body);
   return {
     deviceCode: String(body.device_code),
@@ -225,6 +228,7 @@ export async function directLogin(serverUrl: string, input: DirectLogin, f: Fetc
       totp_code: input.totpCode || undefined,
       recovery_code: input.recoveryCode || undefined,
       device_name: input.deviceName,
+      scope: DEVICE_SCOPE,
     },
     signal,
   );

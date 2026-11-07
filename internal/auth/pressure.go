@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"log/slog"
 	"net/netip"
 	"strconv"
 	"strings"
@@ -126,8 +127,8 @@ func knownPrefix(ip string) (string, bool) {
 // netHash is the keyed hash under which a network is stored for a user: the
 // database never contains addresses, and a leaked table cannot be matched
 // against address lists without the server key.
-func (s *Service) netHash(userID int64, prefix string) []byte {
-	m := hmac.New(sha256.New, s.master)
+func netHash(key []byte, userID int64, prefix string) []byte {
+	m := hmac.New(sha256.New, key)
 	m.Write([]byte("tuxmail known network|" + strconv.FormatInt(userID, 10) + "|" + prefix))
 	return m.Sum(nil)[:16]
 }
@@ -140,9 +141,14 @@ func (s *Service) recordKnownNetwork(ctx context.Context, userID int64, ip strin
 	}
 	ctx = context.WithoutCancel(ctx)
 	now := s.now().Unix()
+	key, err := s.networkKey(ctx)
+	if err != nil {
+		slog.Warn("auth: known network key", "err", err)
+		return
+	}
 	if _, err := s.db.ExecContext(ctx, `INSERT INTO login_known_networks(user_id, net_hash, first_seen, last_seen) VALUES (?,?,?,?)
 		ON CONFLICT(user_id, net_hash) DO UPDATE SET last_seen = excluded.last_seen`,
-		userID, s.netHash(userID, prefix), now, now); err != nil {
+		userID, netHash(key, userID, prefix), now, now); err != nil {
 		return
 	}
 	s.db.ExecContext(ctx, `DELETE FROM login_known_networks WHERE user_id = ? AND net_hash NOT IN
@@ -158,11 +164,24 @@ func (s *Service) networkKnown(ctx context.Context, userID int64, ip string) boo
 	if !ok {
 		return false
 	}
-	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM login_known_networks WHERE user_id = ? AND net_hash = ? AND last_seen > ?`,
-		userID, s.netHash(userID, prefix), s.now().Add(-knownNetworkTTL).Unix()).Scan(&n)
-	if err == nil && n > 0 {
-		return true
+	// Rows written before the key ring carry a hash under master.key: they are
+	// honoured while that key is around and age out with knownNetworkTTL.
+	var hashes [][]byte
+	if key, err := s.networkKey(ctx); err == nil {
+		hashes = append(hashes, netHash(key, userID, prefix))
+	} else {
+		slog.Warn("auth: known network key", "err", err)
+	}
+	if master := s.legacyMaster(); master != nil {
+		hashes = append(hashes, netHash(master, userID, prefix))
+	}
+	for _, h := range hashes {
+		var n int
+		err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM login_known_networks WHERE user_id = ? AND net_hash = ? AND last_seen > ?`,
+			userID, h, s.now().Add(-knownNetworkTTL).Unix()).Scan(&n)
+		if err == nil && n > 0 {
+			return true
+		}
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT ip FROM sessions WHERE user_id = ? AND expires_at > ?`, userID, s.now().Unix())
 	if err != nil {

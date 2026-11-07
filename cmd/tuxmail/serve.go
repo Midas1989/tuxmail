@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/auth"
@@ -68,6 +69,21 @@ func holdEngineLock(ctx context.Context, dir string, wait time.Duration, log *sl
 // built without `go generate ./web`, then a placeholder page is served).
 var webFS fs.FS = web.FS()
 
+// redactedLogKeys are attribute names whose value never reaches a log, wherever
+// the attribute comes from (Basis spec/BETRIEB.md: central redaction).
+var redactedLogKeys = []string{"password", "passwd", "passphrase", "secret", "token", "api_key", "apikey", "private_key", "authorization", "cookie"}
+
+func redactLogAttr(_ []string, a slog.Attr) slog.Attr {
+	k := strings.ToLower(a.Key)
+	for _, r := range redactedLogKeys {
+		if strings.Contains(k, r) {
+			a.Value = slog.StringValue("********")
+			break
+		}
+	}
+	return a
+}
+
 func newLogger(c config.Log, fallback io.Writer) (*slog.Logger, io.Closer, error) {
 	var lvl slog.Level
 	if err := lvl.UnmarshalText([]byte(c.Level)); err != nil {
@@ -82,7 +98,7 @@ func newLogger(c config.Log, fallback io.Writer) (*slog.Logger, io.Closer, error
 		}
 		w, closer = f, f
 	}
-	opts := &slog.HandlerOptions{Level: lvl}
+	opts := &slog.HandlerOptions{Level: lvl, ReplaceAttr: redactLogAttr}
 	var h slog.Handler = slog.NewJSONHandler(w, opts)
 	if c.Format == "text" {
 		h = slog.NewTextHandler(w, opts)
@@ -103,6 +119,14 @@ func (c *cli) serve(ctx context.Context, args []string) error {
 		return err
 	}
 	log, closer, err := newLogger(cfg.Log, c.stderr)
+	if err == nil {
+		if cfg.Auth.SessionLifetime.D() > config.MaxSessionLifetime {
+			log.Warn("auth.session_lifetime is limited to the maximum", "configured", cfg.Auth.SessionLifetime.D().String(), "effective", config.MaxSessionLifetime.String())
+		}
+		if cfg.Auth.SessionIdleTimeout.D() > config.MaxSessionIdle {
+			log.Warn("auth.session_idle_timeout is limited to the maximum", "configured", cfg.Auth.SessionIdleTimeout.D().String(), "effective", config.MaxSessionIdle.String())
+		}
+	}
 	if err != nil {
 		return err
 	}

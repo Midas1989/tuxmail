@@ -3,7 +3,11 @@
 package auth
 
 import (
+	"bytes"
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -490,7 +494,7 @@ func TestPasskeyRegistrationChecks(t *testing.T) {
 	if o.PublicKey.RP.ID != pkRPID || o.PublicKey.RP.Name != "TuxMail" || o.PublicKey.User.Name != "max" || o.PublicKey.Timeout != 300000 {
 		t.Fatalf("options: %s", opts)
 	}
-	if strings.Contains(o.PublicKey.User.ID, "max") || len(o.PublicKey.User.ID) < 80 { // 64 random bytes
+	if strings.Contains(o.PublicKey.User.ID, "max") || len(o.PublicKey.User.ID) < 40 { // 32 random bytes
 		t.Fatalf("user handle: %q", o.PublicKey.User.ID)
 	}
 
@@ -767,5 +771,72 @@ func TestPasskeyLoginChallengeTableIsBounded(t *testing.T) {
 	s.db.QueryRow(`SELECT COUNT(*) FROM passkey_challenges`).Scan(&n)
 	if n > maxPendingLoginChallenges {
 		t.Fatalf("%d pending ceremonies", n)
+	}
+}
+
+// Basis spec/PARAMETER.md: EdDSA, ES256, RS256 (RSA >= 2048) only.
+func TestPasskeyAlgorithms(t *testing.T) {
+	s, _ := newPasskeyService(t)
+	u := mustUser(t, s, "algo", RoleUser, goodPW)
+	_, creation, err := s.BeginPasskeyRegistration(context.Background(), u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := creation.Response.Parameters; len(got) != 3 {
+		t.Fatalf("offered algorithms: %+v", got)
+	}
+	cbor := func(major byte, n int) []byte {
+		switch {
+		case n < 24:
+			return []byte{major<<5 | byte(n)}
+		case n < 256:
+			return []byte{major<<5 | 24, byte(n)}
+		default:
+			return []byte{major<<5 | 25, byte(n >> 8), byte(n)}
+		}
+	}
+	bstr := func(n int) []byte { return append(cbor(2, n), bytes.Repeat([]byte{0xab}, n)...) }
+	neg := func(v int) []byte { return cbor(1, -1-v) }
+	rsa := func(bits int) []byte {
+		out := []byte{0xa4, 0x01, 0x03, 0x03}
+		out = append(out, neg(-257)...)
+		out = append(out, neg(-1)...)
+		out = append(out, bstr(bits/8)...)
+		out = append(out, neg(-2)...)
+		return append(out, cbor(2, 3)[0], 1, 0, 1)
+	}
+	if err := checkPasskeyKey(rsa(2048)); err != nil {
+		t.Errorf("RSA 2048: %v", err)
+	}
+	if err := checkPasskeyKey(rsa(1024)); err == nil {
+		t.Error("RSA 1024 accepted")
+	}
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ecdhKey, err := ecKey.PublicKey.ECDH()
+	if err != nil {
+		t.Fatal(err)
+	}
+	point := ecdhKey.Bytes() // 0x04 || X || Y
+	es := func(alg int) []byte {
+		out := []byte{0xa5, 0x01, 0x02, 0x03}
+		out = append(out, neg(alg)...)
+		out = append(out, neg(-1)...)
+		out = append(out, 0x01)
+		out = append(out, neg(-2)...)
+		out = append(append(out, cbor(2, 32)...), point[1:33]...)
+		out = append(out, neg(-3)...)
+		return append(append(out, cbor(2, 32)...), point[33:]...)
+	}
+	if err := checkPasskeyKey(es(-7)); err != nil {
+		t.Errorf("ES256: %v", err)
+	}
+	if err := checkPasskeyKey(es(-35)); err == nil {
+		t.Error("ES384 accepted")
+	}
+	if err := checkPasskeyKey([]byte{0x01}); err == nil {
+		t.Error("garbage accepted")
 	}
 }

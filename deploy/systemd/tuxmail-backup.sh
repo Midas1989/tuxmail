@@ -16,7 +16,7 @@
 #
 # Ergebnis: /var/backups/tuxmail/tuxmail-LABEL-JJJJMMTT-HHMMSS[-TAG].tar.zst.age
 #
-# Verschlüsselung: Das Archiv enthält master.key. Den öffentlichen Schlüssel legt die Oberfläche in
+# Verschlüsselung: Das Archiv enthält die Server-Schlüssel (secretbox.json, master.key). Den öffentlichen Schlüssel legt die Oberfläche in
 # /var/lib/tuxmail/backup/recipients.txt ab (Einstellungen → Administration → Sicherung). Ohne ihn endet das
 # Skript mit Exit 3 und ohne Datei, bevor der Dienst angehalten wird. Unverschlüsselt nur ausdrücklich:
 # TUXMAIL_BACKUP_ALLOW_PLAINTEXT=1 tuxmail-backup ...

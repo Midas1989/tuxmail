@@ -1,0 +1,14 @@
+{
+  "_hinweis": "Kopie des Abschnitts secretbox aus Basis spec/testvektoren.json. Nicht von Hand aendern.",
+  "secretbox": {
+    "keyring": {
+      "primary": "4db444c9",
+      "keys": {
+        "4db444c9": "MmrHzkPAFcrCegN0uiD8Q5JMSna3ett9-O_Br7MXo64"
+      }
+    },
+    "context": "users.totp_secret:1",
+    "token": "bx1.4db444c9.JHVfihDGbj2_DQcsg4GbsTYDS5xg-lr8eYOjYMFM-OhFaJ7LRVM29gNF9NA",
+    "plaintext": "JBSWY3DPEHPK3PXP"
+  }
+}

@@ -121,11 +121,11 @@ func clientNet(ip string) string {
 }
 
 // loginKeys are the two throttle counters of one login attempt.
-type loginKeys struct{ user, net string }
+type loginKeys struct{ user, net, ip string }
 
 func keysFor(login, ip string) loginKeys {
 	u := throttleKey(login)
-	return loginKeys{user: u, net: u + "|" + clientNet(ip)}
+	return loginKeys{user: u, net: u + "|" + clientNet(ip), ip: ip}
 }
 
 // checkKeys fails while the attempting network is locked for this login name.
@@ -139,6 +139,7 @@ func (s *Service) checkKeys(ctx context.Context, k loginKeys) error {
 func (s *Service) failKeys(ctx context.Context, k loginKeys) {
 	s.recordFailure(ctx, k.net, networkPolicy)
 	s.recordFailure(ctx, k.user, userPolicy)
+	s.hitRate(ctx, ipFailBucket(k.ip), ipFailLimit)
 }
 
 func (s *Service) checkThrottle(ctx context.Context, key string) error {
@@ -237,6 +238,10 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 		s.Audit(ctx, "login", req.Login, false, "throttled")
 		return nil, err
 	}
+	if err := s.checkRate(ctx, ipFailBucket(req.Client.IP), ipFailLimit); err != nil {
+		s.Audit(ctx, "login", req.Login, false, "throttled: too many failures from this address")
+		return nil, err
+	}
 	u, err := s.GetUserByName(ctx, req.Login)
 	if errors.Is(err, ErrNotFound) {
 		// Same answer as for an existing user from an unknown network while
@@ -314,8 +319,13 @@ func (s *Service) Login(ctx context.Context, req LoginRequest) (*LoginResult, er
 			}
 			return &LoginResult{MFARequired: true, Challenge: ch, User: u}, nil
 		}
+		if err := s.checkRate(ctx, totpBucket(u.ID), totpFailLimit); err != nil {
+			s.Audit(ctx, "login", u.Username, false, "throttled: too many wrong second factors")
+			return nil, err
+		}
 		if err := s.verifySecondFactor(ctx, u.ID, req.TOTPCode, req.RecoveryCode); err != nil {
 			s.failKeys(ctx, key)
+			s.hitRate(ctx, totpBucket(u.ID), totpFailLimit)
 			s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 			return nil, err
 		}
@@ -372,8 +382,13 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 		s.Audit(ctx, "login", u.Username, false, "disabled (second factor step)")
 		return nil, ErrInvalidCode
 	}
+	if err := s.checkRate(ctx, totpBucket(u.ID), totpFailLimit); err != nil {
+		s.Audit(ctx, "login", u.Username, false, "throttled: too many wrong second factors")
+		return nil, err
+	}
 	if err := s.verifySecondFactor(ctx, u.ID, totpCode, recoveryCode); err != nil {
 		s.failKeys(ctx, keysFor(u.Username, ci.IP))
+		s.hitRate(ctx, totpBucket(u.ID), totpFailLimit)
 		s.Audit(ctx, "login", u.Username, false, "wrong second factor")
 		return nil, err
 	}
@@ -417,7 +432,7 @@ func (s *Service) verifySecondFactor(ctx context.Context, userID int64, totpCode
 	if !enabled || enc == nil {
 		return ErrInvalidCode
 	}
-	secret, err := s.open(enc, fmt.Sprintf("totp:%d", userID))
+	secret, err := s.open(enc, secretTOTP.context(userID), secretTOTP.legacy(userID))
 	if err != nil {
 		return err
 	}
@@ -453,7 +468,7 @@ func (s *Service) BeginTOTP(ctx context.Context, userID int64) (*TOTPEnrollment,
 		return nil, fmt.Errorf("%w: two-factor authentication is already active", ErrExists)
 	}
 	secret := NewTOTPSecret()
-	enc, err := s.seal(secret, fmt.Sprintf("totp:%d", userID))
+	enc, err := s.seal(secret, secretTOTP.context(userID))
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +496,7 @@ func (s *Service) ConfirmTOTP(ctx context.Context, userID int64, code string) ([
 	if enabled || enc == nil {
 		return nil, ErrInvalidCode
 	}
-	secret, err := s.open(enc, fmt.Sprintf("totp:%d", userID))
+	secret, err := s.open(enc, secretTOTP.context(userID), secretTOTP.legacy(userID))
 	if err != nil {
 		return nil, err
 	}

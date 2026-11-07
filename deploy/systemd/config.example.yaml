@@ -30,7 +30,9 @@ trusted_proxies:
   - "::1/128"
 
 auth:
-  session_lifetime: "168h"
+  # Web-Sitzungen: höchstens 12 h ab Anmeldung und 2 h ohne Anfrage. Nur kürzer einstellbar.
+  session_lifetime: "12h"
+  session_idle_timeout: "2h"
   password_min_length: 12
   # disabled | invite
   registration: "disabled"

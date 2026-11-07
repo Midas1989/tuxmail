@@ -439,9 +439,11 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_auth_totp_required_for_admins` | `true` | TOTP-Pflicht für Admins. Ausgenommen sind nur Sitzungen, die einen eigenen zweiten Faktor mitbringen: per OIDC-Anmeldung entstandene (der IdP ist dort der zweite Faktor) und Passkey-Sitzungen (Nutzerverifizierung per PIN/Biometrie); wer sich als OIDC-verknüpfter oder Passkey-Admin mit lokalem Passwort anmeldet, muss TOTP einrichten |
 | `tuxmail_auth_passkeys_enabled` / `_rp_name` | `auto` / `TuxMail` | Passkeys (WebAuthn): `auto` = an bei https-`tuxmail_public_url` mit Hostnamen (oder `http://localhost`), sonst aus; `true`/`false` erzwingt. Ein Passkey-Login zählt als zwei Faktoren (erfüllt die TOTP-Pflicht der Admins), ein Passwort-Login nicht. **Ein Wechsel des Hostnamens von `tuxmail_public_url` macht alle registrierten Passkeys unbrauchbar** |
 | `tuxmail_security_expose_version` | `false` | `true`: `/healthz` und `/api/auth/config` nennen anonymen Clients die exakte Version (sonst nur `"product":"tuxmail"`) |
-| `tuxmail_security_hsts_include_subdomains` | `false` | `true`: `includeSubDomains` im HSTS-Header der Anwendung (nie `preload`) |
+| `tuxmail_security_hsts_include_subdomains` | `true` | `false`, wenn eine Subdomain kein HTTPS nutzt: ohne `includeSubDomains` im HSTS-Header der Anwendung (nie `preload`) |
+| `tuxmail_security_headers` / `tuxmail_security_hsts` | `true` / `true` | Sicherheits-Header bzw. HSTS der Anwendung; nur abschalten, wenn ein eigener Proxy sie setzt |
 | `tuxmail_auth_password_min_length` | `12` | Passwort-Mindestlänge |
-| `tuxmail_auth_session_lifetime` | `168h` | Sitzungsdauer |
+| `tuxmail_auth_session_lifetime` | `12h` | Höchstdauer einer Web-Sitzung ab Anmeldung (längere Werte werden auf 12 h begrenzt) |
+| `tuxmail_auth_session_idle_timeout` | `2h` | Web-Sitzung endet nach dieser Zeit ohne Anfrage (längere Werte werden auf 2 h begrenzt) |
 | `tuxmail_login_rate_per_minute` | `10` | Login-Ratenbegrenzung |
 | `tuxmail_security_allow_private_networks` | `false` | SSRF-Schutz: `true` erlaubt Benutzern Verbindungen in private Netze/zu Loopback (z. B. Mailserver im LAN) – gilt für alle Benutzer (`security.allow_private_networks`) |
 | `tuxmail_security_allowed_networks_extra` | `[]` | immer erlaubte Ziele, IP/CIDR optional mit Port, z. B. `["192.168.10.5:993"]`; der lokale Matrix-Homeserver der Bridges wird automatisch ergänzt (`security.allowed_networks`) |
@@ -464,7 +466,7 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_nginx_strip_subpath` | `false` | Unterpfad vor dem Weiterreichen entfernen |
 | `tuxmail_nginx_csp` | `""` | `""` = die CSP von TuxMail gilt allein; sonst ersetzt nginx sie durch genau diese (nie zwei CSP-Header) |
 | `tuxmail_nginx_snippet_frame_options` | `""` | nur Snippet-Modus: `X-Frame-Options` (z. B. `SAMEORIGIN`) statt `DENY` von TuxMail; sonst bleibt `DENY` |
-| `tuxmail_nginx_hsts_max_age` / `_include_subdomains` / `_preload` | `31536000` / `false` / `false` | HSTS von nginx; `includeSubDomains` erst, wenn alle Subdomains HTTPS können |
+| `tuxmail_nginx_hsts_max_age` / `_include_subdomains` / `_preload` | `63072000` / `true` / `false` | HSTS von nginx; `includeSubDomains` erst, wenn alle Subdomains HTTPS können |
 | `tuxmail_nginx_upstream_terminates_tls` | `false` | bei `tuxmail_tls_mode=none`: ein vorgelagerter Proxy beendet TLS → `X-Forwarded-Proto https`; sonst `$scheme` |
 | `tuxmail_nginx_ocsp_stapling` / `_resolver` | custom: `true`, sonst `false` / DNS-Server des Hosts | OCSP-Stapling im TLS-vHost (Let's Encrypt hat keine OCSP-Responder mehr) |
 | `tuxmail_nginx_ipv6` | automatisch | auch auf `[::]` lauschen |
@@ -551,11 +553,12 @@ oder `sudo /usr/local/sbin/tuxmail-backup --full --stop manual 10` (alles, Diens
 | Datei | Bedeutung |
 |---|---|
 | `server.db` | Server-Datenbank (Benutzer, Sitzungen, Einstellungen) |
-| `master.key` | **Hauptschlüssel** (0600). Ohne ihn sind gespeicherte Benutzer-Geheimnisse (Mail-Passwörter, Tokens) und TOTP-Daten unlesbar. TuxMail startet nicht, wenn die Datei für Gruppe/Andere lesbar ist. |
+| `secretbox.json` | **Schlüsselring** (0600), Format `bx1`, siehe „Schlüssel rotieren“. Ohne ihn sind gespeicherte Benutzer-Geheimnisse (Mail-Passwörter, Tokens) und TOTP-Geheimnisse verloren. |
+| `master.key` | **Älterer Hauptschlüssel** (0600), für Werte im alten Format und bis `tuxmail keys retire-legacy`. Ohne ihn sind gespeicherte Benutzer-Geheimnisse (Mail-Passwörter, Tokens) und TOTP-Daten unlesbar. TuxMail startet nicht, wenn die Datei für Gruppe/Andere lesbar ist. |
 | `vapid.json` | Web-Push-Schlüssel (0600). Bei Verlust funktionieren bestehende Push-Abonnements nicht mehr – bei Neuinstallation übernehmen. |
 | `users/<id>/` | je Benutzer `tuxmail.db` und `secrets.vault` |
 
-Die Sicherungen enthalten `master.key` und werden mit [age](https://age-encryption.org) verschlüsselt. Das Skript
+Die Sicherungen enthalten `secretbox.json` und `master.key` und werden mit [age](https://age-encryption.org) verschlüsselt. Das Skript
 erzeugt sie mit `umask 077` (Archive 0600, Verzeichnis 0700). Beim Zurückspielen Rechte erhalten (`tar -p` als root).
 
 **Was die tägliche Sicherung enthält.** TuxMail ist ein Mailclient, die Mails liegen beim Mailserver. Darum sichert
@@ -563,7 +566,7 @@ der Job (`tuxmail backup-settings`) nur, was sich nicht neu holen lässt:
 
 | Enthalten | Nicht enthalten |
 |---|---|
-| `server.db` (Benutzer, Gruppen, Sitzungen, Audit-Log, Team-Postfächer und -Rechte), `master.key`, `vapid.json`, öffentlicher Backup-Schlüssel | Mails samt Metadaten und Anhänge, gesamter Blob-Speicher außer den Signaturbildern |
+| `server.db` (Benutzer, Gruppen, Sitzungen, Audit-Log, Team-Postfächer und -Rechte), `secretbox.json`, `master.key`, `vapid.json`, öffentlicher Backup-Schlüssel | Mails samt Metadaten und Anhänge, gesamter Blob-Speicher außer den Signaturbildern |
 | je Benutzer und Team-Postfach `secrets.vault` (Passwörter, Tokens, private Schlüssel) | Chat-Verläufe und Messenger-Sitzungen (`plugins/`): Messenger-Konten müssen neu gekoppelt werden |
 | aus `tuxmail.db`: Konten, Identitäten, Ordnerkonfiguration, Regeln und Workflows, Tags, Projekte ohne Zuordnungen, Suchordner, Signaturen, Textbausteine, S/MIME-Zertifikate, Abwesenheit, Einstellungen | Kalendereinträge, Kontakte, Such-Index, Caches, Warteschlangen, Suchverlauf, geplante Nachrichten, angelernter Spam- und Kategorienfilter, Team-Kommentare und -Entwürfe |
 
@@ -632,6 +635,22 @@ der Dienst angehalten wird. Das Playbook bricht deshalb nicht ab: Es warnt, auch
 Versionswechsel entfällt, und der Rollout läuft weiter. Wer bewusst unverschlüsselt sichert (Archive sind nur für root
 lesbar), setzt `tuxmail_backup_allow_plaintext: true` bzw. startet das Skript manuell mit
 `TUXMAIL_BACKUP_ALLOW_PLAINTEXT=1`. Eine beschädigte Schlüsseldatei stoppt den Lauf in jedem Fall.
+
+## Schlüssel rotieren
+
+Geheimnisse (Daten-Schlüssel der Benutzer, TOTP, Team-Tresore) liegen im Format `bx1` unter dem Schlüsselring
+`secretbox.json`. Werte im alten Format bleiben lesbar, solange `master.key` da ist. Alle Befehle als Dienstbenutzer, Dienst darf laufen:
+
+```bash
+tuxmail keys status         # Werte je Schlüssel; „waiting for keys rewrap“ soll 0 werden
+tuxmail keys rewrap         # stellt alles auf den Primärschlüssel um; wiederholbar, Abbruch jederzeit möglich
+tuxmail keys rotate         # neuer Primärschlüssel; danach secretbox.json sichern, dann keys rewrap
+tuxmail keys retire --kid K # entfernt einen alten Schlüssel, verweigert das, solange ein Wert ihn nutzt
+tuxmail keys retire-legacy  # benennt master.key um, verweigert das, solange ein Wert es nutzt
+```
+
+`tuxmail keys rollback --yes` (Dienst gestoppt, vorher sichern) bringt Daten und Schema zurück auf die Vorversion, solange
+`master.key` noch vorhanden ist. Danach sofort die Vorversion starten.
 
 ## 8. Benutzerverwaltung
 
@@ -721,6 +740,7 @@ root-Datei in `/run`), nicht mit dem Passwort in der Kommandozeile.
 |---|---|
 | Health-Check schlägt fehl | `journalctl -u tuxmail -n 100`; `sudo runuser -u tuxmail -- tuxmail check-config --config /etc/tuxmail/config.yaml`; `curl -v http://127.0.0.1:8080/healthz`. Bei Problemen nach einem Update: Rollback (Abschnitt 6). |
 | `check-config` lehnt Konfiguration ab | Fehlermeldung im Ansible-Output (validate); unbekannte Schlüssel, fehlende TLS-/Secret-/Logdatei, Rechte. |
+| Dienst startet nicht: „secretbox.json is missing“ oder „master.key is missing“ | Datei aus der Sicherung zurückholen; der Dienst legt absichtlich keinen neuen Schlüssel an, weil die Daten sonst unlesbar blieben |
 | Dienst startet nicht: „master.key permissions“ | `sudo chmod 600 /var/lib/tuxmail/master.key && sudo chown tuxmail:tuxmail /var/lib/tuxmail/master.key` |
 | `nginx -t` schlägt fehl (existing) | Der vorherige Zustand wurde wiederhergestellt. Häufig: doppelter `server_name`, Port-/`default_server`-Konflikte. Fehlermeldung mit `sudo nginx -t` ansehen. |
 | „existiert bereits und wurde nicht von diesem Playbook angelegt“ | Eine fremde Datei hat denselben Namen: `tuxmail_nginx_vhost_name` bzw. `tuxmail_nginx_snippet_path` ändern. |

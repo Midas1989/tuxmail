@@ -5,7 +5,10 @@ package server
 import (
 	"bufio"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -25,6 +28,7 @@ const (
 	ctxClient ctxKey = iota
 	ctxAuth
 	ctxCSRF
+	ctxRequestID
 )
 
 // client is the resolved peer of a request (after trusted proxy handling).
@@ -106,6 +110,22 @@ func (s *Server) clientInfo(next http.Handler) http.Handler {
 	})
 }
 
+// withRequestID gives every request an id: in the response header X-Request-ID
+// and in the log, so that a support case can be matched (Basis spec/BETRIEB.md).
+// An id sent by the client is not taken over, it would end up in the log.
+func (s *Server) withRequestID(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		id := randomToken()[:16]
+		w.Header().Set("X-Request-ID", id)
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), ctxRequestID, id)))
+	})
+}
+
+func requestID(r *http.Request) string {
+	id, _ := r.Context().Value(ctxRequestID).(string)
+	return id
+}
+
 func (s *Server) recoverPanics(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -113,7 +133,7 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 				if v == http.ErrAbortHandler {
 					panic(v)
 				}
-				s.log.Error("panic in handler", "panic", v, "path", r.URL.Path, "stack", string(debug.Stack()))
+				s.log.Error("panic in handler", "request_id", requestID(r), "panic", v, "path", r.URL.Path, "stack", string(debug.Stack()))
 				writeError(w, http.StatusInternalServerError, "internal", "internal server error")
 			}
 		}()
@@ -161,7 +181,7 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 		}
 		// Never log query strings: they may contain codes or tokens.
 		lvl("http request", "method", r.Method, "path", r.URL.Path, "status", sw.status,
-			"duration_ms", time.Since(start).Milliseconds(), "ip", clientFrom(r).IP)
+			"duration_ms", time.Since(start).Milliseconds(), "ip", clientFrom(r).IP, "request_id", requestID(r))
 	})
 }
 
@@ -169,26 +189,29 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 // a sandboxed iframe by the frontend.
 const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob:; " +
-	"worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+	"worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; " +
+	"script-src-attr 'none'"
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
-	hsts := s.cfg.SecureCookies()
-	// includeSubDomains only on request (security.hsts_include_subdomains):
-	// it commits every subdomain of the host to HTTPS for a year. "preload"
-	// is never sent.
-	hstsValue := "max-age=31536000"
+	hsts := s.cfg.SecureCookies() && s.cfg.Security.HSTS
+	headers := s.cfg.Security.Headers
+	// Two years (Basis spec/PARAMETER.md). security.hsts_include_subdomains can
+	// switch off includeSubDomains, "preload" is never sent.
+	hstsValue := "max-age=63072000"
 	if s.cfg.Security.HSTSIncludeSubdomains {
 		hstsValue += "; includeSubDomains"
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "same-origin")
-		h.Set("Cross-Origin-Opener-Policy", "same-origin")
-		h.Set("Cross-Origin-Resource-Policy", "same-origin")
-		h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
-		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		if headers {
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+			h.Set("Cross-Origin-Opener-Policy", "same-origin")
+			h.Set("Cross-Origin-Resource-Policy", "same-origin")
+			h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
+			h.Set("Content-Security-Policy", contentSecurityPolicy)
+		}
 		if hsts {
 			h.Set("Strict-Transport-Security", hstsValue)
 		}
@@ -253,7 +276,8 @@ func (s *Server) cookie(r *http.Request, name string) string {
 }
 
 // csrfExempt endpoints are called by native clients without cookies and
-// return tokens in the response body only.
+// return tokens in the response body only: there is no session a forged request
+// could abuse, and the answer does not reach a cross-site caller.
 var csrfExempt = map[string]bool{
 	"/api/device/authorize": true,
 	"/api/device/token":     true,
@@ -264,45 +288,108 @@ func safeMethod(m string) bool {
 	return m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions
 }
 
-// csrf protects cookie-authenticated state-changing API requests with two
-// independent checks: the Origin (or Referer) must be our public origin, and
-// the X-CSRF-Token header must match the CSRF cookie (double submit). The
-// session cookie is additionally SameSite=Lax. Requests authenticated with an
-// Authorization header carry no ambient credentials and are exempt.
+// csrfTokenFor is the token of a session: HMAC-SHA256(session secret,
+// "basis-csrf-v1") in hex (Basis spec/WEB.md, python/basis_sec/csrf.py). The
+// session secret is the value of the session cookie.
+func csrfTokenFor(sessionSecret string) string {
+	m := hmac.New(sha256.New, []byte(sessionSecret))
+	m.Write([]byte("basis-csrf-v1"))
+	return hex.EncodeToString(m.Sum(nil))
+}
+
+// wsCSRFProtocol is the subprotocol prefix that carries the CSRF token of a
+// browser's WebSocket handshake: browsers cannot set headers there.
+const wsCSRFProtocol = "tuxmail.csrf."
+
+// csrf protects cookie-authenticated requests with two independent checks
+// (Basis spec/WEB.md).
+//
+//  1. Origin: state-changing requests need Sec-Fetch-Site same-origin or none;
+//     without that header Origin or Referer must be ours; without both they are
+//     refused (originAllowed).
+//  2. Token: X-CSRF-Token must be the HMAC of the session cookie. Before a login
+//     there is no session; the login requests themselves carry a double-submit
+//     token instead (SameSite=Strict cookie), which is replaced by the HMAC when
+//     the session starts.
+//
+// The WebSocket handshake with a session cookie is a GET but changes state in the
+// sense of the specification: it passes the same checks, with the token as
+// subprotocol. Requests authenticated with an Authorization header (device
+// tokens) carry no ambient credentials and are exempt.
 func (s *Server) csrf(next http.Handler) http.Handler {
 	public := s.cfg.PublicOrigin()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		want := s.cookie(r, csrfCookie)
-		current := want
-		if len(want) < 32 {
-			want = "" // missing or not issued by us: the request below must fail
-			current = randomToken()
-			s.setCookie(w, csrfCookie, current, 0, false, http.SameSiteStrictMode)
+		cookieVal := s.cookie(r, csrfCookie)
+		var want, current string
+		if sess := s.cookie(r, sessionCookie); sess != "" {
+			want = csrfTokenFor(sess)
+			current = want
+			if cookieVal != want {
+				s.setCookie(w, csrfCookie, current, 0, false, http.SameSiteStrictMode)
+			}
+		} else {
+			want, current = cookieVal, cookieVal
+			if len(want) < 32 {
+				want = "" // missing or not issued by us: the request below must fail
+				current = randomToken()
+				s.setCookie(w, csrfCookie, current, 0, false, http.SameSiteStrictMode)
+			}
 		}
 		r = r.WithContext(context.WithValue(r.Context(), ctxCSRF, current))
-		if safeMethod(r.Method) || !isAPI(r.URL.Path) || csrfExempt[r.URL.Path] || bearerToken(r) != "" {
-			next.ServeHTTP(w, r)
-			return
-		}
-		if !s.originAllowed(r, public) {
-			writeError(w, http.StatusForbidden, "csrf", "cross-origin request rejected")
-			return
-		}
-		got := r.Header.Get(csrfHeader)
-		if got == "" || want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
-			writeError(w, http.StatusForbidden, "csrf", "missing or invalid CSRF token")
-			return
+		exempt := !isAPI(r.URL.Path) || csrfExempt[r.URL.Path] || bearerToken(r) != ""
+		switch {
+		case exempt:
+		case r.URL.Path == "/api/events" && r.Method == http.MethodGet && strings.EqualFold(r.Header.Get("Upgrade"), "websocket"):
+			if !s.originAllowed(r, public) {
+				writeError(w, http.StatusForbidden, "csrf", "cross-origin request rejected")
+				return
+			}
+			if !tokenMatches(wsCSRFToken(r), want) {
+				writeError(w, http.StatusForbidden, "csrf", "missing or invalid CSRF token")
+				return
+			}
+		case !safeMethod(r.Method):
+			if !s.originAllowed(r, public) {
+				writeError(w, http.StatusForbidden, "csrf", "cross-origin request rejected")
+				return
+			}
+			if !tokenMatches(r.Header.Get(csrfHeader), want) {
+				writeError(w, http.StatusForbidden, "csrf", "missing or invalid CSRF token")
+				return
+			}
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
+func tokenMatches(got, want string) bool {
+	return got != "" && want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// wsCSRFToken returns the token a browser offered as WebSocket subprotocol.
+func wsCSRFToken(r *http.Request) string {
+	for _, v := range r.Header.Values("Sec-WebSocket-Protocol") {
+		for _, p := range strings.Split(v, ",") {
+			if t, ok := strings.CutPrefix(strings.TrimSpace(p), wsCSRFProtocol); ok {
+				return t
+			}
+		}
+	}
+	return ""
+}
+
+// originAllowed is the first CSRF layer, see csrf. An Origin that a request does
+// carry must be ours in any case, also next to Sec-Fetch-Site.
 func (s *Server) originAllowed(r *http.Request, public string) bool {
+	site := r.Header.Get("Sec-Fetch-Site")
+	if site != "" && site != "same-origin" && site != "none" {
+		return false
+	}
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		ref := r.Header.Get("Referer")
 		if ref == "" {
-			return true // non-browser client; the token check still applies
+			return site != "" // neither Sec-Fetch-Site nor Origin nor Referer: refuse
 		}
 		u, err := url.Parse(ref)
 		if err != nil {
@@ -397,12 +484,41 @@ func (s *Server) withAuth(check func(http.ResponseWriter, *authInfo) bool, h han
 	}
 }
 
-// user requires any logged-in user (cookie session or device token).
-func (s *Server) user(h handlerFunc) http.HandlerFunc { return s.withAuth(nil, h) }
+// requireScope lets browser sessions through and device tokens only with scope.
+func requireScope(scope string) func(http.ResponseWriter, *authInfo) bool {
+	return func(w http.ResponseWriter, a *authInfo) bool {
+		if a.Session.Kind == auth.KindDevice && !a.Session.HasScope(scope) {
+			writeError(w, http.StatusForbidden, "insufficient_scope", "this device token does not allow this ("+scope+")")
+			return false
+		}
+		return true
+	}
+}
+
+// signedIn requires any valid session or device token, whatever its scopes: for
+// what concerns only the session itself (who am I, sign out).
+func (s *Server) signedIn(h handlerFunc) http.HandlerFunc { return s.withAuth(nil, h) }
+
+// user requires a logged-in user (cookie session or device token with the scope
+// for the user's own data).
+func (s *Server) user(h handlerFunc) http.HandlerFunc {
+	return s.withAuth(requireScope(auth.ScopeData), h)
+}
+
+// provisioning requires a cookie session or a device token with that scope.
+func (s *Server) provisioning(h handlerFunc) http.HandlerFunc {
+	return s.withAuth(requireScope(auth.ScopeProvisioning), h)
+}
 
 // admin requires the admin role and, if configured, an enrolled second factor.
+// Administration is impossible with a device token, whoever it belongs to: it is
+// a long-lived credential on a device that can get lost (AUDIT-A I-01).
 func (s *Server) admin(h handlerFunc) http.HandlerFunc {
 	return s.withAuth(func(w http.ResponseWriter, a *authInfo) bool {
+		if a.Session.Kind == auth.KindDevice {
+			writeError(w, http.StatusForbidden, "device_token_forbidden", "administration needs a browser session")
+			return false
+		}
 		if !a.User.IsAdmin() {
 			writeError(w, http.StatusForbidden, "forbidden", "administrator role required")
 			return false
@@ -424,4 +540,13 @@ func (s *Server) device(h handlerFunc) http.HandlerFunc {
 		}
 		return true
 	}, h)
+}
+
+// deviceProvisioning is device plus the provisioning scope.
+func (s *Server) deviceProvisioning(h handlerFunc) http.HandlerFunc {
+	return s.device(func(w http.ResponseWriter, r *http.Request, a *authInfo) {
+		if requireScope(auth.ScopeProvisioning)(w, a) {
+			h(w, r, a)
+		}
+	})
 }

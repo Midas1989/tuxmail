@@ -3,12 +3,11 @@
 package auth
 
 import (
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 
@@ -24,8 +23,8 @@ func (s *Service) TeamDir(id int64) string {
 
 // TeamSecrets returns the secret store of a team mailbox (its mail password
 // or OAuth token): an internal/secrets Vault at data_dir/teams/<id>/secrets.vault
-// whose password is derived from the server master key (HMAC-SHA256 over
-// "team-vault:<id>"), so it is protected by the KEK like the user DEKs.
+// whose password is the team key from teamVaultKey (keys.go), wrapped under the
+// key ring in server_keys and so protected by the KEK like the user DEKs.
 // Vaults are cached next to the user vaults (under the negated id).
 func (s *Service) TeamSecrets(teamID int64) (domain.SecretStore, error) {
 	if teamID <= 0 {
@@ -36,11 +35,12 @@ func (s *Service) TeamSecrets(teamID int64) (domain.SecretStore, error) {
 	if v, ok := s.vaults[-teamID]; ok {
 		return v, nil
 	}
-	mac := hmac.New(sha256.New, s.master)
-	fmt.Fprintf(mac, "team-vault:%d", teamID)
-	key := mac.Sum(nil)
+	key, err := s.teamVaultKey(context.Background(), teamID)
+	if err != nil {
+		return nil, fmt.Errorf("auth: team secrets: %w", err)
+	}
 	defer clear(key)
-	pw := []byte(base64.StdEncoding.EncodeToString(key))
+	pw := vaultPassword(key)
 	defer clear(pw)
 	dir := s.TeamDir(teamID)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -62,4 +62,9 @@ func (s *Service) TeamSecrets(teamID int64) (domain.SecretStore, error) {
 }
 
 // DropTeamSecrets locks and forgets the cached vault of a deleted team mailbox.
-func (s *Service) DropTeamSecrets(teamID int64) { s.dropVault(-teamID) }
+func (s *Service) DropTeamSecrets(teamID int64) {
+	s.dropVault(-teamID)
+	if _, err := s.db.ExecContext(context.Background(), `DELETE FROM server_keys WHERE name = ?`, teamKeyName(teamID)); err != nil {
+		slog.Warn("auth: removing team key", "team", teamID, "err", err)
+	}
+}

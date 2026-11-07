@@ -532,8 +532,8 @@ func TestDeviceFlow(t *testing.T) {
 	if err != nil || res.Session.Kind != KindDevice || len(res.Session.ClientPubKey) != 32 {
 		t.Fatal(err)
 	}
-	if res.Session.ExpiresAt.Sub(clk.Now()) < 300*24*time.Hour {
-		t.Fatal("device token too short-lived")
+	if res.Session.ExpiresAt.Sub(clk.Now()) != DeviceTokenLifetime {
+		t.Fatal("device token lifetime", res.Session.ExpiresAt)
 	}
 	if _, err := s.PollDeviceToken(ctx, g.DeviceCode); !errors.Is(err, ErrExpiredToken) {
 		t.Fatal("token issued twice", err)

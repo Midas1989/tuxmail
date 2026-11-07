@@ -6,7 +6,7 @@ import "github.com/Midas1989/Mailclient/internal/netguard"
 
 // Security configures the outbound connection policy of the server mode
 // (SSRF protection, internal/netguard) and two server hardening switches
-// (ExposeVersion, HSTSIncludeSubdomains). By default users can only make the
+// (ExposeVersion, Headers, HSTS, HSTSIncludeSubdomains). By default users can only make the
 // server connect to public addresses: loopback, private networks,
 // link-local addresses and cloud metadata endpoints are refused for every
 // user-configured destination (mail, calendar, cloud and messenger
@@ -38,11 +38,16 @@ type Security struct {
 	// to server" flow) still recognise the server. Authenticated users
 	// (diagnostics, provisioning profile) always see the version.
 	ExposeVersion bool `yaml:"expose_version"`
-	// HSTSIncludeSubdomains adds includeSubDomains to the
-	// Strict-Transport-Security header sent for HTTPS deployments (default
-	// off). Enable it only when EVERY subdomain of the host name is served
-	// over HTTPS: browsers then refuse plain HTTP for all of them for a year.
-	// "preload" is never sent: it cannot be undone quickly.
+	// Headers sends the security headers from the application (default on).
+	// Switch it off only where a reverse proxy on your own server sets them
+	// all (Basis ADR 0007 no. 11).
+	Headers bool `yaml:"headers"`
+	// HSTS sends Strict-Transport-Security for HTTPS deployments (default on).
+	HSTS bool `yaml:"hsts"`
+	// HSTSIncludeSubdomains adds includeSubDomains to that header (default
+	// on, Basis spec/PARAMETER.md). Turn it off if a subdomain of the host name
+	// is not served over HTTPS: browsers refuse plain HTTP for all of them for
+	// two years. "preload" is never sent: it cannot be undone quickly.
 	HSTSIncludeSubdomains bool `yaml:"hsts_include_subdomains"`
 }
 

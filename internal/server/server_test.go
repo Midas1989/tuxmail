@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -92,6 +93,8 @@ type browser struct {
 	csrf   string
 	bearer string
 	header http.Header
+	// noOrigin: a native client, which sends no Origin header.
+	noOrigin bool
 }
 
 func (e *env) browser() *browser {
@@ -113,6 +116,10 @@ func (b *browser) do(method, path string, body any) (*http.Response, map[string]
 	if b.csrf != "" {
 		req.Header.Set(csrfHeader, b.csrf)
 	}
+	// Like a browser: state-changing requests name their origin. Native clients do not.
+	if !b.noOrigin {
+		req.Header.Set("Origin", b.e.ts.URL)
+	}
 	if b.bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+b.bearer)
 	}
@@ -128,6 +135,24 @@ func (b *browser) do(method, path string, body any) (*http.Response, map[string]
 	var m map[string]any
 	json.Unmarshal(raw, &m)
 	return resp, m
+}
+
+func (b *browser) cookieJarURL() *url.URL {
+	u, _ := url.Parse(b.e.ts.URL)
+	return u
+}
+
+func (b *browser) sessionCookieValue() string {
+	for _, c := range b.c.Jar.Cookies(b.cookieJarURL()) {
+		if c.Name == sessionCookie {
+			return c.Value
+		}
+	}
+	return ""
+}
+
+func (b *browser) setSessionCookie(v string) {
+	b.c.Jar.SetCookies(b.cookieJarURL(), []*http.Cookie{{Name: sessionCookie, Value: v, Path: "/"}})
 }
 
 func (b *browser) fetchCSRF() {
@@ -517,7 +542,8 @@ func TestTrustedProxy(t *testing.T) {
 	e := newEnv(t, Options{})
 	e.user("gil", auth.RoleUser)
 	b := e.browser()
-	b.header = http.Header{"X-Forwarded-For": {"198.51.100.7, 127.0.0.1"}, "X-Forwarded-Proto": {"https"}}
+	b.header = http.Header{"X-Forwarded-For": {"198.51.100.7, 127.0.0.1"}, "X-Forwarded-Proto": {"https"},
+		"Origin": {"https://" + strings.TrimPrefix(e.ts.URL, "http://")}}
 	b.login("gil")
 	_, m := b.do("GET", "/api/auth/me", nil)
 	if ip := m["session"].(map[string]any)["ip"]; ip != "198.51.100.7" {

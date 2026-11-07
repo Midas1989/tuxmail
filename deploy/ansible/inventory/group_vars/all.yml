@@ -64,8 +64,8 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_security_allow_private_networks: false   # true = Benutzer dürfen private Netze/Loopback erreichen
 # tuxmail_security_allowed_networks_extra: []      # z. B. ["192.168.10.5:993"]
 # tuxmail_security_expose_version: false           # true = /healthz nennt anonymen Clients die Version
-# tuxmail_security_hsts_include_subdomains: false  # true = includeSubDomains im HSTS der Anwendung
-# tuxmail_auth_session_lifetime: "168h"
+# tuxmail_security_hsts_include_subdomains: true  # false, wenn eine Subdomain kein HTTPS nutzt
+# tuxmail_auth_session_lifetime: "12h"  # nur kürzer einstellbar, Leerlauf: tuxmail_auth_session_idle_timeout
 # tuxmail_auth_password_min_length: 12
 # tuxmail_auth_registration: disabled       # disabled | invite
 # tuxmail_auth_totp_required_for_admins: true
@@ -112,10 +112,10 @@ tuxmail_tls_letsencrypt_email: "admin@example.org"
 # tuxmail_nginx_strip_subpath: false
 # tuxmail_nginx_proxy_timeout: 300
 # tuxmail_nginx_websocket_timeout: 3600
-# tuxmail_nginx_hsts_max_age: 31536000
+# tuxmail_nginx_hsts_max_age: 63072000
 # tuxmail_nginx_csp: ""                     # leer = CSP von TuxMail; sonst ersetzt nginx sie
 # tuxmail_nginx_snippet_frame_options: ""   # Snippet-Modus: z. B. "SAMEORIGIN" statt DENY
-# tuxmail_nginx_hsts_include_subdomains: false
+# tuxmail_nginx_hsts_include_subdomains: true
 # tuxmail_nginx_upstream_terminates_tls: false   # tls_mode=none hinter einem TLS-beendenden Proxy: true
 # tuxmail_nginx_ocsp_stapling: (auto)       # custom-Zertifikat: an; Let's Encrypt: aus
 # tuxmail_nginx_extra_server_config: ""

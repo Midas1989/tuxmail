@@ -229,6 +229,7 @@ func TestAuditA09BodyLimit(t *testing.T) {
 			req.Body = io.NopCloser(io.MultiReader(body))
 		}
 		req.Header.Set(csrfHeader, b.csrf)
+		req.Header.Set("Origin", e.ts.URL)
 		req.Header.Set("X-Filename", "big.mbox")
 		resp, err := b.c.Do(req)
 		if err != nil {

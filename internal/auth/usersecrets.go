@@ -19,13 +19,16 @@ import (
 // so key stretching adds no security.
 var vaultKDF = secrets.KDFParams{Time: 1, MemoryKiB: 64, Threads: 1}
 
+// vaultPassword is the password of a vault from its key.
+func vaultPassword(key []byte) []byte { return []byte(base64.StdEncoding.EncodeToString(key)) }
+
 // userDEK unwraps the user's data encryption key with the master key.
 func (s *Service) userDEK(ctx context.Context, userID int64) ([]byte, error) {
 	var wrapped []byte
 	if err := s.db.QueryRowContext(ctx, `SELECT dek_wrapped FROM users WHERE id = ?`, userID).Scan(&wrapped); err != nil {
 		return nil, ErrNotFound
 	}
-	return s.open(wrapped, fmt.Sprintf("dek:%d", userID))
+	return s.open(wrapped, secretDEK.context(userID), secretDEK.legacy(userID))
 }
 
 // UserSecrets returns the user's secret store (mail passwords, OAuth tokens)
@@ -43,7 +46,7 @@ func (s *Service) UserSecrets(ctx context.Context, userID int64) (domain.SecretS
 		return nil, err
 	}
 	defer clear(dek)
-	pw := []byte(base64.StdEncoding.EncodeToString(dek))
+	pw := vaultPassword(dek)
 	defer clear(pw)
 	if err := os.MkdirAll(s.UserDir(userID), 0o700); err != nil {
 		return nil, err

@@ -61,7 +61,7 @@ const grant: DeviceGrant = { deviceCode: 'dc', userCode: 'ABCD-EFGH', verificati
 describe('device flow', () => {
   it('starts the authorization with snake_case fields', async () => {
     const f = fakeFetch((_url, init) => {
-      expect(JSON.parse(String(init?.body))).toEqual({ client_name: 'TuxMail Android' });
+      expect(JSON.parse(String(init?.body))).toEqual({ client_name: 'TuxMail Android', scope: 'data' });
       return { status: 200, body: { device_code: 'dc', user_code: 'ABCD-EFGH', verification_uri: 'https://s/device', verification_uri_complete: 'https://s/device?user_code=ABCD-EFGH', interval: 5, expires_in: 600 } };
     });
     expect(await startDeviceAuthorization('https://s', 'TuxMail Android', f)).toEqual(grant);
@@ -107,7 +107,7 @@ describe('directLogin', () => {
       expect(url).toBe('https://s/api/device/login');
       const b = JSON.parse(String(init?.body));
       if (!b.totp_code) return { status: 401, body: { error: 'mfa_required', error_description: 'two-factor code required' } };
-      expect(b).toEqual({ username: 'anna', password: 'pw', totp_code: '123456', device_name: 'Phone' });
+      expect(b).toEqual({ username: 'anna', password: 'pw', totp_code: '123456', device_name: 'Phone', scope: 'data' });
       return { status: 200, body: { access_token: 'tok' } };
     });
     await expect(directLogin('https://s', { username: 'anna', password: 'pw', deviceName: 'Phone' }, f)).rejects.toMatchObject({ code: 'mfa_required', status: 401 });

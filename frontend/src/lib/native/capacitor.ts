@@ -17,7 +17,7 @@ import { Capacitor } from '@capacitor/core';
 import { app, prefs, team } from '../state';
 import { t } from '../i18n/index.svelte';
 import { App, Browser, Preferences, SplashScreen, SystemBars, SystemBarsStyle, TuxMail, type PushRegistration, type SharePayload } from './plugins';
-import { ProfileStore, type KeyValueStore, type ServerProfile } from './profiles';
+import { ProfileStore, tokenKey, type KeyValueStore, type ServerProfile } from './profiles';
 import { ACTIVE_MIRROR_KEY, readActiveMirror, setSessionToken, setUnauthorizedHandler, writeActiveMirror } from './session';
 import { decideBack, dispatchBackEvent, parseConnectLink, parseDeepLink, type BackAction, type DeepLinkTarget } from './navigation';
 import { dispatchShare, dropFiles, shareRecipients, shareSubject, shareTextToHtml, sharedFilesToFiles, waitForElement } from './share';
@@ -35,6 +35,7 @@ import AppLock from './AppLock.svelte';
 import NativeSettings from './NativeSettings.svelte';
 import nativeCss from './native.css?inline';
 import { deviceName } from './device';
+import { rotateIfDue } from './rotation';
 import { installOpenFileHandler } from './files';
 
 const prefsStore: KeyValueStore = {
@@ -172,6 +173,10 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
     // NG-08: from here on only the active server may be contacted / load images (a second meta CSP can only narrow).
     applyNativeServerCsp(document, active.serverUrl);
     mountApp();
+    rotateActiveToken();
+    void App.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) rotateActiveToken();
+    });
     return;
   }
 
@@ -180,6 +185,25 @@ export async function bootNative(target: HTMLElement, mountApp: () => void): Pro
   const render = showConnect(target, list, active?.serverUrl ?? '', !!active?.needsLogin);
   // A connect link never pre-fills silently: the user confirms the full host first (NG-01).
   if (launch?.url) promptConnect(launch.url, (server) => render(server, true));
+}
+
+/** New device token when one is due (at the start and whenever the app comes back). A failure changes nothing. */
+function rotateActiveToken(): void {
+  const profile = active;
+  if (!profile) return;
+  const rotatedKey = `tuxmail.token.rotated.${profile.id}`;
+  void rotateIfDue({
+    serverUrl: profile.serverUrl,
+    token: () => activeToken,
+    persist: (t) => secureStore.set(tokenKey(profile.id), t),
+    mirror: (t) => TuxMail.setActiveSession({ serverUrl: profile.serverUrl, token: t, profileId: profile.id }),
+    use: (t) => {
+      activeToken = t;
+      setSessionToken(t);
+    },
+    lastRotatedAt: async () => Number((await prefsStore.get(rotatedKey).catch(() => null)) ?? 0) || 0,
+    setLastRotatedAt: (at) => prefsStore.set(rotatedKey, String(at)),
+  });
 }
 
 // ---------------------------------------------------------------------------

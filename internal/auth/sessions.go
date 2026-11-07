@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -23,24 +24,34 @@ const (
 	MethodPasskey    = "passkey"     // WebAuthn passkey with user verification (passkeys.go)
 )
 
-// DeviceTokenLifetime is the validity of device tokens issued to clients.
-const DeviceTokenLifetime = 365 * 24 * time.Hour
+// Web sessions end after auth.session_idle_timeout without a request and at the
+// latest auth.session_lifetime after the login (Basis spec/PARAMETER.md: 2 h / 12 h,
+// see config.Auth). Device tokens have no idle limit: an app in a pocket is not an
+// abandoned browser, and each token expires DeviceTokenLifetime after it was
+// issued; rotation (devicetokens.go) replaces it while the device is in use.
+const DeviceTokenLifetime = 90 * 24 * time.Hour
 
 // Session is an authenticated browser session or client device token.
 // The opaque token itself is never stored, only its SHA-256 hash.
 type Session struct {
-	ID           int64     `json:"id"`
-	UserID       int64     `json:"userId"`
-	Kind         string    `json:"kind"`
-	DeviceName   string    `json:"deviceName"`
-	IP           string    `json:"ip"`
-	UserAgent    string    `json:"userAgent"`
-	MFA          bool      `json:"mfa"`
-	LoginMethod  string    `json:"loginMethod"`
-	CreatedAt    time.Time `json:"createdAt"`
-	ExpiresAt    time.Time `json:"expiresAt"`
-	LastSeenAt   time.Time `json:"lastSeenAt"`
-	ClientPubKey []byte    `json:"-"`
+	ID          int64     `json:"id"`
+	UserID      int64     `json:"userId"`
+	Kind        string    `json:"kind"`
+	DeviceName  string    `json:"deviceName"`
+	IP          string    `json:"ip"`
+	UserAgent   string    `json:"userAgent"`
+	MFA         bool      `json:"mfa"`
+	LoginMethod string    `json:"loginMethod"`
+	CreatedAt   time.Time `json:"createdAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
+	LastSeenAt  time.Time `json:"lastSeenAt"`
+	// Scopes limits a device token (devicetokens.go); empty for web sessions.
+	Scopes       []string `json:"scopes,omitempty"`
+	ClientPubKey []byte   `json:"-"`
+
+	tokenIssuedAt int64
+	// superseded: authenticated with an old token inside the rotation leeway.
+	superseded bool
 }
 
 // ClientInfo describes the client creating a session.
@@ -49,6 +60,7 @@ type ClientInfo struct {
 	UserAgent  string
 	DeviceName string
 	PubKey     []byte // X25519 key of a device client (optional)
+	Scopes     string // device tokens: canonical scope list, "" = default (ParseDeviceScopes)
 }
 
 func truncate(s string, n int) string {
@@ -62,14 +74,19 @@ func truncate(s string, n int) string {
 func (s *Service) createSession(ctx context.Context, userID int64, kind, method string, mfa bool, ci ClientInfo) (string, *Session, error) {
 	tok := randomToken(32)
 	now := s.now()
-	life := s.cfg.Auth.SessionLifetime.D()
+	life := s.cfg.Auth.EffectiveSessionLifetime()
+	scopes := ""
 	if kind == KindDevice {
 		life = DeviceTokenLifetime
+		scopes = ci.Scopes
+		if scopes == "" {
+			scopes = DefaultDeviceScopes
+		}
 	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions(token_hash, user_id, kind, device_name, ip, user_agent, mfa,
-		login_method, client_pubkey, created_at, expires_at, last_seen_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		login_method, client_pubkey, created_at, expires_at, last_seen_at, scopes, token_issued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		hashToken(tok), userID, kind, truncate(ci.DeviceName, 100), truncate(ci.IP, 64), truncate(ci.UserAgent, 300), mfa,
-		method, ci.PubKey, now.Unix(), now.Add(life).Unix(), now.Unix())
+		method, ci.PubKey, now.Unix(), now.Add(life).Unix(), now.Unix(), scopes, now.Unix())
 	if err != nil {
 		return "", nil, err
 	}
@@ -81,23 +98,33 @@ func (s *Service) createSession(ctx context.Context, userID int64, kind, method 
 	return tok, sess, err
 }
 
-const sessionCols = `id, user_id, kind, device_name, ip, user_agent, mfa, login_method, client_pubkey, created_at, expires_at, last_seen_at`
+const sessionCols = `id, user_id, kind, device_name, ip, user_agent, mfa, login_method, client_pubkey, created_at, expires_at, last_seen_at, scopes, token_issued_at`
 
 func scanSession(sc interface{ Scan(...any) error }) (*Session, error) {
 	var x Session
 	var c, e, l int64
-	if err := sc.Scan(&x.ID, &x.UserID, &x.Kind, &x.DeviceName, &x.IP, &x.UserAgent, &x.MFA, &x.LoginMethod, &x.ClientPubKey, &c, &e, &l); err != nil {
+	var scopes string
+	if err := sc.Scan(&x.ID, &x.UserID, &x.Kind, &x.DeviceName, &x.IP, &x.UserAgent, &x.MFA, &x.LoginMethod, &x.ClientPubKey, &c, &e, &l, &scopes, &x.tokenIssuedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
 	x.CreatedAt, x.ExpiresAt, x.LastSeenAt = time.Unix(c, 0).UTC(), time.Unix(e, 0).UTC(), time.Unix(l, 0).UTC()
+	x.Scopes = strings.Fields(scopes)
 	return &x, nil
 }
 
 func (s *Service) getSession(ctx context.Context, where string, args ...any) (*Session, error) {
 	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions WHERE `+where, args...))
+}
+
+// webSessionEnded applies the two limits of a web session to its stored times.
+// expires_at alone is not enough: rows from older versions carry a longer one.
+func (s *Service) webSessionEnded(now, created, lastSeen, expires time.Time) bool {
+	return !now.Before(expires) ||
+		!now.Before(created.Add(s.cfg.Auth.EffectiveSessionLifetime())) ||
+		!now.Before(lastSeen.Add(s.cfg.Auth.EffectiveIdleTimeout()))
 }
 
 // Authenticate resolves a session or device token. It fails with ErrNotFound
@@ -107,12 +134,20 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 	if token == "" || len(token) > 200 {
 		return nil, nil, ErrNotFound
 	}
-	sess, err := s.getSession(ctx, `token_hash = ?`, hashToken(token))
+	h := hashToken(token)
+	sess, err := s.getSession(ctx, `token_hash = ?`, h)
+	if errors.Is(err, ErrNotFound) {
+		sess, err = s.resolveRotatedToken(ctx, h, ip) // devicetokens.go
+	}
 	if err != nil {
 		return nil, nil, err
 	}
 	now := s.now()
-	if !now.Before(sess.ExpiresAt) {
+	ended := !now.Before(sess.ExpiresAt)
+	if sess.Kind == KindWeb {
+		ended = s.webSessionEnded(now, sess.CreatedAt, sess.LastSeenAt, sess.ExpiresAt)
+	}
+	if ended {
 		s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, sess.ID)
 		return nil, nil, ErrNotFound
 	}
@@ -122,6 +157,11 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 	}
 	if u.Disabled {
 		return nil, nil, ErrUserDisabled
+	}
+	if sess.Kind == KindDevice && sess.tokenIssuedAt == 0 {
+		if err := s.upgradeLegacyDeviceToken(ctx, sess, u); err != nil {
+			return nil, nil, err
+		}
 	}
 	if now.Sub(sess.LastSeenAt) >= time.Minute || (ip != "" && ip != sess.IP) {
 		ip = truncate(ip, 64)
@@ -138,19 +178,25 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 // it exists, is not expired and the user is not disabled. It returns
 // ErrNotFound or ErrUserDisabled otherwise. Unlike Authenticate it has no
 // side effects, so long-lived connections (the event WebSocket) can use it to
-// notice revocation, expiry and disabling (NH-08).
+// notice revocation, expiry and disabling (NH-08). An open connection is not
+// activity: a web session whose idle time ran out ends its stream as well.
 func (s *Service) CheckSession(ctx context.Context, userID, sessionID int64) error {
-	var exp int64
+	var kind string
+	var created, lastSeen, exp int64
 	var disabled bool
-	err := s.db.QueryRowContext(ctx, `SELECT s.expires_at, u.disabled FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.id = ? AND s.user_id = ?`, sessionID, userID).Scan(&exp, &disabled)
+	err := s.db.QueryRowContext(ctx, `SELECT s.kind, s.created_at, s.last_seen_at, s.expires_at, u.disabled FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.id = ? AND s.user_id = ?`, sessionID, userID).Scan(&kind, &created, &lastSeen, &exp, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if !s.now().Before(time.Unix(exp, 0)) {
+	now := s.now()
+	if !now.Before(time.Unix(exp, 0)) {
+		return ErrNotFound
+	}
+	if kind == KindWeb && s.webSessionEnded(now, time.Unix(created, 0), time.Unix(lastSeen, 0), time.Unix(exp, 0)) {
 		return ErrNotFound
 	}
 	if disabled {
@@ -161,8 +207,10 @@ func (s *Service) CheckSession(ctx context.Context, userID, sessionID int64) err
 
 // ListSessions returns the unexpired sessions and device tokens of a user.
 func (s *Service) ListSessions(ctx context.Context, userID int64) ([]*Session, error) {
+	now := s.now()
 	rows, err := s.db.QueryContext(ctx, `SELECT `+sessionCols+` FROM sessions WHERE user_id = ? AND expires_at > ?
-		ORDER BY last_seen_at DESC`, userID, s.now().Unix())
+		AND (kind <> 'web' OR (created_at > ? AND last_seen_at > ?)) ORDER BY last_seen_at DESC`, userID, now.Unix(),
+		now.Add(-s.cfg.Auth.EffectiveSessionLifetime()).Unix(), now.Add(-s.cfg.Auth.EffectiveIdleTimeout()).Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -198,9 +246,12 @@ func (s *Service) RevokeAllSessions(ctx context.Context, userID, keepID int64) e
 	return err
 }
 
-// Logout deletes the session identified by token.
+// Logout deletes the session identified by token. For a device any token of the
+// family does it, also a pending or just superseded one.
 func (s *Service) Logout(ctx context.Context, token string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?`, hashToken(token))
+	h := hashToken(token)
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = ?1 OR pending_token_hash = ?1
+		OR id = (SELECT session_id FROM device_retired_tokens WHERE token_hash = ?1)`, h)
 	return err
 }
 
@@ -216,10 +267,15 @@ func (s *Service) Cleanup(ctx context.Context) error {
 		`DELETE FROM device_authorizations WHERE expires_at <= ?1 - 3600`,
 		`DELETE FROM login_throttle WHERE locked_until <= ?1 AND first_failure <= ?1 - 86400`,
 		`DELETE FROM login_known_networks WHERE last_seen <= ?1 - 7776000`, // knownNetworkTTL (90 days)
+		`DELETE FROM device_retired_tokens WHERE expires_at <= ?1`,
+		`DELETE FROM rate_limit WHERE window_start <= ?1 - 86400`,
 	} {
 		if _, err := s.db.ExecContext(ctx, q, now); err != nil {
 			return err
 		}
 	}
-	return nil
+	// Web sessions past a limit whose expires_at is still ahead.
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE kind = 'web' AND (created_at <= ? OR last_seen_at <= ?)`,
+		now-int64(s.cfg.Auth.EffectiveSessionLifetime()/time.Second), now-int64(s.cfg.Auth.EffectiveIdleTimeout()/time.Second))
+	return err
 }

@@ -36,9 +36,9 @@ tuxmail_nginx_upstream_keepalive: 16
 # TuxMail sendet selbst einen vollständigen Satz (nosniff, X-Frame-Options: DENY,
 # Referrer-Policy, COOP/CORP, Permissions-Policy und eine strikte CSP mit
 # frame-ancestors 'none'). nginx reicht diese unverändert durch und ergänzt nur HSTS.
-tuxmail_nginx_hsts_max_age: 31536000
+tuxmail_nginx_hsts_max_age: 63072000
 # includeSubDomains erst setzen, wenn ALLE Subdomains der Domain HTTPS können.
-tuxmail_nginx_hsts_include_subdomains: false
+tuxmail_nginx_hsts_include_subdomains: true
 tuxmail_nginx_hsts_preload: false
 # Leer (Standard) = die CSP von TuxMail gilt allein. Nur wenn hier ein Wert steht, ersetzt nginx die
 # CSP von TuxMail durch genau diese (eine einzige maßgebliche CSP, nie zwei Header nebeneinander).

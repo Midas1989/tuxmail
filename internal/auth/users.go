@@ -17,6 +17,9 @@ import (
 	"unicode/utf8"
 )
 
+// maxPasswordRunes is the upper limit of a password (Basis spec/PARAMETER.md).
+const maxPasswordRunes = 128
+
 // User is a server account.
 type User struct {
 	ID          int64     `json:"id"`
@@ -104,8 +107,8 @@ func (s *Service) CheckPasswordPolicy(password string) error {
 	if n < s.cfg.Auth.PasswordMinLength {
 		return fmt.Errorf("%w: at least %d characters required", ErrWeakPassword, s.cfg.Auth.PasswordMinLength)
 	}
-	if len(password) > 1024 {
-		return fmt.Errorf("%w: at most 1024 bytes allowed", ErrWeakPassword)
+	if utf8.RuneCountInString(password) > maxPasswordRunes {
+		return fmt.Errorf("%w: at most %d characters allowed", ErrWeakPassword, maxPasswordRunes)
 	}
 	if strings.TrimSpace(password) == "" || allSame(password) {
 		return fmt.Errorf("%w: password is too simple", ErrWeakPassword)
@@ -190,7 +193,7 @@ func (s *Service) CreateUser(ctx context.Context, nu NewUser) (*User, error) {
 			return err
 		}
 		// The wrapped key is bound to the user id, which is known only now.
-		wrapped, err := s.seal(dek, fmt.Sprintf("dek:%d", id))
+		wrapped, err := s.seal(dek, secretDEK.context(id))
 		if err != nil {
 			return err
 		}

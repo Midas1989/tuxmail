@@ -8,14 +8,15 @@
 // All state lives in its own SQLite database data_dir/server.db, separate from
 // the per-user mail databases under data_dir/users/<id>/.
 //
-// Key hierarchy: data_dir/master.key holds a random 256-bit server master key
-// (KEK, file mode 0600, created on first start). Every user gets a random
+// Key hierarchy: data_dir/secretbox.json is the key ring (internal/secretbox,
+// format bx1, file mode 0600, created on first start). Every user gets a random
 // 256-bit data encryption key (DEK) at creation, stored in users.dek_wrapped
-// encrypted with the KEK (XChaCha20-Poly1305, associated data "dek:<id>").
-// The DEK is used as the password of the user's internal/secrets Vault file
+// encrypted under the ring (context "users.dek_wrapped:<id>"). The DEK is used as
+// the password of the user's internal/secrets Vault file
 // data_dir/users/<id>/secrets.vault (see UserSecrets). TOTP secrets are
-// encrypted with the KEK directly. Losing master.key makes all stored user
-// secrets and TOTP enrolments unreadable, so it must be part of backups.
+// encrypted under the ring directly. Rotation and the older master.key format
+// are described in keys.go. Losing the key files makes all stored user secrets
+// and TOTP enrolments unreadable, so they must be part of backups.
 package auth
 
 import (
@@ -72,7 +73,6 @@ func (r Role) Valid() bool { return r == RoleAdmin || r == RoleUser || r == Role
 type Service struct {
 	db      *sql.DB
 	cfg     *config.Config
-	master  []byte
 	dataDir string
 
 	// Now returns the current time; tests may replace it.
@@ -91,6 +91,8 @@ type Service struct {
 	oidcMu sync.Mutex
 	oidc   *oidcClient
 
+	keys keyState // keys.go
+
 	waOnce sync.Once // passkeys.go
 	wa     *webauthn.WebAuthn
 	waErr  error
@@ -105,7 +107,7 @@ func Open(ctx context.Context, cfg *config.Config) (*Service, error) {
 	if err := os.MkdirAll(filepath.Join(cfg.DataDir, "users"), 0o700); err != nil {
 		return nil, fmt.Errorf("auth: create users dir: %w", err)
 	}
-	master, err := LoadOrCreateMasterKey(filepath.Join(cfg.DataDir, "master.key"))
+	master, ring, err := loadKeyFiles(cfg.DataDir)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +116,7 @@ func Open(ctx context.Context, cfg *config.Config) (*Service, error) {
 		return nil, err
 	}
 	s := &Service{
-		db: db, cfg: cfg, master: master, dataDir: cfg.DataDir,
+		db: db, cfg: cfg, dataDir: cfg.DataDir,
 		Now:            time.Now,
 		PasswordParams: DefaultArgonParams,
 		PressureDelay:  DefaultPressureDelay,
@@ -122,6 +124,10 @@ func Open(ctx context.Context, cfg *config.Config) (*Service, error) {
 		vaults:         map[int64]*secrets.Vault{},
 	}
 	if err := migrate(ctx, db); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := s.initKeys(ctx, master, ring); err != nil {
 		db.Close()
 		return nil, err
 	}

@@ -138,7 +138,19 @@ func cookieHeader(t *testing.T, e *env, b *browser) http.Header {
 		parts = append(parts, c.Name+"="+c.Value)
 	}
 	h.Set("Cookie", strings.Join(parts, "; "))
+	// Like the web client: the CSRF token of the session as subprotocol.
+	b.fetchCSRF()
+	h.Set("Sec-WebSocket-Protocol", "tuxmail.v1, "+wsCSRFProtocol+b.csrf)
 	return h
+}
+
+// wsProtocols returns the subprotocols of a cookieHeader for x/net/websocket,
+// which ignores that header in Config.Header.
+func wsProtocols(h http.Header) []string {
+	if p := h.Get("Sec-WebSocket-Protocol"); p != "" {
+		return strings.Split(p, ", ")
+	}
+	return nil
 }
 
 func streamEnv(t *testing.T, revalidate time.Duration) *env {
@@ -246,6 +258,7 @@ func TestReauditNA08StreamsPerUserCapped(t *testing.T) {
 	// The fourth is refused with 429 before the upgrade.
 	cfg, _ := websocket.NewConfig(strings.Replace(e.ts.URL, "http", "ws", 1)+"/api/events", e.ts.URL)
 	cfg.Header = cookieHeader(t, e, a)
+	cfg.Protocol = wsProtocols(cfg.Header)
 	if ws, err := websocket.DialConfig(cfg); err == nil {
 		ws.Close()
 		t.Fatal("fourth stream of one user accepted")
@@ -356,6 +369,7 @@ func TestReauditNA08ReadJSONGenericError(t *testing.T) {
 		req, _ := http.NewRequest("POST", e.ts.URL+"/api/auth/login", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set(csrfHeader, b.csrf)
+		req.Header.Set("Origin", e.ts.URL)
 		resp, err := b.c.Do(req)
 		if err != nil {
 			t.Fatal(err)
@@ -373,7 +387,7 @@ func TestReauditNA08ReadJSONGenericError(t *testing.T) {
 	}
 }
 
-// NA-08: HSTS gets includeSubDomains only on request and never preload.
+// HSTS: two years (Basis spec/PARAMETER.md), includeSubDomains can be switched off, never preload.
 func TestReauditNA08HSTSOption(t *testing.T) {
 	for _, sub := range []bool{false, true} {
 		e := newEnv(t, Options{}, func(c *config.Config) {
@@ -383,7 +397,7 @@ func TestReauditNA08HSTSOption(t *testing.T) {
 		rec := httptest.NewRecorder()
 		e.srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/auth/csrf", nil))
 		got := rec.Header().Get("Strict-Transport-Security")
-		want := "max-age=31536000"
+		want := "max-age=63072000"
 		if sub {
 			want += "; includeSubDomains"
 		}

@@ -263,8 +263,8 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET "+auth.OIDCCallbackPath, s.handleOIDCCallback)
 
 	// Authentication (logged in)
-	mux.HandleFunc("POST /api/auth/logout", s.user(s.handleLogout))
-	mux.HandleFunc("GET /api/auth/me", s.user(s.handleMe))
+	mux.HandleFunc("POST /api/auth/logout", s.signedIn(s.handleLogout))
+	mux.HandleFunc("GET /api/auth/me", s.signedIn(s.handleMe))
 	mux.HandleFunc("POST /api/auth/password", s.user(s.handleChangePassword))
 	mux.HandleFunc("GET /api/auth/sessions", s.user(s.handleListSessions))
 	mux.HandleFunc("DELETE /api/auth/sessions/{id}", s.user(s.handleRevokeSession))
@@ -328,10 +328,11 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("POST /api/device/authorize", s.handleDeviceAuthorize)
 	mux.HandleFunc("POST /api/device/token", s.handleDeviceToken)
 	mux.HandleFunc("POST /api/device/login", s.handleDeviceLogin)
+	mux.HandleFunc("POST /api/device/rotate", s.device(s.handleDeviceRotate))
 	mux.HandleFunc("GET /api/device/request", s.user(s.handleDeviceRequest))
 	mux.HandleFunc("POST /api/device/approve", s.user(s.handleDeviceApprove))
-	mux.HandleFunc("GET /api/provisioning/profile", s.user(s.handleProvisioningProfile))
-	mux.HandleFunc("GET /api/provisioning/secrets", s.device(s.handleProvisioningSecrets))
+	mux.HandleFunc("GET /api/provisioning/profile", s.provisioning(s.handleProvisioningProfile))
+	mux.HandleFunc("GET /api/provisioning/secrets", s.deviceProvisioning(s.handleProvisioningSecrets))
 
 	s.mountOAuth(mux)     // oauth.go: Graph change notifications
 	s.mountTeamAdmin(mux) // team_admin.go
@@ -362,6 +363,7 @@ func (s *Server) routes() http.Handler {
 	h = s.limitBody(h)
 	h = s.securityHeaders(h)
 	h = s.logRequests(h)
+	h = s.withRequestID(h)
 	h = s.clientInfo(h)
 	h = s.recoverPanics(h)
 	return h

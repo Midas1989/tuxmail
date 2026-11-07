@@ -415,7 +415,7 @@ docker compose exec tuxmail tuxmail user add --username admin --admin     # Pass
 ```
 
 Der Container lauscht nur auf `127.0.0.1:8080` und spricht HTTP. Davor gehört ein Reverse Proxy mit TLS. Das Volume
-`/data` enthält alle Daten einschließlich `master.key` und muss **unbedingt gesichert** werden.
+`/data` enthält alle Daten einschließlich der Schlüssel (`secretbox.json`, `master.key`) und muss **unbedingt gesichert** werden.
 
 ### 6d) Mit oder ohne Reverse Proxy, Zertifikat per Konfigurationsdatei
 

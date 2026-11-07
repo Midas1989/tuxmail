@@ -77,6 +77,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		err = c.checkConfig(args[1:])
 	case "user":
 		err = c.user(ctx, args[1:])
+	case "keys":
+		err = c.keys(ctx, args[1:])
 	case "import":
 		err = c.importCmd(ctx, args[1:])
 	case "export":
@@ -140,13 +142,14 @@ func (c *cli) usage() {
   tuxmail user reset-2fa      USERNAME               (removes TOTP, recovery codes and passkeys)
   tuxmail user set-role       USERNAME ROLE          (admin | user | readonly)
   tuxmail user delete         USERNAME --yes [--keep-data]
+  tuxmail keys    status|rotate|rewrap|retire --kid K|retire-legacy|rollback --yes   (server keys, see docs)
   tuxmail import  --format eml|mbox|maildir|pst|thunderbird|ics|vcf|csv|ldif --source PATH
                   [--target local|folder] [--folder-id N] [--keep-structure] [--dedupe] [--inspect] [--resume JOB]
   tuxmail export  --format eml|mbox|maildir|ics|vcf|csv|ldif --out FILE [--folder-id N,..] [--query Q]
                   [--conversation N] [--project N] [--from DATE --to DATE] [--vcard 3.0|4.0] [--csv-preset outlook|google]
   tuxmail backup  --out FILE|DIR | --webdav URL [--mode config|local|full|custom] [--accounts ..] [--areas ..]
                   [--secrets] [--base PREV.txmb] [--passphrase-file F | --passphrase-stdin]
-  tuxmail backup  --server --out FILE      (admin: whole data_dir incl. master.key)
+  tuxmail backup  --server --out FILE      (admin: whole data_dir incl. the server keys)
   tuxmail backup-settings --data-dir DIR --out DIR   (admin: settings only, unencrypted tree for the daily job)
   tuxmail restore --in FILE [--inspect | --verify] [--mode replace|merge] [--accounts ..] [--config-only]
                   [--secrets] [--base B.txmb] | --server --in FILE --target-dir DIR

@@ -44,6 +44,7 @@ type DeviceRequest struct {
 	CreatedAt  time.Time `json:"createdAt"`
 	ExpiresAt  time.Time `json:"expiresAt"`
 	Status     string    `json:"status"`
+	Scopes     []string  `json:"scopes"`
 }
 
 // NormalizeUserCode uppercases a user code and strips separators.
@@ -70,14 +71,18 @@ func (s *Service) StartDeviceAuthorization(ctx context.Context, ci ClientInfo) (
 	if ci.PubKey != nil && len(ci.PubKey) != 32 {
 		return nil, fmt.Errorf("%w: client public key must be 32 bytes (X25519)", ErrInvalidInput)
 	}
+	scopes := ci.Scopes
+	if scopes == "" {
+		scopes = DefaultDeviceScopes
+	}
 	now := s.now()
 	for range 5 {
 		dc := randomToken(32)
 		uc := randomString(userCodeAlphabet, userCodeLen)
 		_, err := s.db.ExecContext(ctx, `INSERT INTO device_authorizations(device_code_hash, user_code, client_name,
-			client_pubkey, ip, user_agent, interval_s, created_at, expires_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+			client_pubkey, ip, user_agent, interval_s, created_at, expires_at, scopes) VALUES (?,?,?,?,?,?,?,?,?,?)`,
 			hashToken(dc), uc, truncate(ci.DeviceName, 100), ci.PubKey, truncate(ci.IP, 64), truncate(ci.UserAgent, 300),
-			int(DevicePollInterval/time.Second), now.Unix(), now.Add(DeviceCodeLifetime).Unix())
+			int(DevicePollInterval/time.Second), now.Unix(), now.Add(DeviceCodeLifetime).Unix(), scopes)
 		if isUniqueErr(err) {
 			continue // user code collision; try another
 		}
@@ -93,9 +98,10 @@ func (s *Service) StartDeviceAuthorization(ctx context.Context, ci ClientInfo) (
 func (s *Service) LookupDeviceRequest(ctx context.Context, userCode string) (*DeviceRequest, error) {
 	var r DeviceRequest
 	var c, e int64
-	err := s.db.QueryRowContext(ctx, `SELECT user_code, client_name, ip, user_agent, created_at, expires_at, status
+	var scopes string
+	err := s.db.QueryRowContext(ctx, `SELECT user_code, client_name, ip, user_agent, created_at, expires_at, status, scopes
 		FROM device_authorizations WHERE user_code = ?`, NormalizeUserCode(userCode)).
-		Scan(&r.UserCode, &r.ClientName, &r.IP, &r.UserAgent, &c, &e, &r.Status)
+		Scan(&r.UserCode, &r.ClientName, &r.IP, &r.UserAgent, &c, &e, &r.Status, &scopes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidCode
 	}
@@ -107,6 +113,7 @@ func (s *Service) LookupDeviceRequest(ctx context.Context, userCode string) (*De
 		return nil, ErrInvalidCode
 	}
 	r.UserCode = FormatUserCode(r.UserCode)
+	r.Scopes = strings.Fields(scopes)
 	return &r, nil
 }
 
@@ -133,12 +140,12 @@ func (s *Service) ApproveDevice(ctx context.Context, userID int64, userCode stri
 func (s *Service) PollDeviceToken(ctx context.Context, deviceCode string) (*LoginResult, error) {
 	h := hashToken(deviceCode)
 	var id, interval, exp, lastPoll int64
-	var status, name, ip, ua string
+	var status, name, ip, ua, scopes string
 	var userID sql.NullInt64
 	var pub []byte
 	err := s.db.QueryRowContext(ctx, `SELECT id, status, user_id, client_name, client_pubkey, ip, user_agent, interval_s,
-		expires_at, last_poll_at FROM device_authorizations WHERE device_code_hash = ?`, h).
-		Scan(&id, &status, &userID, &name, &pub, &ip, &ua, &interval, &exp, &lastPoll)
+		expires_at, last_poll_at, scopes FROM device_authorizations WHERE device_code_hash = ?`, h).
+		Scan(&id, &status, &userID, &name, &pub, &ip, &ua, &interval, &exp, &lastPoll, &scopes)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrInvalidCode
 	}
@@ -176,5 +183,5 @@ func (s *Service) PollDeviceToken(ctx context.Context, deviceCode string) (*Logi
 		return nil, ErrAccessDenied
 	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: ip})
-	return s.finishLogin(ctx, u, KindDevice, MethodDeviceCode, false, ClientInfo{IP: ip, UserAgent: ua, DeviceName: name, PubKey: pub})
+	return s.finishLogin(ctx, u, KindDevice, MethodDeviceCode, false, ClientInfo{IP: ip, UserAgent: ua, DeviceName: name, PubKey: pub, Scopes: scopes})
 }

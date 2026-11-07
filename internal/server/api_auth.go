@@ -38,9 +38,9 @@ func (s *Server) handleCSRF(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startSession(w http.ResponseWriter, res *auth.LoginResult) {
-	s.setCookie(w, sessionCookie, res.Token, s.cfg.Auth.SessionLifetime.D(), true, http.SameSiteLaxMode)
-	// Rotate the CSRF token on login (prevents fixation of a known token).
-	s.setCookie(w, csrfCookie, randomToken(), 0, false, http.SameSiteStrictMode)
+	s.setCookie(w, sessionCookie, res.Token, s.cfg.Auth.EffectiveSessionLifetime(), true, http.SameSiteLaxMode)
+	// The CSRF token of the new session (prevents fixation of a known token).
+	s.setCookie(w, csrfCookie, csrfTokenFor(res.Token), 0, false, http.SameSiteStrictMode)
 }
 
 type loginReq struct {
@@ -102,6 +102,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request, a *authInf
 	s.auth.Audit(r.Context(), "logout", a.User.Username, true, "")
 	if !a.Bearer {
 		s.setCookie(w, sessionCookie, "", -1, true, http.SameSiteLaxMode)
+		s.setCookie(w, csrfCookie, randomToken(), 0, false, http.SameSiteStrictMode)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -53,6 +53,7 @@ func (s *Server) handleDeviceAuthorize(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		ClientName      string `json:"client_name"`
 		ClientPublicKey string `json:"client_public_key"`
+		Scope           string `json:"scope"`
 	}
 	if !readJSON(w, r, &req) || !s.limitLogin(w, r, "device-authorize") {
 		return
@@ -62,8 +63,14 @@ func (s *Server) handleDeviceAuthorize(w http.ResponseWriter, r *http.Request) {
 		deviceError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	scopes, err := auth.ParseDeviceScopes(req.Scope)
+	if err != nil {
+		deviceError(w, http.StatusBadRequest, "invalid_scope", err.Error())
+		return
+	}
 	ci := s.clientInfoFor(r, req.ClientName)
 	ci.PubKey = pub
+	ci.Scopes = scopes
 	g, err := s.auth.StartDeviceAuthorization(r.Context(), ci)
 	if err != nil {
 		s.writeAuthError(w, err)
@@ -85,8 +92,31 @@ func (s *Server) writeDeviceToken(w http.ResponseWriter, res *auth.LoginResult) 
 		"access_token": res.Token,
 		"token_type":   "Bearer",
 		"expires_in":   int(time.Until(res.Session.ExpiresAt) / time.Second),
+		"scope":        strings.Join(res.Session.Scopes, " "),
 		"user":         res.User,
 		"session_id":   res.Session.ID,
+	})
+}
+
+// handleDeviceRotate issues the successor of the presented device token, see
+// internal/auth/devicetokens.go. The client stores the new token, switches to it
+// and forgets the old one; the old one ends with the first use of the new one.
+func (s *Server) handleDeviceRotate(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	next, exp, err := s.auth.RotateDeviceToken(r.Context(), a.Session, a.Token)
+	if errors.Is(err, auth.ErrTokenSuperseded) {
+		writeError(w, http.StatusConflict, "token_superseded", "this token was already replaced")
+		return
+	}
+	if err != nil {
+		s.writeAuthError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"access_token": next,
+		"token_type":   "Bearer",
+		"expires_in":   int(time.Until(exp) / time.Second),
+		"scope":        strings.Join(a.Session.Scopes, " "),
+		"session_id":   a.Session.ID,
 	})
 }
 
@@ -142,6 +172,7 @@ func (s *Server) handleDeviceLogin(w http.ResponseWriter, r *http.Request) {
 		RecoveryCode    string `json:"recovery_code"`
 		DeviceName      string `json:"device_name"`
 		ClientPublicKey string `json:"client_public_key"`
+		Scope           string `json:"scope"`
 	}
 	if !readJSON(w, r, &req) || !s.limitLogin(w, r, req.Username) {
 		return
@@ -151,8 +182,14 @@ func (s *Server) handleDeviceLogin(w http.ResponseWriter, r *http.Request) {
 		deviceError(w, http.StatusBadRequest, "invalid_request", err.Error())
 		return
 	}
+	scopes, err := auth.ParseDeviceScopes(req.Scope)
+	if err != nil {
+		deviceError(w, http.StatusBadRequest, "invalid_scope", err.Error())
+		return
+	}
 	ci := s.clientInfoFor(r, req.DeviceName)
 	ci.PubKey = pub
+	ci.Scopes = scopes
 	res, err := s.auth.Login(r.Context(), auth.LoginRequest{
 		Login: req.Username, Password: req.Password, TOTPCode: req.TOTPCode, RecoveryCode: req.RecoveryCode,
 		Kind: auth.KindDevice, Client: ci,
