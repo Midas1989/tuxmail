@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
+import { ApiError } from '../api/api';
+import { errorWording } from '../errorWording';
 import { createApiFromWindow } from '../api/select';
 import { AppState } from './app.svelte';
 import { SearchState } from './search.svelte';
@@ -7,6 +9,8 @@ import { TeamState } from './team.svelte';
 import { platformHttpOptions } from '../session';
 import { createAdminClient } from '../api/admin';
 import { AdminState } from './admin.svelte';
+
+ApiError.translate = errorWording;
 
 // The root transport; mailbox methods switch to a team mailbox while one is open (state/team.svelte.ts).
 const rootApi = createApiFromWindow();

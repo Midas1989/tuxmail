@@ -3,6 +3,7 @@
 <script lang="ts">
   import { isNativeShell } from '../../platform';
   import { buildReauth } from '../../security';
+  import BrowserOnlyHint from '../common/BrowserOnlyHint.svelte';
   import DatabaseBackup from '@lucide/svelte/icons/database-backup';
   import RotateCcw from '@lucide/svelte/icons/rotate-ccw';
   import Play from '@lucide/svelte/icons/play';
@@ -184,7 +185,7 @@
         accounts: rAccounts.length === (inspection.manifest.accounts ?? []).length ? undefined : rAccounts,
         configOnly: rConfigOnly,
         secrets: rSecrets,
-        reauth: rSecrets && serverAccount ? buildReauth({ hasPassword: true, password: reauthPassword, secondFactor: reauthCode }) : undefined,
+        reauth: (rSecrets || rmode === 'replace') && serverAccount ? buildReauth({ hasPassword: true, password: reauthPassword, secondFactor: reauthCode }) : undefined,
       });
       rstep = 'progress';
     } catch (e) {
@@ -249,7 +250,9 @@
             </li>
           </ul>
         {/if}
-        {#if !native}
+        {#if native}
+          <BrowserOnlyHint what={t('errors.backupTitle')} />
+        {:else}
           <label class="check"><input type="checkbox" bind:checked={secrets} /> {t('backup.includeSecrets')}</label>
           {#if secrets && serverAccount}{@render reauthFields()}{/if}
         {/if}
@@ -393,11 +396,11 @@
       <fieldset>
         <legend>{t('backup.restoreMode')}</legend>
         <label class="radio"><input type="radio" bind:group={rmode} value="merge" /> <span><strong>{t('backup.merge')}</strong> <span class="muted">{t('backup.mergeHint')}</span></span></label>
-        <label class="radio"><input type="radio" bind:group={rmode} value="replace" /> <span><strong>{t('backup.replace')}</strong> <span class="muted">{t('backup.replaceHint')}</span></span></label>
+        {#if native}<BrowserOnlyHint what={t('errors.backupTitle')} />{:else}<label class="radio"><input type="radio" bind:group={rmode} value="replace" /> <span><strong>{t('backup.replace')}</strong> <span class="muted">{t('backup.replaceHint')}</span></span></label>{/if}
+        {#if (rSecrets || rmode === 'replace') && serverAccount && !native}{@render reauthFields()}{/if}
         <label class="check"><input type="checkbox" bind:checked={rConfigOnly} /> {t('backup.configOnly')}</label>
         {#if m.secrets && !native}
           <label class="check"><input type="checkbox" bind:checked={rSecrets} /> {t('backup.restoreSecrets')}</label>
-          {#if rSecrets && serverAccount}{@render reauthFields()}{/if}
         {/if}
       </fieldset>
       <div class="nav">

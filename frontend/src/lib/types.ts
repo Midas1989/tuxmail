@@ -2429,6 +2429,8 @@ export interface AccountSettings {
 
 /** Fields left out stay unchanged. */
 export interface AccountUpdate {
+  /** Mandatory for another server, port or user: the stored password is not sent there. */
+  password?: string;
   displayName?: string;
   color?: string;
   enabled?: boolean;

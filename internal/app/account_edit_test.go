@@ -142,7 +142,7 @@ func TestAccountConnectionTestAndPassword(t *testing.T) {
 	}
 	bad := e.srv
 	bad.Port = closedPort(t)
-	res, _ = e.a.TestAccountConnection(ctx, e.acc, ConnectionTestInput{Kinds: []string{"imap"}, Update: &AccountUpdate{Incoming: &bad}})
+	res, _ = e.a.TestAccountConnection(ctx, e.acc, ConnectionTestInput{Kinds: []string{"imap"}, Password: "secret", Update: &AccountUpdate{Incoming: &bad}})
 	if res.OK || res.Steps[0].Code != "unreachable" {
 		t.Fatalf("closed port: %+v", res)
 	}
@@ -153,7 +153,7 @@ func TestAccountConnectionTestAndPassword(t *testing.T) {
 	}
 
 	// Verified updates do not save broken settings (Sieve is optional).
-	if _, err := e.a.UpdateAccount(ctx, e.acc, AccountUpdate{Incoming: &bad, Verify: true}); errCode(err) != CodeConnectionFailed {
+	if _, err := e.a.UpdateAccount(ctx, e.acc, AccountUpdate{Incoming: &bad, Password: "secret", Verify: true}); errCode(err) != CodeConnectionFailed {
 		t.Fatalf("verify: %v", err)
 	}
 	if acc, _ := e.st.GetAccount(ctx, e.acc); acc.Incoming.Port != e.srv.Port {
@@ -161,7 +161,7 @@ func TestAccountConnectionTestAndPassword(t *testing.T) {
 	}
 	good := e.srv
 	good.Username = "alice"
-	if _, err := e.a.UpdateAccount(ctx, e.acc, AccountUpdate{Incoming: &good, Verify: true}); err != nil {
+	if _, err := e.a.UpdateAccount(ctx, e.acc, AccountUpdate{Incoming: &good, Password: "secret", Verify: true}); err != nil {
 		t.Fatalf("verify good: %v", err)
 	}
 

@@ -3,6 +3,8 @@
      mailboxes with their account; administrators and managers grant users
      and groups the roles read, reply, assign and manage (KONZEPT 8.14, 15.6). -->
 <script lang="ts">
+  import { isNativeShell } from '../../platform';
+  import BrowserOnlyHint from '../common/BrowserOnlyHint.svelte';
   import Plus from '@lucide/svelte/icons/plus';
   import Trash from '@lucide/svelte/icons/trash';
   import Users from '@lucide/svelte/icons/users';
@@ -113,6 +115,8 @@
   function minutes(sec: number): string {
     return sec < 3600 ? t('team.stats.minutes', { n: Math.round(sec / 60) }) : t('team.stats.hours', { n: (sec / 3600).toFixed(1) });
   }
+
+  const native = isNativeShell();
 </script>
 
 {#if team.client && (isAdmin || managed.length)}
@@ -173,6 +177,7 @@
               <div><dt>{t('team.stats.median')}</dt><dd>{s.responded ? minutes(s.medianFirstResponseSeconds) : '–'}</dd></div>
             </dl>
           {/if}
+          {#if native}<BrowserOnlyHint what={t('errors.teamGrantsTitle')} />{:else}
           <table class="grants">
             <thead><tr><th>{t('team.admin.member')}</th><th>{t('team.admin.role')}</th><th></th></tr></thead>
             <tbody>
@@ -206,6 +211,7 @@
               {/if}
             </tbody>
           </table>
+          {/if}
         </li>
       {/each}
     </ul>

@@ -167,8 +167,12 @@
       message = { kind: 'error', text: t('onboarding.account.errInsecure') };
       return;
     }
-    const s = await run(() => app.api.updateAccount(accountId, { ...serverUpdate(), verify }), t('settings.accountEdit.saved'));
-    if (s) fill(s);
+    // Another server, port or user needs its password: the server refuses to send the stored one there.
+    const s = await run(() => app.api.updateAccount(accountId, { ...serverUpdate(), verify, password: newPassword || undefined }), t('settings.accountEdit.saved'));
+    if (s) {
+      fill(s);
+      newPassword = '';
+    }
   }
 
   async function runTest() {

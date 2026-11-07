@@ -929,3 +929,42 @@ func TestRecoveryCodeUseIsAudited(t *testing.T) {
 		t.Fatal("refused use audited as a use:", n)
 	}
 }
+
+// Basis spec/BETRIEB.md: no sign-in by a recovery code without its entry, and the code stays.
+func TestRecoveryCodeWithoutAuditIsNotConsumed(t *testing.T) {
+	li := newLegacyInstall(t)
+	s := li.open(t)
+	ctx := context.Background()
+	codes, err := s.RegenerateRecoveryCodes(ctx, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`CREATE TRIGGER kaputt BEFORE INSERT ON audit_log BEGIN SELECT RAISE(ABORT, 'voll'); END`); err != nil {
+		t.Fatal(err)
+	}
+	for user, code := range map[int64]string{2: codes[0], 1: legacyRecoveryCode} {
+		if err := s.useRecoveryCode(ctx, user, code); err == nil || errors.Is(err, ErrInvalidCode) {
+			t.Fatalf("user %d: %v", user, err)
+		}
+	}
+	if _, err := s.db.Exec(`DROP TRIGGER kaputt`); err != nil {
+		t.Fatal(err)
+	}
+	for user, code := range map[int64]string{2: codes[0], 1: legacyRecoveryCode} {
+		if err := s.useRecoveryCode(ctx, user, code); err != nil {
+			t.Fatalf("user %d: the code was lost: %v", user, err)
+		}
+	}
+}
+
+// An OIDC session of an administrator does not owe TOTP, with or without amr/acr.
+func TestOIDCAdminIsNotLockedOut(t *testing.T) {
+	s, _ := newTestService(t, func(c *config.Config) { c.Auth.TOTPRequiredForAdmins = true })
+	admin := &User{Role: RoleAdmin, OIDC: true}
+	if s.MFASetupRequired(admin, &Session{LoginMethod: MethodOIDC}) {
+		t.Fatal("OIDC admin has to enrol TOTP")
+	}
+	if !s.MFASetupRequired(admin, &Session{LoginMethod: MethodPassword}) {
+		t.Fatal("password session of the same admin is exempt")
+	}
+}

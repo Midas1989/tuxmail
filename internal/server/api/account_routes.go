@@ -16,10 +16,6 @@ func accountEditRoutes() []Route {
 		{"PATCH /api/accounts/{id}", withID(func(w w, r r, a A, id int64) {
 			var in app.AccountUpdate
 			if readJSON(w, r, &in) {
-				// New connection data would send the stored password to that server.
-				if (in.Incoming != nil || in.Outgoing != nil || in.EASURL != nil || in.JMAPURL != nil) && !noDevice(w, r) {
-					return
-				}
 				send(w)(a.UpdateAccount(r.Context(), id, in))
 			}
 		})},

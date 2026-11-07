@@ -100,7 +100,9 @@ func ioRoutes() []Route {
 			app.RestoreRequest
 			Reauth Reauth `json:"reauth"`
 		}) {
-			if in.Secrets && !needReauth(w, r, in.Reauth) { // replaces stored credentials
+			// With secrets it replaces stored credentials. Replace puts account settings
+			// from the archive next to the stored credentials after the restart.
+			if (in.Secrets || in.Mode == "replace") && !needReauth(w, r, in.Reauth) {
 				return
 			}
 			job, err := a.StartRestore(r.Context(), in.RestoreRequest)

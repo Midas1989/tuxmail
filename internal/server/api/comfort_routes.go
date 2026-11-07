@@ -123,7 +123,17 @@ func comfortRoutes() []Route {
 				done(w, a.SetSMIMETrusted(r.Context(), id, in.Trusted))
 			}
 		})},
-		{"DELETE /api/comfort/smime/certificates/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DeleteSMIMECertificate(r.Context(), id)) })},
+		{"DELETE /api/comfort/smime/certificates/{id}", withID(func(w w, r r, a A, id int64) {
+			private, err := a.SMIMECertificateIsPrivate(r.Context(), id)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+			if private && !noDevice(w, r) { // a private key is gone for good
+				return
+			}
+			done(w, a.DeleteSMIMECertificate(r.Context(), id))
+		})},
 		{"GET /api/comfort/smime/status", func(w w, r r, a A) {
 			q := r.URL.Query()
 			var rcpts []string
@@ -171,7 +181,17 @@ func comfortRoutes() []Route {
 				done(w, a.SetPGPKeyVerified(r.Context(), id, in.Verified))
 			}
 		})},
-		{"DELETE /api/comfort/pgp/keys/{id}", withID(func(w w, r r, a A, id int64) { done(w, a.DeletePGPKey(r.Context(), id)) })},
+		{"DELETE /api/comfort/pgp/keys/{id}", withID(func(w w, r r, a A, id int64) {
+			private, err := a.PGPKeyIsPrivate(r.Context(), id)
+			if err != nil {
+				writeErr(w, err)
+				return
+			}
+			if private && !noDevice(w, r) { // a private key is gone for good
+				return
+			}
+			done(w, a.DeletePGPKey(r.Context(), id))
+		})},
 		{"GET /api/comfort/pgp/peers", func(w w, r r, a A) { send(w)(a.ListPGPPeers(r.Context())) }},
 		{"POST /api/comfort/pgp/peers/verify", jsonHandler(func(w w, r r, a A, in app.PGPPeerInput) { send(w)(a.VerifyPGPPeer(r.Context(), in)) })},
 		{"POST /api/comfort/pgp/peers/accept", jsonHandler(func(w w, r r, a A, in app.PGPPeerInput) { done(w, a.AcceptPGPPeer(r.Context(), in)) })},

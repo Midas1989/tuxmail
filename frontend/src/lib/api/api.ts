@@ -433,8 +433,10 @@ export class ApiError extends Error {
   readonly code: string;
   /** Seconds from the Retry-After header of a 429 answer (server mode), when present. */
   readonly retryAfter?: number;
+  /** Set at start: the wording of codes that users see in every dialog (server texts are English). */
+  static translate: ((code: string) => string | undefined) | undefined;
   constructor(message: string, status = 0, code = 'error', retryAfter?: number) {
-    super(message);
+    super(ApiError.translate?.(code) ?? message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;

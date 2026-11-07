@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Settings -> S/MIME certificate manager: import PKCS#12 / certificates, trust, delete, defaults. -->
 <script lang="ts">
+  import { isNativeShell } from '../../platform';
+  import BrowserOnlyHint from '../common/BrowserOnlyHint.svelte';
   import Upload from '@lucide/svelte/icons/upload';
   import Trash from '@lucide/svelte/icons/trash';
   import ShieldCheck from '@lucide/svelte/icons/shield-check';
@@ -58,6 +60,8 @@
     if (s) await comfort.saveSettings($state.snapshot(s) as ComfortSettings);
     app.toast(t('notifications.saved'));
   }
+
+  const native = isNativeShell();
 </script>
 
 <section class="card" id="set-smime" aria-labelledby="set-smime-h">
@@ -76,6 +80,7 @@
     </div>
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if native && certs.some((c) => c.own)}<BrowserOnlyHint what={t('errors.privateKeyTitle')} />{/if}
   <ul class="certs">
     {#each certs as c (c.id)}
       <li class:expired={c.expired}>
@@ -88,7 +93,7 @@
         <div class="sub">{c.subject} · {t('comfort.smime.issuer', { issuer: c.issuer })} · {t('comfort.smime.validUntil', { date: fmt().date(c.notAfter) })}</div>
         <div class="acts">
           {#if !c.own}<button class="btn btn-ghost sm" onclick={() => trust(c)}>{c.trusted ? t('comfort.smime.untrust') : t('comfort.smime.trust')}</button>{/if}
-          <button class="icon-btn" aria-label={t('comfort.smime.delete')} title={t('comfort.smime.delete')} onclick={() => del(c)}><Trash size={15} /></button>
+          {#if !(native && c.own)}<button class="icon-btn" aria-label={t('comfort.smime.delete')} title={t('comfort.smime.delete')} onclick={() => del(c)}><Trash size={15} /></button>{/if}
         </div>
       </li>
     {:else}

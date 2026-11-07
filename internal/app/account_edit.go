@@ -109,6 +109,9 @@ type AccountUpdate struct {
 	// credentials) before saving; a failed test returns
 	// connection_failed and saves nothing.
 	Verify bool `json:"verify,omitempty"`
+	// Password is mandatory when the update changes where the stored credentials
+	// go (requireNewCredential); it replaces them. It is never returned.
+	Password string `json:"password,omitempty"`
 }
 
 // ConnectionTestInput selects what TestAccountConnection checks.
@@ -592,11 +595,21 @@ func (a *App) UpdateAccount(ctx context.Context, id int64, in AccountUpdate) (Ac
 	if in.Sieve != nil && acc.Kind != domain.KindIMAP {
 		return AccountSettings{}, invalid("server rules (Sieve) are only available for IMAP accounts")
 	}
+	probe := withSieveUpdate(next, in.Sieve)
+	if err := requireNewCredential(acc, probe, in.Password); err != nil {
+		return AccountSettings{}, err
+	}
 	if in.Verify && connChanged && next.Enabled {
-		res := a.testAccount(ctx, next, "", requiredTests(next))
+		res := a.testAccount(ctx, next, in.Password, requiredTests(next))
 		if !res.OK {
 			return AccountSettings{}, connectionError(res)
 		}
+	}
+	if err := a.storeMovedCredential(acc, &next, in.Password); err != nil {
+		return AccountSettings{}, err
+	}
+	if in.Sieve != nil && in.Sieve.Password == "" {
+		in.Sieve.Password = in.Password
 	}
 	if err := a.st.UpdateAccount(ctx, next); err != nil {
 		return AccountSettings{}, err
@@ -705,11 +718,15 @@ func (a *App) TestAccountConnection(ctx context.Context, id int64, in Connection
 		return ConnectionTestResult{}, err
 	}
 	if in.Update != nil {
+		stored := acc
 		if acc, _, err = applyAccountUpdate(acc, *in.Update); err != nil {
 			return ConnectionTestResult{}, err
 		}
 		if in.Update.Sieve != nil && acc.Kind == domain.KindIMAP {
 			applySieveExtra(&acc, *in.Update.Sieve)
+		}
+		if err := requireNewCredential(stored, acc, in.Password); err != nil {
+			return ConnectionTestResult{}, err
 		}
 	}
 	if len(connectionTests(acc)) == 0 {
@@ -840,9 +857,12 @@ func (a *App) testStep(ctx context.Context, acc domain.Account, kind string, cre
 			}
 			cfg.Token = ts.Token
 		} else {
-			pw, err := creds.Password(ctx, acc)
-			if err != nil {
-				return target, err
+			pw := password
+			if pw == "" {
+				var err error
+				if pw, err = a.sievePassword(ctx, acc, creds); err != nil {
+					return target, err
+				}
 			}
 			cfg.Password = pw
 		}
@@ -1003,7 +1023,7 @@ func (a *App) DeleteAccount(ctx context.Context, id int64, opts DeleteAccountOpt
 	if err := a.sync.RemoveAccount(ctx, id); err != nil {
 		a.log.Warn("app: stopping sync failed", "account", id, "err", err)
 	}
-	refs := []string{acc.SecretRef}
+	refs := []string{acc.SecretRef, acc.Extra[extraSieveSecretRef]}
 	if acc.Extra != nil {
 		refs = append(refs, acc.Extra[oauth.ExtraSecretRef], acc.Extra[send.ExtraSMTPSecretRef])
 	}

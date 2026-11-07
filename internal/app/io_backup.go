@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/Midas1989/Mailclient/internal/send"
 	"io"
 	"net/http"
 	"os"
@@ -91,6 +92,15 @@ func (a *App) backupWriteTarget(ctx context.Context, t BackupTarget, scheduleID 
 func (a *App) secretRefs() []string {
 	refs := []string{aiSecretRef}
 	ctx := context.Background()
+	if accs, err := a.st.ListAccounts(ctx); err == nil {
+		for _, acc := range accs {
+			for _, k := range []string{extraSieveSecretRef, send.ExtraSMTPSecretRef} {
+				if r := acc.Extra[k]; r != "" {
+					refs = append(refs, r)
+				}
+			}
+		}
+	}
 	if keys, err := a.st.ListPGPKeys(ctx); err == nil {
 		for _, k := range keys {
 			refs = append(refs, k.SecretRef)
@@ -428,6 +438,11 @@ func (a *App) SaveBackupSchedule(ctx context.Context, in BackupScheduleInput) (b
 			idx = i
 			s.LastRun, s.LastResult, s.LastError, s.PassphraseRef = x.LastRun, x.LastResult, x.LastError, x.PassphraseRef
 			s.Target.PasswordRef = x.Target.PasswordRef
+			// The stored password goes only to where it was entered for (credentials.go).
+			if s.Target.Kind == "webdav" && s.Target.PasswordRef != "" && in.TargetPassword == "" &&
+				(s.Target.URL != x.Target.URL || s.Target.Username != x.Target.Username) {
+				return s, errPasswordRequired("another WebDAV target: enter its password, the stored one is not sent there")
+			}
 		}
 	}
 	if s.ID == "" {

@@ -27,7 +27,7 @@ import (
 const rollbackFromVersion = 9
 
 const rollbackSQL = `
-DROP TRIGGER audit_log_no_null;
+DROP TRIGGER IF EXISTS audit_log_no_null;
 DROP TRIGGER audit_log_no_update;
 DROP TRIGGER audit_log_no_delete;
 ALTER TABLE audit_log DROP COLUMN prev_hash;

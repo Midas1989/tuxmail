@@ -2157,6 +2157,14 @@
     "durationMs": "{ms} ms"
   },
   "errors": {
+    "teamGrantsTitle": "Rollen im Team-Postfach",
+    "accountSecurityTitle": "Zwei-Faktor-Anmeldung, Passkeys, Passwort, Sitzungen, Verwaltung",
+    "backupTitle": "Geheimnisse in Sicherungen, Wiederherstellung mit Ersetzen",
+    "privateKeyTitle": "Privaten Schlüssel exportieren, löschen, Passphrase ändern",
+    "browserOnly": "Geht aus Sicherheitsgründen nur im Browser.",
+    "openServer": "Server öffnen",
+    "deviceTokenForbidden": "Geht aus Sicherheitsgründen nur im Browser.",
+    "passwordRequired": "Für einen anderen Server, Port oder Benutzer das Passwort eingeben; das gespeicherte wird dort nicht verwendet. Konten mit Anbieter-Anmeldung (OAuth) neu anlegen.",
     "loadTitle": "TuxMail konnte nicht geladen werden",
     "retry": "Erneut versuchen"
   },

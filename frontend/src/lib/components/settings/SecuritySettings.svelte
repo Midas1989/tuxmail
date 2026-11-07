@@ -12,6 +12,7 @@
   import LogOut from '@lucide/svelte/icons/log-out';
   import { app, security } from '../../state';
   import { isNativeShell } from '../../platform';
+  import BrowserOnlyHint from '../common/BrowserOnlyHint.svelte';
   import { signOutWeb } from '../../session';
   import PasskeyCard from './PasskeyCard.svelte';
   import { t, type MessageKey } from '../../i18n/index.svelte';
@@ -79,6 +80,9 @@
       {/each}
     </ul>
   </section>
+  {#if isNativeShell()}
+    <BrowserOnlyHint what={t('errors.accountSecurityTitle')} />
+  {/if}
   {#if security.available}
     <TwoFactorCard />
     <PasskeyCard />

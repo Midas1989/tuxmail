@@ -609,21 +609,15 @@ func (s *Server) session(h handlerFunc) http.HandlerFunc {
 
 // deviceForbiddenAppRoutes are the routes of the application API that device tokens
 // may not use, although they belong to the user's own data: they hand out key
-// material or decide what is trusted. The reasons for all sensitive routes:
+// material or decide whose app gets the tokens. Deleting a private key and the
+// archive routes are decided in their handlers (api.Guards). The reasons for all sensitive routes:
 // docs/security/BASIS-ABWEICHUNGEN.md, "Geräte-Token: Routen". A test keeps this
 // list complete (TestDeviceTokenSensitiveRoutesAreClassified).
 var deviceForbiddenAppRoutes = map[string]bool{
-	"POST /api/comfort/pgp/keys/{id}/secret":         true, // exports the private key
-	"POST /api/comfort/pgp/keys/{id}/passphrase":     true,
-	"DELETE /api/comfort/pgp/keys/{id}":              true,
-	"PUT /api/comfort/pgp/keys/{id}/trust":           true,
-	"POST /api/comfort/pgp/peers/accept":             true,
-	"POST /api/comfort/pgp/peers/verify":             true,
-	"POST /api/comfort/pgp/peers/delete":             true,
-	"DELETE /api/comfort/smime/certificates/{id}":    true,
-	"PUT /api/comfort/smime/certificates/{id}/trust": true,
-	"PUT /api/oauth/clients/{provider}":              true, // whose app gets the mail tokens
-	"DELETE /api/oauth/clients/{provider}":           true,
+	"POST /api/comfort/pgp/keys/{id}/secret":     true, // exports the private key
+	"POST /api/comfort/pgp/keys/{id}/passphrase": true,
+	"PUT /api/oauth/clients/{provider}":          true, // whose app gets the mail tokens
+	"DELETE /api/oauth/clients/{provider}":       true,
 }
 
 // deviceProvisioning is device plus the provisioning scope.

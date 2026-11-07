@@ -407,7 +407,9 @@ func (s *Service) CompleteMFA(ctx context.Context, challenge, totpCode, recovery
 // sessions (a passkey login always verified the user, PIN or biometric, on top
 // of possessing the device). A password login of the very same account is not
 // exempt (NA-02), whatever passkeys or OIDC link the account has. A nil
-// session is never exempt.
+// session is never exempt. An OIDC login counts whether or not the identity
+// provider reports MFA (amr/acr, which many do not fill in): an administrator
+// without it is not locked out, see docs/security/BASIS-ABWEICHUNGEN.md.
 func (s *Service) MFASetupRequired(u *User, sess *Session) bool {
 	if !s.cfg.Auth.TOTPRequiredForAdmins || !u.IsAdmin() || u.TOTPEnabled {
 		return false

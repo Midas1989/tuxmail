@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 )
 
@@ -77,14 +78,14 @@ func (s *Service) useRecoveryCode(ctx context.Context, userID int64, code string
 		return err
 	}
 	now := s.now().Unix()
-	res, err := s.db.ExecContext(ctx, `UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND scheme = 'hmac' AND code_hash = ? AND used_at IS NULL`,
-		now, userID, recoveryHMAC(pepper, code))
-	if err != nil {
-		return err
+	var used int64
+	err = s.db.QueryRowContext(ctx, `UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND scheme = 'hmac' AND code_hash = ? AND used_at IS NULL RETURNING id`,
+		now, userID, recoveryHMAC(pepper, code)).Scan(&used)
+	if err == nil {
+		return s.auditRecoveryUse(ctx, userID, used)
 	}
-	if n, _ := res.RowsAffected(); n > 0 {
-		s.auditUser(ctx, "recovery_code.use", userID, nil, "")
-		return nil
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
 	}
 	// Codes from before the HMAC.
 	want := hashToken(normalizeRecoveryCode(code))
@@ -121,11 +122,26 @@ func (s *Service) useRecoveryCode(ctx context.Context, userID int64, code string
 			return err
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
-			s.auditUser(ctx, "recovery_code.use", userID, nil, "")
-			return nil
+			return s.auditRecoveryUse(ctx, userID, id)
 		}
 	}
 	return ErrInvalidCode
+}
+
+// auditRecoveryUse records a used code. Without the entry the sign-in fails (Basis
+// spec/BETRIEB.md), and the code stays usable: the person did nothing wrong.
+func (s *Service) auditRecoveryUse(ctx context.Context, userID, codeID int64) error {
+	target := strconv.FormatInt(userID, 10)
+	if u, err := s.GetUser(ctx, userID); err == nil {
+		target = u.Username
+	}
+	if err := s.Audit(ctx, "recovery_code.use", target, true, ""); err != nil {
+		if _, uerr := s.db.ExecContext(context.WithoutCancel(ctx), `UPDATE recovery_codes SET used_at = NULL WHERE id = ?`, codeID); uerr != nil {
+			slog.Error("auth: recovery code stays used", "id", codeID, "err", uerr)
+		}
+		return fmt.Errorf("auth: audit: %w", err)
+	}
+	return nil
 }
 
 // rollbackRecoveryCodes restores the SHA-256 of old codes and removes new ones.

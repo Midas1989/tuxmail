@@ -40,6 +40,18 @@ func (a *App) SaveAiSettings(ctx context.Context, s AiSettings) (AiSettings, err
 	if !aiProviders[s.Provider] {
 		return AiSettings{}, invalid("unknown AI provider %q", s.Provider)
 	}
+	// The stored key goes only to where it was entered for (credentials.go).
+	if s.APIKey == "" && s.Provider != "none" {
+		if _, err := a.opts.Secrets.Get(aiSecretRef); err == nil {
+			prev, err := a.GetAiSettings(ctx)
+			if err != nil {
+				return AiSettings{}, err
+			}
+			if prev.Provider != s.Provider || strings.TrimSpace(prev.BaseURL) != strings.TrimSpace(s.BaseURL) {
+				return AiSettings{}, errPasswordRequired("another AI service: enter its API key, the stored key is not sent there")
+			}
+		}
+	}
 	if s.APIKey != "" {
 		if err := a.opts.Secrets.Set(aiSecretRef, []byte(s.APIKey)); err != nil {
 			return AiSettings{}, err

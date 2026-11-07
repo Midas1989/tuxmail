@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
 	"strconv"
 	"strings"
@@ -302,7 +303,7 @@ func (a *App) sieveManager(ctx context.Context, accountID int64) (*sieve.Manager
 		}
 		cfg.Token = ts.Token
 	} else {
-		pw, err := creds.Password(ctx, acc)
+		pw, err := a.sievePassword(ctx, acc, creds)
 		if err != nil {
 			return nil, acc, err
 		}
@@ -323,6 +324,9 @@ type SieveConfig struct {
 	// Separate keeps TuxMail's rules in an own script included from the
 	// active one (needs the "include" extension).
 	Separate bool `json:"separate"`
+	// Password is mandatory for another ManageSieve server or port
+	// (requireNewCredential); it is kept for ManageSieve only and never returned.
+	Password string `json:"password,omitempty"`
 }
 
 // GetSieveConfig returns the effective ManageSieve settings of an account.
@@ -363,6 +367,14 @@ func (a *App) SetSieveConfig(ctx context.Context, accountID int64, c SieveConfig
 	}
 	if acc.Extra == nil {
 		acc.Extra = map[string]string{}
+	}
+	stored := acc
+	stored.Extra = maps.Clone(acc.Extra)
+	if err := requireNewCredential(stored, withSieveUpdate(stored, &c), c.Password); err != nil {
+		return SieveConfig{}, err
+	}
+	if err := a.storeSievePassword(&acc, stored, c); err != nil {
+		return SieveConfig{}, err
 	}
 	set := func(k, v string) {
 		if v == "" {

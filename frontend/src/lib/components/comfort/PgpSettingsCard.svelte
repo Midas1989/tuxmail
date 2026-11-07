@@ -1,6 +1,8 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <!-- Settings -> OpenPGP key manager: create, import, export, trust and delete keys; Autocrypt; defaults. -->
 <script lang="ts">
+  import { isNativeShell } from '../../platform';
+  import BrowserOnlyHint from '../common/BrowserOnlyHint.svelte';
   import Upload from '@lucide/svelte/icons/upload';
   import Trash from '@lucide/svelte/icons/trash';
   import ShieldCheck from '@lucide/svelte/icons/shield-check';
@@ -182,6 +184,8 @@
     if (s) await comfort.saveSettings($state.snapshot(s) as ComfortSettings);
     app.toast(t('notifications.saved'));
   }
+
+  const native = isNativeShell();
 </script>
 
 <section class="card" id="set-pgp" aria-labelledby="set-pgp-h">
@@ -240,6 +244,7 @@
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
 
+  {#if native && keys.some((k) => k.own)}<BrowserOnlyHint what={t('errors.privateKeyTitle')} />{/if}
   <ul class="keys">
     {#each keys as k (k.id)}
       <li class:expired={k.status !== 'valid'}>
@@ -256,11 +261,11 @@
         <div class="sub">{k.algorithm} · {fmt().date(k.created)}{#if k.expires} · {t('comfort.smime.validUntil', { date: fmt().date(k.expires) })}{/if}</div>
         <div class="acts">
           {#if k.own && k.locked}<button class="btn btn-ghost sm" onclick={() => (unlocking = k)}>{t('comfort.pgp.unlock')}</button>{/if}
-          {#if k.own}<button class="btn btn-ghost sm" onclick={() => { changing = k; changeCurrent = changeNew = ''; }}>{t('comfort.pgp.changePassphrase')}</button>{/if}
+          {#if k.own && !native}<button class="btn btn-ghost sm" onclick={() => { changing = k; changeCurrent = changeNew = ''; }}>{t('comfort.pgp.changePassphrase')}</button>{/if}
           {#if !k.own}<button class="btn btn-ghost sm" onclick={() => trust(k)}>{k.trust === 'verified' ? t('comfort.pgp.unverify') : t('comfort.pgp.verify')}</button>{/if}
           <button class="icon-btn" aria-label={t('comfort.pgp.exportPublic')} title={t('comfort.pgp.exportPublic')} onclick={() => exportPublic(k)}><Download size={15} /></button>
-          {#if k.own}<button class="icon-btn" aria-label={t('comfort.pgp.exportSecret')} title={t('comfort.pgp.exportSecret')} onclick={() => (exporting = k)}><KeyRound size={15} /></button>{/if}
-          <button class="icon-btn" aria-label={t('comfort.pgp.delete')} title={t('comfort.pgp.delete')} onclick={() => del(k)}><Trash size={15} /></button>
+          {#if k.own && !native}<button class="icon-btn" aria-label={t('comfort.pgp.exportSecret')} title={t('comfort.pgp.exportSecret')} onclick={() => (exporting = k)}><KeyRound size={15} /></button>{/if}
+          {#if !(native && k.own)}<button class="icon-btn" aria-label={t('comfort.pgp.delete')} title={t('comfort.pgp.delete')} onclick={() => del(k)}><Trash size={15} /></button>{/if}
         </div>
       </li>
     {:else}

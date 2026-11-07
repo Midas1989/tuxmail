@@ -3,7 +3,12 @@
 package server
 
 import (
+	"github.com/Midas1989/Mailclient/internal/app"
+	"github.com/Midas1989/Mailclient/internal/domain"
+	"strconv"
+
 	"encoding/base32"
+	"github.com/Midas1989/Mailclient/internal/store"
 	"os"
 	"path/filepath"
 
@@ -463,69 +468,159 @@ func TestDeviceTokenCannotGetSecretsFromBackup(t *testing.T) {
 	}
 }
 
-func TestDeviceTokenCannotMoveAccountOrKeys(t *testing.T) {
+func TestDeviceTokenRestrictedKeyRoutes(t *testing.T) {
 	e := newEnv(t, Options{})
 	e.user("ida", auth.RoleUser)
 	d := deviceTok(t, e, "ida", "data")
-	// Another server would get the stored password.
-	for _, patch := range []map[string]any{
-		{"incoming": map[string]any{"host": "evil.example"}}, {"outgoing": map[string]any{"host": "evil.example"}},
-		{"easUrl": "https://evil.example"}, {"jmapUrl": "https://evil.example"},
-	} {
-		if resp, m := d.do("PATCH", "/api/accounts/1", patch); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
-			t.Fatal(patch, resp.Status, m)
-		}
-	}
-	// A display name is fine for the check; the unknown account answers 404.
-	if resp, m := d.do("PATCH", "/api/accounts/1", map[string]any{"displayName": "x"}); resp.StatusCode == 403 {
-		t.Fatal(resp.Status, m)
-	}
 	re := regexp.MustCompile(`\{[a-zA-Z]+\}`)
 	for pattern := range deviceForbiddenAppRoutes {
 		method, path, _ := strings.Cut(pattern, " ")
 		wantStatus(t, d, method, re.ReplaceAllString(path, "1"), 403, "device_token_forbidden")
 	}
 	wantStatus(t, d, "PUT", "/api/team/1/grants", 403, "device_token_forbidden")
+	// Released for the app (decision 2026-11-07): trust and peers; they answer, whatever the data says.
+	for _, r := range []struct{ method, path string }{
+		{"PUT", "/api/comfort/pgp/keys/1/trust"}, {"POST", "/api/comfort/pgp/peers/accept"}, {"POST", "/api/comfort/pgp/peers/verify"},
+		{"POST", "/api/comfort/pgp/peers/delete"}, {"PUT", "/api/comfort/smime/certificates/1/trust"},
+	} {
+		if resp, m := d.do(r.method, r.path, map[string]any{}); m["error"] == "device_token_forbidden" {
+			t.Errorf("%s %s: %s %v", r.method, r.path, resp.Status, m)
+		}
+	}
+}
+
+// Restore replace puts account settings from the archive next to the stored secrets.
+func TestRestoreReplaceRefusesDeviceTokens(t *testing.T) {
+	e := newEnv(t, Options{})
+	e.user("ida", auth.RoleUser)
+	d := deviceTok(t, e, "ida", "data")
+	body := map[string]any{"mode": "replace", "source": map[string]string{"uploadToken": "x"}}
+	if resp, m := d.do("POST", "/api/backup/restore", body); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
+		t.Fatal(resp.Status, m)
+	}
+	// Merge does not touch stored accounts: the unknown archive answers something else.
+	body["mode"] = "merge"
+	if resp, m := d.do("POST", "/api/backup/restore", body); m["error"] == "device_token_forbidden" {
+		t.Fatal(resp.Status, m)
+	}
+	w := e.browser()
+	w.login("ida")
+	body["mode"] = "replace"
+	if resp, m := w.do("POST", "/api/backup/restore", body); resp.StatusCode != 401 {
+		t.Fatal("browser without proof:", resp.Status, m)
+	}
+}
+
+// What the review showed with a probe: the stored password on its way to a foreign server.
+func TestDeviceTokenCannotSendStoredPasswordElsewhere(t *testing.T) {
+	e := newEnv(t, Options{})
+	u := e.user("ida", auth.RoleUser)
+	ap, err := e.srv.App(t.Context(), u.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := domain.ServerConfig{Host: "mail.example.org", Port: 993, TLS: domain.TLSImplicit, Auth: domain.AuthPassword, Username: "ida"}
+	acc, err := ap.CreateAccount(t.Context(), app.NewAccountInput{Kind: "imap", DisplayName: "I", Email: "ida@example.org", Name: "I", Password: "geheim", Incoming: &srv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := strconv.FormatInt(acc.ID, 10)
+	evil := map[string]any{"host": "evil.example", "port": 993, "tls": "tls", "auth": "password", "username": "ida"}
+	for _, b := range []*browser{deviceTok(t, e, "ida", "data"), func() *browser { w := e.browser(); w.login("ida"); return w }()} {
+		for _, c := range []struct {
+			method, path string
+			body         map[string]any
+		}{
+			{"POST", "/api/accounts/" + id + "/test", map[string]any{"update": map[string]any{"incoming": evil}}},
+			{"POST", "/api/accounts/" + id + "/test", map[string]any{"update": map[string]any{"sieve": map[string]any{"host": "evil.example", "port": 4190}}}},
+			{"PATCH", "/api/accounts/" + id, map[string]any{"incoming": evil}},
+			{"PATCH", "/api/accounts/" + id, map[string]any{"sieve": map[string]any{"host": "evil.example", "port": 4190}}},
+			{"PUT", "/api/accounts/" + id + "/sieve/config", map[string]any{"host": "evil.example", "port": 4190}},
+		} {
+			if resp, m := b.do(c.method, c.path, c.body); resp.StatusCode != 400 || m["error"] != "password_required" {
+				t.Errorf("%s %s %v: %s %v", c.method, c.path, c.body, resp.Status, m)
+			}
+		}
+	}
+	// The app can still change servers, with the password for them, and other settings without.
+	d := deviceTok(t, e, "ida", "data")
+	if resp, m := d.do("PATCH", "/api/accounts/"+id, map[string]any{"displayName": "Neu"}); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+	if resp, m := d.do("PATCH", "/api/accounts/"+id, map[string]any{"incoming": map[string]any{"host": "new.example.org", "port": 993, "tls": "tls", "auth": "password", "username": "ida"}, "password": "neu-geheim"}); resp.StatusCode != 200 {
+		t.Fatal(resp.Status, m)
+	}
+}
+
+// Private keys stay with the browser; the keys of others may go.
+func TestDeviceTokenDeletesOnlyPublicKeys(t *testing.T) {
+	e := newEnv(t, Options{})
+	u := e.user("ida", auth.RoleUser)
+	st, err := store.Open(t.Context(), filepath.Join(e.svc.UserDir(u.ID), UserStoreFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	priv, err := st.PutPGPKey(t.Context(), store.PGPKey{Fingerprint: "AA", Email: "a@example.de", SecretRef: "pgp:AA", PublicKey: []byte("x")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, err := st.PutPGPKey(t.Context(), store.PGPKey{Fingerprint: "BB", Email: "b@example.de", PublicKey: []byte("x")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Close()
+	d := deviceTok(t, e, "ida", "data")
+	wantStatus(t, d, "DELETE", "/api/comfort/pgp/keys/"+strconv.FormatInt(priv, 10), 403, "device_token_forbidden")
+	if resp, m := d.do("DELETE", "/api/comfort/pgp/keys/"+strconv.FormatInt(pub, 10), nil); m["error"] == "device_token_forbidden" {
+		t.Fatal(resp.Status, m)
+	}
 }
 
 // Every route that sounds like secrets, keys or trust is decided here, also future ones.
 func TestDeviceTokenSensitiveRoutesAreClassified(t *testing.T) {
 	allowed := map[string]string{
-		"GET /api/vault/status":                   "only says whether the desktop vault is locked",
-		"POST /api/vault/unlock":                  "needs the vault password, desktop only",
-		"PUT /api/accounts/{id}/password":         "sets, never reads; the app must be able to fix a changed mail password",
-		"GET /api/cloud/accounts/{id}/password":   "generates a random password, reads nothing stored",
-		"GET /api/cloud/shares/{id}/password":     "the password of a share link the user made, part of the sharing dialog",
-		"GET /api/comfort/pgp/keys":               "public data",
-		"POST /api/comfort/pgp/keys":              "imports; hands nothing out",
-		"POST /api/comfort/pgp/keys/generate":     "creates; hands nothing out",
-		"POST /api/comfort/pgp/keys/lookup":       "public directory",
-		"GET /api/comfort/pgp/keys/{id}/public":   "public data",
-		"POST /api/comfort/pgp/keys/{id}/unlock":  "needs the passphrase of the key; reading encrypted mail in the app",
-		"POST /api/comfort/pgp/lock":              "only locks",
-		"GET /api/comfort/smime/certificates":     "public data",
-		"POST /api/comfort/smime/certificates":    "imports; hands nothing out",
-		"GET /api/comfort/pgp/peers":              "public data",
-		"GET /api/comfort/pgp/status":             "state only",
-		"GET /api/comfort/smime/status":           "state only",
-		"GET /api/oauth/providers":                "public data",
-		"POST /api/oauth/start":                   "the user signs in at the provider",
-		"GET /api/oauth/flows/{flowId}/status":    "state of the own flow",
-		"DELETE /api/oauth/flows/{flowId}":        "ends the own flow",
-		"GET /api/oauth/{provider}/callback":      "bound to the flow state",
-		"POST /api/backup":                        "secrets: guarded in the handler",
-		"POST /api/backup/inspect":                "needs the passphrase of the archive",
-		"POST /api/backup/restore":                "secrets: guarded in the handler",
-		"GET /api/backup/schedules":               "no secrets in the answer",
-		"POST /api/backup/schedules":              "secrets: guarded in the handler",
-		"PUT /api/backup/schedules/{id}":          "secrets: guarded in the handler",
-		"DELETE /api/backup/schedules/{id}":       "own schedule",
-		"POST /api/backup/schedules/{id}/run":     "goes to the configured target",
-		"GET /api/backup/schedules/{id}/archives": "names only",
-		"GET /api/diagnostics/export":             "redacted",
-		"GET /api/diagnostics":                    "redacted",
-		"GET /api/accounts/{id}/diagnostics":      "redacted",
-		"GET /api/cloud/oauth/callback":           "bound to the flow state",
+		"GET /api/vault/status":                          "only says whether the desktop vault is locked",
+		"POST /api/vault/unlock":                         "needs the vault password, desktop only",
+		"PUT /api/accounts/{id}/password":                "sets, never reads; the app must be able to fix a changed mail password",
+		"GET /api/cloud/accounts/{id}/password":          "generates a random password, reads nothing stored",
+		"GET /api/cloud/shares/{id}/password":            "the password of a share link the user made, part of the sharing dialog",
+		"GET /api/comfort/pgp/keys":                      "public data",
+		"POST /api/comfort/pgp/keys":                     "imports; hands nothing out",
+		"POST /api/comfort/pgp/keys/generate":            "creates; hands nothing out",
+		"POST /api/comfort/pgp/keys/lookup":              "public directory",
+		"GET /api/comfort/pgp/keys/{id}/public":          "public data",
+		"POST /api/comfort/pgp/keys/{id}/unlock":         "needs the passphrase of the key; reading encrypted mail in the app",
+		"POST /api/comfort/pgp/lock":                     "only locks",
+		"GET /api/comfort/smime/certificates":            "public data",
+		"POST /api/comfort/smime/certificates":           "imports; hands nothing out",
+		"GET /api/comfort/pgp/peers":                     "public data",
+		"GET /api/comfort/pgp/status":                    "state only",
+		"GET /api/comfort/smime/status":                  "state only",
+		"GET /api/oauth/providers":                       "public data",
+		"POST /api/oauth/start":                          "the user signs in at the provider",
+		"GET /api/oauth/flows/{flowId}/status":           "state of the own flow",
+		"DELETE /api/oauth/flows/{flowId}":               "ends the own flow",
+		"GET /api/oauth/{provider}/callback":             "bound to the flow state",
+		"PUT /api/comfort/pgp/keys/{id}/trust":           "released for the app, decision 2026-11-07",
+		"POST /api/comfort/pgp/peers/accept":             "released for the app, the composer needs it",
+		"POST /api/comfort/pgp/peers/verify":             "released for the app",
+		"POST /api/comfort/pgp/peers/delete":             "released for the app",
+		"PUT /api/comfort/smime/certificates/{id}/trust": "released for the app",
+		"DELETE /api/comfort/pgp/keys/{id}":              "private keys: guarded in the handler",
+		"DELETE /api/comfort/smime/certificates/{id}":    "private keys: guarded in the handler",
+		"POST /api/backup":                               "secrets: guarded in the handler",
+		"POST /api/backup/inspect":                       "needs the passphrase of the archive",
+		"POST /api/backup/restore":                       "secrets: guarded in the handler",
+		"GET /api/backup/schedules":                      "no secrets in the answer",
+		"POST /api/backup/schedules":                     "secrets: guarded in the handler",
+		"PUT /api/backup/schedules/{id}":                 "secrets: guarded in the handler",
+		"DELETE /api/backup/schedules/{id}":              "own schedule",
+		"POST /api/backup/schedules/{id}/run":            "goes to the configured target",
+		"GET /api/backup/schedules/{id}/archives":        "names only",
+		"GET /api/diagnostics/export":                    "redacted",
+		"GET /api/diagnostics":                           "redacted",
+		"GET /api/accounts/{id}/diagnostics":             "redacted",
+		"GET /api/cloud/oauth/callback":                  "bound to the flow state",
 	}
 	sensitive := regexp.MustCompile(`(?i)secret|password|passphrase|vault|/pgp|smime|trust|oauth|backup|diagnostics`)
 	for _, rt := range api.Routes(api.Options{}) {

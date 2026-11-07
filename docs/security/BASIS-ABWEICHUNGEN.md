@@ -30,27 +30,47 @@ Stand: 2026-11-07, Release 1.0.0. Bezug: Basis `spec/PARAMETER.md`, `spec/AUTH.m
 | 15 | Schlüssel nicht im Backup derselben Daten (`KRYPTO.md`) | Tägliche Einstellungs-Sicherung und Server-Sicherung enthalten `secretbox.json` und `master.key`. | Nur innerhalb der age-Verschlüsselung (vergleiche ADR 0007 Nr. 6): Ein Backup, das sich ohne getrennt gepflegte Schlüssel nicht einspielen lässt, ist im Ernstfall wertlos. Der private age-Schlüssel liegt nicht am Server. Unverschlüsselt nur nach ausdrücklicher Einstellung. |
 | 16 | Pflicht-Checks (`BETRIEB.md`) | `mail` und `license` fehlen, `certificate` nur bei eigenem TLS. | TuxMail ist Mail-Client und verschickt keine eigene Systempost, Lizenzen gibt es nicht. Hinter nginx prüft das Zertifikat die Stelle, die es hält. |
 | 17 | Schwellen der Health-Checks (ohne Wert in der Spezifikation) | Platz: `warn` unter 10 %, `fail` unter 2 %. Jobs: `fail` nach 1 h ohne Lauf. Zertifikat: `warn` 14 Tage vor Ablauf. | Eigene Werte, in `internal/server/server.go`. |
+| 19 | Lokale 2FA gilt nicht für IdP-Konten, „wenn der IdP MFA nachweist (`amr`/`acr`)“ (`AUTH.md` §5) | Eine OIDC-Sitzung eines mit OIDC verknüpften Admins braucht kein TOTP, auch ohne `amr`/`acr`. | Viele IdP liefern die Angaben nicht oder uneinheitlich; eine Pflicht würde solche Admins beim Upgrade vor den Einrichtungsdialog stellen, obwohl die MFA am IdP liegt. Ein Passwort-Login desselben Admins ist nicht ausgenommen (NA-02). Der Betreiber verantwortet die MFA am IdP. Test: `TestOIDCAdminIsNotLockedOut`. |
 | 18 | Reauth als `stepup_until` für 5 min (`AUTH.md` §3) | Jede sensible Aktion verlangt ihren eigenen Nachweis, ohne Zeitfenster. | Strenger als verlangt, und die vorhandenen Dialoge fragen ohnehin je Aktion. |
 
 ## Geräte-Token: Routen
 
-Gerätetoken sind langlebig und liegen auf Geräten, die verloren gehen. Sie können sich nicht erneut ausweisen. Daher:
+Gerätetoken sind langlebig und liegen auf Geräten, die verloren gehen, und sie können sich nicht erneut ausweisen. Was
+gesperrt bleibt, bietet die Android-App nicht als Knopf an, sondern als Hinweis „Geht aus Sicherheitsgründen nur im Browser“
+mit Link zum Server (`BrowserOnlyHint`). `device_token_forbidden` ist in de und en übersetzt. Stand: Entscheidung vom 2026-11-07,
+„Android ohne Einschränkung“, außer:
 
 | Gruppe | Routen | Gerätetoken | Browser-Sitzung |
 |---|---|---|---|
 | Verwaltung | `/api/admin/*` | nie | Admin, 2FA-Pflicht |
-| Kontoschutz | `/api/auth/password`, `/totp/*`, `/recovery-codes`, `/passkeys/*` (außer Liste), `/sessions/{id}`, `/sessions/revoke-others`, `/api/device/request`, `/api/device/approve` | nie | Reauth; `totp/confirm` folgt auf `totp/setup` mit Reauth, Passkey-Name ändern und Sperren der eigenen Sitzung brauchen keine |
-| Schlüsselmaterial | PGP: `keys/{id}/secret`, `/passphrase`, Löschen, Vertrauen, `peers/accept`, `/verify`, `/delete`. S/MIME: Löschen, Vertrauen | nie | wie bisher (PGP-Export verlangt die Passphrase) |
+| Kontoschutz | `/api/auth/password`, `/totp/*`, `/recovery-codes`, `/passkeys/*` (außer Liste), `/sessions/{id}`, `/sessions/revoke-others`, `/api/device/request`, `/api/device/approve` | nie | Reauth; `totp/confirm` folgt auf `totp/setup` mit Reauth, Passkey-Name ändern und das Ende der eigenen Sitzung brauchen keine |
+| Schlüsselmaterial | PGP: `keys/{id}/secret`, `keys/{id}/passphrase`. PGP und S/MIME: Löschen eines Schlüssels mit privatem Teil | nie | wie bisher (PGP-Export verlangt die Passphrase) |
 | OAuth-Clients | `PUT`/`DELETE /api/oauth/clients/{provider}` | nie | wie bisher |
 | Team-Rechte | `PUT /api/team/{teamId}/grants` | nie | wie bisher |
-| Geheimnisse im Archiv | `POST /api/backup`, `/backup/restore`, `/backup/schedules` mit `secrets: true` | nie, auch nicht mit Scope `provisioning` | Reauth |
-| Anderer Server fürs Konto | `PATCH /api/accounts/{id}` mit `incoming`, `outgoing`, `easUrl`, `jmapUrl` | nie | wie bisher |
+| Geheimnisse im Archiv | `POST /api/backup`, `/backup/schedules` mit `secrets: true`, `/backup/restore` mit `secrets: true` oder `mode: replace` | nie, auch nicht mit Scope `provisioning` | Reauth |
 | Versiegelte Geheimnisse | `GET /api/provisioning/secrets` | Scope `provisioning`, nur an den Schlüssel des Geräts | nein |
-| Bewusst erlaubt | `PUT /api/accounts/{id}/password` (setzt nur), PGP entsperren (braucht die Passphrase), Schlüssel erzeugen und einführen, Passwort eines eigenen Freigabelinks | ja | ja |
+| Freigegeben | PGP und S/MIME: Vertrauen, `peers/accept`, `peers/verify`, `peers/delete`, Löschen fremder Schlüssel. Kontoeinstellungen samt Server unter der Passwort-Regel unten. `PUT /api/accounts/{id}/password`, PGP entsperren, Schlüssel erzeugen und einführen, Passwort eines eigenen Freigabelinks | ja | ja |
 
 `POST /api/backup` mit `secrets: true` geht bewusst auch mit Scope `provisioning` nicht: Der Scope liefert Geheimnisse nur
 versiegelt an den Schlüssel des Geräts, ein Archiv mit frei gewählter Passphrase dagegen jedem, der das Token hat.
 `TestDeviceTokenSensitiveRoutesAreClassified` scheitert, wenn eine neue Route dieser Art nicht zugeordnet ist.
+
+Restrisiko der Freigabe: Wer ein Gerätetoken stiehlt, kann Vertrauensentscheidungen ändern und fremde Schlüssel löschen, bis das
+Token widerrufen ist. Er kommt so an keinen privaten Schlüssel und an kein Passwort.
+
+## Regel für gespeicherte Zugänge
+
+Ändert eine Anfrage Server, Port oder Benutzer eines gespeicherten Zugangs, oder schaltet sie auf unverschlüsselt, wird das
+gespeicherte Passwort nicht verwendet; sie muss ein neues mitbringen (`password_required`, `internal/app/credentials.go`). Das gilt
+für alle Clients und für Kontoeinstellungen, den Verbindungstest ungespeicherter Werte, ManageSieve, das WebDAV-Ziel geplanter
+Sicherungen (Adresse, Benutzer) und den KI-Dienst (Anbieter, Basis-URL). OAuth-Konten können kein Passwort mitbringen: Ihr Token
+geht nicht an einen anderen Server, sie werden neu angelegt. Ein eigener SMTP- oder ManageSieve-Server bekommt ein eigenes
+Geheimnis, das Passwort des Eingangsservers bleibt. Zurück auf den Standard-ManageSieve-Server geht ohne Passwort, dessen Zugang
+ist der des Kontos.
+
+Nicht von der Regel erfasst: Eine Wiederherstellung mit `mode: replace` bringt Kontoeinstellungen aus dem Archiv neben die
+gespeicherten Geheimnisse; sie ist daher für Gerätetoken gesperrt und verlangt im Browser Reauth. Wer sich dort ausweisen kann,
+kennt das Konto.
 
 ## Noch offen
 
@@ -68,4 +88,10 @@ versiegelt an den Schlüssel des Geräts, ein Archiv mit frei gewählter Passphr
 - Eine Konto-Sperre je Konto gilt nur je Netz (tuxmail: 5 Versuche); netzübergreifend tritt ab 50 Fehlversuchen statt einer Sperre eine Bremse in Kraft, damit Fremde den Inhaber nicht aussperren können.
 - Native Anmelde-Endpunkte ohne Sitzungsbezug, die kein Cookie setzen und nur im Antwort-Body antworten (`/api/device/authorize|token|login`), sind von der CSRF-Prüfung ausgenommen.
 - Bei der Rotation von Geräte-Token gilt das alte Token 60 s nach dem ersten Gebrauch des neuen weiter, ohne erneut rotieren zu dürfen; danach widerruft sein Gebrauch die Familie.
+- Gespeicherte Passwörter gehen nur an den Server, Port und Benutzer, für den sie eingegeben wurden; wer das Ziel ändert, bringt ein neues Passwort mit.
 - `style-src-attr 'unsafe-inline'` ist erlaubt, wo fremdes HTML in einem sandboxed `srcdoc`-Frame angezeigt wird, der die CSP der Seite erbt.
+
+## Hinweis zum Zwischenstand
+
+Commit `3ffbf7d` wurde nie veröffentlicht. Datenbanken von diesem Stand haben den Trigger `audit_log_no_null` nicht; `keys rollback`
+kommt damit zurecht (`DROP TRIGGER IF EXISTS`), der Trigger selbst fehlt dort bis zu einer Neuinstallation.

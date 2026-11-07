@@ -29,10 +29,11 @@ trusted_proxies:
   - fc00::/7
 
 auth:
-  session_lifetime: 720h
+  session_lifetime: 12h
+  session_idle_timeout: 2h
   password_min_length: 12
   registration: disabled
-  totp_required_for_admins: false
+  totp_required_for_admins: true
   # Passkeys (WebAuthn) are on automatically for an https public_url (or
   # http://localhost); "passkeys: {enabled: false}" switches them off. Changing
   # the host name of public_url invalidates all registered passkeys.

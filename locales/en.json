@@ -2158,6 +2158,14 @@
     "durationMs": "{ms} ms"
   },
   "errors": {
+    "teamGrantsTitle": "Roles of the team mailbox",
+    "accountSecurityTitle": "Two-factor sign-in, passkeys, password, sessions, administration",
+    "backupTitle": "Secrets in backups, restoring with replace",
+    "privateKeyTitle": "Export or delete the private key, change its passphrase",
+    "browserOnly": "For security reasons this is possible only in the browser.",
+    "openServer": "Open server",
+    "deviceTokenForbidden": "For security reasons this is possible only in the browser.",
+    "passwordRequired": "For another server, port or user, enter its password; the stored one is not used there. Accounts that sign in through a provider (OAuth) must be added again.",
     "loadTitle": "TuxMail could not be loaded",
     "retry": "Try again"
   },

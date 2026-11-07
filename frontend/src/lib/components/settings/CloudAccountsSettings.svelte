@@ -5,6 +5,8 @@
   identities (Send-As / Send-on-Behalf), KONZEPT 7.3–7.4, 7.3a.
 -->
 <script lang="ts">
+  import { isNativeShell } from '../../platform';
+  import BrowserOnlyHint from '../common/BrowserOnlyHint.svelte';
   import KeyRound from '@lucide/svelte/icons/key-round';
   import Users from '@lucide/svelte/icons/users';
   import CalendarSync from '@lucide/svelte/icons/calendar-sync';
@@ -107,6 +109,8 @@
       error = err instanceof Error ? err.message : String(err);
     }
   }
+
+  const native = isNativeShell();
 </script>
 
 <section class="card" id={hid} aria-labelledby="{hid}-h">
@@ -129,7 +133,9 @@
           <strong>{p.displayName}</strong>
           <span class="badge" class:on={p.configured}>{p.configured ? t('cloud.services.configured') : t('cloud.services.notConfigured')}</span>
           {#if p.source}<span class="sub">{t(`cloud.services.source.${p.source}`)}</span>{/if}
-          {#if p.allowUserClients && editing?.provider !== p.id}
+          {#if p.allowUserClients && native}
+            <BrowserOnlyHint />
+          {:else if p.allowUserClients && editing?.provider !== p.id}
             <button class="btn btn-ghost small" onclick={() => edit(p)}>{t('cloud.services.edit')}</button>
           {/if}
         </div>
