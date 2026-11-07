@@ -26,7 +26,7 @@ main{background:#fff;padding:2rem;border-radius:12px;box-shadow:0 2px 16px rgba(
 h1{font-size:1.4rem;margin:0 0 1rem}label{display:block;margin:.75rem 0 .25rem;font-size:.9rem}
 input{width:100%;box-sizing:border-box;padding:.6rem;border:1px solid #9995;border-radius:8px;font-size:1rem}
 button{margin-top:1.25rem;width:100%;padding:.7rem;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:1rem;cursor:pointer}
-button.secondary{background:#6b7280}.err{color:#dc2626;min-height:1.2em;margin-top:.75rem}.hidden{display:none}
+button:disabled{opacity:.5;cursor:not-allowed}button.secondary{background:#6b7280}.err{color:#dc2626;min-height:1.2em;margin-top:.75rem}.hidden{display:none}
 code{font-size:1.4rem;letter-spacing:.15em}
 </style></head><body><main>{{.Body}}</main><script{{if .ScriptNonce}} nonce="{{.ScriptNonce}}"{{end}} src="{{.Script}}"></script></body></html>`))
 
@@ -50,7 +50,7 @@ const loginBody = `<h1>TuxMail</h1>
 const commonJS = `async function csrf(){const r=await fetch('/api/auth/csrf',{credentials:'same-origin'});return (await r.json()).csrfToken}
 async function post(path,body){const t=await csrf();const r=await fetch(path,{method:'POST',credentials:'same-origin',
 headers:{'Content-Type':'application/json','X-CSRF-Token':t},body:JSON.stringify(body)});
-let j={};try{j=await r.json()}catch(e){}return {status:r.status,body:j}}
+let j={};try{j=await r.json()}catch(e){}return {status:r.status,body:j,retry:Number(r.headers.get('Retry-After'))||0}}
 function msg(j){return j.message||j.error||'Error'}
 `
 
@@ -73,44 +73,78 @@ if(pkBtn){fetch('/api/auth/config',{credentials:'same-origin'}).then((r)=>r.json
 pkBtn.addEventListener('click',async()=>{err.textContent='';pkBtn.disabled=true;
 try{await pkSignIn(post,navigator);location.href=next()}catch(e){err.textContent=pkErrorMessage(e)}finally{pkBtn.disabled=false}})}`
 
-const deviceBody = `<h1>Connect a device</h1>
-<div id="step1"><form id="code"><label for="c">Code shown on the device</label><input id="c" name="code" autocomplete="off" required autofocus>
-<button type="submit">Continue</button></form></div>
-<div id="step2" class="hidden"><p>Allow <b id="name"></b> to access your TuxMail account?</p><p>Code: <code id="ucode"></code></p>
-<p id="where"></p><p class="err">Only allow this if you started the sign-in on this device yourself just now. Never enter or approve a code that someone sent you.</p><div id="pw" class="hidden"><label for="p">Your password</label><input id="p" type="password" autocomplete="current-password"></div>
-<div id="totp" class="hidden"><label for="t">Two-factor code</label><input id="t" inputmode="numeric" autocomplete="one-time-code"></div>
-<p id="fresh" class="hidden">You just signed in with your passkey: that confirms this request.</p>
-<button id="pkapprove" class="hidden">Allow with passkey</button><button id="approve">Allow</button><button id="deny" class="secondary">Deny</button></div>
+const deviceBody = `<h1 data-k="title">Connect a device</h1>
+<div id="step1"><form id="code"><label for="c" data-k="codeLabel">Code shown on the device</label><input id="c" name="code" autocomplete="off" required autofocus>
+<button type="submit" data-k="continue">Continue</button></form></div>
+<div id="step2" class="hidden"><p><span data-k="allow1">Allow</span> <b id="name"></b> <span data-k="allow2">to access your TuxMail account?</span></p><p><span data-k="code">Code:</span> <code id="ucode"></code></p>
+<p id="where"></p><p class="err" data-k="warn">Only allow this if you started the sign-in on this device yourself just now. Never enter or approve a code that someone sent you.</p>
+<form id="proof"><div id="pw" class="hidden"><label for="p" data-k="password">Current password</label><input id="p" type="password" autocomplete="current-password"></div>
+<div id="totp" class="hidden"><label for="t" data-k="totp">Two-factor code or recovery code</label><input id="t" autocomplete="one-time-code" autocapitalize="off" spellcheck="false"></div>
+<div class="err" id="lock" role="alert"></div>
+<button type="button" id="pkapprove" class="hidden" data-k="allowPk">Allow with passkey</button>
+<button type="submit" id="approve" data-k="allow">Allow</button><button type="button" id="deny" class="secondary" data-k="deny">Deny</button></form></div>
 <div id="done" class="hidden"><p id="donemsg"></p></div><div class="err" id="err" role="alert"></div>`
 
-// deviceJS is the approval page. Its step-up: password (+ code), a passkey
-// (#pkapprove, api_device_passkey.go) or, right after a passkey sign-in, nothing
-// more (passkeyFresh).
-const deviceJS = commonJS + `const $=(id)=>document.getElementById(id),err=$('err');let code='';
+// deviceJS drives the approval page. Texts: English, German when the browser language is German.
+// Same rules as the two-factor card in Settings: the password field stands whenever the account
+// has a password, the code field whenever it has a second factor, a lock keeps the fields and
+// disables the button with the remaining time until it ends.
+const deviceJS = commonJS + `const $=(id)=>document.getElementById(id),err=$('err');let code='',lockTimer=0,lockEnd=0;
+const L={en:{title:'Connect a device',codeLabel:'Code shown on the device',continue:'Continue',allow1:'Allow',allow2:'to access your TuxMail account?',code:'Code:',
+warn:'Only allow this if you started the sign-in on this device yourself just now. Never enter or approve a code that someone sent you.',
+password:'Current password',totp:'Two-factor code or recovery code',allow:'Allow',deny:'Deny',ip:'IP',client:'Client',requested:'Requested',done:'Done. You can return to the app.',denied:'The request was denied.',
+wrongPw:'The password is not correct.',wrongCode:'This code is not correct or was already used.',empty:'Enter your password and your code first.',reauth:'This needs a recent sign-in. Sign in again and retry.',
+locked:'Locked after too many wrong attempts. Try again in {t}. Signing in is not affected.',min:'{n} min',sec:'{n} s',unknown:'This code is unknown or has expired. Start the sign-in on the device again.',
+generic:'That did not work. Please try again.',signedOut:'You are signed out. Sign in again.',
+allowPk:'Allow with passkey',allowPw:'Allow with password',pkFailed:'The passkey was not accepted. Try again or use your password.'},
+de:{title:'Gerät verbinden',codeLabel:'Code, der auf dem Gerät angezeigt wird',continue:'Weiter',allow1:'Soll',allow2:'auf dein TuxMail-Konto zugreifen dürfen?',code:'Code:',
+warn:'Erlaube das nur, wenn du die Anmeldung gerade selbst auf diesem Gerät gestartet hast. Gib nie einen Code ein und bestätige nie einen, den dir jemand geschickt hat.',
+password:'Aktuelles Passwort',totp:'Zwei-Faktor-Code oder Wiederherstellungscode',allow:'Erlauben',deny:'Ablehnen',ip:'IP',client:'Programm',requested:'Angefragt',done:'Fertig. Du kannst zur App zurückkehren.',denied:'Die Anfrage wurde abgelehnt.',
+wrongPw:'Das Passwort stimmt nicht.',wrongCode:'Dieser Code stimmt nicht oder wurde schon benutzt.',empty:'Gib zuerst dein Passwort und deinen Code ein.',reauth:'Dafür ist eine frische Anmeldung nötig. Melde dich neu an und versuche es noch einmal.',
+locked:'Gesperrt nach zu vielen falschen Eingaben. Neuer Versuch in {t}. Das Anmelden ist nicht betroffen.',min:'{n} Minuten',sec:'{n} Sekunden',unknown:'Dieser Code ist unbekannt oder abgelaufen. Starte die Anmeldung am Gerät neu.',
+generic:'Das hat nicht geklappt. Bitte versuche es noch einmal.',signedOut:'Du bist abgemeldet. Melde dich neu an.',
+allowPk:'Mit Passkey erlauben',allowPw:'Mit Passwort erlauben',pkFailed:'Der Passkey wurde nicht angenommen. Versuche es noch einmal oder nimm dein Passwort.'}};
+const tx=((navigator.language||'en').toLowerCase().startsWith('de')?L.de:L.en);
+document.documentElement.lang=tx===L.de?'de':'en';document.title=tx.title+' – TuxMail';
+document.querySelectorAll('[data-k]').forEach((e)=>{if(tx[e.dataset.k])e.textContent=tx[e.dataset.k]});
+function why(res){const b=res.body||{},c=b.error;
+if(res.status===429||c==='throttled')return null;
+if(c==='invalid_credentials')return tx.wrongPw;if(c==='invalid_code')return tx.wrongCode;if(c==='reauth_required')return (b.message||'').indexOf('enter your')>=0?tx.empty:tx.reauth;
+if(c==='passkey_invalid'||c==='passkey_challenge')return tx.pkFailed;if(c==='not_found')return tx.unknown;if(res.status===401)return tx.signedOut;return tx===L.de?tx.generic:msg(b)}
+function lockFor(sec){clearInterval(lockTimer);lockEnd=Date.now()+Math.max(1,sec)*1000;
+const tick=()=>{const left=Math.ceil((lockEnd-Date.now())/1000);
+if(left<=0){clearInterval(lockTimer);$('lock').textContent='';$('approve').disabled=false;return}
+$('approve').disabled=true;const t=left>=60?tx.min.replace('{n}',Math.ceil(left/60)):tx.sec.replace('{n}',left);$('lock').textContent=tx.locked.replace('{t}',t)};
+tick();lockTimer=setInterval(tick,500)}
 async function lookup(c){err.textContent='';const r=await fetch('/api/device/request?user_code='+encodeURIComponent(c),{credentials:'same-origin'});
 let j={};try{j=await r.json()}catch(e){}
 if(r.status===401){location.href='/login?next='+encodeURIComponent(location.pathname+'?user_code='+c);return}
-if(r.status!==200){err.textContent=msg(j);return}
+if(r.status!==200){err.textContent=why({status:r.status,body:j})||msg(j);return}
 code=c;const q=j.request||{};$('name').textContent=q.deviceName||q.clientName||'TuxMail';$('ucode').textContent=c;
-$('where').textContent=[q.ip?('IP: '+q.ip):'',q.userAgent?('Client: '+q.userAgent):'',q.createdAt?('Requested: '+new Date(q.createdAt).toLocaleString()):''].filter(Boolean).join(' · ');
-if(j.passkeyFresh){$('fresh').classList.remove('hidden')}else{if(j.totpRequired)$('totp').classList.remove('hidden');
+$('where').textContent=[q.ip?(tx.ip+': '+q.ip):'',q.userAgent?(tx.client+': '+q.userAgent):'',q.createdAt?(tx.requested+': '+new Date(q.createdAt).toLocaleString()):''].filter(Boolean).join(' · ');
+if(j.totpRequired)$('totp').classList.remove('hidden');
 if(j.passwordRequired)$('pw').classList.remove('hidden');
-if(j.passkey&&pkSupported(window)){$('pkapprove').classList.remove('hidden');$('approve').textContent='Allow with password';$('approve').classList.add('secondary')}}
+if(j.passkey&&pkSupported(window)){$('pkapprove').classList.remove('hidden');$('approve').textContent=tx.allowPw;$('approve').classList.add('secondary')}
 $('step1').classList.add('hidden');$('step2').classList.remove('hidden')}
-async function send(approve,extra){const res=await post('/api/device/approve',Object.assign({user_code:code,approve},extra));
-if(res.status!==204){err.textContent=msg(res.body);return}
+async function decide(approve){err.textContent='';const v=$('t').value.trim(),six=v.replace(/[\s-]/g,'');
+const body={user_code:code,approve,password:$('p').value};if(/^\d{6}$/.test(six))body.totp_code=six;else if(v)body.recovery_code=v;
+$('approve').disabled=true;const res=await post('/api/device/approve',body);if(Date.now()>=lockEnd)$('approve').disabled=false;
+if(res.status!==204){if(res.status===429||res.body.error==='throttled')lockFor(res.retry||60);else err.textContent=why(res)||tx.generic;$('t').value='';return}
 $('step2').classList.add('hidden');$('done').classList.remove('hidden');
-$('donemsg').textContent=approve?'Done. You can return to the app.':'The request was denied.'}
+$('donemsg').textContent=approve?tx.done:tx.denied}
 $('code').addEventListener('submit',(e)=>{e.preventDefault();lookup($('c').value.trim().toUpperCase())});
-function decide(approve){return send(approve,approve?{password:$('p').value,totp_code:$('t').value.trim()}:{})}
-async function pkApprove(){err.textContent='';const btn=$('pkapprove');btn.disabled=true;
-try{const b=await post('/api/device/approve/passkey',{});if(b.status!==200)throw Object.assign(new Error(msg(b.body)),{status:b.status});
-const cred=await navigator.credentials.get({publicKey:pkRequestOptions(b.body.publicKey)});
+$('proof').addEventListener('submit',(e)=>{e.preventDefault();decide(true)});
+// Passkey (api_device_passkey.go): its own ceremony, bound to this request, after it was shown.
+async function pkApprove(){err.textContent='';const btn=$('pkapprove');btn.disabled=true;let res;
+try{const b=await post('/api/device/approve/passkey',{user_code:code});
+if(b.status!==200){res=b}else{const cred=await navigator.credentials.get({publicKey:pkRequestOptions(b.body.publicKey)});
 if(!cred)throw Object.assign(new Error('cancelled'),{name:'NotAllowedError'});
-await send(true,{passkey:{challengeId:b.body.challengeId,credential:pkAssertionJSON(cred)}})}
-catch(e){err.textContent=pkErrorMessage(e)}finally{btn.disabled=false}}
-$('pkapprove').addEventListener('click',()=>pkApprove());
-$('approve').addEventListener('click',()=>decide(true));$('deny').addEventListener('click',()=>decide(false));
+res=await post('/api/device/approve',{user_code:code,approve:true,passkey:{challengeId:b.body.challengeId,credential:pkAssertionJSON(cred)}})}}
+catch(e){err.textContent=(e&&(e.name==='NotAllowedError'||e.name==='AbortError'))?tx.pkFailed:pkErrorMessage(e);return}
+finally{btn.disabled=false}
+if(res.status!==204){if(res.status===429||res.body.error==='throttled')lockFor(res.retry||60);else err.textContent=why(res)||tx.generic;return}
+$('step2').classList.add('hidden');$('done').classList.remove('hidden');$('donemsg').textContent=tx.done}
+$('pkapprove').addEventListener('click',()=>pkApprove());$('deny').addEventListener('click',()=>decide(false));
 const pre=new URLSearchParams(location.search).get('user_code');if(pre){$('c').value=pre;lookup(pre)}`
 
 func serveScript(w http.ResponseWriter, js string) {
@@ -131,6 +165,7 @@ func (s *Server) handleDevicePage(w http.ResponseWriter, r *http.Request) {
 	renderPage(w, r, "Connect a device", "/device.js", template.HTML(deviceBody))
 }
 
+// The device page uses the WebAuthn helpers of the login page for "Allow with passkey".
 func (s *Server) handleDeviceScript(w http.ResponseWriter, r *http.Request) {
 	serveScript(w, passkeyLoginJS+deviceJS)
 }

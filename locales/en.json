@@ -4025,7 +4025,10 @@
     "stepup": {
       "intro": "For your security, confirm this with a code.",
       "introPassword": "For your security, confirm this with your password and a code.",
-      "password": "Password",
+      "password": "Current password",
+      "resignin": "Sign in again",
+      "lockedMinutes": "Too many wrong attempts. Security checks (changing password, codes and sessions) are locked; try again in {minutes} min. Signing in is not affected.",
+      "lockedSeconds": "Locked. Try again in {seconds} s. Signing in is not affected.",
       "code": "Authenticator code or recovery code",
       "codeHint": "The 6-digit code from your app, or one of your recovery codes.",
       "introPasswordOnly": "Confirm with your TuxMail sign-in password.",

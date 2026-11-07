@@ -38,6 +38,10 @@
 - name: Systemd-Dienst
   ansible.builtin.import_tasks: service.yml
 
+- name: Laufende Version prüfen (Abbruch, wenn ein altes Binary läuft)
+  ansible.builtin.import_tasks: verify_running.yml
+  when: not ansible_check_mode
+
 - name: Health-Check
   ansible.builtin.import_tasks: healthcheck.yml
   when: tuxmail_healthcheck_enabled | bool

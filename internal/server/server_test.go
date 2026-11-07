@@ -10,6 +10,7 @@ import (
 	"encoding/base32"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -881,4 +882,60 @@ func TestUnixSocketAndShutdown(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("no graceful shutdown")
 	}
+}
+
+// t-102: the user the session middleware loads has HasPassword true when the
+// account has a local password, and the approval page asks for it (field is shown
+// by passwordRequired); an account without one is not asked.
+func TestSessionUserHasPasswordFlag(t *testing.T) {
+	e := newEnv(t, Options{})
+	e.user("pat", auth.RoleUser)
+	web := e.browser()
+	web.login("pat")
+	if _, m := web.do("GET", "/api/auth/me", nil); m["user"].(map[string]any)["hasPassword"] != true {
+		t.Fatalf("session user lost HasPassword: %v", m)
+	}
+	clientKey, _ := ecdh.X25519().GenerateKey(rand.Reader)
+	_, m := e.browser().do("POST", "/api/device/authorize", map[string]string{"client_name": "x", "client_public_key": base64.RawURLEncoding.EncodeToString(clientKey.PublicKey().Bytes())})
+	_, req := web.do("GET", "/api/device/request?user_code="+m["user_code"].(string), nil)
+	if req["passwordRequired"] != true {
+		t.Fatalf("approval page would hide the password field: %v", req)
+	}
+	// Without a local password the field is not asked for.
+	e.svc.DB().Exec(`UPDATE users SET password_hash = '' WHERE username = 'pat'`)
+	if _, req := web.do("GET", "/api/device/request?user_code="+m["user_code"].(string), nil); req["passwordRequired"] != false {
+		t.Fatalf("passwordless account asked for a password: %v", req)
+	}
+}
+
+// t-102: an administrator cannot lift the lock on their own account in the web
+// interface (stolen session); another administrator can, and it also lifts the
+// lock of the security checks.
+func TestAdminUnlockNotSelf(t *testing.T) {
+	e := newEnv(t, Options{})
+	a1 := e.user("root1", auth.RoleAdmin)
+	a2 := e.user("root2", auth.RoleAdmin)
+	for range 6 {
+		e.svc.VerifyStepUpPassword(context.Background(), a1.ID, "wrong password!")
+	}
+	if err := e.svc.StepUpCheck(context.Background(), a1.ID); err == nil {
+		t.Fatal("step-up not locked")
+	}
+	w1 := e.browser()
+	w1.login("root1")
+	if resp, m := w1.do("POST", fmt.Sprintf("/api/admin/users/%d/unlock", a1.ID), nil); resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("self unlock allowed: %s %v", resp.Status, m)
+	}
+	if err := e.svc.StepUpCheck(context.Background(), a1.ID); err == nil {
+		t.Fatal("self unlock lifted the lock")
+	}
+	w2 := e.browser()
+	w2.login("root2")
+	if resp, _ := w2.do("POST", fmt.Sprintf("/api/admin/users/%d/unlock", a1.ID), nil); resp.StatusCode != http.StatusNoContent {
+		t.Fatal(resp.Status)
+	}
+	if err := e.svc.StepUpCheck(context.Background(), a1.ID); err != nil {
+		t.Fatal("unlock by another admin did not lift the step-up lock", err)
+	}
+	_ = a2
 }

@@ -4024,7 +4024,10 @@
     "stepup": {
       "intro": "Zu deiner Sicherheit bestätigst du das mit einem Code.",
       "introPassword": "Zu deiner Sicherheit bestätigst du das mit deinem Passwort und einem Code.",
-      "password": "Passwort",
+      "password": "Aktuelles Passwort",
+      "resignin": "Neu anmelden",
+      "lockedMinutes": "Zu viele falsche Eingaben. Die Sicherheitsabfragen (Passwort, Codes und Sitzungen ändern) sind gesperrt; versuche es in {minutes} Min. erneut. Das Anmelden ist nicht betroffen.",
+      "lockedSeconds": "Gesperrt. Neuer Versuch in {seconds} Sek. Das Anmelden ist nicht betroffen.",
       "code": "Authenticator-Code oder Wiederherstellungscode",
       "codeHint": "Der 6-stellige Code aus deiner App oder einer deiner Wiederherstellungscodes.",
       "introPasswordOnly": "Bestätige mit deinem Anmeldepasswort für TuxMail.",

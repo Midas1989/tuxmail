@@ -15,19 +15,21 @@ import (
 // Passkeys for connecting apps (KONZEPT 15.8/15.9):
 //
 //   - Device approval in the browser (RFC 8628 verification page, /device): the
-//     approval is a long-lived way into the account and needs a step-up. Besides
-//     password (+ code) it accepts a passkey assertion of the signed-in user,
-//     bound to the purpose "device-approve" and to that user (Basis spec/AUTH.md
-//     §3: step-up by password, passkey or TOTP), or - so that a passkey user who
-//     just signed in on /login is not asked twice - a session that was itself
-//     created by a passkey sign-in at most PasskeyApprovalWindow ago.
+//     approval is a long-lived way into the account and needs a step-up given
+//     AFTER the request was shown. Besides password (+ code) it accepts a passkey
+//     assertion of the signed-in user whose ceremony is bound to the purpose
+//     "device-approve", to that user and to the user code of the request shown
+//     (Basis spec/AUTH.md §3: step-up by password, passkey or TOTP). A recent
+//     passkey sign-in alone is deliberately not enough: with a phishing link
+//     (/device?user_code=<attacker's code>) the victim would sign in for
+//     themselves and then approve with one click.
 //   - Direct passkey sign-in of the Android app (Credential Manager, no browser):
 //     a discoverable login whose ceremony is bound to the purpose "device-login"
-//     and that, besides the web origin, accepts the android:apk-key-hash origins
-//     of auth.passkeys.android_apps. It issues a device token like
-//     /api/device/login, counted as two factors like the web passkey login. The
-//     web passkey login never accepts an app origin, and a ceremony of one
-//     purpose is useless for the other (takePasskeyChallenge).
+//     and that accepts ONLY the android:apk-key-hash origins of
+//     auth.passkeys.android_apps (without a configured app it does not exist).
+//     It issues a device token like /api/device/login, counted as two factors
+//     like the web passkey login. The web passkey login never accepts an app
+//     origin, and a ceremony of one purpose is useless for the other.
 //
 // Everything else is the web passkey login of passkeys.go: single-use 5-minute
 // challenges, user verification required, counter compare-and-swap, network
@@ -35,21 +37,21 @@ import (
 const (
 	purposeDeviceLogin   = "device-login"
 	purposeDeviceApprove = "device-approve"
-
-	// PasskeyApprovalWindow is how long a passkey sign-in counts as the step-up
-	// for approving a device (Basis spec/AUTH.md §3: stepup_until = now + 5 min).
-	PasskeyApprovalWindow = FirstPasswordReauthWindow
 )
 
-// webAuthnApps is the relying party of the app sign-in: the web origin plus
-// the configured Android app origins. Built per ceremony: it is cheap and
+// webAuthnApps is the relying party of the app sign-in: the configured Android
+// app origins (the library also needs the web origin in its list; the app
+// endpoint filters it out, see appOrigin). Built per ceremony: it is cheap and
 // follows a changed configuration.
 func (s *Service) webAuthnApps() (*webauthn.WebAuthn, string, error) {
 	if !s.cfg.PasskeysEnabled() {
 		return nil, "", ErrPasskeysDisabled
 	}
-	rpID, origin, _ := s.cfg.PasskeyRP()
 	opaque := s.cfg.PasskeyAppOrigins()
+	if len(opaque) == 0 {
+		return nil, "", fmt.Errorf("%w: no app may sign in with a passkey (auth.passkeys.android_apps)", ErrNotFound)
+	}
+	rpID, origin, _ := s.cfg.PasskeyRP()
 	wa, err := webauthn.New(s.webAuthnConfig(rpID, origin, opaque))
 	if err != nil {
 		return nil, "", fmt.Errorf("auth: passkeys for apps: %w", err)
@@ -81,12 +83,22 @@ func (s *Service) FinishPasskeyDeviceLogin(ctx context.Context, challengeID stri
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.finishDiscoverableLogin(ctx, wa, rpID, purposeDeviceLogin, challengeID, credentialJSON, ci)
+	u, err := s.finishDiscoverableLogin(ctx, wa, rpID, purposeDeviceLogin, challengeID, credentialJSON, ci, s.appOrigin)
 	if err != nil {
 		return nil, err
 	}
 	ctx = WithActor(ctx, Actor{UserID: u.ID, Name: u.Username, IP: ci.IP})
 	return s.finishLogin(ctx, u, KindDevice, MethodPasskey, true, ci)
+}
+
+// appOrigin accepts the configured app origins only.
+func (s *Service) appOrigin(o string) bool {
+	for _, a := range s.cfg.PasskeyAppOrigins() {
+		if o == a {
+			return true
+		}
+	}
+	return false
 }
 
 // usablePasskeys are the credentials of userID for the current RP ID.
@@ -114,20 +126,19 @@ func (s *Service) HasUsablePasskey(ctx context.Context, userID int64) bool {
 	return err == nil && len(rows) > 0
 }
 
-// PasskeySessionFresh reports whether sess is a web session created by a
-// passkey sign-in at most PasskeyApprovalWindow ago: that sign-in is the step-up
-// of a device approval.
-func (s *Service) PasskeySessionFresh(sess *Session) bool {
-	return sess != nil && sess.Kind == KindWeb && sess.LoginMethod == MethodPasskey &&
-		s.now().Sub(sess.CreatedAt) <= PasskeyApprovalWindow
-}
-
-// BeginPasskeyDeviceApproval starts the passkey confirmation of a device
-// approval by the signed-in userID. The options list the user's own
-// credentials only. A new begin replaces a pending one of the same user.
-func (s *Service) BeginPasskeyDeviceApproval(ctx context.Context, userID int64) (string, *protocol.CredentialAssertion, error) {
+// BeginPasskeyDeviceApproval starts the passkey confirmation of the pending
+// device request userCode by the signed-in userID. The ceremony is bound to
+// both; the options list the user's own credentials only. A new begin replaces
+// a pending one of the same user.
+func (s *Service) BeginPasskeyDeviceApproval(ctx context.Context, userID int64, userCode string) (string, *protocol.CredentialAssertion, error) {
 	wa, rpID, err := s.webAuthn()
 	if err != nil {
+		return "", nil, err
+	}
+	if _, err := s.LookupDeviceRequest(ctx, userCode); err != nil {
+		return "", nil, err
+	}
+	if err := s.StepUpCheck(ctx, userID); err != nil {
 		return "", nil, err
 	}
 	wu, _, err := s.approvalUser(ctx, userID, rpID)
@@ -141,7 +152,7 @@ func (s *Service) BeginPasskeyDeviceApproval(ctx context.Context, userID int64) 
 	if _, err := s.db.ExecContext(ctx, `DELETE FROM passkey_challenges WHERE kind = 'login' AND user_id = ?`, userID); err != nil {
 		return "", nil, err
 	}
-	id, err := s.putPasskeyChallenge(ctx, "login", purposeDeviceApprove, userID, sd)
+	id, err := s.putBoundChallenge(ctx, "login", purposeDeviceApprove, NormalizeUserCode(userCode), userID, sd)
 	if err != nil {
 		return "", nil, err
 	}
@@ -171,12 +182,14 @@ func (s *Service) approvalUser(ctx context.Context, userID int64, rpID string) (
 	return wu, rows, nil
 }
 
-// VerifyPasskeyDeviceApproval checks the passkey confirmation of a device
-// approval by userID. It must be an assertion of one of userID's own passkeys
-// with user verification, for the ceremony started by
-// BeginPasskeyDeviceApproval for the same user. Failures are ErrPasskeyInvalid
-// (the reason is in the audit log).
-func (s *Service) VerifyPasskeyDeviceApproval(ctx context.Context, userID int64, challengeID string, credentialJSON []byte) error {
+// VerifyPasskeyDeviceApproval checks the passkey confirmation of the device
+// request userCode by userID. It must be an assertion of one of userID's own
+// passkeys with user verification, for the ceremony started by
+// BeginPasskeyDeviceApproval for the same user and code. It runs under the
+// step-up lock of the account (stepup.go) and counts a refused assertion
+// there. Failures are ErrPasskeyInvalid (the reason is in the audit log) or a
+// *ThrottleError while the lock holds.
+func (s *Service) VerifyPasskeyDeviceApproval(ctx context.Context, userID int64, userCode, challengeID string, credentialJSON []byte) error {
 	wa, rpID, err := s.webAuthn()
 	if err != nil {
 		return err
@@ -185,14 +198,20 @@ func (s *Service) VerifyPasskeyDeviceApproval(ctx context.Context, userID int64,
 	if err != nil {
 		return err
 	}
+	if err := s.StepUpCheck(ctx, userID); err != nil {
+		return err
+	}
 	fail := func(reason string) error {
 		s.Audit(ctx, "device.passkey", u.Username, false, reason)
+		s.stepUpFailed(ctx, userID, "passkey: "+reason)
 		return ErrPasskeyInvalid
 	}
-	sd, err := s.takePasskeyChallenge(ctx, challengeID, "login", purposeDeviceApprove, userID)
+	sd, err := s.takeBoundChallenge(ctx, challengeID, "login", purposeDeviceApprove, NormalizeUserCode(userCode), userID)
 	if err != nil {
 		if errors.Is(err, ErrPasskeyChallenge) {
-			return fail("unknown, expired, used or foreign ceremony")
+			// Not a wrong answer (an old or foreign form): not counted.
+			s.Audit(ctx, "device.passkey", u.Username, false, "unknown, expired, used or foreign ceremony")
+			return ErrPasskeyInvalid
 		}
 		return err
 	}
@@ -223,6 +242,7 @@ func (s *Service) VerifyPasskeyDeviceApproval(ctx context.Context, userID int64,
 	if err := s.acceptAssertion(ctx, u, row, cred); err != nil {
 		return fail(err.Error())
 	}
-	s.Audit(ctx, "device.passkey", u.Username, true, fmt.Sprintf("confirmed with passkey %q", row.name))
+	s.ClearStepUp(ctx, userID)
+	s.Audit(ctx, "device.passkey", u.Username, true, fmt.Sprintf("confirmed with passkey %q user_code=%s", row.name, NormalizeUserCode(userCode)))
 	return nil
 }

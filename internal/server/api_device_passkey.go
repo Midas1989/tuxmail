@@ -11,10 +11,10 @@ import (
 
 // Passkeys for connecting apps (internal/auth/passkey_device.go):
 //
-//	POST /api/device/passkey/begin    (public, native)  -> {challengeId, publicKey}
+//	POST /api/device/passkey/begin    (public, native)  -> {challengeId, publicKey}; 404 without auth.passkeys.android_apps
 //	POST /api/device/passkey/login    (public, native)  {challengeId, credential, device_name, client_public_key, scope}
 //	                                                     -> token like /api/device/login
-//	POST /api/device/approve/passkey  (browser session) -> {challengeId, publicKey}; the answer goes to
+//	POST /api/device/approve/passkey  (browser session) {user_code} -> {challengeId, publicKey}; the answer goes to
 //	                                                     /api/device/approve as "passkey": {challengeId, credential}
 //	GET  /.well-known/assetlinks.json (public)          Digital Asset Links of auth.passkeys.android_apps
 //
@@ -31,6 +31,10 @@ type passkeyProof struct {
 func (s *Server) handleDevicePasskeyBegin(w http.ResponseWriter, r *http.Request) {
 	if !s.auth.PasskeysEnabled() {
 		s.writeAuthError(w, auth.ErrPasskeysDisabled)
+		return
+	}
+	if !s.auth.PasskeyAppLogin() {
+		writeError(w, http.StatusNotFound, "not_found", "no app may sign in with a passkey on this server")
 		return
 	}
 	if !s.limitLogin(w, r, "passkey") {
@@ -58,6 +62,10 @@ func (s *Server) handleDevicePasskeyLogin(w http.ResponseWriter, r *http.Request
 		s.writeAuthError(w, auth.ErrPasskeysDisabled)
 		return
 	}
+	if !s.auth.PasskeyAppLogin() {
+		writeError(w, http.StatusNotFound, "not_found", "no app may sign in with a passkey on this server")
+		return
+	}
 	if !s.limitLogin(w, r, "passkey") {
 		return
 	}
@@ -82,9 +90,15 @@ func (s *Server) handleDevicePasskeyLogin(w http.ResponseWriter, r *http.Request
 	s.writeDeviceToken(w, res)
 }
 
-// handleDeviceApprovePasskeyBegin starts the passkey confirmation of a device
-// approval on the verification page.
+// handleDeviceApprovePasskeyBegin starts the passkey confirmation of the device
+// request shown on the verification page (bound to its user code).
 func (s *Server) handleDeviceApprovePasskeyBegin(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	var req struct {
+		UserCode string `json:"user_code"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
 	if a.Bearer || a.Session.Kind != auth.KindWeb {
 		writeError(w, http.StatusForbidden, "forbidden", "approve devices from a browser session")
 		return
@@ -92,7 +106,7 @@ func (s *Server) handleDeviceApprovePasskeyBegin(w http.ResponseWriter, r *http.
 	if !s.limitLogin(w, r, a.User.Username) {
 		return
 	}
-	id, assertion, err := s.auth.BeginPasskeyDeviceApproval(r.Context(), a.User.ID)
+	id, assertion, err := s.auth.BeginPasskeyDeviceApproval(r.Context(), a.User.ID, req.UserCode)
 	if err != nil {
 		s.writeAuthError(w, err)
 		return
@@ -100,17 +114,20 @@ func (s *Server) handleDeviceApprovePasskeyBegin(w http.ResponseWriter, r *http.
 	writeJSON(w, http.StatusOK, passkeyBeginResponse{ChallengeID: id, PublicKey: assertion.Response})
 }
 
-// approvalProof is the step-up of a device approval: a passkey assertion, a
-// fresh passkey sign-in of this session, or password and code (reauth).
-func (s *Server) approvalProof(w http.ResponseWriter, r *http.Request, a *authInfo, pk *passkeyProof, password, code, recovery string) bool {
+// approvalProof is the step-up of a device approval, given after the request
+// was shown: a passkey assertion bound to this request, or password and code
+// (reauth). A recent sign-in alone never is (device code phishing).
+func (s *Server) approvalProof(w http.ResponseWriter, r *http.Request, a *authInfo, userCode string, pk *passkeyProof, password, code, recovery string) bool {
 	if pk != nil && pk.ChallengeID != "" {
-		if err := s.auth.VerifyPasskeyDeviceApproval(r.Context(), a.User.ID, pk.ChallengeID, pk.Credential); err != nil {
+		if a.Session.Kind != auth.KindWeb {
+			refuseDevice(w)
+			return false
+		}
+		if err := s.auth.VerifyPasskeyDeviceApproval(r.Context(), a.User.ID, userCode, pk.ChallengeID, pk.Credential); err != nil {
 			s.writeAuthError(w, err)
 			return false
 		}
-		return true
-	}
-	if password == "" && code == "" && recovery == "" && s.auth.PasskeySessionFresh(a.Session) {
+		s.rotateAfterStepUp(w, r, a)
 		return true
 	}
 	return s.reauth(w, r, a, password, code, recovery)

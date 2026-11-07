@@ -29,6 +29,14 @@ export function retryMinutes(err: unknown): number | undefined {
   return typeof s === 'number' && s > 0 ? Math.max(1, Math.ceil(s / 60)) : undefined;
 }
 
+/** End of a server lock (ms since epoch) after a 429 with Retry-After; null for any other error. */
+export function lockUntilOf(err: unknown, now = Date.now()): number | null {
+  const e = (err ?? {}) as ErrorLike;
+  if (e.code !== 'throttled' && e.status !== 429) return null;
+  const s = e.retryAfter;
+  return now + (typeof s === 'number' && s > 0 ? s : 60) * 1000;
+}
+
 /**
  * Localized text for an error of the account security routes. Known server
  * codes map to our own wording (the server texts are English); anything else

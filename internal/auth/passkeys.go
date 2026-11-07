@@ -346,12 +346,18 @@ func (s *Service) ListPasskeys(ctx context.Context, userID int64) ([]Passkey, er
 type ceremonyState struct {
 	webauthn.SessionData
 	Purpose string `json:"tuxmailPurpose,omitempty"`
+	// Bind ties the ceremony to one object (the device approval: the user code).
+	Bind string `json:"tuxmailBind,omitempty"`
 }
 
 // putPasskeyChallenge stores the ceremony state and returns the opaque id the
 // client must present to finish it.
 func (s *Service) putPasskeyChallenge(ctx context.Context, kind, purpose string, userID int64, sd *webauthn.SessionData) (string, error) {
-	data, err := json.Marshal(ceremonyState{SessionData: *sd, Purpose: purpose})
+	return s.putBoundChallenge(ctx, kind, purpose, "", userID, sd)
+}
+
+func (s *Service) putBoundChallenge(ctx context.Context, kind, purpose, bind string, userID int64, sd *webauthn.SessionData) (string, error) {
+	data, err := json.Marshal(ceremonyState{SessionData: *sd, Purpose: purpose, Bind: bind})
 	if err != nil {
 		return "", err
 	}
@@ -371,6 +377,10 @@ func (s *Service) putPasskeyChallenge(ctx context.Context, kind, purpose string,
 // ErrPasskeyChallenge for unknown, expired, used or foreign ids and for a
 // ceremony started for another purpose (which is consumed all the same).
 func (s *Service) takePasskeyChallenge(ctx context.Context, id, kind, purpose string, userID int64) (*webauthn.SessionData, error) {
+	return s.takeBoundChallenge(ctx, id, kind, purpose, "", userID)
+}
+
+func (s *Service) takeBoundChallenge(ctx context.Context, id, kind, purpose, bind string, userID int64) (*webauthn.SessionData, error) {
 	if id == "" || len(id) > 100 {
 		return nil, ErrPasskeyChallenge
 	}
@@ -390,7 +400,7 @@ func (s *Service) takePasskeyChallenge(ctx context.Context, id, kind, purpose st
 		return nil, err
 	}
 	var st ceremonyState
-	if err := json.Unmarshal(data, &st); err != nil || st.Purpose != purpose {
+	if err := json.Unmarshal(data, &st); err != nil || st.Purpose != purpose || subtle.ConstantTimeCompare([]byte(st.Bind), []byte(bind)) != 1 {
 		return nil, ErrPasskeyChallenge
 	}
 	return &st.SessionData, nil
@@ -727,7 +737,7 @@ func (s *Service) FinishPasskeyLogin(ctx context.Context, challengeID string, cr
 	if err != nil {
 		return nil, err
 	}
-	u, err := s.finishDiscoverableLogin(ctx, wa, rpID, "", challengeID, credentialJSON, ci)
+	u, err := s.finishDiscoverableLogin(ctx, wa, rpID, "", challengeID, credentialJSON, ci, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +751,10 @@ func (s *Service) FinishPasskeyLogin(ctx context.Context, challengeID string, cr
 // enforces everything but the session: network throttle, single use, origin
 // and RP ID (by wa), user verification, the signature counter and disabled
 // accounts. Every failure is ErrInvalidCredentials.
-func (s *Service) finishDiscoverableLogin(ctx context.Context, wa *webauthn.WebAuthn, rpID, purpose, challengeID string, credentialJSON []byte, ci ClientInfo) (*User, error) {
+//
+// allowOrigin, if set, narrows the origins wa accepts (the app sign-in takes
+// app origins only, although the library needs the web origin in its list).
+func (s *Service) finishDiscoverableLogin(ctx context.Context, wa *webauthn.WebAuthn, rpID, purpose, challengeID string, credentialJSON []byte, ci ClientInfo, allowOrigin func(string) bool) (*User, error) {
 	ctx = WithActor(ctx, Actor{Name: "(passkey)", IP: ci.IP})
 	key := passkeyThrottleKey(ci.IP)
 	if err := s.checkThrottle(ctx, key); err != nil {
@@ -763,6 +776,9 @@ func (s *Service) finishDiscoverableLogin(ctx context.Context, wa *webauthn.WebA
 	parsed, err := protocol.ParseCredentialRequestResponseBytes(credentialJSON)
 	if err != nil {
 		return fail("(passkey)", "malformed response: "+protocolReason(err))
+	}
+	if allowOrigin != nil && !allowOrigin(parsed.Response.CollectedClientData.Origin) {
+		return fail("(passkey)", "origin not allowed here")
 	}
 
 	var row *passkeyRow

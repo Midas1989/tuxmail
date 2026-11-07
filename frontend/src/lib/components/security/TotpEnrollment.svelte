@@ -19,59 +19,51 @@
   import type { Api } from '../../api/api';
   import type { TotpEnrollment } from '../../api/security';
   import { t } from '../../i18n/index.svelte';
-  import { formatSecret, sanitizeTotpCode, securityErrorMessage } from '../../security';
+  import { formatSecret, lockUntilOf, sanitizeTotpCode, securityErrorMessage } from '../../security';
+  import { signOutWeb } from '../../session';
   import QrCode from '../common/QrCode.svelte';
   import RecoveryCodes from './RecoveryCodes.svelte';
 
   interface Props {
     api: Api;
     onfinished: () => void;
+    /** Does the account have a local password? Unknown (undefined): asked from the server. */
+    hasPassword?: boolean;
     /** Leave before the codes are shown (hidden once TOTP is active: from then on only "finish" is possible). */
     oncancel?: () => void;
   }
-  let { api, onfinished, oncancel }: Props = $props();
+  let { api, onfinished, hasPassword: hasPasswordProp, oncancel }: Props = $props();
 
-  type Step = 'loading' | 'reauth' | 'scan' | 'verify' | 'codes';
-  let step = $state<Step>('loading');
+  type Step = 'reauth' | 'scan' | 'verify' | 'codes';
+  let step = $state<Step>('reauth');
   let enrollment = $state<TotpEnrollment | null>(null);
   let code = $state('');
   let codes = $state<string[]>([]);
   let stored = $state(false);
   let error = $state<string | null>(null);
   let busy = $state(false);
-  /** The account has a local password: then every failure of the proof stays at the password field. */
-  let hasPassword = $state(true);
+  let lockUntil = $state<number | null>(null);
+  /** The proof field is always there (like in the passkey card): an unknown state counts as "has a password". */
+  let hasPasswordLoaded = $state<boolean | undefined>(undefined);
+  const hasPassword = $derived(hasPasswordProp ?? hasPasswordLoaded ?? true);
   let secretCopied = $state(false);
   let codeInput = $state<HTMLInputElement>();
 
-  const stepNumber = $derived(step === 'loading' || step === 'reauth' || step === 'scan' ? 1 : step === 'verify' ? 2 : 3);
-
-  /** The server asks for the password first (accounts without one: a recent sign-in). */
-  async function begin() {
-    error = null;
-    step = 'loading';
-    try {
-      const me = await api.getAuthMe();
-      hasPassword = me.user.hasPassword;
-      if (hasPassword) step = 'reauth';
-      else await enroll({});
-    } catch (err) {
-      error = securityErrorMessage(err, t);
-    }
-  }
+  const stepNumber = $derived(step === 'reauth' || step === 'scan' ? 1 : step === 'verify' ? 2 : 3);
 
   async function enroll(reauth: Reauth) {
     error = null;
     busy = true;
     try {
       enrollment = await api.totpSetup(reauth);
+      lockUntil = null;
       step = 'scan';
     } catch (err) {
-      const e = err as { code?: string };
-      // With a password the field never disappears (wrong password, lock, network ...).
-      step = hasPassword ? 'reauth' : 'loading';
+      // The form stays whatever happens (wrong password, lock, network ...).
+      step = 'reauth';
+      lockUntil = lockUntilOf(err);
       // "Nothing entered" is the form itself, not an error.
-      error = hasPassword && e?.code === 'reauth_required' ? null : securityErrorMessage(err, t);
+      error = (err as { code?: string })?.code === 'reauth_required' && hasPassword ? null : securityErrorMessage(err, t);
     } finally {
       busy = false;
     }
@@ -109,7 +101,13 @@
     if (step === 'verify') codeInput?.focus();
   });
 
-  onMount(() => void begin());
+  onMount(() => {
+    if (hasPasswordProp !== undefined) return;
+    api
+      .getAuthMe()
+      .then((me) => (hasPasswordLoaded = me.user.hasPassword))
+      .catch((err) => (error = securityErrorMessage(err, t)));
+  });
 
   // The recovery codes are shown only once: warn before the page is left.
   function onbeforeunload(e: BeforeUnloadEvent) {
@@ -120,20 +118,12 @@
 <svelte:window {onbeforeunload} />
 
 <div class="enroll" data-step={step}>
-  <p class="steps" aria-live="polite">{t('security.setup.step', { current: stepNumber, total: 3 })}</p>
+  {#if step !== 'reauth'}<p class="steps" aria-live="polite">{t('security.setup.step', { current: stepNumber, total: 3 })}</p>{/if}
 
   {#if step === 'reauth'}
-    <StepUpForm hasPassword={true} hasSecondFactor={false} submitLabel={t('security.setup.continue')} {busy} {error} onsubmit={(r) => void enroll(r)} oncancel={() => oncancel?.()} />
-  {:else if step === 'loading'}
-    {#if error}
-      <p class="error" role="alert">{error}</p>
-      <div class="row">
-        <button type="button" class="btn" onclick={() => void begin()}>{t('security.setup.retry')}</button>
-        {#if oncancel}<button type="button" class="btn btn-ghost" onclick={oncancel}>{t('common.action.cancel')}</button>{/if}
-      </div>
-    {:else}
-      <p class="muted"><LoaderCircle size={15} class="spin" /> {t('security.setup.preparing')}</p>
-    {/if}
+    {#key hasPassword}
+      <StepUpForm {hasPassword} hasSecondFactor={false} submitLabel={t('security.twofactor.enable')} {busy} {error} {lockUntil} resignin={() => void signOutWeb({ api })} onsubmit={(r) => void enroll(r)} {oncancel} />
+    {/key}
   {:else if step === 'scan' && enrollment}
     <h3>{t('security.setup.scanTitle')}</h3>
     <p class="muted">{t('security.setup.scanText')}</p>

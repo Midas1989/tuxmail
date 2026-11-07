@@ -1,7 +1,58 @@
 ---
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Installiert die gewünschte Version nach /opt/tuxmail/versions/<version>/.
+# Mit tuxmail_binary_src bestimmt der Dateiname des Archivs die Version (versions/<v>); ein vorhandenes
+# Verzeichnis wird mit dem Archivinhalt abgeglichen (kein creates), sonst bliebe ein altes Binary liegen.
 # Der Symlink /opt/tuxmail/current wird erst in activate.yml umgestellt.
+
+- name: Archivname des lokalen Archivs passt zum Muster tuxmail_<version>_linux_<arch>.tar.gz
+  ansible.builtin.assert:
+    that:
+      - >-
+        tuxmail_binary_src | basename is match('^tuxmail_[0-9A-Za-z][0-9A-Za-z.+-]*_linux_' ~ tuxmail_arch ~ '\\.(tar\\.gz|tgz)$')
+      - >-
+        '..' not in (tuxmail_binary_src | basename)
+    quiet: true
+    fail_msg: >-
+      Der Dateiname "{{ tuxmail_binary_src | basename }}" passt nicht zu tuxmail_<version>_linux_{{ tuxmail_arch }}.tar.gz
+      (Version: Buchstaben, Ziffern, Punkt, Plus, Minus; kein "..", kein Leerzeichen). Aus dem Namen wird die Version
+      bestimmt (versions/<version>); benenne das Archiv so oder gib es als entpacktes Binary an. Es wurde nichts verändert.
+  when:
+    - tuxmail_binary_src | length > 0
+    - tuxmail_binary_src is search('\\.(tar\\.gz|tgz)$')
+
+- name: Version aus dem lokalen Archiv bestimmen
+  ansible.builtin.set_fact:
+    tuxmail_version: "{{ tuxmail_binary_src | basename | regex_replace('^tuxmail_(.+)_linux_[a-z0-9]+\\.(tar\\.gz|tgz)$', '\\1') }}"
+  when:
+    - tuxmail_binary_src | length > 0
+    - tuxmail_binary_src is search('\\.(tar\\.gz|tgz)$')
+
+- name: Vorhandenes Binary dieser Version suchen
+  ansible.builtin.stat:
+    path: "{{ tuxmail_version_binary }}"
+  register: tuxmail_existing_binary
+
+- name: Unterschied zum vorhandenen Versionsverzeichnis prüfen (nur Vergleich)
+  ansible.builtin.unarchive:
+    src: "{{ tuxmail_binary_src }}"
+    dest: "{{ tuxmail_version_dir }}"
+  check_mode: true
+  register: tuxmail_version_diff
+  when:
+    - tuxmail_existing_binary.stat.exists
+    - tuxmail_binary_src | length > 0
+    - tuxmail_binary_src is search('\\.(tar\\.gz|tgz)$')
+
+- name: Vorhandene Version nicht stillschweigend überschreiben
+  ansible.builtin.assert:
+    that: not (tuxmail_version_diff.changed | default(false)) or (tuxmail_replace_existing_version | bool)
+    quiet: true
+    fail_msg: >-
+      {{ tuxmail_version_dir }} existiert schon mit anderem Inhalt als {{ tuxmail_binary_src | basename }}. Das ist die aktive
+      oder eine Rückweg-Version und wird nicht überschrieben. Gib dem Archiv eine neue Versionsnummer, oder erlaube
+      das Ersetzen ausdrücklich mit -e tuxmail_replace_existing_version=true. Es wurde nichts verändert.
+  when: tuxmail_version_diff is not skipped
 
 - name: Versionsverzeichnis anlegen
   ansible.builtin.file:
@@ -67,7 +118,7 @@
     remote_src: true
     owner: root
     group: root
-    creates: "{{ tuxmail_version_binary }}"
+  notify: tuxmail restart
   when: tuxmail_binary_src | length == 0
 
 - name: Lokales Archiv vom Steuerrechner entpacken
@@ -76,7 +127,6 @@
     dest: "{{ tuxmail_version_dir }}"
     owner: root
     group: root
-    creates: "{{ tuxmail_version_binary }}"
   when:
     - tuxmail_binary_src | length > 0
     - tuxmail_binary_src is search('\.(tar\.gz|tgz)$')
@@ -88,6 +138,7 @@
     owner: root
     group: root
     mode: "0755"
+  notify: tuxmail restart
   when:
     - tuxmail_binary_src | length > 0
     - tuxmail_binary_src is not search('\.(tar\.gz|tgz)$')

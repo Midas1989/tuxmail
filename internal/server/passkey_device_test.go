@@ -87,60 +87,64 @@ func pollToken(t *testing.T, e *env, deviceCode string) (*http.Response, map[str
 	return e.native("").do("POST", "/api/device/token", map[string]string{"device_code": deviceCode})
 }
 
-// approvalProofOf runs the passkey confirmation on the approval page of b with a.
-func approvalProofOf(t *testing.T, b *browser, a *passkeytest.Authenticator) map[string]any {
+// approvalProofOf runs the passkey confirmation of request uc on the approval page of b with a.
+func approvalProofOf(t *testing.T, b *browser, a *passkeytest.Authenticator, uc string) map[string]any {
 	t.Helper()
-	resp, m := b.do("POST", "/api/device/approve/passkey", nil)
+	resp, m := b.do("POST", "/api/device/approve/passkey", map[string]string{"user_code": uc})
 	if resp.StatusCode != 200 {
 		t.Fatal(resp.Status, m)
 	}
 	return map[string]any{"challengeId": m["challengeId"], "credential": json.RawMessage(a.Get(js(t, m["publicKey"])))}
 }
 
-func TestDeviceApprovalAfterPasskeySignIn(t *testing.T) {
+// Device code phishing: a link /device?user_code=<attacker's code>, the victim
+// signs in with the passkey and comes back. That sign-in must not approve
+// anything: the proof comes after the request was shown and is bound to it.
+func TestDeviceApprovalNeedsProofAfterPasskeySignIn(t *testing.T) {
 	e := passkeyEnv(t, fastLogin)
 	_, a := enrolPasskey(t, e, "anna")
 	dc, uc := startGrant(t, e)
+	_, uc2 := startGrant(t, e)
 
-	// The Custom Tab: not signed in, /login with the passkey, back on /device.
 	pb, resp, m := e.passkeyLoginHTTP(a, nil)
 	if resp.StatusCode != 200 {
 		t.Fatal(resp.Status, m)
 	}
 	resp, m = pb.do("GET", "/api/device/request?user_code="+uc, nil)
-	if resp.StatusCode != 200 || m["passkey"] != true || m["passkeyFresh"] != true {
+	if resp.StatusCode != 200 || m["passkey"] != true || m["passkeyFresh"] != nil {
 		t.Fatalf("request: %s %v", resp.Status, m)
 	}
-	// The fresh passkey sign-in is the confirmation: one passkey prompt in total.
-	if resp, m := pb.do("POST", "/api/device/approve", map[string]any{"user_code": uc, "approve": true}); resp.StatusCode != 204 {
-		t.Fatalf("approve: %s %v", resp.Status, m)
+	for _, code := range []string{uc, uc2} {
+		if resp, m := pb.do("POST", "/api/device/approve", map[string]any{"user_code": code, "approve": true}); resp.StatusCode != 403 || m["error"] != "reauth_required" {
+			t.Fatalf("fresh passkey session approved %s without proof: %s %v", code, resp.Status, m)
+		}
+	}
+	if resp, m := pollToken(t, e, dc); resp.StatusCode == 200 {
+		t.Fatalf("token without proof: %v", m)
+	}
+	// A proof for one request does not approve another.
+	proof := approvalProofOf(t, pb, a, uc)
+	if resp, m := pb.do("POST", "/api/device/approve", map[string]any{"user_code": uc2, "passkey": proof}); resp.StatusCode != 400 || m["error"] != "passkey_invalid" {
+		t.Fatalf("proof of another request: %s %v", resp.Status, m)
+	}
+	// The proof given for the shown request works, once; the session id rotates.
+	before := pb.sessionCookieValue()
+	proof = approvalProofOf(t, pb, a, uc)
+	if resp, m := pb.do("POST", "/api/device/approve", map[string]any{"user_code": uc, "passkey": proof}); resp.StatusCode != 204 {
+		t.Fatalf("approve with passkey: %s %v", resp.Status, m)
+	}
+	if pb.sessionCookieValue() == before {
+		t.Error("session not rotated after the passkey step-up")
 	}
 	resp, m = pollToken(t, e, dc)
 	if resp.StatusCode != 200 || m["access_token"] == "" || m["scope"] != "data" {
 		t.Fatalf("token: %s %v", resp.Status, m)
 	}
-
-	// Later (past the window) the same session must confirm again.
-	dc2, uc2 := startGrant(t, e)
-	e.svc.Now = func() time.Time { return time.Now().Add(auth.PasskeyApprovalWindow + time.Minute) }
-	defer func() { e.svc.Now = time.Now }()
-	_, m = pb.do("GET", "/api/device/request?user_code="+uc2, nil)
-	if m["passkeyFresh"] != false {
-		t.Fatalf("still fresh: %v", m)
-	}
-	if resp, m := pb.do("POST", "/api/device/approve", map[string]any{"user_code": uc2}); resp.StatusCode != 403 || m["error"] != "reauth_required" {
-		t.Fatalf("stale passkey session approved without proof: %s %v", resp.Status, m)
-	}
-	// ... with the passkey ...
-	proof := approvalProofOf(t, pb, a)
-	if resp, m := pb.do("POST", "/api/device/approve", map[string]any{"user_code": uc2, "passkey": proof}); resp.StatusCode != 204 {
-		t.Fatalf("approve with passkey: %s %v", resp.Status, m)
-	}
-	e.svc.Now = time.Now
-	if resp, m := pollToken(t, e, dc2); resp.StatusCode != 200 {
-		t.Fatalf("token 2: %s %v", resp.Status, m)
-	}
 	assertAudit(t, e, "device.passkey", "anna", true)
+	// Begin needs a pending request.
+	if resp, m := pb.do("POST", "/api/device/approve/passkey", map[string]string{"user_code": "BCDF-GHJK"}); resp.StatusCode < 400 || resp.StatusCode >= 500 {
+		t.Fatalf("unknown code: %s %v", resp.Status, m)
+	}
 }
 
 func TestDeviceApprovalPasskeyForPasswordSession(t *testing.T) {
@@ -149,15 +153,34 @@ func TestDeviceApprovalPasskeyForPasswordSession(t *testing.T) {
 	_, uc := startGrant(t, e)
 	b := e.browser()
 	b.login("anna")
-	// A password sign-in is not a passkey confirmation.
-	if _, m := b.do("GET", "/api/device/request?user_code="+uc, nil); m["passkeyFresh"] != false || m["passkey"] != true {
+	if _, m := b.do("GET", "/api/device/request?user_code="+uc, nil); m["passkey"] != true {
 		t.Fatalf("request: %v", m)
 	}
 	if resp, m := b.do("POST", "/api/device/approve", map[string]any{"user_code": uc}); resp.StatusCode != 403 || m["error"] != "reauth_required" {
 		t.Fatalf("password session without proof: %s %v", resp.Status, m)
 	}
-	if resp, m := b.do("POST", "/api/device/approve", map[string]any{"user_code": uc, "passkey": approvalProofOf(t, b, a)}); resp.StatusCode != 204 {
+	if resp, m := b.do("POST", "/api/device/approve", map[string]any{"user_code": uc, "passkey": approvalProofOf(t, b, a, uc)}); resp.StatusCode != 204 {
 		t.Fatalf("passkey proof: %s %v", resp.Status, m)
+	}
+}
+
+// Refused passkey proofs count in the step-up lock of the account (s:<id>).
+func TestDeviceApprovalPasskeyStepUpLock(t *testing.T) {
+	e := passkeyEnv(t, fastLogin)
+	_, a := enrolPasskey(t, e, "anna")
+	_, uc := startGrant(t, e)
+	b := e.browser()
+	b.login("anna")
+	noUV := *a
+	noUV.UV = false
+	for range 5 {
+		b.do("POST", "/api/device/approve", map[string]any{"user_code": uc, "passkey": approvalProofOf(t, b, &noUV, uc)})
+	}
+	if resp, m := b.do("POST", "/api/device/approve/passkey", map[string]string{"user_code": uc}); resp.StatusCode != 429 || m["error"] != "throttled" {
+		t.Fatalf("locked begin: %s %v", resp.Status, m)
+	}
+	if resp, m := b.do("POST", "/api/device/approve", map[string]any{"user_code": uc, "password": pw}); resp.StatusCode != 429 {
+		t.Fatalf("password during the lock: %s %v", resp.Status, m)
 	}
 }
 
@@ -176,32 +199,33 @@ func TestDeviceApprovalPasskeyNegative(t *testing.T) {
 		if resp, m := approve(proof); resp.StatusCode != 400 || m["error"] != "passkey_invalid" {
 			t.Errorf("%s: %s %v", what, resp.Status, m)
 		}
+		e.svc.ClearStepUp(context.Background(), 1) // each case on its own (the lock has its own test)
 	}
 
 	// Foreign user: bob's passkey for anna's approval.
-	refused("passkey of another user", approvalProofOf(t, b, bob))
+	refused("passkey of another user", approvalProofOf(t, b, bob, uc))
 	// Wrong origin (phishing site) and wrong RP ID.
 	phish := *a
 	phish.Origin = "https://evil.example"
-	refused("wrong origin", approvalProofOf(t, b, &phish))
+	refused("wrong origin", approvalProofOf(t, b, &phish, uc))
 	wrongRP := *a
 	wrongRP.RPID = "evil.example"
-	refused("wrong RP ID", approvalProofOf(t, b, &wrongRP))
+	refused("wrong RP ID", approvalProofOf(t, b, &wrongRP, uc))
 	// The app origin is never valid in the browser ceremony.
 	appA := *a
 	appA.Origin = appOrigin
-	refused("app origin", approvalProofOf(t, b, &appA))
+	refused("app origin", approvalProofOf(t, b, &appA, uc))
 	// No user verification.
 	noUV := *a
 	noUV.UV = false
-	refused("UV=0", approvalProofOf(t, b, &noUV))
+	refused("UV=0", approvalProofOf(t, b, &noUV, uc))
 	// Expired challenge.
-	proof := approvalProofOf(t, b, a)
+	proof := approvalProofOf(t, b, a, uc)
 	e.svc.Now = func() time.Time { return time.Now().Add(6 * time.Minute) }
 	refused("expired challenge", proof)
 	e.svc.Now = time.Now
 	// Reused challenge: the first use succeeds, the second is refused.
-	proof = approvalProofOf(t, b, a)
+	proof = approvalProofOf(t, b, a, uc)
 	if resp, m := approve(proof); resp.StatusCode != 204 {
 		t.Fatalf("valid proof: %s %v", resp.Status, m)
 	}
@@ -210,7 +234,7 @@ func TestDeviceApprovalPasskeyNegative(t *testing.T) {
 	// Counter going backwards (the valid proof above stored a counter > 0).
 	back := *a
 	back.SignCount, back.CountStep = 0, 0
-	refused("counter backwards", approvalProofOf(t, b, &back))
+	refused("counter backwards", approvalProofOf(t, b, &back, uc))
 	// A challenge of the web sign-in (other purpose) is no approval.
 	x := e.browser()
 	x.fetchCSRF()
@@ -219,22 +243,22 @@ func TestDeviceApprovalPasskeyNegative(t *testing.T) {
 	// Another user's approval ceremony cannot be used (user bound).
 	bb := e.browser()
 	bb.login("bob")
-	refused("bob's ceremony", approvalProofOf(t, bb, a))
+	refused("bob's ceremony", approvalProofOf(t, bb, a, uc))
 	assertAudit(t, e, "device.passkey", "anna", false)
 
 	// Device tokens and anonymous callers cannot start the confirmation.
-	if resp, _ := e.browser().do("POST", "/api/device/approve/passkey", nil); resp.StatusCode != 401 && resp.StatusCode != 403 {
+	if resp, _ := e.browser().do("POST", "/api/device/approve/passkey", map[string]string{"user_code": uc}); resp.StatusCode != 401 && resp.StatusCode != 403 {
 		t.Errorf("anonymous: %s", resp.Status)
 	}
 	d := deviceTok(t, e, "anna", "data")
-	if resp, m := d.do("POST", "/api/device/approve/passkey", nil); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
+	if resp, m := d.do("POST", "/api/device/approve/passkey", map[string]string{"user_code": uc}); resp.StatusCode != 403 || m["error"] != "device_token_forbidden" {
 		t.Errorf("device token: %s %v", resp.Status, m)
 	}
 	// An account without passkey gets a clear answer.
 	e.user("carl", auth.RoleUser)
 	cb := e.browser()
 	cb.login("carl")
-	if resp, m := cb.do("POST", "/api/device/approve/passkey", nil); resp.StatusCode != 404 {
+	if resp, m := cb.do("POST", "/api/device/approve/passkey", map[string]string{"user_code": uc}); resp.StatusCode != 404 {
 		t.Errorf("no passkey: %s %v", resp.Status, m)
 	}
 	if _, m := cb.do("GET", "/api/device/request?user_code="+uc, nil); m["passkey"] != false {
@@ -289,10 +313,10 @@ func TestAppPasskeyLogin(t *testing.T) {
 		t.Fatalf("provisioning with a data token: %s", resp.Status)
 	}
 	assertAuditDetails(t, e, "login", "anna", "kind=device method=passkey mfa=true")
-	// The web origin works for the app endpoint too (e.g. a future iOS/PWA client).
+	// The web origin gets no device token here: app origins only.
 	a.Origin = pkOrigin
-	if resp, m := appLogin(t, e, a, "192.0.2.11", nil); resp.StatusCode != 200 {
-		t.Fatalf("web origin: %s %v", resp.Status, m)
+	if resp, m := appLogin(t, e, a, "192.0.2.11", nil); resp.StatusCode != 401 || m["access_token"] != nil {
+		t.Fatalf("web origin at the app endpoint: %s %v", resp.Status, m)
 	}
 	// Invalid client key and scope are refused before anything else.
 	a.Origin = appOrigin
@@ -427,9 +451,15 @@ func TestAppPasskeyLoginWithoutConfiguredApp(t *testing.T) {
 	if _, m := e.browser().do("GET", "/api/auth/config", nil); m["passkeyAppLogin"] != false {
 		t.Fatalf("config: %v", m)
 	}
-	a.Origin = appOrigin
-	if r, m := appLogin(t, e, a, "192.0.2.50", nil); r.StatusCode != 401 {
-		t.Fatalf("unconfigured app origin: %s %v", r.Status, m)
+	// Without a configured app the endpoints do not exist, for any origin.
+	for _, o := range []string{appOrigin, pkOrigin} {
+		a.Origin = o
+		if r, m := appLogin(t, e, a, "192.0.2.50", nil); r.StatusCode != 404 || m["access_token"] != nil {
+			t.Fatalf("%s without app: %s %v", o, r.Status, m)
+		}
+	}
+	if r, m := e.native("").do("POST", "/api/device/passkey/login", map[string]any{"challengeId": "x"}); r.StatusCode != 404 {
+		t.Fatalf("login without app: %s %v", r.Status, m)
 	}
 	if r, _ := e.browser().do("GET", "/.well-known/assetlinks.json", nil); r.StatusCode != 404 {
 		t.Fatalf("assetlinks without apps: %s", r.Status)

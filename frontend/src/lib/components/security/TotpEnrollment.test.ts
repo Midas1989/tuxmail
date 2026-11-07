@@ -39,13 +39,13 @@ describe('TotpEnrollment: QR code -> first code -> recovery codes', () => {
     const api = mock();
     const setup = vi
       .spyOn(api, 'totpSetup')
-      .mockRejectedValueOnce(new ApiError('x', 429, 'throttled', 240))
       .mockRejectedValueOnce(new ApiError('x', 0, 'network'))
-      .mockRejectedValueOnce(new ApiError('x', 403, 'reauth_required'));
+      .mockRejectedValueOnce(new ApiError('x', 403, 'reauth_required'))
+      .mockRejectedValueOnce(new ApiError('x', 429, 'throttled', 240));
     const root = render(TotpEnrollment, { api, onfinished: () => {} });
     await until(() => expect(root.querySelector('[data-step="reauth"]')).toBeTruthy());
     expect(text(root)).toContain('Confirm with your TuxMail sign-in password.');
-    for (const [i, wanted] of ['locked', 'cannot be reached', ''].entries()) {
+    for (const [i, wanted] of ['cannot be reached', '', 'locked'].entries()) {
       await stepUp(root, 'irgendwas');
       await until(() => expect(setup).toHaveBeenCalledTimes(i + 1));
       await until(() => expect(root.querySelector('[data-step="reauth"]')).toBeTruthy());
@@ -61,19 +61,21 @@ describe('TotpEnrollment: QR code -> first code -> recovery codes', () => {
     const root = render(TotpEnrollment, { api, onfinished: () => {} });
     await until(() => expect(root.querySelector('[data-step="reauth"]')).toBeTruthy());
     expect(setup).not.toHaveBeenCalled();
-    expect(button(root, 'Continue').disabled).toBe(true);
+    expect(button(root, 'Set up two-factor authentication').disabled).toBe(true);
   });
 
   it('an account without a password goes straight on: the server decides by the recent sign-in', async () => {
     const api = new MockTransport({ latencyMs: 0, security: { hasPassword: false } });
     const root = render(TotpEnrollment, { api, onfinished: () => {} });
+    await until(() => expect(root.querySelector('input[type="password"]')).toBeNull());
+    await click(button(root, 'Set up two-factor authentication'));
     await until(() => expect(root.querySelector('[data-step="scan"]')).toBeTruthy());
   });
 
   it('step 1 shows the QR code and the secret for manual entry, in groups of four', async () => {
     const root = render(TotpEnrollment, { api: mock(), onfinished: () => {} });
-    expect(text(root)).toContain('Step 1 of 3');
     await stepUp(root);
+    expect(text(root)).toContain('Step 1 of 3');
     await until(() => expect(root.querySelector('svg[role="img"]')).toBeTruthy());
     expect(root.querySelector('svg')?.getAttribute('aria-label')).toBe('QR code for your authenticator app');
     expect(root.querySelector('svg path')?.getAttribute('d')?.length).toBeGreaterThan(100);

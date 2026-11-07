@@ -216,10 +216,9 @@ func (s *Server) handleDeviceRequest(w http.ResponseWriter, r *http.Request, a *
 		s.writeAuthError(w, err)
 		return
 	}
-	// passkey: the account can confirm with a passkey instead of password and
-	// code; passkeyFresh: this session's own passkey sign-in is the confirmation.
+	// passkey: the account can confirm with a passkey instead of password and code.
 	writeJSON(w, http.StatusOK, map[string]any{"request": req, "totpRequired": a.User.TOTPEnabled, "passwordRequired": a.User.HasPassword,
-		"passkey": s.auth.HasUsablePasskey(r.Context(), a.User.ID), "passkeyFresh": s.auth.PasskeySessionFresh(a.Session)})
+		"passkey": s.auth.HasUsablePasskey(r.Context(), a.User.ID)})
 }
 
 func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *authInfo) {
@@ -240,7 +239,7 @@ func (s *Server) handleDeviceApprove(w http.ResponseWriter, r *http.Request, a *
 	}
 	approve := req.Approve == nil || *req.Approve
 	// Approving creates a long-lived way into the account.
-	if approve && !s.approvalProof(w, r, a, req.Passkey, req.Password, req.TOTPCode, req.RecoveryCode) {
+	if approve && !s.approvalProof(w, r, a, req.UserCode, req.Passkey, req.Password, req.TOTPCode, req.RecoveryCode) {
 		return
 	}
 	if err := s.auth.ApproveDevice(r.Context(), a.User.ID, req.UserCode, approve); err != nil {

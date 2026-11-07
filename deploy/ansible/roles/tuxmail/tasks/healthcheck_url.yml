@@ -1,0 +1,15 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Setzt tuxmail_healthcheck_url (Listener von "tuxmail serve", nicht nginx).
+
+- name: Health-Check-Adresse bestimmen
+  ansible.builtin.set_fact:
+    tuxmail_healthcheck_url: >-
+      {{ 'http://localhost/healthz?deep=1' if tuxmail_listen_is_socket | bool
+         else (('https' if tuxmail_server_tls_mode == 'file' else 'http') ~ '://' ~ tuxmail_healthcheck_host
+               ~ ':' ~ tuxmail_listen.rsplit(':', 1)[1] ~ '/healthz?deep=1') }}
+  vars:
+    tuxmail_listen_host: "{{ tuxmail_listen.rsplit(':', 1)[0] }}"
+    # Wildcard-Adressen über Loopback ansprechen
+    tuxmail_healthcheck_host: >-
+      {{ {'': '127.0.0.1', '0.0.0.0': '127.0.0.1', '*': '127.0.0.1', '[::]': '[::1]'}.get(tuxmail_listen_host, tuxmail_listen_host) }}

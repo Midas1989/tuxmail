@@ -501,12 +501,16 @@ heruntergeladenen.
      `tuxmail_auth_passkeys_rp_name`. Geht ein Gerät verloren, entfernt ein Administrator unter *Administration →
      Benutzer → Verwalten → Zwei-Faktor zurücksetzen* TOTP, Wiederherstellungscodes **und** Passkeys des Kontos.
    - **Apps mit Passkey verbinden:** Die Android- und Desktop-App melden sich über die Gerätebestätigung an
-     („Mit Passkey oder Passwort im Browser bestätigen“). Die Seite `/device` nimmt einen Passkey an: Wer sich gerade
-     per Passkey angemeldet hat, bestätigt ohne weitere Eingabe, sonst mit „Allow with passkey“ oder Passwort und Code.
+     („Mit Passkey oder Passwort im Browser bestätigen“). Die Seite `/device` nimmt einen Passkey an: Nach dem Anzeigen der
+     Anfrage bestätigt man mit „Mit Passkey erlauben“ (an genau diese Anfrage gebunden) oder mit Passwort und Code.
+     Eine gerade erfolgte Anmeldung allein reicht bewusst nicht (Schutz vor untergeschobenen Codes).
      Die **direkte** Passkey-Anmeldung in der Android-App (ohne Browser) braucht zusätzlich
      `auth.passkeys.android_apps` (Ansible: `tuxmail_auth_passkeys_android_apps`) mit Paketname und SHA-256-Fingerabdruck
      des Signaturzertifikats der App; der Server liefert daraus `/.well-known/assetlinks.json`. Ohne Eintrag zeigt die
-     App die Schaltfläche nicht.
+     App die Schaltfläche nicht. Android liest die Datei immer am **Stamm der Domain**
+     (`https://mail.example.org/.well-known/assetlinks.json`): Läuft TuxMail unter einem Unterpfad
+     (`public_url: https://example.org/mail`), muss der Webserver diesen Pfad an TuxMail weiterreichen, z. B. nginx
+     `location = /.well-known/assetlinks.json { proxy_pass http://127.0.0.1:8080/.well-known/assetlinks.json; }`.
    - **Gemeinsame Postfächer** richtest du in den Team-Einstellungen ein.
 
 ---

@@ -675,6 +675,7 @@ $TM user disable $CFG anna
 $TM user enable $CFG anna
 echo 'NeuesPasswort' | $TM user reset-password $CFG anna --password-stdin   # ohne --password-stdin wird ein Passwort erzeugt und ausgegeben
 $TM user reset-2fa $CFG anna
+$TM user unlock $CFG anna                 # hebt Anmelde- UND Sicherheitsabfragen-Sperre auf (Audit: user.unlock)
 $TM user set-role $CFG anna admin           # admin | user | readonly
 $TM user delete $CFG anna --yes            # --keep-data behält die Benutzerdaten
 ```
@@ -687,7 +688,9 @@ Android-App) gibt es dasselbe und mehr: Benutzer anlegen, bearbeiten, deaktivier
 zurücksetzen, Sitzungen beenden, löschen und **gesperrte Konten entsperren**; außerdem Einladungen (benötigen
 `auth.registration: invite`), Gruppen und das Audit-Log. Ein Konto sperrt sich nach 5 falschen Anmeldungen je
 Netzwerk (1 Minute, bis zu 1 Stunde); bei Angriffen aus vielen Netzwerken können sich nur noch bekannte Netze
-anmelden. „Entsperren“ hebt beides auf. Gemeinsame (Team-)Postfächer verwalten Administratoren ebenfalls in der
+anmelden. Zu viele falsche Passwörter oder Codes bei den Sicherheitsabfragen (Zwei-Faktor einrichten, Passkeys,
+Passwort ändern; 5 Fehlversuche, dann 5 Minuten bis 1 Stunde) sperren nur diese Abfragen, nicht die Anmeldung; leere
+Anfragen zählen nicht. „Entsperren“ (Oberfläche) und `tuxmail user unlock` heben beide Sperren auf. Gemeinsame (Team-)Postfächer verwalten Administratoren ebenfalls in der
 Weboberfläche. Bei OIDC werden Benutzer bei der ersten Anmeldung
 angelegt; Admin-Rechte über `tuxmail_oidc_admin_group`.
 

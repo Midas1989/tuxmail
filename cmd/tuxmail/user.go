@@ -43,6 +43,13 @@ func (c *cli) user(ctx context.Context, args []string) error {
 			fmt.Fprintf(c.stdout, "two-factor authentication of %s reset (TOTP, recovery codes and passkeys removed)\n", u.Username)
 			return nil
 		})
+	case "unlock":
+		return c.userSimple(ctx, sub, args, func(ctx context.Context, s *auth.Service, u *auth.User) error {
+			s.UnlockLogin(ctx, u.Username) // sign-in locks and the lock of the security checks (step-up)
+			s.Audit(ctx, "user.unlock", u.Username, true, "")
+			fmt.Fprintf(c.stdout, "sign-in and security-check locks of %s cleared\n", u.Username)
+			return nil
+		})
 	case "reset-password":
 		return c.userResetPassword(ctx, args)
 	case "set-role":

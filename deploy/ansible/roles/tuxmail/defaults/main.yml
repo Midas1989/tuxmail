@@ -43,6 +43,8 @@ tuxmail_verify_dir: "{{ tuxmail_download_dir }}/verify-{{ tuxmail_version }}"
 # Alternative: lokale Datei auf dem Steuerrechner (Binary oder .tar.gz).
 # Ist der Wert gesetzt, wird nichts heruntergeladen.
 tuxmail_binary_src: ""
+# Ein vorhandenes versions/<v> mit anderem Archivinhalt (aktive/Rückweg-Version) wird nie stillschweigend ersetzt.
+tuxmail_replace_existing_version: false
 # Verzeichnis und Binary der gewünschten Version (intern).
 tuxmail_version_dir: "{{ tuxmail_install_dir }}/versions/{{ tuxmail_version }}"
 tuxmail_version_binary: "{{ tuxmail_version_dir }}/tuxmail"
