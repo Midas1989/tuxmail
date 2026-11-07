@@ -12,8 +12,10 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/auth"
@@ -222,6 +224,193 @@ func TestAuthSection6HTTP(t *testing.T) {
 		t.Fatal(resp.Status, r)
 	}
 	wantStatus(t, d2, "GET", "/api/auth/me", 401, "")
+}
+
+// An open tab that polls and holds its event stream does not stay signed in.
+func TestOpenTabDoesNotStopTheIdleLimit(t *testing.T) {
+	e := newEnv(t, Options{})
+	e.user("ida", auth.RoleUser)
+	b := e.browser()
+	b.login("ida")
+	b.background = true
+	wsHeader := cookieHeader(t, e, b)
+	dial := func() int {
+		req, _ := http.NewRequest("GET", e.ts.URL+"/api/events", nil)
+		for k, v := range wsHeader {
+			req.Header[k] = v
+		}
+		req.Header.Set("Origin", e.ts.URL)
+		req.Header.Set("Upgrade", "websocket")
+		req.Header.Set("Connection", "Upgrade")
+		req.Header.Set("Sec-WebSocket-Version", "13")
+		req.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+		req.Header.Set(activityHeader, "1") // not even if it claims so
+		resp, err := testTransport.RoundTrip(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	start := time.Now()
+	for i := 1; i <= 11; i++ {
+		at := start.Add(time.Duration(i) * 10 * time.Minute)
+		e.svc.Now = func() time.Time { return at }
+		wantStatus(t, b, "GET", "/api/auth/me", 200, "")
+		if got := dial(); got != 101 && got != 200 {
+			t.Fatalf("handshake %d: %d", i, got)
+		}
+	}
+	e.svc.Now = func() time.Time { return start.Add(2*time.Hour + time.Minute) }
+	wantStatus(t, b, "GET", "/api/auth/me", 401, "")
+
+	// The same requests with a person in front of them keep it going.
+	e.svc.Now = time.Now
+	a := e.browser()
+	a.login("ida")
+	start = time.Now()
+	for i := 1; i <= 11; i++ {
+		at := start.Add(time.Duration(i) * 20 * time.Minute)
+		e.svc.Now = func() time.Time { return at }
+		wantStatus(t, a, "GET", "/api/auth/me", 200, "")
+	}
+}
+
+func TestHealth(t *testing.T) {
+	e := newEnv(t, Options{})
+	b := e.browser()
+	resp, m := b.do("GET", "/healthz", nil)
+	if resp.StatusCode != 200 || m["status"] != "ok" || m["product"] != "tuxmail" || m["checks"] != nil {
+		t.Fatal(resp.Status, m)
+	}
+	// Not yet proven: not green (Basis spec/BETRIEB.md).
+	resp, m = b.do("GET", "/healthz?deep=1", nil)
+	if resp.StatusCode != 200 || m["status"] != "warn" {
+		t.Fatal(resp.Status, m)
+	}
+	e.srv.runPeriodicChecks(t.Context())
+	resp, m = b.do("GET", "/healthz?deep=1", nil)
+	if resp.StatusCode != 200 || m["status"] != "ok" {
+		t.Fatal(resp.Status, m)
+	}
+	names := map[string]string{}
+	for _, c := range m["checks"].([]any) {
+		x := c.(map[string]any)
+		names[x["name"].(string)] = x["status"].(string)
+		if len(x) != 2 {
+			t.Fatal("details in a public answer:", x)
+		}
+	}
+	if names["db"] != "ok" || names["audit_chain"] != "ok" || names["key_rotation"] != "ok" {
+		t.Fatal(names)
+	}
+	// An open rotation is a warning.
+	if _, err := e.svc.RotateKey(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	e.user("ida", auth.RoleUser)
+	if _, err := e.svc.RotateKey(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	e.srv.runPeriodicChecks(t.Context())
+	if resp, m = b.do("GET", "/healthz?deep=1", nil); resp.StatusCode != 200 || m["status"] != "warn" {
+		t.Fatal(resp.Status, m)
+	}
+	// Without the database: the plain answer lives on, the deep one fails.
+	e.svc.DB().Close()
+	if resp, _ := b.do("GET", "/healthz", nil); resp.StatusCode != 200 {
+		t.Fatal(resp.Status)
+	}
+	if resp, m = b.do("GET", "/healthz?deep=1", nil); resp.StatusCode != 503 || m["status"] != "fail" {
+		t.Fatal(resp.Status, m)
+	}
+}
+
+func cspDirective(csp, name string) string {
+	for _, d := range strings.Split(csp, ";") {
+		if d = strings.TrimSpace(d); strings.HasPrefix(d, name+" ") {
+			return d
+		}
+	}
+	return ""
+}
+
+func nonceOf(t *testing.T, directive string) string {
+	t.Helper()
+	m := regexp.MustCompile(`'nonce-([^']+)'`).FindStringSubmatch(directive)
+	if m == nil {
+		t.Fatalf("no nonce in %q", directive)
+	}
+	return m[1]
+}
+
+// Basis spec/PARAMETER.md, spec/WEB.md.
+func TestCSPNonces(t *testing.T) {
+	static := fstest.MapFS{
+		"index.html":   {Data: []byte(`<!doctype html><html><head><link rel="modulepreload" href="/assets/a.js"><link rel="stylesheet" href="/assets/a.css"><script type="module" src="/assets/m.js"></script></head><body></body></html>`)},
+		"offline.html": {Data: []byte(`<!doctype html><html><head><style>a{}</style></head><body></body></html>`)},
+	}
+	e := newEnv(t, Options{Static: static})
+	e.user("ida", auth.RoleUser)
+	b := e.browser()
+	b.login("ida")
+	get := func(path string) (string, string, string) {
+		req, _ := http.NewRequest("GET", e.ts.URL+path, nil)
+		resp, err := b.c.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		raw, _ := io.ReadAll(resp.Body)
+		csp := resp.Header.Get("Content-Security-Policy")
+		return nonceOf(t, cspDirective(csp, "script-src")), nonceOf(t, cspDirective(csp, "style-src")), string(raw)
+	}
+	script, style, page := get("/")
+	if script == style {
+		t.Fatal("one nonce for scripts and styles")
+	}
+	for _, want := range []string{
+		`<script nonce="` + script + `" type="module"`,
+		`<link nonce="` + script + `" rel="modulepreload"`,
+		`<meta name="tuxmail-style-nonce" content="` + style + `">`,
+	} {
+		if !strings.Contains(page, want) {
+			t.Errorf("index.html without %s:\n%s", want, page)
+		}
+	}
+	// The script nonce is not readable from the page except on script elements.
+	if strings.Contains(strings.ReplaceAll(strings.ReplaceAll(page, `<script nonce="`+script+`"`, ""), `<link nonce="`+script+`"`, ""), script) {
+		t.Error("script nonce elsewhere in the page")
+	}
+	script2, _, _ := get("/")
+	if script2 == script {
+		t.Error("nonce not per request")
+	}
+	if _, style, page := get("/offline.html"); !strings.Contains(page, `<style nonce="`+style+`">`) {
+		t.Error("offline.html:", page)
+	}
+	for _, p := range []string{"/login", "/device"} {
+		script, style, page := get(p)
+		if !strings.Contains(page, `<script nonce="`+script+`" src=`) || !strings.Contains(page, `<style nonce="`+style+`">`) {
+			t.Errorf("%s: %s", p, page)
+		}
+	}
+	resp, _ := b.do("GET", "/api/auth/config", nil)
+	csp := resp.Header.Get("Content-Security-Policy")
+	for _, want := range []string{"'strict-dynamic'", "object-src 'none'", "base-uri 'none'", "frame-ancestors 'none'", "script-src-attr 'none'"} {
+		if !strings.Contains(csp, want) {
+			t.Errorf("CSP without %s: %s", want, csp)
+		}
+	}
+	if d := cspDirective(csp, "script-src"); strings.Contains(d, "unsafe-inline") {
+		t.Error(d)
+	}
+	if d := cspDirective(csp, "style-src"); strings.Contains(d, "unsafe-inline") {
+		t.Error(d)
+	}
+	if strings.Contains(csp, "Report-Only") || resp.Header.Get("Content-Security-Policy-Report-Only") != "" {
+		t.Error("report-only")
+	}
 }
 
 func TestSessionIdleOverHTTP(t *testing.T) {

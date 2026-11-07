@@ -1,0 +1,25 @@
+{
+  "_hinweis": "Kopie aus Basis spec/testvektoren.json. Nicht von Hand aendern.",
+  "audit_chain": {
+    "key_hex": "6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b6b",
+    "entry": {
+      "actor": "user:1",
+      "action": "user.update",
+      "target": "user:17",
+      "old": {
+        "name": "Müller",
+        "password": "x"
+      },
+      "new": {
+        "name": "Maier",
+        "n": 3,
+        "aktiv": true
+      },
+      "ip": "10.0.0.1",
+      "ts": "2026-11-06T10:00:00.000+00:00"
+    },
+    "prev_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+    "payload": "{\"action\":\"user.update\",\"actor\":\"user:1\",\"ip\":\"10.0.0.1\",\"new\":{\"aktiv\":true,\"n\":3,\"name\":\"Maier\"},\"old\":{\"name\":\"Müller\",\"password\":\"********\"},\"target\":\"user:17\",\"ts\":\"2026-11-06T10:00:00.000+00:00\"}",
+    "hash": "aabf9c716cd3f329c1728439f1cb8ff3a3314e3a0c5fc0c5f89d1f459ddb87f0"
+  }
+}

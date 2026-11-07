@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -18,7 +19,7 @@ import (
 var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>{{.Title}} – TuxMail</title>
-<style>
+<style{{if .StyleNonce}} nonce="{{.StyleNonce}}"{{end}}>
 body{font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f5f7;color:#111}
 @media (prefers-color-scheme:dark){body{background:#111318;color:#e6e6e6}main{background:#1b1e25!important}input{background:#111318;color:#e6e6e6}}
 main{background:#fff;padding:2rem;border-radius:12px;box-shadow:0 2px 16px rgba(0,0,0,.08);width:min(22rem,90vw)}
@@ -27,11 +28,12 @@ input{width:100%;box-sizing:border-box;padding:.6rem;border:1px solid #9995;bord
 button{margin-top:1.25rem;width:100%;padding:.7rem;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:1rem;cursor:pointer}
 button.secondary{background:#6b7280}.err{color:#dc2626;min-height:1.2em;margin-top:.75rem}.hidden{display:none}
 code{font-size:1.4rem;letter-spacing:.15em}
-</style></head><body><main>{{.Body}}</main><script src="{{.Script}}"></script></body></html>`))
+</style></head><body><main>{{.Body}}</main><script{{if .ScriptNonce}} nonce="{{.ScriptNonce}}"{{end}} src="{{.Script}}"></script></body></html>`))
 
-func renderPage(w http.ResponseWriter, title, script string, body template.HTML) {
+func renderPage(w http.ResponseWriter, r *http.Request, title, script string, body template.HTML) {
 	var buf bytes.Buffer
-	_ = pageTmpl.Execute(&buf, map[string]any{"Title": title, "Script": script, "Body": body})
+	n := noncesFrom(r)
+	_ = pageTmpl.Execute(&buf, map[string]any{"Title": title, "Script": script, "Body": body, "ScriptNonce": n.script, "StyleNonce": n.style})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(buf.Bytes())
@@ -102,7 +104,7 @@ func serveScript(w http.ResponseWriter, js string) {
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	renderPage(w, "Log in", "/login.js", template.HTML(loginBody))
+	renderPage(w, r, "Log in", "/login.js", template.HTML(loginBody))
 }
 
 func (s *Server) handleLoginScript(w http.ResponseWriter, r *http.Request) {
@@ -110,7 +112,7 @@ func (s *Server) handleLoginScript(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDevicePage(w http.ResponseWriter, r *http.Request) {
-	renderPage(w, "Connect a device", "/device.js", template.HTML(deviceBody))
+	renderPage(w, r, "Connect a device", "/device.js", template.HTML(deviceBody))
 }
 
 func (s *Server) handleDeviceScript(w http.ResponseWriter, r *http.Request) { serveScript(w, deviceJS) }
@@ -132,11 +134,34 @@ func loginRedirect(w http.ResponseWriter, r *http.Request) {
 
 // injectMeta adds the transport and CSRF meta tags to index.html so that
 // the SPA uses the HTTP transport against this server.
-func injectMeta(idx []byte, csrf string) []byte {
+func injectMeta(idx []byte, csrf string, n cspNonces) []byte {
 	tags := `<meta name="tuxmail-api" content="http"><meta name="tuxmail-csrf" content="` + template.HTMLEscapeString(csrf) + `">`
-	s := string(idx)
+	if n.style != "" {
+		tags += `<meta name="tuxmail-style-nonce" content="` + n.style + `">`
+	}
+	s := string(injectNonces(idx, n))
 	if i := strings.Index(strings.ToLower(s), "<head>"); i >= 0 {
 		return []byte(s[:i+6] + tags + s[i+6:])
 	}
 	return []byte(tags + s)
+}
+
+var (
+	scriptTag     = regexp.MustCompile(`(?i)<script\b`)
+	modulePreload = regexp.MustCompile(`(?i)<link\b[^>]*\brel="modulepreload"[^>]*>`)
+	styleTag      = regexp.MustCompile(`(?i)<style\b`)
+)
+
+// injectNonces puts the nonces of the request on the elements of a static HTML
+// file. These files come from our own build, not from user data.
+func injectNonces(page []byte, n cspNonces) []byte {
+	if n.script == "" {
+		return page
+	}
+	attr := []byte(`$0 nonce="` + n.script + `"`)
+	page = scriptTag.ReplaceAll(page, attr)
+	page = modulePreload.ReplaceAllFunc(page, func(m []byte) []byte {
+		return bytes.Replace(m, []byte("<link"), []byte(`<link nonce="`+n.script+`"`), 1)
+	})
+	return styleTag.ReplaceAll(page, []byte(`$0 nonce="`+n.style+`"`))
 }

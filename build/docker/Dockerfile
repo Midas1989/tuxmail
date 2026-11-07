@@ -117,7 +117,7 @@ USER 10001:10001
 VOLUME ["/data"]
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${TUXMAIL_LISTEN##*:}/healthz" || exit 1
+    CMD wget -q -O /dev/null "http://127.0.0.1:${TUXMAIL_LISTEN##*:}/healthz?deep=1" || exit 1
 
 ENTRYPOINT ["/usr/local/bin/tuxmail"]
 CMD ["serve", "--config", "/etc/tuxmail/config.yaml"]

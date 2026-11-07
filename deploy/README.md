@@ -387,7 +387,7 @@ Benutzer `tuxmail` geprüft (Leserechte). `check-config` lehnt unbekannte Schlü
 dass TLS-Dateien, OIDC-Secret-Datei und Logdatei vorhanden bzw. lesbar sind – das Playbook legt
 diese Dateien deshalb vorher an.
 
-**Health-Check:** Nach jedem (Neu-)Start fragt Ansible `GET /healthz` direkt am Listener ab
+**Health-Check:** `GET /healthz` sagt nur, dass der Prozess lebt; `GET /healthz?deep=1` prüft die Datenbank und meldet Audit-Kette und offene Schlüssel-Rotation (`ok`, `warn`, `fail`; 503 bei `fail`). Nach jedem (Neu-)Start fragt Ansible `GET /healthz?deep=1` direkt am Listener ab
 (bis zu 30 × 2 s). Schlägt das fehl, bricht der Lauf ab (siehe Fehlerbehebung).
 Geprüft wird nur der Status 200; `/healthz` nennt die Version anonymen Clients nur mit
 `tuxmail_security_expose_version: true` (sonst `{"status":"ok","product":"tuxmail"}`).
@@ -649,8 +649,11 @@ tuxmail keys retire --kid K # entfernt einen alten Schlüssel, verweigert das, s
 tuxmail keys retire-legacy  # benennt master.key um, verweigert das, solange ein Wert es nutzt
 ```
 
+`tuxmail audit verify` prüft die Audit-Kette. Der Dienst schreibt einmal täglich den neuesten Hash ins Log (`audit chain anchor`):
+Diese Zeile ins zentrale Logging geben, nur so fällt ein abgeschnittenes Ende auf.
+
 `tuxmail keys rollback --yes` (Dienst gestoppt, vorher sichern) bringt Daten und Schema zurück auf die Vorversion, solange
-`master.key` noch vorhanden ist. Danach sofort die Vorversion starten.
+`master.key` noch vorhanden ist. Danach sofort die Vorversion starten. Wiederherstellungscodes, die seit dem Upgrade erzeugt wurden, sind dann weg; der Befehl nennt die Konten.
 
 ## 8. Benutzerverwaltung
 
@@ -811,7 +814,7 @@ Eigenschaften des Images (`build/docker/Dockerfile`):
 - Alpine-Basis, statisches Go-Binary `/usr/local/bin/tuxmail` mit eingebettetem Web-Frontend
 - läuft als **Nicht-root**-Benutzer `tuxmail` (UID/GID 10001), funktioniert mit `read_only: true` und `cap_drop: [ALL]`
 - Daten im Volume **`/data`** (Datenbanken, `master.key`, VAPID-Schlüssel, Benutzerdaten) – **dieses Volume sichern**
-- Port **8080** (HTTP), Healthcheck auf `/healthz`
+- Port **8080** (HTTP), Healthcheck auf `/healthz?deep=1`
 - Start: `tuxmail serve --config /etc/tuxmail/config.yaml`; die mitgelieferte Konfiguration
   (`build/docker/config.yaml`) wird über Umgebungsvariablen angepasst:
 

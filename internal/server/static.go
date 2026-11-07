@@ -45,6 +45,12 @@ func (s *Server) staticHandler() http.Handler {
 		name := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
 		if name != "" && name != "index.html" {
 			if st, err := fs.Stat(fsys, name); err == nil && !st.IsDir() {
+				if strings.HasSuffix(name, ".html") { // offline.html: needs the nonces of this response
+					if page, err := fs.ReadFile(fsys, name); err == nil {
+						serveIndex(w, r, injectNonces(page, noncesFrom(r)))
+						return
+					}
+				}
 				serveFile(w, r, fsys, name, st.ModTime())
 				return
 			}
@@ -65,7 +71,7 @@ func (s *Server) staticHandler() http.Handler {
 			return
 		}
 		tok, _ := r.Context().Value(ctxCSRF).(string)
-		serveIndex(w, r, injectMeta(idx, tok))
+		serveIndex(w, r, injectMeta(idx, tok, noncesFrom(r)))
 	})
 }
 

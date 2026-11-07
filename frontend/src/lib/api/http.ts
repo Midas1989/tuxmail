@@ -210,6 +210,7 @@
 // In the desktop build these run inside the Go core (WailsTransport), which
 // keeps the tokens in the secret store; the HTTP variant exists for completeness.
 
+import { activityHeaders } from '../activity';
 import type { Api, ConversationQuery, ConversationRef, ItemsQuery, MessageQuery, TransportKind, Unsubscribe } from './api';
 import { ApiError, EventHub } from './api';
 import type { ConversationScope } from './api';
@@ -377,6 +378,7 @@ export class HttpTransport implements Api {
     const csrf = bearer ? undefined : readCsrfToken();
     if (bearer) h.Authorization = `Bearer ${bearer}`;
     if (csrf) h['X-CSRF-Token'] = csrf;
+    if (!bearer) Object.assign(h, activityHeaders());
     let payload: BodyInit | undefined;
     if (body instanceof Blob) {
       payload = body;

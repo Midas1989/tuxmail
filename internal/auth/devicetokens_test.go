@@ -4,7 +4,13 @@ package auth
 
 import (
 	"context"
+	"database/sql"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -32,10 +38,11 @@ func TestWebSessionIdleAndAbsoluteLimit(t *testing.T) {
 		}
 		return res.Token
 	}
-	// Idle: 2 hours (Basis spec/PARAMETER.md), counted from the last request.
+	// Idle: 2 hours (Basis spec/PARAMETER.md), counted from the last request of a person.
+	active := WithUserActivity(ctx)
 	tok := login()
 	clk.Add(2*time.Hour - time.Minute)
-	sess, _, err := s.Authenticate(ctx, tok, "192.0.2.1")
+	sess, _, err := s.Authenticate(active, tok, "192.0.2.1")
 	if err != nil {
 		t.Fatal("active session ended:", err)
 	}
@@ -43,7 +50,7 @@ func TestWebSessionIdleAndAbsoluteLimit(t *testing.T) {
 	if err := s.CheckSession(ctx, sess.UserID, sess.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.Authenticate(ctx, tok, "192.0.2.1"); err != nil {
+	if _, _, err := s.Authenticate(active, tok, "192.0.2.1"); err != nil {
 		t.Fatal("session with activity ended:", err)
 	}
 	clk.Add(2 * time.Hour)
@@ -60,13 +67,41 @@ func TestWebSessionIdleAndAbsoluteLimit(t *testing.T) {
 	tok = login()
 	for range 11 {
 		clk.Add(time.Hour)
-		if _, _, err := s.Authenticate(ctx, tok, "192.0.2.1"); err != nil {
+		if _, _, err := s.Authenticate(active, tok, "192.0.2.1"); err != nil {
 			t.Fatal(err)
 		}
 	}
 	clk.Add(time.Hour)
 	if _, _, err := s.Authenticate(ctx, tok, "192.0.2.1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("after absolute limit: %v", err)
+	}
+}
+
+// An open tab: requests without user activity keep the session seen, not alive.
+func TestBackgroundRequestsDoNotExtendIdle(t *testing.T) {
+	s, clk := newTestService(t)
+	mustUser(t, s, "ida", RoleUser, goodPW)
+	ctx := context.Background()
+	res, err := s.Login(ctx, LoginRequest{Login: "ida", Password: goodPW, Client: ClientInfo{IP: "192.0.2.1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 11 {
+		clk.Add(10 * time.Minute)
+		sess, _, err := s.Authenticate(ctx, res.Token, "192.0.2.1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !sess.LastSeenAt.Equal(clk.Now()) {
+			t.Fatal("last seen not updated", sess.LastSeenAt)
+		}
+	}
+	clk.Add(10 * time.Minute) // two hours since the login
+	if err := s.CheckSession(ctx, res.Session.UserID, res.Session.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stream check: %v", err)
+	}
+	if _, _, err := s.Authenticate(ctx, res.Token, "192.0.2.1"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("background requests kept the session alive: %v", err)
 	}
 }
 
@@ -485,5 +520,281 @@ func enrollTOTPForTest(t *testing.T, s *Service, userID int64) {
 	}
 	if _, err := s.ConfirmTOTP(ctx, userID, TOTP{Secret: sec}.Code(s.now())); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestPasswordBlocklist(t *testing.T) {
+	s, _ := newTestService(t)
+	ctx := context.Background()
+	if len(blocklistGz) == 0 {
+		t.Fatal("list not embedded")
+	}
+	// From the list, also in other spelling (Basis normalize_for_blocklist).
+	for _, pw := range []string{"123456789012", "  123456789012 ", "１２３４５６７８９０１２"} {
+		if blocked, err := passwordBlocklisted(pw); err != nil || !blocked {
+			t.Errorf("%q: %v %v", pw, blocked, err)
+		}
+		if err := s.CheckPasswordPolicy(pw); !errors.Is(err, ErrWeakPassword) {
+			t.Errorf("%q: %v", pw, err)
+		}
+	}
+	if err := s.CheckPasswordPolicy(goodPW); err != nil {
+		t.Fatal(err)
+	}
+	blocklistOnce.Do(loadBlocklist)
+	if len(blocklist) < 100000 {
+		t.Fatalf("list has %d entries", len(blocklist))
+	}
+	// Only new passwords: someone who has such a password can still sign in.
+	u := mustUser(t, s, "ida", RoleUser, goodPW)
+	h, err := HashPassword("123456789012", s.PasswordParams)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE users SET password_hash = ? WHERE id = ?`, h, u.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Login(ctx, LoginRequest{Login: "ida", Password: "123456789012", Client: ClientInfo{IP: "192.0.2.1"}}); err != nil {
+		t.Fatalf("login with an existing listed password: %v", err)
+	}
+	if err := s.ChangePassword(ctx, u.ID, "123456789012", "abcdefgh1234", 0); !errors.Is(err, ErrWeakPassword) && err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Basis spec/testvektoren.json.
+func TestRecoveryHMACVector(t *testing.T) {
+	raw, err := os.ReadFile("testdata/testvektoren.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var v struct {
+		RecoveryCode struct {
+			Code      string `json:"code"`
+			PepperHex string `json:"pepper_hex"`
+			HMAC      string `json:"hmac"`
+		} `json:"recovery_code"`
+	}
+	if err := json.Unmarshal(raw, &v); err != nil {
+		t.Fatal(err)
+	}
+	pepper, _ := hex.DecodeString(v.RecoveryCode.PepperHex)
+	if got := string(recoveryHMAC(pepper, v.RecoveryCode.Code)); got != v.RecoveryCode.HMAC {
+		t.Fatalf("%s, want %s", got, v.RecoveryCode.HMAC)
+	}
+}
+
+func TestRecoveryCodesFromBeforeKeepWorking(t *testing.T) {
+	li := newLegacyInstall(t)
+	s := li.open(t)
+	ctx := context.Background()
+	// Sealed at the start: no plain SHA-256 left in the database.
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM recovery_codes WHERE scheme <> 'enc-sha256'`).Scan(&n)
+	if n != 0 {
+		t.Fatal("unsealed codes:", n)
+	}
+	s.db.QueryRow(`SELECT COUNT(*) FROM recovery_codes WHERE code_hash = ?`, hashToken(legacyRecoveryCode)).Scan(&n)
+	if n != 0 {
+		t.Fatal("plain hash in the database")
+	}
+	li.open(t) // a second start changes nothing
+	if left, _ := s.RecoveryCodesLeft(ctx, 1); left != 2 {
+		t.Fatal(left)
+	}
+	if err := s.useRecoveryCode(ctx, 1, "ABCDE-23456"); err != nil { // as shown to the user
+		t.Fatal(err)
+	}
+	if err := s.useRecoveryCode(ctx, 1, legacyRecoveryCode); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("second use: %v", err)
+	}
+	if err := s.useRecoveryCode(ctx, 2, "zweitercode"); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("code of another user: %v", err)
+	}
+	if err := s.useRecoveryCode(ctx, 1, "falschfalsch"); !errors.Is(err, ErrInvalidCode) {
+		t.Fatal(err)
+	}
+	// They survive a key rotation.
+	if _, err := s.RotateKey(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RewrapSecrets(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := s.KeyStatus(ctx); st.NeedsRewrap() != 0 {
+		t.Fatalf("%+v", st)
+	}
+	if err := s.useRecoveryCode(ctx, 1, "zweitercode"); err != nil {
+		t.Fatal("after rotation:", err)
+	}
+	// New codes are HMAC, and single use.
+	codes, err := s.RegenerateRecoveryCodes(ctx, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.db.QueryRow(`SELECT COUNT(*) FROM recovery_codes WHERE user_id = 3 AND scheme = 'hmac' AND length(code_hash) = 64`).Scan(&n)
+	if n != len(codes) {
+		t.Fatal(n)
+	}
+	s.db.QueryRow(`SELECT COUNT(*) FROM recovery_codes WHERE code_hash = ?`, hashToken(normalizeRecoveryCode(codes[0]))).Scan(&n)
+	if n != 0 {
+		t.Fatal("SHA-256 of a new code stored")
+	}
+	if err := s.useRecoveryCode(ctx, 3, codes[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.useRecoveryCode(ctx, 3, codes[0]); !errors.Is(err, ErrInvalidCode) {
+		t.Fatalf("second use: %v", err)
+	}
+}
+
+func TestRecoveryCodeUsedOnceInParallel(t *testing.T) {
+	li := newLegacyInstall(t)
+	s := li.open(t)
+	ctx := context.Background()
+	wins := make(chan error, 6)
+	for range 6 {
+		go func() { wins <- s.useRecoveryCode(ctx, 1, legacyRecoveryCode) }()
+	}
+	ok := 0
+	for range 6 {
+		if err := <-wins; err == nil {
+			ok++
+		}
+	}
+	if ok != 1 {
+		t.Fatalf("%d winners", ok)
+	}
+}
+
+func TestAuditChain(t *testing.T) {
+	li := newLegacyInstall(t)
+	s := li.open(t)
+	ctx := WithActor(context.Background(), Actor{UserID: 1, Name: "user1", IP: "192.0.2.1"})
+	// Old rows are its beginning, new ones follow.
+	rep, err := s.VerifyAuditChain(ctx)
+	if err != nil || !rep.OK() || rep.Entries != 2 {
+		t.Fatalf("%+v %v", rep, err)
+	}
+	var first string
+	s.db.QueryRow(`SELECT prev_hash FROM audit_log ORDER BY id LIMIT 1`).Scan(&first)
+	if first != strings.Repeat("0", 64) {
+		t.Fatal(first)
+	}
+	for i := range 5 {
+		if err := s.Audit(ctx, "test", fmt.Sprint(i), i%2 == 0, "Müller <b>"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep, err = s.VerifyAuditChain(ctx)
+	if err != nil || !rep.OK() || rep.Entries != 7 || len(rep.Head) != 64 {
+		t.Fatalf("%+v %v", rep, err)
+	}
+	// Parallel writers keep the chain in order.
+	done := make(chan error, 8)
+	for i := range 8 {
+		go func() { done <- s.Audit(ctx, "parallel", fmt.Sprint(i), true, "") }()
+	}
+	for range 8 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	rep, _ = s.VerifyAuditChain(ctx)
+	if !rep.OK() || rep.Entries != 15 {
+		t.Fatalf("%+v", rep)
+	}
+	// The database refuses changes.
+	if _, err := s.db.Exec(`UPDATE audit_log SET details = 'x' WHERE id = 1`); err == nil {
+		t.Fatal("update accepted")
+	}
+	if _, err := s.db.Exec(`DELETE FROM audit_log WHERE id = 1`); err == nil {
+		t.Fatal("delete accepted")
+	}
+	// Deleting a user keeps the entries.
+	if _, err := s.db.Exec(`DELETE FROM users WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if rep, _ := s.VerifyAuditChain(ctx); !rep.OK() {
+		t.Fatalf("%+v", rep)
+	}
+	// Someone who removes the triggers is caught by the chain, also across a key rotation.
+	if _, err := s.RotateKey(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RewrapSecrets(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if rep, _ := s.VerifyAuditChain(ctx); !rep.OK() {
+		t.Fatalf("after key rotation: %+v", rep)
+	}
+	for _, q := range []string{`DROP TRIGGER audit_log_no_update`, `DROP TRIGGER audit_log_no_delete`} {
+		if _, err := s.db.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, c := range map[string]struct {
+		q        string
+		brokenAt int64
+	}{
+		"content": {`UPDATE audit_log SET details = 'x' WHERE id = 3`, 3},
+		"success": {`UPDATE audit_log SET success = 1 - success WHERE id = 4`, 4},
+		"removed": {`DELETE FROM audit_log WHERE id = 5`, 6},
+	} {
+		// Each on a copy of the state: undo by keeping the values.
+		tx, err := s.db.Begin()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.Exec(c.q); err != nil {
+			t.Fatal(err)
+		}
+		var broken int64
+		rows, _ := tx.Query(`SELECT ` + auditRowCols + `, prev_hash, hash FROM audit_log ORDER BY id`)
+		head := strings.Repeat("0", 64)
+		key, _ := s.purposeKey(ctx, auditKeyName)
+		for rows.Next() && broken == 0 {
+			var prev, hash sql.NullString
+			r, err := scanAuditRow(rows, &prev, &hash)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if prev.String != head || !r.entry().Valid(prev.String, hash.String, key) {
+				broken = r.id
+			}
+			head = hash.String
+		}
+		rows.Close()
+		tx.Rollback()
+		if broken != c.brokenAt {
+			t.Errorf("%s: broken at %d, want %d", name, broken, c.brokenAt)
+		}
+	}
+	if _, err := s.db.Exec(`UPDATE audit_log SET details = 'x' WHERE id = 3`); err != nil {
+		t.Fatal(err)
+	}
+	rep, err = s.VerifyAuditChain(ctx)
+	if err != nil || rep.OK() || rep.BrokenAt != 3 || rep.Reason != "content changed" {
+		t.Fatalf("%+v %v", rep, err)
+	}
+	if rep, err := s.AuditAnchor(ctx); err != nil || rep.OK() {
+		t.Fatal(rep, err)
+	}
+}
+
+func TestLoginFailsWithoutAudit(t *testing.T) {
+	s, _ := newTestService(t)
+	mustUser(t, s, "ida", RoleUser, goodPW)
+	ctx := context.Background()
+	if _, err := s.db.Exec(`CREATE TRIGGER kaputt BEFORE INSERT ON audit_log BEGIN SELECT RAISE(ABORT, 'voll'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Login(ctx, LoginRequest{Login: "ida", Password: goodPW, Client: ClientInfo{IP: "192.0.2.1"}}); err == nil {
+		t.Fatal("login without audit entry")
+	}
+	var n int
+	s.db.QueryRow(`SELECT COUNT(*) FROM sessions`).Scan(&n)
+	if n != 0 {
+		t.Fatal("session left behind")
 	}
 }

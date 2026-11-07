@@ -5,6 +5,11 @@ following third-party components that are not plain Go module
 dependencies listed in `go.mod` / `package.json` (whose licenses are
 recorded there and in the module caches).
 
+## Password blocklist (`internal/auth/data`)
+
+`passwords-blocklist.txt.gz` comes from SecLists (MIT, Copyright (c) 2018 Daniel Miessler), see
+`internal/auth/data/README.md` and `internal/auth/data/LICENSE.SecLists`. Data only.
+
 ## Spell-checking dictionaries (`internal/spell/dicts`)
 
 The dictionaries are embedded gzip-compressed and unchanged.

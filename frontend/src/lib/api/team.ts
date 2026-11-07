@@ -24,6 +24,7 @@
 //   GET/PUT /api/team/{id}/grants; GET /api/team/directory
 //   GET/POST /api/admin/team/mailboxes; PATCH/DELETE /api/admin/team/mailboxes/{id}
 
+import { activityHeaders } from '../activity';
 import type { Api, ConversationQuery, MessageQuery, ConversationScope, MessageScope } from './api';
 import { ApiError } from './api';
 import { HttpTransport, type HttpTransportOptions } from './http';
@@ -266,6 +267,7 @@ export class HttpTeamClient implements TeamClient {
     else {
       const c = csrf();
       if (c) h['X-CSRF-Token'] = c;
+      Object.assign(h, activityHeaders());
     }
     if (body !== undefined) h['Content-Type'] = 'application/json';
     const f = this.opts.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));

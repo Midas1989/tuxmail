@@ -1,0 +1,8 @@
+{
+  "_hinweis": "Kopie aus Basis spec/testvektoren.json. Nicht von Hand aendern.",
+  "recovery_code": {
+    "code": "ABCDE-FGHJK",
+    "pepper_hex": "7272727272727272727272727272727272727272727272727272727272727272",
+    "hmac": "4a2a8a5e57aebf0dec17aa5addcd6a17d31236e1ff971810ee3f887bc2bfa4c0"
+  }
+}

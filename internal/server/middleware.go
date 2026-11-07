@@ -29,6 +29,7 @@ const (
 	ctxAuth
 	ctxCSRF
 	ctxRequestID
+	ctxCSPNonce
 )
 
 // client is the resolved peer of a request (after trusted proxy handling).
@@ -185,12 +186,28 @@ func (s *Server) logRequests(next http.Handler) http.Handler {
 	})
 }
 
-// contentSecurityPolicy for the SPA. Mail HTML is expected to be rendered in
-// a sandboxed iframe by the frontend.
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob:; " +
-	"worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'; " +
-	"script-src-attr 'none'"
+// contentSecurityPolicy is Basis spec/PARAMETER.md with one nonce per request for
+// scripts and one for <style> elements. Only the style nonce can be read by page
+// scripts (<meta name="tuxmail-style-nonce">, needed for the srcdoc documents of the
+// mail view, which inherit this policy), so it is no help for injecting a script.
+//
+// style-src-attr 'unsafe-inline' is a documented deviation
+// (docs/security/BASIS-ABWEICHUNGEN.md): a style attribute cannot carry a nonce,
+// and HTML mail, shown in a srcdoc frame that inherits this policy, is made of them.
+func contentSecurityPolicy(scriptNonce, styleNonce string) string {
+	return "default-src 'self'; script-src 'self' 'nonce-" + scriptNonce + "' 'strict-dynamic'; script-src-attr 'none'; " +
+		"style-src 'self' 'nonce-" + styleNonce + "'; style-src-attr 'unsafe-inline'; " +
+		"img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob:; " +
+		"worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+}
+
+// cspNonces are the nonces of a request.
+type cspNonces struct{ script, style string }
+
+func noncesFrom(r *http.Request) cspNonces {
+	n, _ := r.Context().Value(ctxCSPNonce).(cspNonces)
+	return n
+}
 
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	hsts := s.cfg.SecureCookies() && s.cfg.Security.HSTS
@@ -210,7 +227,9 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 			h.Set("Cross-Origin-Opener-Policy", "same-origin")
 			h.Set("Cross-Origin-Resource-Policy", "same-origin")
 			h.Set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()")
-			h.Set("Content-Security-Policy", contentSecurityPolicy)
+			nonces := cspNonces{script: randomToken()[:22], style: randomToken()[:22]}
+			h.Set("Content-Security-Policy", contentSecurityPolicy(nonces.script, nonces.style))
+			r = r.WithContext(context.WithValue(r.Context(), ctxCSPNonce, nonces))
 		}
 		if hsts {
 			h.Set("Strict-Transport-Security", hstsValue)
@@ -443,6 +462,18 @@ func (s *Server) wsOriginAllowed(r *http.Request, origin string) bool {
 	return s.originAllowed(rr, s.cfg.PublicOrigin())
 }
 
+// activityHeader is set by the web client on requests within a moment of the
+// user's input (frontend/src/lib/activity.ts). Polling, refetches after a
+// server event and the event stream do not carry it.
+const activityHeader = "X-TuxMail-Activity"
+
+// userActivity reports whether a request extends the idle limit of a web session.
+// The event stream never does. A client could send the header without any input,
+// but one that has the session can keep it alive only up to the absolute limit.
+func userActivity(r *http.Request) bool {
+	return r.Header.Get(activityHeader) == "1" && r.URL.Path != "/api/events"
+}
+
 // authenticate resolves the session cookie or bearer token.
 func (s *Server) authenticate(r *http.Request) (*authInfo, error) {
 	tok, bearer := bearerToken(r), true
@@ -452,7 +483,11 @@ func (s *Server) authenticate(r *http.Request) (*authInfo, error) {
 	if tok == "" {
 		return nil, auth.ErrNotFound
 	}
-	sess, u, err := s.auth.Authenticate(r.Context(), tok, clientFrom(r).IP)
+	ctx := r.Context()
+	if userActivity(r) {
+		ctx = auth.WithUserActivity(ctx)
+	}
+	sess, u, err := s.auth.Authenticate(ctx, tok, clientFrom(r).IP)
 	if err != nil {
 		return nil, err
 	}

@@ -79,6 +79,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 		err = c.user(ctx, args[1:])
 	case "keys":
 		err = c.keys(ctx, args[1:])
+	case "audit":
+		err = c.audit(ctx, args[1:])
 	case "import":
 		err = c.importCmd(ctx, args[1:])
 	case "export":
@@ -142,6 +144,7 @@ func (c *cli) usage() {
   tuxmail user reset-2fa      USERNAME               (removes TOTP, recovery codes and passkeys)
   tuxmail user set-role       USERNAME ROLE          (admin | user | readonly)
   tuxmail user delete         USERNAME --yes [--keep-data]
+  tuxmail audit   verify [--json]   (checks the audit chain; exit status 1 if it is broken)
   tuxmail keys    status|rotate|rewrap|retire --kid K|retire-legacy|rollback --yes   (server keys, see docs)
   tuxmail import  --format eml|mbox|maildir|pst|thunderbird|ics|vcf|csv|ldif --source PATH
                   [--target local|folder] [--folder-id N] [--keep-structure] [--dedupe] [--inspect] [--resume JOB]

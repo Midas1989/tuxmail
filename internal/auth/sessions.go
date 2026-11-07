@@ -45,6 +45,10 @@ type Session struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	ExpiresAt   time.Time `json:"expiresAt"`
 	LastSeenAt  time.Time `json:"lastSeenAt"`
+	// LastActiveAt is the last request a person caused (WithUserActivity). It alone
+	// counts for the idle limit: an open tab's background requests and event
+	// stream keep LastSeenAt fresh, not this.
+	LastActiveAt time.Time `json:"-"`
 	// Scopes limits a device token (devicetokens.go); empty for web sessions.
 	Scopes       []string `json:"scopes,omitempty"`
 	ClientPubKey []byte   `json:"-"`
@@ -84,9 +88,9 @@ func (s *Service) createSession(ctx context.Context, userID int64, kind, method 
 		}
 	}
 	res, err := s.db.ExecContext(ctx, `INSERT INTO sessions(token_hash, user_id, kind, device_name, ip, user_agent, mfa,
-		login_method, client_pubkey, created_at, expires_at, last_seen_at, scopes, token_issued_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		login_method, client_pubkey, created_at, expires_at, last_seen_at, scopes, token_issued_at, last_active_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		hashToken(tok), userID, kind, truncate(ci.DeviceName, 100), truncate(ci.IP, 64), truncate(ci.UserAgent, 300), mfa,
-		method, ci.PubKey, now.Unix(), now.Add(life).Unix(), now.Unix(), scopes, now.Unix())
+		method, ci.PubKey, now.Unix(), now.Add(life).Unix(), now.Unix(), scopes, now.Unix(), now.Unix())
 	if err != nil {
 		return "", nil, err
 	}
@@ -98,13 +102,13 @@ func (s *Service) createSession(ctx context.Context, userID int64, kind, method 
 	return tok, sess, err
 }
 
-const sessionCols = `id, user_id, kind, device_name, ip, user_agent, mfa, login_method, client_pubkey, created_at, expires_at, last_seen_at, scopes, token_issued_at`
+const sessionCols = `id, user_id, kind, device_name, ip, user_agent, mfa, login_method, client_pubkey, created_at, expires_at, last_seen_at, scopes, token_issued_at, last_active_at`
 
 func scanSession(sc interface{ Scan(...any) error }) (*Session, error) {
 	var x Session
-	var c, e, l int64
+	var c, e, l, a int64
 	var scopes string
-	if err := sc.Scan(&x.ID, &x.UserID, &x.Kind, &x.DeviceName, &x.IP, &x.UserAgent, &x.MFA, &x.LoginMethod, &x.ClientPubKey, &c, &e, &l, &scopes, &x.tokenIssuedAt); err != nil {
+	if err := sc.Scan(&x.ID, &x.UserID, &x.Kind, &x.DeviceName, &x.IP, &x.UserAgent, &x.MFA, &x.LoginMethod, &x.ClientPubKey, &c, &e, &l, &scopes, &x.tokenIssuedAt, &a); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
@@ -112,6 +116,7 @@ func scanSession(sc interface{ Scan(...any) error }) (*Session, error) {
 	}
 	x.CreatedAt, x.ExpiresAt, x.LastSeenAt = time.Unix(c, 0).UTC(), time.Unix(e, 0).UTC(), time.Unix(l, 0).UTC()
 	x.Scopes = strings.Fields(scopes)
+	x.LastActiveAt = time.Unix(a, 0).UTC()
 	return &x, nil
 }
 
@@ -119,12 +124,25 @@ func (s *Service) getSession(ctx context.Context, where string, args ...any) (*S
 	return scanSession(s.db.QueryRowContext(ctx, `SELECT `+sessionCols+` FROM sessions WHERE `+where, args...))
 }
 
+type userActivityKey struct{}
+
+// WithUserActivity marks a request as caused by a person: only such requests
+// extend the idle limit of a web session.
+func WithUserActivity(ctx context.Context) context.Context {
+	return context.WithValue(ctx, userActivityKey{}, true)
+}
+
+func isUserActivity(ctx context.Context) bool {
+	v, _ := ctx.Value(userActivityKey{}).(bool)
+	return v
+}
+
 // webSessionEnded applies the two limits of a web session to its stored times.
 // expires_at alone is not enough: rows from older versions carry a longer one.
-func (s *Service) webSessionEnded(now, created, lastSeen, expires time.Time) bool {
+func (s *Service) webSessionEnded(now, created, lastActive, expires time.Time) bool {
 	return !now.Before(expires) ||
 		!now.Before(created.Add(s.cfg.Auth.EffectiveSessionLifetime())) ||
-		!now.Before(lastSeen.Add(s.cfg.Auth.EffectiveIdleTimeout()))
+		!now.Before(lastActive.Add(s.cfg.Auth.EffectiveIdleTimeout()))
 }
 
 // Authenticate resolves a session or device token. It fails with ErrNotFound
@@ -145,7 +163,7 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 	now := s.now()
 	ended := !now.Before(sess.ExpiresAt)
 	if sess.Kind == KindWeb {
-		ended = s.webSessionEnded(now, sess.CreatedAt, sess.LastSeenAt, sess.ExpiresAt)
+		ended = s.webSessionEnded(now, sess.CreatedAt, sess.LastActiveAt, sess.ExpiresAt)
 	}
 	if ended {
 		s.db.ExecContext(ctx, `DELETE FROM sessions WHERE id = ?`, sess.ID)
@@ -171,6 +189,10 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 		s.db.ExecContext(ctx, `UPDATE sessions SET last_seen_at = ?, ip = ? WHERE id = ?`, now.Unix(), ip, sess.ID)
 		sess.LastSeenAt, sess.IP = now, ip
 	}
+	if isUserActivity(ctx) && now.Sub(sess.LastActiveAt) >= time.Minute {
+		s.db.ExecContext(ctx, `UPDATE sessions SET last_active_at = ? WHERE id = ?`, now.Unix(), sess.ID)
+		sess.LastActiveAt = now
+	}
 	return sess, u, nil
 }
 
@@ -182,10 +204,10 @@ func (s *Service) Authenticate(ctx context.Context, token, ip string) (*Session,
 // activity: a web session whose idle time ran out ends its stream as well.
 func (s *Service) CheckSession(ctx context.Context, userID, sessionID int64) error {
 	var kind string
-	var created, lastSeen, exp int64
+	var created, lastActive, exp int64
 	var disabled bool
-	err := s.db.QueryRowContext(ctx, `SELECT s.kind, s.created_at, s.last_seen_at, s.expires_at, u.disabled FROM sessions s JOIN users u ON u.id = s.user_id
-		WHERE s.id = ? AND s.user_id = ?`, sessionID, userID).Scan(&kind, &created, &lastSeen, &exp, &disabled)
+	err := s.db.QueryRowContext(ctx, `SELECT s.kind, s.created_at, s.last_active_at, s.expires_at, u.disabled FROM sessions s JOIN users u ON u.id = s.user_id
+		WHERE s.id = ? AND s.user_id = ?`, sessionID, userID).Scan(&kind, &created, &lastActive, &exp, &disabled)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -196,7 +218,7 @@ func (s *Service) CheckSession(ctx context.Context, userID, sessionID int64) err
 	if !now.Before(time.Unix(exp, 0)) {
 		return ErrNotFound
 	}
-	if kind == KindWeb && s.webSessionEnded(now, time.Unix(created, 0), time.Unix(lastSeen, 0), time.Unix(exp, 0)) {
+	if kind == KindWeb && s.webSessionEnded(now, time.Unix(created, 0), time.Unix(lastActive, 0), time.Unix(exp, 0)) {
 		return ErrNotFound
 	}
 	if disabled {
@@ -209,7 +231,7 @@ func (s *Service) CheckSession(ctx context.Context, userID, sessionID int64) err
 func (s *Service) ListSessions(ctx context.Context, userID int64) ([]*Session, error) {
 	now := s.now()
 	rows, err := s.db.QueryContext(ctx, `SELECT `+sessionCols+` FROM sessions WHERE user_id = ? AND expires_at > ?
-		AND (kind <> 'web' OR (created_at > ? AND last_seen_at > ?)) ORDER BY last_seen_at DESC`, userID, now.Unix(),
+		AND (kind <> 'web' OR (created_at > ? AND last_active_at > ?)) ORDER BY last_seen_at DESC`, userID, now.Unix(),
 		now.Add(-s.cfg.Auth.EffectiveSessionLifetime()).Unix(), now.Add(-s.cfg.Auth.EffectiveIdleTimeout()).Unix())
 	if err != nil {
 		return nil, err
@@ -275,7 +297,7 @@ func (s *Service) Cleanup(ctx context.Context) error {
 		}
 	}
 	// Web sessions past a limit whose expires_at is still ahead.
-	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE kind = 'web' AND (created_at <= ? OR last_seen_at <= ?)`,
+	_, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE kind = 'web' AND (created_at <= ? OR last_active_at <= ?)`,
 		now-int64(s.cfg.Auth.EffectiveSessionLifetime()/time.Second), now-int64(s.cfg.Auth.EffectiveIdleTimeout()/time.Second))
 	return err
 }

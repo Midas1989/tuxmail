@@ -49,6 +49,12 @@ func TestKeysCommands(t *testing.T) {
 	if code, out, errs := runCLI(t, "", "keys", "retire", "--config", p, "--kid", old); code != 0 {
 		t.Fatal(out, errs)
 	}
+	if code, out, errs := runCLI(t, "", "audit", "verify", "--config", p); code != 0 || !strings.Contains(out, "intact") {
+		t.Fatal(out, errs)
+	}
+	if code, _, _ := runCLI(t, "", "audit", "--config", p); code == 0 {
+		t.Fatal("audit without verify")
+	}
 	if code, _, _ := runCLI(t, "", "keys", "rollback", "--config", p); code == 0 {
 		t.Fatal("rollback without --yes")
 	}

@@ -28,9 +28,10 @@ describe('CSP per shell (NG-08)', () => {
 
   it('web meta is never looser than the server header', () => {
     // Directives of internal/server/middleware.go (contentSecurityPolicy); the meta may only narrow them.
-    const header = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'";
+    // style-src is the exception: the meta is shared with Wails, which has no nonces, and the header applies in addition.
+    const header = "default-src 'self'; script-src 'self' 'nonce-x' 'strict-dynamic'; style-src 'self' 'nonce-y'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; frame-src 'self' blob:; worker-src 'self'; manifest-src 'self'; object-src 'none'";
     const meta = cspFor('web');
-    for (const name of ['default-src', 'script-src', 'img-src', 'connect-src', 'worker-src', 'manifest-src', 'object-src', 'style-src']) {
+    for (const name of ['default-src', 'script-src', 'img-src', 'connect-src', 'worker-src', 'manifest-src', 'object-src']) {
       const allowed = directive(header, name);
       for (const src of directive(meta, name)) expect(allowed, `${name} ${src}`).toContain(src);
     }

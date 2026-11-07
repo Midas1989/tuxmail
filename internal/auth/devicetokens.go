@@ -174,6 +174,8 @@ func (s *Service) RotateDeviceToken(ctx context.Context, sess *Session, token st
 	if n, _ := res.RowsAffected(); n == 0 {
 		return "", time.Time{}, ErrTokenSuperseded
 	}
-	s.Audit(ctx, "device.token_rotate", sess.DeviceName, true, "session="+strconv.FormatInt(sess.ID, 10))
+	if err := s.Audit(ctx, "device.token_rotate", sess.DeviceName, true, "session="+strconv.FormatInt(sess.ID, 10)); err != nil {
+		return "", time.Time{}, err
+	}
 	return next, s.now().Add(DeviceTokenLifetime), nil
 }

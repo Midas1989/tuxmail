@@ -1,5 +1,7 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts" module>
+  import { withStyleNonce } from '../../stylenonce';
+
   export function escapeHtml(s: string): string {
     return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
   }
@@ -57,7 +59,7 @@
     // put into the HTML (Api.loadRemoteContent); blocked images are never
     // restored to their direct URLs here (audit B-05: IP/tracking leak).
     const body = plain ? `<pre class="plain">${plainToHtml(opts.text ?? '')}</pre>` : opts.html!;
-    return `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank"><style>${css}</style></head><body>${body}</body></html>`;
+    return withStyleNonce(`<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><base target="_blank"><style>${css}</style></head><body>${body}</body></html>`);
   }
 </script>
 

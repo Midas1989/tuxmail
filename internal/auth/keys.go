@@ -27,7 +27,9 @@ import (
 // bx1.<kid>.<...> under its primary key. Three kinds of values exist:
 //
 //	users.dek_wrapped, users.totp_secret_enc   one per user
-//	server_keys.key_enc                        team vault passwords, known-network key
+//	recovery_codes.code_hash                   codes from before the HMAC (recovery.go)
+//	server_keys.key_enc                        team vault passwords, known-network key,
+//	                                           recovery pepper, audit chain key
 //
 // data_dir/master.key is the key of the format before bx1 (raw
 // XChaCha20-Poly1305, associated data "dek:<id>" / "totp:<id>"). It stays
@@ -54,25 +56,43 @@ const (
 	rewrapBatch    = 200
 )
 
-// secretColumn is an encrypted column of users.
+// secretColumn is an encrypted column.
 type secretColumn struct {
-	column    string // users.<column>
-	context   func(id int64) string
-	legacyTag string
+	table, column string
+	where         string // restricts the rows; "" = all
+	context       func(id int64) string
+	legacyTag     string // "" = never existed in the old format
 }
 
-func (c secretColumn) legacy(id int64) string { return c.legacyTag + ":" + strconv.FormatInt(id, 10) }
+func (c secretColumn) legacy(id int64) string {
+	if c.legacyTag == "" {
+		return ""
+	}
+	return c.legacyTag + ":" + strconv.FormatInt(id, 10)
+}
 
 var (
 	secretDEK = secretColumnFor("dek_wrapped", "dek")
 	// Context as in Basis spec/PARAMETER.md.
 	secretTOTP = secretColumnFor("totp_secret_enc", "totp")
+	// The SHA-256 of a recovery code from before the HMAC, sealed (recovery.go).
+	secretRecovery = secretColumn{table: "recovery_codes", column: "code_hash", where: "scheme = 'enc-sha256'",
+		context: func(id int64) string { return "recovery_codes.code_hash:" + strconv.FormatInt(id, 10) }}
+	secretColumns = []secretColumn{secretDEK, secretTOTP, secretRecovery}
 )
 
 func secretColumnFor(column, legacyTag string) secretColumn {
-	return secretColumn{column: column, legacyTag: legacyTag, context: func(id int64) string {
+	return secretColumn{table: "users", column: column, legacyTag: legacyTag, context: func(id int64) string {
 		return "users." + column + ":" + strconv.FormatInt(id, 10)
 	}}
+}
+
+func (c secretColumn) rowFilter() string {
+	f := c.column + ` IS NOT NULL AND length(` + c.column + `) > 0`
+	if c.where != "" {
+		f += ` AND ` + c.where
+	}
+	return f
 }
 
 func serverKeyContext(name string) string { return "server_keys.key_enc:" + name }
@@ -87,6 +107,8 @@ type keyState struct {
 	mtime  time.Time // of the loaded key file
 	size   int64
 	netKey []byte
+
+	derived map[string][]byte // recovery pepper, audit chain key
 
 	rewrapHook func(id string) // tests: runs before each converted value
 }
@@ -169,6 +191,13 @@ func (s *Service) initKeys(ctx context.Context, master []byte, ring *secretbox.K
 	s.keys.ring = ring
 	if fi, err := os.Stat(s.ringPath()); err == nil {
 		s.keys.mtime, s.keys.size = fi.ModTime(), fi.Size()
+	}
+	// Data that needs a key to reach its current form (idempotent).
+	if err := s.sealLegacyRecoveryCodes(ctx); err != nil {
+		return fmt.Errorf("auth: recovery codes: %w", err)
+	}
+	if err := s.sealAuditBacklog(ctx); err != nil {
+		return fmt.Errorf("auth: audit chain: %w", err)
 	}
 	return nil
 }
@@ -273,6 +302,27 @@ func randomServerKey() ([]byte, error) {
 	return k, nil
 }
 
+// purposeKey is a cached random key of its own (Basis spec/KRYPTO.md: separate keys per purpose).
+func (s *Service) purposeKey(ctx context.Context, name string) ([]byte, error) {
+	s.keys.mu.Lock()
+	k := s.keys.derived[name]
+	s.keys.mu.Unlock()
+	if k != nil {
+		return k, nil
+	}
+	k, err := s.serverKey(ctx, name, randomServerKey)
+	if err != nil {
+		return nil, err
+	}
+	s.keys.mu.Lock()
+	if s.keys.derived == nil {
+		s.keys.derived = map[string][]byte{}
+	}
+	s.keys.derived[name] = k
+	s.keys.mu.Unlock()
+	return k, nil
+}
+
 // networkKey is the HMAC key of login_known_networks (pressure.go).
 func (s *Service) networkKey(ctx context.Context) ([]byte, error) {
 	s.keys.mu.Lock()
@@ -352,11 +402,11 @@ type secretCounts struct {
 
 // eachSecretValue visits all encrypted values of the database.
 func (s *Service) eachSecretValue(ctx context.Context, fn func(v []byte)) error {
-	for _, q := range []string{
-		`SELECT dek_wrapped FROM users WHERE length(dek_wrapped) > 0`,
-		`SELECT totp_secret_enc FROM users WHERE totp_secret_enc IS NOT NULL`,
-		`SELECT key_enc FROM server_keys`,
-	} {
+	queries := []string{`SELECT key_enc FROM server_keys`}
+	for _, c := range secretColumns {
+		queries = append(queries, `SELECT `+c.column+` FROM `+c.table+` WHERE `+c.rowFilter())
+	}
+	for _, q := range queries {
 		rows, err := s.db.QueryContext(ctx, q)
 		if err != nil {
 			return err
@@ -545,7 +595,7 @@ func (s *Service) RewrapSecrets(ctx context.Context) (*RewrapReport, error) {
 		s.Audit(context.WithoutCancel(ctx), "keys.rewrap", ring.Primary(), err == nil && rep.Failed == 0,
 			fmt.Sprintf("converted=%d current=%d changed=%d failed=%d teams=%d", rep.Converted, rep.Current, rep.Changed, rep.Failed, rep.Teams))
 	}
-	for _, col := range []secretColumn{secretDEK, secretTOTP} {
+	for _, col := range secretColumns {
 		var last int64
 		for {
 			ids, vals, err := s.readSecretBatch(ctx, col, last)
@@ -560,7 +610,7 @@ func (s *Service) RewrapSecrets(ctx context.Context) (*RewrapReport, error) {
 				last = id
 				err := s.rewrapValue(ctx, ring, col.column+":"+strconv.FormatInt(id, 10), vals[i], col.context(id), col.legacy(id),
 					func(c context.Context, next, old []byte) (int64, error) {
-						res, err := s.db.ExecContext(c, `UPDATE users SET `+col.column+` = ? WHERE id = ? AND `+col.column+` = ?`, next, id, old)
+						res, err := s.db.ExecContext(c, `UPDATE `+col.table+` SET `+col.column+` = ? WHERE id = ? AND `+col.column+` = ?`, next, id, old)
 						if err != nil {
 							return 0, err
 						}
@@ -642,8 +692,8 @@ func (s *Service) RewrapSecrets(ctx context.Context) (*RewrapReport, error) {
 }
 
 func (s *Service) readSecretBatch(ctx context.Context, col secretColumn, after int64) ([]int64, [][]byte, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, `+col.column+` FROM users WHERE id > ? AND `+col.column+` IS NOT NULL
-		AND length(`+col.column+`) > 0 ORDER BY id LIMIT ?`, after, rewrapBatch)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, `+col.column+` FROM `+col.table+` WHERE id > ? AND `+col.rowFilter()+`
+		ORDER BY id LIMIT ?`, after, rewrapBatch)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -674,8 +724,11 @@ func (s *Service) RetireKey(ctx context.Context, kid string) error {
 		if kid == ring.Primary() {
 			return fmt.Errorf("%w: %q is the primary key; rotate first", ErrInvalidInput, kid)
 		}
-		rows, err := tx.QueryContext(ctx, `SELECT dek_wrapped FROM users UNION ALL SELECT totp_secret_enc FROM users WHERE totp_secret_enc IS NOT NULL
-			UNION ALL SELECT key_enc FROM server_keys`)
+		q := `SELECT key_enc FROM server_keys`
+		for _, c := range secretColumns {
+			q += ` UNION ALL SELECT ` + c.column + ` FROM ` + c.table + ` WHERE ` + c.rowFilter()
+		}
+		rows, err := tx.QueryContext(ctx, q)
 		if err != nil {
 			return err
 		}

@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Midas1989/Mailclient/internal/app"
@@ -60,13 +61,15 @@ type Options struct {
 
 // Server is the HTTP server of the server mode.
 type Server struct {
-	cfg      *config.Config
-	auth     *auth.Service
-	log      *slog.Logger
-	version  string
-	static   fs.FS
-	trusted  []netip.Prefix
-	mailData MailDataSource
+	periodic  atomic.Pointer[periodicResult] // health checks that are too expensive to run on request
+	anchorDay string                         // housekeeping only: day of the last audit chain anchor
+	cfg       *config.Config
+	auth      *auth.Service
+	log       *slog.Logger
+	version   string
+	static    fs.FS
+	trusted   []netip.Prefix
+	mailData  MailDataSource
 
 	backupKeyMu sync.Mutex // serialises replacing the backup key (api_admin_backup.go)
 
@@ -238,6 +241,7 @@ func (s *Server) housekeeping(ctx context.Context) {
 		s.deviceTokenCode.prune()
 		s.deviceTokenIP.prune()
 		s.apps.prune()
+		s.runPeriodicChecks(ctx)
 		select {
 		case <-ctx.Done():
 			return
@@ -369,18 +373,94 @@ func (s *Server) routes() http.Handler {
 	return h
 }
 
+// handleHealth is Basis spec/BETRIEB.md: /healthz says the process lives and needs
+// nothing else; /healthz?deep=1 checks the dependencies, for start scripts and
+// container health checks. Both are public, so the deep answer names checks and
+// states only. "ok" only after a check has succeeded.
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if err := s.auth.DB().PingContext(r.Context()); err != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "error", "product": productMarker, "error": "database unavailable"})
-		return
-	}
 	// "product" lets clients recognise a TuxMail server; the exact version is
 	// only disclosed on request (security.expose_version, NA-07).
-	out := map[string]string{"status": "ok", "product": productMarker}
+	out := map[string]any{"status": "ok", "product": productMarker}
 	if s.cfg.Security.ExposeVersion {
 		out["version"] = s.version
 	}
-	writeJSON(w, http.StatusOK, out)
+	code := http.StatusOK
+	if r.URL.Query().Get("deep") == "1" {
+		status, checks := s.healthChecks(r.Context())
+		out["status"], out["checks"] = status, checks
+		if status == "fail" {
+			code = http.StatusServiceUnavailable
+		}
+	}
+	writeJSON(w, code, out)
+}
+
+type healthCheck struct {
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+// healthChecks runs the database check and adds the results of the periodic job:
+// the audit chain and open key rotations are too expensive for a public endpoint.
+func (s *Server) healthChecks(ctx context.Context) (string, []healthCheck) {
+	db := "ok"
+	if err := s.auth.DB().PingContext(ctx); err != nil {
+		db = "fail"
+	} else if err := s.auth.DB().QueryRowContext(ctx, `SELECT 1 FROM schema_version LIMIT 1`).Scan(new(int)); err != nil {
+		db = "fail"
+	}
+	checks := []healthCheck{{"db", db}}
+	if p := s.periodic.Load(); p != nil {
+		checks = append(checks, healthCheck{"audit_chain", p.audit}, healthCheck{"key_rotation", p.keys})
+	} else {
+		checks = append(checks, healthCheck{"audit_chain", "warn"}, healthCheck{"key_rotation", "warn"})
+	}
+	status := "ok"
+	for _, c := range checks {
+		switch {
+		case c.Status == "fail":
+			status = "fail"
+		case c.Status == "warn" && status == "ok":
+			status = "warn"
+		}
+	}
+	return status, checks
+}
+
+// periodicResult is what the periodic job last found out.
+type periodicResult struct{ audit, keys string }
+
+// runPeriodicChecks verifies the audit chain and looks for open key rotations.
+// The anchor of the chain goes to the log once a day.
+func (s *Server) runPeriodicChecks(ctx context.Context) {
+	res := &periodicResult{audit: "fail", keys: "warn"}
+	if prev := s.periodic.Load(); prev != nil {
+		*res = *prev
+	}
+	if st, err := s.auth.KeyStatus(ctx); err != nil {
+		s.log.Warn("key status", "err", err)
+	} else if st.UnknownKid > 0 {
+		res.keys = "fail"
+	} else if st.NeedsRewrap() > 0 {
+		res.keys = "warn"
+	} else {
+		res.keys = "ok"
+	}
+	if day := time.Now().UTC().Format(time.DateOnly); day != s.anchorDay {
+		rep, err := s.auth.AuditAnchor(ctx)
+		switch {
+		case err != nil:
+			s.log.Error("audit chain check", "err", err)
+			res.audit = "fail"
+		case !rep.OK():
+			res.audit = "fail"
+			s.anchorDay = day
+		default:
+			res.audit = "ok"
+			s.anchorDay = day
+		}
+	}
+	s.periodic.Store(res)
 }
 
 // productMarker identifies the server to clients without revealing the version.

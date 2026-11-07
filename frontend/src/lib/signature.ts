@@ -5,6 +5,8 @@
 // when sending - this one only keeps pasted HTML from running in the app),
 // link and image handling, and the plain-text fallback.
 
+import { withStyleNonce } from './stylenonce';
+
 /** Size limit of one signature image (the server enforces the same). */
 export const MAX_SIGNATURE_IMAGE = 1024 * 1024;
 export const SIGNATURE_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
@@ -350,10 +352,10 @@ export function setImageWidth(img: HTMLImageElement, width: number): void {
 export function previewDocument(html: string, dark: boolean): string {
   const bg = dark ? '#1f2328' : '#ffffff';
   const fg = dark ? '#e6e6e6' : '#1f2328';
-  return (
+  return withStyleNonce(
     '<!DOCTYPE html><html><head><meta charset="utf-8">' +
-    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'">` +
-    `<style>html,body{margin:0;padding:10px;background:${bg};color:${fg};font:13px/1.45 system-ui,sans-serif}a{color:${dark ? '#7ab7ff' : '#0b62c4'}}img{max-width:100%}</style>` +
-    `</head><body>${html}</body></html>`
+      `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'">` +
+      `<style>html,body{margin:0;padding:10px;background:${bg};color:${fg};font:13px/1.45 system-ui,sans-serif}a{color:${dark ? '#7ab7ff' : '#0b62c4'}}img{max-width:100%}</style>` +
+      `</head><body>${html}</body></html>`,
   );
 }

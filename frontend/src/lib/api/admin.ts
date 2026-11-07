@@ -25,6 +25,7 @@
 // The pure parts (types, error mapping, the in-memory MockAdminClient used by
 // `?api=mock`) live here; the logic of the screens is in lib/admin/.
 
+import { activityHeaders } from '../activity';
 import type { Api } from './api';
 import { ApiError } from './api';
 import type { HttpTransportOptions } from './http';
@@ -277,6 +278,7 @@ export class HttpAdminClient implements AdminClient {
     else {
       const c = csrfToken();
       if (c) h['X-CSRF-Token'] = c;
+      Object.assign(h, activityHeaders());
     }
     if (body !== undefined) h['Content-Type'] = 'application/json';
     const f = this.opts.fetchImpl ?? ((...a: Parameters<typeof fetch>) => fetch(...a));

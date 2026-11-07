@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/instance"
 )
@@ -110,13 +111,51 @@ func (c *cli) keys(ctx context.Context, args []string) error {
 			return fmt.Errorf("the data directory is in use, stop the service first: %w", err)
 		}
 		defer lock.Release()
-		if err := s.RollbackToLegacy(ctx); err != nil {
+		rep, err := s.RollbackToLegacy(ctx)
+		if err != nil {
 			return err
 		}
 		fmt.Fprintln(c.stdout, "rolled back: start the previous program version now, not this one")
+		if rep.RecoveryCodesRemoved > 0 {
+			fmt.Fprintf(c.stdout, "%d recovery codes made since the upgrade are gone; these accounts must generate new ones: %s\n",
+				rep.RecoveryCodesRemoved, strings.Join(rep.UsersWithoutCodes, ", "))
+		}
 		return nil
 	default:
 		c.usage()
 		return fmt.Errorf("%w: unknown keys subcommand %q", errUsage, sub)
 	}
+}
+
+// audit checks the audit chain of the server.
+func (c *cli) audit(ctx context.Context, args []string) error {
+	if len(args) == 0 || args[0] != "verify" {
+		c.usage()
+		return fmt.Errorf("%w: use audit verify", errUsage)
+	}
+	fs, cfgPath := newFlagSet("audit verify", c)
+	asJSON := fs.Bool("json", false, "print the result as JSON")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	s, ctx, err := openService(ctx, *cfgPath)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+	rep, err := s.VerifyAuditChain(ctx)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		if err := json.NewEncoder(c.stdout).Encode(rep); err != nil {
+			return err
+		}
+	} else if rep.OK() {
+		fmt.Fprintf(c.stdout, "audit chain intact: %d entries, newest hash %s\n", rep.Entries, rep.Head)
+	}
+	if !rep.OK() {
+		return fmt.Errorf("audit chain broken at entry %d: %s", rep.BrokenAt, rep.Reason)
+	}
+	return nil
 }

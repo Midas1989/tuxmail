@@ -95,6 +95,8 @@ type browser struct {
 	header http.Header
 	// noOrigin: a native client, which sends no Origin header.
 	noOrigin bool
+	// background: requests of a tab nobody touches (polling).
+	background bool
 }
 
 func (e *env) browser() *browser {
@@ -119,6 +121,10 @@ func (b *browser) do(method, path string, body any) (*http.Response, map[string]
 	// Like a browser: state-changing requests name their origin. Native clients do not.
 	if !b.noOrigin {
 		req.Header.Set("Origin", b.e.ts.URL)
+	}
+	// A person is using the tab, unless the test says otherwise.
+	if !b.background {
+		req.Header.Set(activityHeader, "1")
 	}
 	if b.bearer != "" {
 		req.Header.Set("Authorization", "Bearer "+b.bearer)

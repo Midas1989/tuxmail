@@ -113,6 +113,11 @@ func (s *Service) CheckPasswordPolicy(password string) error {
 	if strings.TrimSpace(password) == "" || allSame(password) {
 		return fmt.Errorf("%w: password is too simple", ErrWeakPassword)
 	}
+	if blocked, err := passwordBlocklisted(password); err != nil {
+		return err
+	} else if blocked {
+		return fmt.Errorf("%w: this password is on a list of common passwords, choose another one", ErrWeakPassword)
+	}
 	return nil
 }
 

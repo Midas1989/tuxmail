@@ -346,7 +346,11 @@ func (s *Service) finishLogin(ctx context.Context, u *User, kind, method string,
 	if err != nil {
 		return nil, err
 	}
-	s.Audit(ctx, "login", u.Username, true, fmt.Sprintf("kind=%s method=%s mfa=%v", kind, method, mfa))
+	// Basis spec/BETRIEB.md: no sign-in without its audit entry.
+	if err := s.Audit(ctx, "login", u.Username, true, fmt.Sprintf("kind=%s method=%s mfa=%v", kind, method, mfa)); err != nil {
+		s.db.ExecContext(context.WithoutCancel(ctx), `DELETE FROM sessions WHERE id = ?`, sess.ID)
+		return nil, fmt.Errorf("auth: audit: %w", err)
+	}
 	u, err = s.GetUser(ctx, u.ID)
 	if err != nil {
 		return nil, err
@@ -539,15 +543,20 @@ func normalizeRecoveryCode(c string) string {
 // (shown once; only hashes are stored).
 func (s *Service) RegenerateRecoveryCodes(ctx context.Context, userID int64) ([]string, error) {
 	codes := make([]string, recoveryCodeCount)
-	err := s.withTx(ctx, func(tx *sql.Tx) error {
+	// Outside the transaction: creating the key on first use writes to the database.
+	pepper, err := s.purposeKey(ctx, recoveryPepperName)
+	if err != nil {
+		return nil, err
+	}
+	err = s.withTx(ctx, func(tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM recovery_codes WHERE user_id = ?`, userID); err != nil {
 			return err
 		}
 		for i := range codes {
 			raw := randomString(recoveryCodeLetters, 10)
 			codes[i] = raw[:5] + "-" + raw[5:]
-			if _, err := tx.ExecContext(ctx, `INSERT INTO recovery_codes(user_id, code_hash) VALUES (?,?)`,
-				userID, hashToken(raw)); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO recovery_codes(user_id, code_hash, scheme) VALUES (?,?,'hmac')`,
+				userID, recoveryHMAC(pepper, raw)); err != nil {
 				return err
 			}
 		}
@@ -565,19 +574,6 @@ func (s *Service) RecoveryCodesLeft(ctx context.Context, userID int64) (int, err
 	var n int
 	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM recovery_codes WHERE user_id = ? AND used_at IS NULL`, userID).Scan(&n)
 	return n, err
-}
-
-func (s *Service) useRecoveryCode(ctx context.Context, userID int64, code string) error {
-	res, err := s.db.ExecContext(ctx, `UPDATE recovery_codes SET used_at = ? WHERE user_id = ? AND code_hash = ? AND used_at IS NULL`,
-		s.now().Unix(), userID, hashToken(normalizeRecoveryCode(code)))
-	if err != nil {
-		return err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrInvalidCode
-	}
-	s.auditUser(ctx, "recovery_code.use", userID, nil, "")
-	return nil
 }
 
 // VerifyUserPassword checks the password of a logged-in user, e.g. before

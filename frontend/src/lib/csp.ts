@@ -7,8 +7,9 @@
 //
 //   shell                   who sets the CSP                         effective policy
 //   ----------------------  ---------------------------------------  -----------------------------------------
-//   web (tuxmail serve)     HTTP header (internal/server) AND meta   header AND meta: both strict, the meta is
-//                                                                    never looser than the header
+//   web (tuxmail serve)     HTTP header (internal/server) AND meta   header (nonces per request) AND meta: both
+//                                                                    apply; only style-src of the meta is wider,
+//                                                                    the header narrows it
 //   Wails desktop           meta only (shared build with web)        connect-src 'self', img-src 'self' data: blob:
 //   Capacitor (Android)     meta only (vite --mode capacitor)        connect-src 'self' https: wss: (user-chosen
 //                                                                    server, no cleartext ws:), img-src adds https:

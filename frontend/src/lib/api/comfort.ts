@@ -62,6 +62,7 @@
 //   DELETE /api/comfort/send-failures/{id}
 //   GET /api/comfort/pgp/status                     ?from=&recipients=a,b -> PgpStatus
 
+import { activityHeaders } from '../activity';
 import type { Api } from './api';
 import { ApiError } from './api';
 import type { MessageSummary, Workflow } from '../types';
@@ -459,6 +460,7 @@ export class ComfortHttp implements ComfortApi {
     else {
       const c = readCsrf();
       if (c) h['X-CSRF-Token'] = c;
+      Object.assign(h, activityHeaders());
     }
     let payload: BodyInit | undefined;
     if (body instanceof Blob) payload = body;

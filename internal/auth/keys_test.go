@@ -21,6 +21,9 @@ import (
 
 const keysTestPW = "korrekt-pferd-batterie"
 
+// legacyRecoveryCode exists in the old form in every legacyInstall (user 1).
+const legacyRecoveryCode = "abcde23456"
+
 // legacyInstall builds a data directory as the previous release left it: schema
 // version 7, master.key, secrets in the old format, a user vault, a team vault,
 // a web session, device tokens and a known network.
@@ -154,6 +157,13 @@ func newLegacyInstall(t *testing.T) *legacyInstall {
 	if _, err := db.Exec(`INSERT INTO push_subscriptions(id, user_id, session_id, endpoint, p256dh, auth, created_at) VALUES (1, 1, 10, 'https://e/1', 'k', 'a', 1)`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := db.Exec(`INSERT INTO recovery_codes(user_id, code_hash) VALUES (1, ?), (1, ?)`, hashToken(legacyRecoveryCode), hashToken("zweitercode")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO audit_log(at, actor_id, actor, action, target, ip, success, details) VALUES
+		(1000, 1, 'user1', 'login', 'user1', '192.0.2.1', 1, 'kind=web'), (1001, NULL, 'cli', 'user.create', 'Müller "x"', '', 0, '')`); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := db.Exec(`INSERT INTO login_known_networks(user_id, net_hash, first_seen, last_seen) VALUES (1, ?, ?, ?)`,
 		netHash(master, 1, "192.0.2.0/24"), now, now); err != nil {
 		t.Fatal(err)
@@ -217,7 +227,7 @@ func TestUpgradeKeepsExistingDataReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Legacy != 10 || st.TeamVaultsPending != 0 || !st.MasterKeyPresent {
+	if st.Legacy != 10 || st.TeamVaultsPending != 0 || !st.MasterKeyPresent || st.NeedsRewrap() != 10 {
 		// The team vault was opened by checkAll and thus moved into server_keys.
 		t.Fatalf("status %+v", st)
 	}
@@ -346,7 +356,7 @@ func TestRotationInterruptedAndResumed(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(li.cfg.DataDir, masterFile)); err == nil {
 		t.Fatal("master.key was created again")
 	}
-	if err := s3.RollbackToLegacy(bg); err == nil {
+	if _, err := s3.RollbackToLegacy(bg); err == nil {
 		t.Fatal("rollback without master.key")
 	}
 	if s3.legacyMaster() != nil {
@@ -467,7 +477,7 @@ func TestMigrationForwardBackwardForward(t *testing.T) {
 	ctx := context.Background()
 	var v int
 	s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v)
-	if v != 8 {
+	if v != 9 {
 		t.Fatalf("schema version %d", v)
 	}
 	// Existing rows got the new columns with sensible values.
@@ -509,8 +519,18 @@ func TestMigrationForwardBackwardForward(t *testing.T) {
 		}
 	}
 
-	if err := s.RollbackToLegacy(ctx); err != nil {
+	// A recovery code made after the upgrade cannot survive the way back.
+	newCodes, err := s.RegenerateRecoveryCodes(ctx, 4)
+	if err != nil {
 		t.Fatal(err)
+	}
+	s.Audit(ctx, "vor.rollback", "x", true, "")
+	rep, err := s.RollbackToLegacy(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.RecoveryCodesRemoved != len(newCodes) || len(rep.UsersWithoutCodes) != 1 || rep.UsersWithoutCodes[0] != "user4" {
+		t.Fatalf("%+v", rep)
 	}
 	s.Close()
 	// Exactly the schema of the previous release, with the data in its format.
@@ -542,6 +562,24 @@ func TestMigrationForwardBackwardForward(t *testing.T) {
 	}
 	// The rotated device token and the push link are there for the old program.
 	var n int
+	// Recovery codes of the old release work for the old program again: the plain SHA-256.
+	db.QueryRow(`SELECT COUNT(*) FROM recovery_codes WHERE user_id = 1 AND code_hash = ?`, hashToken(legacyRecoveryCode)).Scan(&n)
+	if n != 1 {
+		t.Fatal("old recovery code not restored")
+	}
+	db.QueryRow(`SELECT COUNT(*) FROM audit_log`).Scan(&n)
+	if n < 3 {
+		t.Fatal("audit rows lost", n)
+	}
+	if _, err := db.Exec(`INSERT INTO audit_log(at, action) VALUES (1, 'alte.version')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`DELETE FROM audit_log WHERE action = 'alte.version'`); err != nil {
+		t.Fatal("trigger left behind:", err)
+	}
+	if _, err := db.Exec(`INSERT INTO audit_log(at, action) VALUES (1, 'alte.version')`); err != nil {
+		t.Fatal(err)
+	}
 	db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = 10 AND token_hash = ?`, hashToken(next)).Scan(&n)
 	if n != 1 {
 		t.Fatal("device token lost")
@@ -558,6 +596,13 @@ func TestMigrationForwardBackwardForward(t *testing.T) {
 	if _, _, err := s2.Authenticate(ctx, next, "192.0.2.1"); err != nil {
 		t.Fatal(err)
 	}
+	if err := s2.useRecoveryCode(ctx, 1, legacyRecoveryCode); err != nil {
+		t.Fatal("old recovery code after the second upgrade:", err)
+	}
+	rep2, err := s2.VerifyAuditChain(ctx)
+	if err != nil || !rep2.OK() {
+		t.Fatalf("chain after the second upgrade: %+v %v", rep2, err)
+	}
 }
 
 func TestRollbackRefusesForeignTeamKey(t *testing.T) {
@@ -568,12 +613,12 @@ func TestRollbackRefusesForeignTeamKey(t *testing.T) {
 	if _, err := s.db.Exec(`INSERT INTO server_keys(name, key_enc) VALUES (?, ?)`, teamKeyName(li.teamID), enc); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.RollbackToLegacy(ctx); err == nil {
+	if _, err := s.RollbackToLegacy(ctx); err == nil {
 		t.Fatal("rollback would lose a team vault")
 	}
 	var v int
 	s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v)
-	if v != 8 {
+	if v != 9 {
 		t.Fatal("schema changed by the refused rollback")
 	}
 }
