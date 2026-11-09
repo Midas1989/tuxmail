@@ -54,6 +54,13 @@ export function installShortcuts(app: AppState): () => void {
       void app.toggleViewMode();
       return;
     }
+    // Ctrl+` opens and closes the terminal view (like the terminal panel of an editor).
+    if (mod && !e.shiftKey && !e.altKey && (e.key === '`' || e.code === 'Backquote') && !dialogOpen) {
+      e.preventDefault();
+      if (app.route !== 'mail') app.navigate('mail');
+      void app.setViewMode(prefs.viewMode === 'terminal' ? 'classic' : 'terminal');
+      return;
+    }
     if (editable || dialogOpen || mod || e.altKey) return;
     if (app.route !== 'mail') return;
 
