@@ -7,11 +7,11 @@
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
   import { currentPushSubscription, disablePush, enablePush, pushSupported } from '../../pwa';
-  import { currentIosEnv, isIos, isWails } from '../../platform';
+  import { currentIosEnv, isIos, isNativeShell, isWails } from '../../platform';
   import type { Channel, NotificationSettings } from '../../types';
   import ChannelIcon from '../common/ChannelIcon.svelte';
 
-  type PushState = 'loading' | 'desktop' | 'unsupported' | 'ios-install' | 'off' | 'denied' | 'on';
+  type PushState = 'loading' | 'desktop' | 'native' | 'unsupported' | 'ios-install' | 'off' | 'denied' | 'on';
 
   let settings = $state<NotificationSettings | null>(null);
   let pushState = $state<PushState>('loading');
@@ -20,6 +20,8 @@
 
   async function refreshPushState() {
     if (isWails()) return (pushState = 'desktop');
+    // The Android app has no service worker: it registers its own push (UnifiedPush / FCM) in the app settings.
+    if (isNativeShell()) return (pushState = 'native');
     if (!pushSupported()) {
       const env = currentIosEnv(false);
       return (pushState = isIos(env) && !env.standalone && !env.displayStandalone ? 'ios-install' : 'unsupported');
@@ -92,6 +94,9 @@
       <strong>{t(`notifications.state.${pushState}`)}</strong>
       <small>{t(`notifications.stateHint.${pushState}`)}</small>
     </div>
+    {#if pushState === 'native'}
+      <button class="btn" onclick={() => (location.hash = '#/native-settings')}>{t('notifications.openAppSettings')}</button>
+    {/if}
     {#if pushState === 'on' || pushState === 'off'}
       <button class="btn" class:btn-primary={pushState === 'off'} disabled={busy} onclick={togglePush}>
         {pushState === 'on' ? t('notifications.disable') : t('notifications.enable')}
