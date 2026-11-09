@@ -1,6 +1,6 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 <script lang="ts">
-  import { connection, needsOnline } from '../../state/connection.svelte';
+  import { connection, needsOnline, needsOnlineToMove } from '../../state/connection.svelte';
   import { t as tOffline } from '../../i18n/index.svelte';
   const notOffline = () => tOffline('connection.notAvailableOffline');
   import TeamPanel from '../team/TeamPanel.svelte';
@@ -15,6 +15,7 @@
   import ArrowLeft from '@lucide/svelte/icons/arrow-left';
   import MessagesSquare from '@lucide/svelte/icons/messages-square';
   import ImageOff from '@lucide/svelte/icons/image-off';
+  import CloudOff from '@lucide/svelte/icons/cloud-off';
   import MailOpen from '@lucide/svelte/icons/mail-open';
   import Tags from '@lucide/svelte/icons/tags';
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
@@ -80,8 +81,8 @@
       <button class="btn btn-ghost" onclick={() => app.replyTo('replyAll')} title="Shift+R" aria-label={t('common.action.replyAll')}><ReplyAll size={16} /> <span class="hide-sm">{t('common.action.replyAll')}</span></button>
       <button class="btn btn-ghost" onclick={() => app.replyTo('forward')} title="F" aria-label={t('common.action.forward')}><Forward size={16} /> <span class="hide-sm">{t('common.action.forward')}</span></button>
       <span class="sep"></span>
-      <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.moveToRole(m.id, 'archive')}><Archive size={17} /></button>
-      <button use:needsOnline={notOffline} class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.moveToRole(m.id, 'trash')}><Trash size={17} /></button>
+      <button use:needsOnlineToMove={notOffline} class="icon-btn" title={t('common.action.archive')} aria-label={t('common.action.archive')} onclick={() => app.moveToRole(m.id, 'archive')}><Archive size={17} /></button>
+      <button use:needsOnlineToMove={notOffline} class="icon-btn" title={t('common.action.delete')} aria-label={t('common.action.delete')} onclick={() => app.moveToRole(m.id, 'trash')}><Trash size={17} /></button>
       <MoveMenu messageId={m.id} accountId={m.accountId} currentFolderIds={m.folderIds} />
       <button class="icon-btn" title={t('common.action.flag')} aria-label={t('common.action.flag')} aria-pressed={flagged} onclick={() => app.toggleFlag(m.id)}><Star size={17} class={flagged ? 'starred' : ''} /></button>
       <button class="icon-btn" title={t('common.action.markUnread')} aria-label={t('common.action.markUnread')} onclick={() => app.toggleRead(m.id)}><Mail size={17} /></button>
@@ -153,9 +154,18 @@
         </div>
       {/if}
 
-      <div class="body" class:html={!!m.html}>
-        <MailFrame html={remoteHtml ?? m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
-      </div>
+      {#if m.offlineHeadersOnly}
+        <!-- Android app offline: only the header lines of this mail are on the device. -->
+        <div class="notice" role="note" data-testid="headers-only">
+          <CloudOff size={16} aria-hidden="true" />
+          <span>{t('mail.reader.contentOnlyOnline')}</span>
+        </div>
+        {#if m.preview}<p class="preview-only">{m.preview}</p>{/if}
+      {:else}
+        <div class="body" class:html={!!m.html}>
+          <MailFrame html={remoteHtml ?? m.html} text={m.text} {allowRemote} dark={prefs.effectiveTheme === 'dark'} title={t('mail.reader.bodyTitle', { subject: m.subject })} />
+        </div>
+      {/if}
     </div>
   {:else}
     <div class="empty">
@@ -167,6 +177,12 @@
 </section>
 
 <style>
+  .preview-only {
+    margin: 12px 20px;
+    color: var(--tm-muted);
+    font-size: 14px;
+    line-height: 1.5;
+  }
   .pane {
     display: flex;
     flex-direction: column;

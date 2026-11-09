@@ -137,6 +137,10 @@ export interface Toast {
 
 const PAGE = 200;
 
+function toastPhone(): boolean {
+  return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px), (pointer: coarse) and (max-height: 500px)').matches;
+}
+
 /**
  * Trailing debounce with an upper bound: a steady stream of calls (e.g. the
  * events of a large initial sync) still runs fn at least every maxWait ms.
@@ -1060,7 +1064,8 @@ export class AppState {
   toast(text: string, action?: { label: string; run: () => void }, kind: 'info' | 'error' = 'info'): void {
     const id = ++this.toastSeq;
     this.toasts = [...this.toasts, { id, text, actionLabel: action?.label, action: action?.run, kind }];
-    setTimeout(() => this.dismissToast(id), 6000);
+    // Phones: plain notes go after a few seconds; with an action (undo, open) they stay as long as before.
+    setTimeout(() => this.dismissToast(id), action || kind === 'error' || !toastPhone() ? 6000 : 3000);
   }
 
   dismissToast(id: number): void {
@@ -1097,7 +1102,7 @@ export class AppState {
   }
 
   async moveToRole(id: number, role: FolderRole): Promise<void> {
-    if (connection.offline) return this.toast(t('connection.notAvailableOffline')); // keyboard: the buttons are switched off
+    if (connection.movesBlocked) return this.toast(t('connection.notAvailableOffline')); // keyboard: the buttons are switched off
     const m = this.messages.find((x) => x.id === id) ?? this.message;
     if (!m) return;
     const f = (this.folders[m.accountId] ?? []).find((x) => x.role === role);
@@ -1300,16 +1305,18 @@ export class AppState {
   }
 
   async initChatFeatures(): Promise<void> {
+    // One part missing (e.g. the AI settings without a connection in the apps' offline mode) must not stop the others.
+    const keep = <T>(p: Promise<T>) => p.then((v) => v, () => undefined);
     const [focus, freq, ai, snippets] = await Promise.all([
-      this.api.getFocusSettings(),
-      this.api.frequentContacts(),
-      this.api.getAiSettings(),
-      this.api.listSnippets(),
+      keep(this.api.getFocusSettings()),
+      keep(this.api.frequentContacts()),
+      keep(this.api.getAiSettings()),
+      keep(this.api.listSnippets()),
     ]);
-    this.focus = focus;
-    this.frequentIds = freq;
-    this.aiSettings ??= ai; // a save that raced this initial load wins
-    this.snippets = snippets;
+    if (focus) this.focus = focus;
+    if (freq) this.frequentIds = freq;
+    if (ai) this.aiSettings ??= ai; // a save that raced this initial load wins
+    if (snippets) this.snippets = snippets;
     await this.loadChatFolders();
     setInterval(() => (this.now = Date.now()), 60_000);
   }
@@ -1588,7 +1595,7 @@ export class AppState {
   }
 
   async bulk(action: 'archive' | 'trash' | 'read' | 'unread' | 'flag'): Promise<void> {
-    if (connection.offline && (action === 'archive' || action === 'trash')) return this.toast(t('connection.notAvailableOffline'));
+    if (connection.movesBlocked && (action === 'archive' || action === 'trash')) return this.toast(t('connection.notAvailableOffline'));
     const ids = [...this.checked];
     if (!ids.length) return;
     if (action === 'read' || action === 'unread') await this.api.setFlags(ids, action === 'read' ? [FLAG_SEEN] : [], action === 'unread' ? [FLAG_SEEN] : []);

@@ -21,6 +21,8 @@ import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import org.tuxmail.app.MainActivity
 import org.tuxmail.app.R
+import org.tuxmail.app.offline.OfflineSync
+import org.tuxmail.app.push.PushBus
 
 /**
  * Push payload as sent by the TuxMail server (internal/server/push.Payload,
@@ -70,7 +72,13 @@ object PushRenderer {
     const val KEY_REPLY = "tuxmail.reply"
     private const val GROUP_PREFIX = "org.tuxmail.group."
 
-    fun render(context: Context, raw: String) = render(context, PushPayload.parse(raw))
+    fun render(context: Context, raw: String) {
+        val p = PushPayload.parse(raw)
+        render(context, p)
+        // Something new at the server: the app (if running) or the background work loads it for offline reading.
+        PushBus.received(p.type)
+        OfflineSync.kick(context)
+    }
 
     /** Stable id per conversation (or tag), so new messages update one notification. */
     fun notificationId(p: PushPayload): Int = when {

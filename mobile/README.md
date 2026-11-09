@@ -56,6 +56,23 @@ Systemleisten, App-Sperre und die App-Einstellungen unter `#/native-settings`.
   App minimieren), Edge-to-Edge mit Safe-Area-Abständen, Statusleiste hell/dunkel
   passend zum Thema, Splash-Screen mit dem Pinguin, adaptive Icons mit
   Monochrom-Variante (Android 13+), Sprache pro App (Android 13+).
+- **Offline** (wie die Desktop-App „Über den Server“, KONZEPT 15.9): Ordner,
+  Mailliste, Mails samt Anhängen (nach Regel), Chats, Kalender und Kontakte
+  liegen je Server-Profil in IndexedDB im App-privaten Speicher
+  (`frontend/src/lib/native/offline`). Ohne Netz: lesen, im Geladenen suchen,
+  schreiben mit Anhängen, markieren, archivieren/löschen – alles wartet im
+  Postausgang und geht beim Wiederverbinden genau einmal raus
+  (`Idempotency-Key` = Postausgangs-Kennung, „unklar“ bei 5xx/Antwortverlust,
+  Versandprüfung → zurück als Entwurf, Konflikte sichtbar). Einstellungen unter
+  App-Einstellungen > Offline: Größe, Anhänge im Voraus, „Ältere Mails nur als
+  Kopfzeilen“ (`mail.headersOnlyOlderThanDays`), WLAN/mobil, Intervall.
+  Hintergrund: `OfflineSyncWorker` (WorkManager, Akku nicht niedrig, gewähltes
+  Netz; Push löst ihn aus) lädt nur lesend in `noBackupFilesDir/offline-staging`
+  (höchstens 20 MB), die Oberfläche übernimmt das beim nächsten Start. Mails
+  verschickt nur die laufende App. Abmelden/Serverwechsel löschen den Speicher.
+  Keine eigene Verschlüsselung der Ablage: siehe
+  `docs/security/BASIS-ABWEICHUNGEN.md` Nr. 20. Rundlauf-Test: Chromium im
+  Handymodus mit Capacitor-Stubs gegen `tuxmail serve` + `tuxmail devserver`.
 - Kein Service Worker in der App (`pwa.ts` prüft `isNativeShell()`), keine
   Tracker, kein Backup der App-Daten.
 
@@ -184,7 +201,10 @@ Ohne diese Angaben entsteht ein unsigniertes Release-APK.
 ## Grenzen / offene Punkte
 
 - Mehrere Server gleichzeitig: Datenmodell und Umschalten vorhanden, gleichzeitige
-  Push-Registrierung für mehrere Profile noch nicht.
+  Push-Registrierung für mehrere Profile noch nicht. Der Offline-Speicher gilt
+  nur für das aktive Profil (Wechsel löscht ihn).
+- Offline: eingebettete Bilder (`cid:`) im Mailtext erscheinen ohne Netz nicht;
+  wartende Mails gehen erst raus, wenn die App läuft.
 - Serverseitige Voraussetzungen (FCM-Versand, `/reply`, WebSocket-Token,
   Bestätigungsseite `/device`) siehe [SERVER_TODO.md](SERVER_TODO.md).
 - iOS folgt mit demselben Capacitor-Projekt (`npx cap add ios`, Mac nötig).

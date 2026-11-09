@@ -658,6 +658,54 @@ func TestIdempotencyKeyOnSend(t *testing.T) {
 	if r, raw := send("key-00000003", "D"); r.StatusCode != 409 || !strings.Contains(string(raw), "idempotency_in_progress") || c.sender.count("D") != 0 {
 		t.Fatalf("in progress: %d %s", r.StatusCode, raw)
 	}
+	// What became of a key (the Android outbox asks before it repeats an unclear mail).
+	status := func(key string) (int, string) {
+		req, _ := http.NewRequest("GET", c.url+"/api/idempotency/"+key, nil)
+		req.Header.Set("Authorization", "Bearer "+tok.AccessToken)
+		res, err := hc.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer res.Body.Close()
+		var out struct{ State string }
+		json.NewDecoder(res.Body).Decode(&out)
+		return res.StatusCode, out.State
+	}
+	// A run that died midway (older than 10 min) is what a POST meets too: doubt, not pending.
+	for key, want := range map[string]string{"key-00000001": "done", "key-00000002": "doubt", "key-00000003": "pending", "key-99999999": "unknown"} {
+		if code, got := status(key); code != 200 || got != want {
+			t.Fatalf("status %s: %d %q, want %q", key, code, got, want)
+		}
+	}
+	if err := c.srvApp.Store().DoubtIdempotency(ctx, "key-00000003"); err != nil {
+		t.Fatal(err)
+	}
+	if _, got := status("key-00000003"); got != "doubt" {
+		t.Fatalf("doubt: %q", got)
+	}
+	if code, _ := status("bad%20key"); code != 400 {
+		t.Fatalf("bad key: %d", code)
+	}
+	// Same answer as the POST: the stale key is refused as in doubt there as well.
+	if r, raw := send("key-00000002", "D"); r.StatusCode != 409 || !strings.Contains(string(raw), "idempotency_in_doubt") {
+		t.Fatalf("stale post: %d %s", r.StatusCode, raw)
+	}
+	// Limited like other status queries.
+	limited := false
+	for range 40 {
+		if code, _ := status("key-00000001"); code == 429 {
+			limited = true
+			break
+		}
+	}
+	if !limited {
+		t.Fatal("status queries are not limited")
+	}
+	// Another user cannot see the keys (they live with the user's data): without a token nothing.
+	req, _ := http.NewRequest("GET", c.url+"/api/idempotency/key-00000001", nil)
+	if res, err := hc.Do(req); err != nil || res.StatusCode != 401 {
+		t.Fatalf("anonymous: %v %v", err, res)
+	}
 }
 
 func TestConnectionDisconnect(t *testing.T) {

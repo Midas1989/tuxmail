@@ -14,6 +14,8 @@
   import { GRACE_CHOICES, type LockSettings } from './applock';
   import type { PushInfo } from './plugins';
   import type { NativeController, PushStatus } from './status';
+  import OfflineSettings from './OfflineSettings.svelte';
+  import { connection } from '../state/connection.svelte';
 
 
   interface Props {
@@ -37,6 +39,17 @@
       distributor = push?.distributor ?? push?.distributors[0] ?? '';
     })();
   });
+
+  /** Leaving the profile deletes what is kept on the device, waiting mails included: say so first. */
+  let confirmLeave = $state<'signOut' | 'switch' | null>(null);
+  const waiting = $derived(connection.status.outbox.length);
+  function leave(kind: 'signOut' | 'switch') {
+    if (waiting > 0 && confirmLeave !== kind) {
+      confirmLeave = kind;
+      return;
+    }
+    void (kind === 'signOut' ? ctl.signOut() : ctl.switchServer());
+  }
 
   async function setLock(next: LockSettings) {
     lock = next;
@@ -62,11 +75,23 @@
   <section>
     <h2>{t('native.settings.server')}</h2>
     <p class="muted">{t('native.settings.signedInAs', { server: ctl.serverLabel, user: ctl.userLabel })}</p>
+    {#if confirmLeave}
+      <div class="warn" role="alert" data-testid="leave-outbox">
+        <p>{t('connection.leave.outbox', { count: waiting })}</p>
+        <ul>
+          {#each connection.status.outbox as o (o.id)}<li>{o.kind === 'send' ? o.title || t('connection.outbox.noSubject') : t('connection.outbox.mark') + (o.title ? ': ' + o.title : '')}</li>{/each}
+        </ul>
+        <p>{t('native.offline.leaveConfirm')}</p>
+      </div>
+    {/if}
     <div class="col">
-      <button class="btn" onclick={() => void ctl.switchServer()}><Server size={16} />{t('native.settings.switchServer')}</button>
-      <button class="btn danger" onclick={() => void ctl.signOut()}><LogOut size={16} />{t('native.settings.signOut')}</button>
+      <button class="btn" onclick={() => leave('switch')}><Server size={16} />{t('native.settings.switchServer')}</button>
+      <button class="btn danger" onclick={() => leave('signOut')}><LogOut size={16} />{t('native.settings.signOut')}</button>
     </div>
+    <p class="muted small">{t('native.offline.leaveNote')}</p>
   </section>
+
+  {#if ctl.offline}<OfflineSettings ctl={ctl.offline} />{/if}
 
   <section>
     <h2>{t('native.settings.appLock')}</h2>
@@ -174,6 +199,14 @@
   }
   .small {
     font-size: 12px;
+  }
+  .warn p,
+  .warn ul {
+    margin: 0;
+  }
+  .warn ul {
+    padding-left: 18px;
+    overflow-wrap: anywhere;
   }
   .warn {
     margin: 0;

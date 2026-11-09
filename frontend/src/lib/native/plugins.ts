@@ -113,6 +113,30 @@ export interface TuxMailPlugin {
   checkPermissions(): Promise<{ notifications: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' }>;
   requestPermissions(o?: { permissions?: 'notifications'[] }): Promise<{ notifications: 'granted' | 'denied' | 'prompt' | 'prompt-with-rationale' }>;
   cancelConversationNotifications(o: { conversationId: string }): Promise<void>;
+  // Offline store (native/offline): network kind, background synchronisation (WorkManager), its results
+  networkStatus(): Promise<{ connected: boolean; unmetered: boolean }>;
+  configureOfflineSync(o: OfflineSyncConfig): Promise<void>;
+  takeOfflineStaging(o: { profileId: string; limit: number }): Promise<{ entries: StagedResponse[]; more: boolean }>;
+  clearOfflineStaging(): Promise<void>;
+  /** A push message arrived while the app runs: time to load what is new. */
+  addListener(event: 'pushReceived', fn: (p: { type?: string }) => void): Promise<PluginListenerHandle>;
+}
+
+export interface OfflineSyncConfig {
+  profileId: string;
+  /** 0 = no periodic work. */
+  intervalMinutes: number;
+  wifiOnly: boolean;
+  /** mail.headersOnlyOlderThanDays; 0 = everything in full. */
+  headersOnlyOlderThanDays: number;
+}
+
+/** An answer the background work loaded (JSON only). */
+export interface StagedResponse {
+  key: string;
+  contentType?: string;
+  body: string;
+  storedAt?: number;
 }
 
 export const App = registerPlugin<AppPlugin>('App');

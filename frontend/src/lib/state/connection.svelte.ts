@@ -2,8 +2,9 @@
 //
 // The desktop app's connection to a TuxMail server, as the interface sees it
 // (internal/app/remote_conn.go). The bindings always reach the local core, also
-// while the interface works through the server. In the browser and on Android
-// there is no such connection: `available` is false, nothing is ever offline.
+// while the interface works through the server. The Android app brings its own
+// core with the same methods (native/offline/bridge.ts, useBackend()). In the
+// browser there is no such connection: `available` is false, nothing is ever offline.
 
 import { ApiError } from '../api/api';
 import { WailsTransport, type WailsWindow } from '../api/wails';
@@ -14,6 +15,15 @@ export type ConnectionWizard = { purpose: 'connect' } | { purpose: 'reauth'; ser
 
 const NONE: ConnectionStatus = { connected: false, state: 'none', cacheBytes: 0, outbox: [], settingsLog: [] };
 
+/** A core with the desktop's methods (ServerConnectionStatus, ServerOutboxDiscard, ...) that is not Wails: the Android app. */
+export interface CoreBackend {
+  call(method: string, ...args: unknown[]): Promise<unknown>;
+  /** Status changes; returns the unsubscribe function. */
+  subscribe(onChange: () => void): () => void;
+  /** "Neu anmelden" when the device was rejected. */
+  reauth(): void;
+}
+
 export class ConnectionState {
   status = $state<ConnectionStatus>(NONE);
   wizard = $state<ConnectionWizard | null>(null);
@@ -22,6 +32,7 @@ export class ConnectionState {
   /** More things wait for the user than before: the app says so once. */
   onAttention: (() => void) | null = null;
   private off: (() => void) | undefined;
+  private backend: CoreBackend | null = null;
   private readonly win: DesktopWin;
   private readonly reload: () => void;
 
@@ -30,8 +41,13 @@ export class ConnectionState {
     this.reload = reload ?? (() => location.reload());
   }
 
+  /** The Android app's core; call before the app starts (native/capacitor.ts). */
+  useBackend(b: CoreBackend | null): void {
+    this.backend = b;
+  }
+
   private async call<T>(method: string, ...args: unknown[]): Promise<T> {
-    const fn = this.win.go?.app?.Api?.[method];
+    const fn = this.backend ? (...a: unknown[]) => this.backend!.call(method, ...a) : this.win.go?.app?.Api?.[method];
     if (!fn) throw new ApiError(`binding ${method} not available`, 0, 'not_bound');
     try {
       return (await fn(...args)) as T;
@@ -50,7 +66,7 @@ export class ConnectionState {
 
   /** This app has a local core (desktop). */
   get available(): boolean {
-    return !!this.win.go?.app?.Api?.ServerConnectionStatus;
+    return !!this.backend || !!this.win.go?.app?.Api?.ServerConnectionStatus;
   }
   get connected(): boolean {
     return this.status.connected;
@@ -70,6 +86,10 @@ export class ConnectionState {
   get offline(): boolean {
     return this.serverMode && this.status.state !== 'online';
   }
+  /** Offline, and moving/deleting cannot wait for the connection (desktop): those buttons are off. */
+  get movesBlocked(): boolean {
+    return this.offline && !this.status.queuesMoves;
+  }
   /** Mails waiting to be sent (noted marks are not worth a number). */
   get waitingMails(): number {
     return this.status.outbox.filter((o) => o.kind === 'send').length;
@@ -88,6 +108,10 @@ export class ConnectionState {
   start(): () => void {
     if (!this.available) return () => {};
     void this.refresh();
+    if (this.backend) {
+      this.off = this.backend.subscribe(() => void this.refresh());
+      return () => this.off?.();
+    }
     this.off = this.win.runtime?.EventsOn?.('tuxmail:event', (ev) => {
       const type = (ev as { type?: string } | undefined)?.type;
       if (type === 'server.connection') void this.refresh();
@@ -162,6 +186,12 @@ export class ConnectionState {
     await this.refresh();
   }
 
+  /** "Neu anmelden": the Android app has its own sign-in, the desktop the wizard. */
+  reauth(): void {
+    if (this.backend) this.backend.reauth();
+    else if (this.status.serverUrl) this.wizard = { purpose: 'reauth', serverUrl: this.status.serverUrl };
+  }
+
   /** The transport is chosen when the app starts. */
   reloadApp(): void {
     this.reload();
@@ -178,6 +208,16 @@ export function needsOnline(el: HTMLButtonElement, reason: () => string): void {
   const title = el.title;
   $effect(() => {
     const off = connection.offline;
+    el.disabled = off;
+    el.title = off ? reason() : title;
+  });
+}
+
+/** Like needsOnline for archiving and deleting: the Android app notes them for later, the desktop switches them off. */
+export function needsOnlineToMove(el: HTMLButtonElement, reason: () => string): void {
+  const title = el.title;
+  $effect(() => {
+    const off = connection.movesBlocked;
     el.disabled = off;
     el.title = off ? reason() : title;
   });

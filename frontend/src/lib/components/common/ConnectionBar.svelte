@@ -30,7 +30,7 @@
       <span class="count">{t('connection.bar.waiting', { count: connection.waitingMails })}</span>
     {/if}
     {#if connection.expired && connection.status.serverUrl}
-      <button class="btn btn-ghost" onclick={() => (connection.wizard = { purpose: 'reauth', serverUrl: connection.status.serverUrl! })}>{t('connection.reauth')}</button>
+      <button class="btn btn-ghost" onclick={() => connection.reauth()}>{t('connection.reauth')}</button>
     {/if}
   </div>
 {/if}

@@ -91,6 +91,31 @@ func (s *Store) DoubtIdempotency(ctx context.Context, key string) error {
 	return checkAffected(s.db.ExecContext(ctx, `UPDATE idempotency_keys SET state = 'doubt' WHERE idem_key = ?`, key))
 }
 
+// IdempotencyStatus tells a client what became of a key, without running
+// anything: "done" (the stored answer replays), "pending" (an attempt runs),
+// "doubt" (failed in a way that may have had an effect, or a run that died
+// midway: older than stale) or "unknown" (never seen, refused and freed, or
+// older than the retention). It answers exactly what a POST with this key
+// would meet (BeginIdempotency + the stale rule of internal/server/api).
+func (s *Store) IdempotencyStatus(ctx context.Context, key string, now time.Time, stale time.Duration) (string, error) {
+	var state string
+	var created int64
+	err := s.db.QueryRowContext(ctx, `SELECT state, created_at FROM idempotency_keys WHERE idem_key = ?`, key).Scan(&state, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "unknown", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("store: idempotency status: %w", err)
+	}
+	switch {
+	case state == "done", state == "doubt":
+		return state, nil
+	case now.Sub(time.Unix(created, 0)) > stale:
+		return "doubt", nil
+	}
+	return "pending", nil
+}
+
 // ReleaseIdempotency forgets a key whose request failed without an effect, so that it can be retried.
 func (s *Store) ReleaseIdempotency(ctx context.Context, key string) error {
 	_, err := s.db.ExecContext(ctx, `DELETE FROM idempotency_keys WHERE idem_key = ?`, key)

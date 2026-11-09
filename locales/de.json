@@ -150,7 +150,8 @@
       "toMany": "An {name} und {count} weitere",
       "toMany_one": "An {name} und 1 weitere Person",
       "loadRemoteSender": "Immer für Absender laden",
-      "loadRemoteDomain": "Immer für {domain}"
+      "loadRemoteDomain": "Immer für {domain}",
+      "contentOnlyOnline": "Inhalt nur online: Diese Mail liegt nur mit ihren Kopfzeilen auf dem Gerät. Den Inhalt und die Anhänge lädt die App, sobald wieder eine Verbindung besteht."
     },
     "sidebar": {
       "allAccounts": "Alle Konten",
@@ -2604,6 +2605,48 @@
       "switchServer": "Server wechseln oder hinzufügen",
       "title": "App-Einstellungen",
       "version": "App-Version {version}"
+    },
+    "offline": {
+      "title": "Offline",
+      "intro": "Die App hält zuletzt geladene Mails, Chats, Termine und Kontakte auf diesem Gerät, damit du sie auch ohne Netz lesen und durchsuchen kannst. Geschriebene Mails, Markierungen, Verschieben und Löschen warten und werden beim Wiederverbinden nachgeholt.",
+      "state": "Verbindung",
+      "used": "Auf diesem Gerät",
+      "usedOf": "{used} von höchstens {max}",
+      "waiting": "Wartende Mails",
+      "headersOnly": "Ältere Mails nur als Kopfzeilen speichern",
+      "headersOnlyAll": "leer = alles",
+      "days": "Tage",
+      "headersOnlyHint": "Mails, die älter sind als diese Anzahl Tage, liegen nur mit Absender, Empfängern, Betreff, Datum, Kennzeichen und einer kurzen Vorschau auf dem Gerät. Das spart Platz. Inhalt und Anhänge lädt die App, wenn du so eine Mail öffnest, und behält sie danach noch eine Woche. Ohne Netz zeigt sie dann „Inhalt nur online“. Leer oder 0: alle Mails vollständig (Standard).",
+      "maxSize": "Speicherplatz höchstens",
+      "attachments": "Anhänge im Voraus laden",
+      "attachmentsOpen": "Nur beim Öffnen",
+      "attachmentsUpTo": "Bis {size} je Anhang",
+      "network": "Im Voraus laden über",
+      "networkAny": "WLAN und mobile Daten",
+      "networkWifi": "Nur WLAN",
+      "interval": "Im Hintergrund abgleichen",
+      "intervalOff": "Aus (nur wenn die App offen ist)",
+      "intervalMinutes": "Alle {count} Minuten",
+      "intervalHours": "Alle {count} Stunden",
+      "intervalHours_one": "Jede Stunde",
+      "intervalHint": "Eine Push-Benachrichtigung löst den Abgleich sofort aus. Den genauen Zeitpunkt bestimmt Android; abgeglichen wird nur bei ausreichendem Akku und im gewählten Netz. Mails verschickt die App, sobald sie geöffnet ist und eine Verbindung hat.",
+      "clear": "Offline-Speicher leeren",
+      "clearHint": "Löscht die gespeicherten Inhalte auf diesem Gerät. Wartende Mails bleiben erhalten.",
+      "cleared": "Geleert. Beim nächsten Abgleich lädt die App das Wichtigste neu.",
+      "leaveConfirm": "Tippe noch einmal, um trotzdem fortzufahren.",
+      "leaveNote": "Beim Abmelden und beim Wechsel des Servers werden die auf diesem Gerät gespeicherten Inhalte gelöscht.",
+      "lockRecommended": "Empfehlung: Schalte unten die App-Sperre ein. Die gespeicherten Inhalte liegen unverschlüsselt im geschützten Speicher der App; die Sperre hält sie von anderen Personen am Gerät fern.",
+      "foreignWaiting": "Von einem anderen Konto warten noch {count} Elemente auf dem Gerät.",
+      "foreignWaiting_one": "Von einem anderen Konto wartet noch {count} Element auf dem Gerät.",
+      "foreignHint": "Sie werden gesendet, sobald du dich wieder mit diesem Konto anmeldest. Alles andere dieses Kontos ist bereits gelöscht.",
+      "foreignConfirm": "Tippe noch einmal: Diese Elemente werden dann endgültig gelöscht und nicht gesendet.",
+      "foreignDiscard": "Wartende Elemente löschen",
+      "lockRecommendedShort": "Tipp: Schalte die App-Sperre ein. Mails liegen zum Offline-Lesen auf diesem Gerät.",
+      "foreignCount": "{count} nicht gesendete Mails von {account}.",
+      "foreignCount_one": "{count} nicht gesendete Mail von {account}.",
+      "foreignActions": "Dazu {count} vorgemerkte Aktionen.",
+      "foreignActions_one": "Dazu {count} vorgemerkte Aktion.",
+      "foreignUnknown": "einem anderen Konto"
     }
   },
   "cloud": {
@@ -4200,7 +4243,20 @@
       "discard": "Verwerfen",
       "asDraft": "Als Entwurf öffnen",
       "blocked": "Nicht gesendet: Die Versandprüfung möchte, dass du dir das ansiehst.",
-      "draftNotice": "Diese Mail wurde nicht gesendet:"
+      "draftNotice": "Diese Mail wurde nicht gesendet:",
+      "action": {
+        "flags": "Markierung",
+        "move": "Verschieben",
+        "read": "Als gelesen markieren"
+      },
+      "conflictGone": "Nicht ausgeführt: Die Mail gibt es am Server nicht mehr. Sie wurde dort inzwischen gelöscht oder verschoben.",
+      "conflictRefused": "Nicht ausgeführt: Der Server hat diese Aktion abgelehnt. Prüfe die Mail, wenn wieder eine Verbindung besteht.",
+      "understood": "Verstanden",
+      "sentLater": "Eine wartende Mail wurde gesendet.",
+      "blockedToast": "Eine wartende Mail wurde nicht gesendet: Die Versandprüfung möchte, dass du sie dir ansiehst.",
+      "discardedSent": "Die Mail wurde trotz Verwerfen gesendet: Sie war schon unterwegs.",
+      "discardedUnclear": "Verworfen, aber vielleicht schon gesendet: Die Mail war unterwegs, als du sie verworfen hast. Schau unter „Gesendet“ nach.",
+      "discardedNotSent": "Verworfen. Die Mail wurde nicht gesendet."
     },
     "log": {
       "title": "Protokoll des Abgleichs",

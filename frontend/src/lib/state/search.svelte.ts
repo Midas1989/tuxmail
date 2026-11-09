@@ -111,7 +111,8 @@ export class SearchState {
   }
 
   async loadHistory(): Promise<void> {
-    this.history = await this.api.getSearchHistory();
+    // Offline (apps in server mode) the history is not available: the list just stays as it is.
+    this.history = await this.api.getSearchHistory().catch(() => this.history);
   }
 
   async saveProfile(name: string): Promise<void> {
