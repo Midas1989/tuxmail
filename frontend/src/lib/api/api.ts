@@ -79,6 +79,7 @@ import type {
   OAuthClientInput,
   OAuthFlowStatus,
   OAuthProviderInfo,
+  SecretLink,
   OAuthStartInput,
   SharedMailboxInput,
 } from '../types';
@@ -408,6 +409,11 @@ export interface Api {
   deleteBackupSchedule(id: string): Promise<void>;
   runBackupSchedule(id: string): Promise<IO.IOJob>;
   listBackupArchives(scheduleId: string): Promise<IO.BackupArchive[]>;
+  // --- One-time secret links --- (internal/server/secretlinks.go; only with a TuxMail server, kind 'http')
+  /** Stores a ciphertext made in this browser (lib/secretlink.ts); the key never comes here. */
+  createSecretLink(input: { ciphertext: string; ttlSeconds: number; maxViews: number }): Promise<SecretLink>;
+  listSecretLinks(): Promise<SecretLink[]>;
+  deleteSecretLink(id: string): Promise<void>;
   // --- OAuth/Cloud accounts --- (KONZEPT 7.3–7.5; error codes oauth_not_configured, oauth_consent_required ...)
   /** Sign-in services (Microsoft, Google) and their client configuration. */
   listOAuthProviders(): Promise<OAuthProviderInfo[]>;

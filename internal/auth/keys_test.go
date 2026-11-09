@@ -477,7 +477,7 @@ func TestMigrationForwardBackwardForward(t *testing.T) {
 	ctx := context.Background()
 	var v int
 	s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v)
-	if v != 9 {
+	if v != 10 {
 		t.Fatalf("schema version %d", v)
 	}
 	// Existing rows got the new columns with sensible values.
@@ -622,7 +622,7 @@ func TestRollbackRefusesForeignTeamKey(t *testing.T) {
 	}
 	var v int
 	s.db.QueryRow(`SELECT MAX(version) FROM schema_version`).Scan(&v)
-	if v != 9 {
+	if v != 10 {
 		t.Fatal("schema changed by the refused rollback")
 	}
 }

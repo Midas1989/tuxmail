@@ -224,6 +224,7 @@ import type {
   OAuthClientInput,
   OAuthFlowStatus,
   OAuthProviderInfo,
+  SecretLink,
   OAuthStartInput,
   SharedMailboxInput,
 } from '../types';
@@ -988,6 +989,15 @@ export class HttpTransport implements Api {
   }
 
   // --- OAuth/Cloud accounts ---
+  createSecretLink(input: { ciphertext: string; ttlSeconds: number; maxViews: number }): Promise<SecretLink> {
+    return this.request('POST', '/api/secrets', input);
+  }
+  listSecretLinks(): Promise<SecretLink[]> {
+    return this.request('GET', '/api/secrets');
+  }
+  deleteSecretLink(id: string): Promise<void> {
+    return this.request('DELETE', `/api/secrets/${encodeURIComponent(id)}`);
+  }
   listOAuthProviders(): Promise<OAuthProviderInfo[]> {
     return this.request('GET', '/api/oauth/providers');
   }

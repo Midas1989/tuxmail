@@ -66,6 +66,8 @@
   import Modal from '../common/Modal.svelte';
   import RecipientInput, { isValidEmail } from './RecipientInput.svelte';
   import SendChecks from './SendChecks.svelte';
+  import SecretLinkDialog from './SecretLinkDialog.svelte';
+  import KeyRound from '@lucide/svelte/icons/key-round';
   import PasswordDeliveryDialog, { type MessengerTarget } from './PasswordDeliveryDialog.svelte';
   import ComposerComfort from '../comfort/ComposerComfort.svelte'; // spell check, video link, S/MIME, mail merge
   import type { OutgoingCrypto } from '../../api/comfort';
@@ -109,6 +111,7 @@
   let lastPw: PasswordDelivery | undefined;
   let dragOver = $state(false);
   let pickCloud = $state(false);
+  let secretDialog = $state(false);
   let crypto = $state<OutgoingCrypto>({ method: 'auto' });
   let unlockKey = $state<number | null>(null);
 
@@ -283,6 +286,21 @@
     const block = document.createElement('div');
     block.innerHTML = `<ul>${items}</ul>`;
     editor.insertBefore(block, editor.querySelector('[data-signature]') ?? editor.querySelector('[data-quote]'));
+  }
+
+  /** One-time secret link (SecretLinkDialog): the sentence with the link goes in like the cloud links. */
+  function insertSecretLink(line: string, url: string) {
+    if (!editor) return;
+    const block = document.createElement('p');
+    const at = line.indexOf(url);
+    block.append('🔐 ', document.createTextNode(at >= 0 ? line.slice(0, at) : line));
+    const a = document.createElement('a');
+    a.href = url;
+    a.textContent = url;
+    a.rel = 'noopener noreferrer';
+    block.append(a);
+    editor.insertBefore(block, editor.querySelector('[data-signature]') ?? editor.querySelector('[data-quote]'));
+    app.toast(t('compose.secret.inserted'));
   }
 
   const cloudAttachments = $derived(attachments.filter((a) => a.delivery !== 'attach'));
@@ -488,6 +506,9 @@
       <span class="sep"></span>
       <button class="icon-btn" title={t('compose.insertSignature')} aria-label={t('compose.insertSignature')} onclick={insertSignature}><Signature size={16} /></button>
       <button class="icon-btn" title={t('compose.attach')} aria-label={t('compose.attach')} onclick={() => fileInput?.click()}><Paperclip size={16} /></button>
+      {#if app.api.kind === 'http'}
+        <button class="icon-btn" title={t('compose.secret.button')} aria-label={t('compose.secret.button')} onclick={() => (secretDialog = true)}><KeyRound size={16} /></button>
+      {/if}
       {#if cloud.storageAccounts.length}
         <button class="icon-btn" title={t('cloud.picker.title')} aria-label={t('cloud.picker.title')} onclick={() => (pickCloud = true)}><CloudDownload size={16} /></button>
       {/if}
@@ -552,6 +573,10 @@
     </button>
   {/snippet}
 </Modal>
+
+{#if secretDialog}
+  <SecretLinkDialog oninsert={insertSecretLink} onclose={() => (secretDialog = false)} />
+{/if}
 
 {#if pickCloud}
   <CloudPickerDialog onattach={addCloudFiles} onlinks={insertCloudLinks} onclose={() => (pickCloud = false)} />

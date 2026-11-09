@@ -1013,6 +1013,14 @@ Bitwarden-Send ist Ende-zu-Ende-verschlüsselt: Der Schlüssel steht nur im URL-
 - **Fallback:** Falls die native Implementierung bei einer Server-Version scheitert, kann die offizielle `bw`-CLI als Werkzeug genutzt werden (`bw send create`).
 - Ergänzend möglich: Passwörter für Kontozugänge aus Vaultwarden beziehen (später, optional).
 
+### 12.6 Einmal-Links für geheime Texte (eigener Server)
+Für alltägliche Geheimnisse (ein WLAN-Passwort, ein Zugangscode) ohne Vaultwarden: Im Verfassen-Fenster (Schlüssel-Symbol, nur mit TuxMail-Server) wird ein Text **im Browser** mit AES-256-GCM und einem Zufallsschlüssel verschlüsselt. Der Server (`internal/server/secretlink`, Tabelle `secret_links` in `server.db`) speichert nur den Geheimtext; der Schlüssel steht nur im Link-Fragment `https://<public_url>/secret/<id>#<key>`.
+
+- **Grenzen:** höchstens 60 KB, Gültigkeit 1 Stunde bis 7 Tage, 1 bis 10 Abrufe, höchstens 50 aktive Links je Benutzer. Mit dem letzten erlaubten Abruf oder nach Ablauf wird die Zeile gelöscht.
+- **Abruf:** Die Seite `/secret/<id>` lädt nichts und braucht einen Klick; erst `POST /api/secrets/<id>/open` verbraucht einen Abruf (Link-Vorschauen und Mail-Scanner rufen nur `GET` auf). Unbekannt, abgelaufen und verbraucht antworten gleich (404 `gone`); der Abruf ist je Client-Netz gedrosselt. Die Seite läuft ohne Referrer, ohne Cache, ohne Indexierung und entfernt den Schlüssel nach dem Anzeigen aus der Adresszeile.
+- **Hinweis in der Oberfläche:** Bei sehr geheimen Passwörtern (Bank, Administrator-Zugänge, Hauptpasswörter) soll **Bitwarden Send** oder die Teilen-Funktion eines Passwortmanagers genutzt werden. Beim Einmal-Link liefert der Betreiber des TuxMail-Servers die Seite, die entschlüsselt; ein manipulierter Server könnte sie austauschen. Das steht im Dialog, nicht nur hier.
+- **Protokoll:** Der Audit-Eintrag (`secretlink.create`/`secretlink.delete`) nennt weder Id noch Inhalt; die Id wird auch nicht geloggt.
+
 ---
 
 ## 13. Import & Export

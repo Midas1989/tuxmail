@@ -31,6 +31,7 @@ import (
 	"github.com/Midas1989/Mailclient/internal/netguard"
 	"github.com/Midas1989/Mailclient/internal/server/api"
 	"github.com/Midas1989/Mailclient/internal/server/push"
+	"github.com/Midas1989/Mailclient/internal/server/secretlink"
 )
 
 // Options configure optional parts of the server.
@@ -87,6 +88,10 @@ type Server struct {
 	push      *push.Sender
 	pushStore *push.Store
 
+	secrets           *secretlink.Store // secretlinks.go
+	secretOpenIP      *rateLimiter
+	secretCreateLimit *rateLimiter
+
 	team           *teamState // team.go
 	teamAppOptions func(teamID int64, o *app.Options)
 
@@ -142,6 +147,9 @@ func New(cfg *config.Config, svc *auth.Service, opts Options) (*Server, error) {
 		return nil, err
 	}
 	s.pushStore = &push.Store{DB: svc.DB(), Now: svc.Now}
+	s.secrets = &secretlink.Store{DB: svc.DB(), Now: svc.Now}
+	s.secretOpenIP = newRateLimiter(secretOpenPerMinute, secretOpenBurst)
+	s.secretCreateLimit = newRateLimiter(secretCreatePerMin, secretCreatePerMin)
 	subscriber := "mailto:postmaster@localhost"
 	if cfg.SecureCookies() {
 		subscriber = cfg.PublicOrigin()
@@ -255,6 +263,9 @@ func (s *Server) housekeeping(ctx context.Context) {
 		s.userLimiter.prune()
 		s.deviceTokenCode.prune()
 		s.deviceTokenIP.prune()
+		s.secretOpenIP.prune()
+		s.secretCreateLimit.prune()
+		_ = s.secrets.Prune(ctx)
 		s.apps.prune()
 		s.runPeriodicChecks(ctx)
 		select {
@@ -344,6 +355,14 @@ func (s *Server) routes() http.Handler {
 	mux.HandleFunc("GET /api/push/preferences", s.user(s.handlePushGetPrefs))
 	mux.HandleFunc("PUT /api/push/preferences", s.user(s.handlePushPutPrefs))
 	mux.HandleFunc("POST /api/push/test", s.user(s.handlePushTest))
+
+	// One-time secret links (secretlinks.go)
+	mux.HandleFunc("POST /api/secrets", s.user(s.handleSecretCreate))
+	mux.HandleFunc("GET /api/secrets", s.user(s.handleSecretList))
+	mux.HandleFunc("DELETE /api/secrets/{id}", s.user(s.handleSecretDelete))
+	mux.HandleFunc("POST /api/secrets/{id}/open", s.handleSecretOpen)
+	mux.HandleFunc("GET /secret/{id}", s.handleSecretPage)
+	mux.HandleFunc("GET /secret.js", s.handleSecretScript)
 
 	// Desktop client device login and provisioning
 	mux.HandleFunc("POST /api/device/authorize", s.handleDeviceAuthorize)

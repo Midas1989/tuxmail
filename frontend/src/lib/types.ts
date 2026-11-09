@@ -2355,6 +2355,17 @@ export interface OAuthClientInput {
   tenant?: string;
 }
 
+/** Metadata of a one-time secret link (never its content). */
+export interface SecretLink {
+  id: string;
+  createdAt: string;
+  expiresAt: string;
+  views: number;
+  maxViews: number;
+  /** Only in the answer to creating: where the recipient opens it (without the #key). */
+  url?: string;
+}
+
 export interface OAuthProviderInfo {
   id: OAuthProviderId;
   displayName: string;

@@ -104,6 +104,7 @@ import type {
   OAuthClientInput,
   OAuthFlowStatus,
   OAuthProviderInfo,
+  SecretLink,
   OAuthStartInput,
   SharedMailboxInput,
 } from '../types';
@@ -2663,6 +2664,21 @@ export class MockTransport implements Api {
   get oauth(): MockOAuth {
     this.oauthMock ??= new MockOAuth({ accounts: () => this.accounts, identities: () => this.identities, createAccount: (i) => this.createAccount(i) });
     return this.oauthMock;
+  }
+  private secretLinks = new Map<string, SecretLink & { ciphertext: string }>();
+  async createSecretLink(input: { ciphertext: string; ttlSeconds: number; maxViews: number }): Promise<SecretLink> {
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('').slice(0, 22);
+    const now = Date.now();
+    const l = { id, createdAt: new Date(now).toISOString(), expiresAt: new Date(now + input.ttlSeconds * 1000).toISOString(), views: 0, maxViews: input.maxViews, ciphertext: input.ciphertext };
+    this.secretLinks.set(id, l);
+    return this.reply({ id, createdAt: l.createdAt, expiresAt: l.expiresAt, views: 0, maxViews: l.maxViews, url: `https://mail.example.org/secret/${id}` });
+  }
+  listSecretLinks(): Promise<SecretLink[]> {
+    return this.reply([...this.secretLinks.values()].map(({ ciphertext: _c, ...l }) => l));
+  }
+  deleteSecretLink(id: string): Promise<void> {
+    this.secretLinks.delete(id);
+    return this.reply(undefined);
   }
   listOAuthProviders(): Promise<OAuthProviderInfo[]> {
     return this.reply(this.oauth.providers());

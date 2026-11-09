@@ -21,6 +21,7 @@ import type {
   OAuthClientInput,
   OAuthFlowStatus,
   OAuthProviderInfo,
+  SecretLink,
   OAuthStartInput,
   SharedMailboxInput,
 } from '../types';
@@ -830,6 +831,16 @@ export class WailsTransport implements Api {
   }
 
   // --- OAuth/Cloud accounts --- (internal/app/oauth_api.go)
+  // One-time secret links need the TuxMail server (the page that opens them lives there).
+  createSecretLink(): Promise<SecretLink> {
+    return Promise.reject(new ApiError('secret links need a TuxMail server', 501, 'unsupported'));
+  }
+  listSecretLinks(): Promise<SecretLink[]> {
+    return Promise.resolve([]);
+  }
+  deleteSecretLink(): Promise<void> {
+    return Promise.reject(new ApiError('secret links need a TuxMail server', 501, 'unsupported'));
+  }
   listOAuthProviders(): Promise<OAuthProviderInfo[]> {
     return this.call('ListOAuthProviders');
   }

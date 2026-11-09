@@ -24,7 +24,9 @@ import (
 // cannot (only their HMAC exists), they are removed and reported. It needs
 // master.key and may be repeated after an interruption.
 
-const rollbackFromVersion = 9
+// Migrations 9 and 10 (audit chain / recovery, secret links) are undone together with 8: the one-time
+// secret links are short-lived and are dropped with their table.
+const rollbackFromVersion = 10
 
 const rollbackSQL = `
 DROP TRIGGER IF EXISTS audit_log_no_null;
@@ -39,10 +41,11 @@ ALTER TABLE sessions DROP COLUMN pending_token_hash;
 ALTER TABLE sessions DROP COLUMN token_issued_at;
 ALTER TABLE sessions DROP COLUMN scopes;
 ALTER TABLE device_authorizations DROP COLUMN scopes;
+DROP TABLE secret_links;
 DROP TABLE device_retired_tokens;
 DROP TABLE server_keys;
 DROP TABLE rate_limit;
-DELETE FROM schema_version WHERE version IN (8, 9);
+DELETE FROM schema_version WHERE version IN (8, 9, 10);
 `
 
 // RollbackReport says what the rollback could not keep.

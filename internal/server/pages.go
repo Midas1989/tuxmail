@@ -28,6 +28,7 @@ input{width:100%;box-sizing:border-box;padding:.6rem;border:1px solid #9995;bord
 button{margin-top:1.25rem;width:100%;padding:.7rem;border:0;border-radius:8px;background:#2563eb;color:#fff;font-size:1rem;cursor:pointer}
 button:disabled{opacity:.5;cursor:not-allowed}button.secondary{background:#6b7280}.err{color:#dc2626;min-height:1.2em;margin-top:.75rem}.hidden{display:none}
 code{font-size:1.4rem;letter-spacing:.15em}
+pre{white-space:pre-wrap;word-break:break-all;background:#9992;padding:.75rem;border-radius:8px;font-size:1rem;margin:0 0 .5rem}.note{font-size:.85rem;opacity:.8}
 </style></head><body><main>{{.Body}}</main><script{{if .ScriptNonce}} nonce="{{.ScriptNonce}}"{{end}} src="{{.Script}}"></script></body></html>`))
 
 func renderPage(w http.ResponseWriter, r *http.Request, title, script string, body template.HTML) {
@@ -35,7 +36,9 @@ func renderPage(w http.ResponseWriter, r *http.Request, title, script string, bo
 	n := noncesFrom(r)
 	_ = pageTmpl.Execute(&buf, map[string]any{"Title": title, "Script": script, "Body": body, "ScriptNonce": n.script, "StyleNonce": n.style})
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
+	if w.Header().Get("Cache-Control") == "" { // a page may ask for stricter caching (no-store)
+		w.Header().Set("Cache-Control", "no-cache")
+	}
 	_, _ = w.Write(buf.Bytes())
 }
 
