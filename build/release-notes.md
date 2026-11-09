@@ -8,6 +8,7 @@
 | **Fedora / RHEL / openSUSE** | `tuxmail-<v>-1.x86_64.rpm` → `sudo dnf install ./tuxmail-<v>-1.x86_64.rpm` |
 | Linux (jede Distribution / any distro) | `TuxMail-<v>-linux-amd64.AppImage` → `chmod +x` und starten / and run |
 | Linux portabel / portable | `TuxMail-<v>-linux-amd64-portable.tar.gz` |
+| **macOS** (Apple-Chip / Apple silicon; Intel: `amd64`) | `TuxMail-<v>-macos-arm64.dmg` → in „Programme“ ziehen / drag to Applications |
 | **Android** | `TuxMail-<v>-foss.apk` (Vorab-Builds / pre-release builds: `…-foss-debug.apk`) |
 | **Server** (Ansible, systemd) | `tuxmail_<v>_linux_amd64.tar.gz` · Docker: `ghcr.io/midas1989/tuxmail:<v>` |
 | Kommandozeile Windows / Windows CLI | `tuxmail_<v>_windows_amd64.zip` |
@@ -21,3 +22,5 @@ Prüfsummen / Checksums: `sha256sum -c checksums.txt --ignore-missing` (Android:
 
 > 0.x = Vorab-Version, noch nicht digital signiert: Windows SmartScreen → „Weitere Informationen“ → „Trotzdem ausführen“.
 > Pre-release, not yet code-signed: SmartScreen → "More info" → "Run anyway".
+> macOS: noch nicht notarisiert: einmal Rechtsklick → „Öffnen“ (macOS 15: Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“) oder `xattr -dr com.apple.quarantine /Applications/TuxMail.app`.
+> macOS: not notarized yet: right-click → "Open" once (macOS 15: System Settings → Privacy & Security → "Open Anyway").

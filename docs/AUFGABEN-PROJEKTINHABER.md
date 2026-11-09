@@ -24,6 +24,7 @@ Diese Punkte kann nur der Projektinhaber erledigen oder auf echter Hardware prü
 | I | **Betrieb bestehender Server prüfen:** Sicherungen brauchen einen Backup-Schlüssel (nach dem Rollout in der Oberfläche erzeugen, ein vorhandenes `tuxmail_backup_age_recipients` wird übernommen) oder die ausdrückliche Klartext-Ausnahme; `tuxmail_tls_mode: none` hinter einem TLS-beendenden Proxy braucht `tuxmail_nginx_upstream_terminates_tls: true`; die Version erscheint auf `/healthz` nur noch mit `security.expose_version: true`. | 🟡 | – |
 | J | **Entscheidung:** Soll das Projekt eine **Update-Funktion** im Programm bekommen (Vorschlag: signierter Update-Hinweis zuerst)? | 🟡 | – |
 | L | **Standard-Branch auf `main` stellen:** Der Standard-Branch des Repositories ist noch `claude/mail-messaging-calendar-app-u4loru`. Ein normales `git clone` landet deshalb auf dem alten Stand ohne die Korrekturen (so ist der Ubuntu-26.04-Fehler auf dem Server entstanden). *Settings → Branches → Default branch → main*. Danach den alten Branch löschen. | 🔴 | – |
+| M | **Optional, kostenpflichtig: Apple Developer ID für macOS** (siehe Punkt 9). Ohne sie ist die macOS-App nur ad-hoc signiert; Nutzer öffnen sie einmal per Rechtsklick → „Öffnen“. Mit ihr: Secrets `MACOS_CERTIFICATE_P12`, `MACOS_CERTIFICATE_PASSWORD`, `MACOS_NOTARY_KEY`, `MACOS_NOTARY_KEY_ID`, `MACOS_NOTARY_ISSUER_ID` setzen. | 🟢 | 99 USD/Jahr |
 | K | Projekt wurde nach `github.com/Midas1989/tuxmail` umbenannt: Der Go-Modulpfad (`go.mod`) heißt noch `github.com/Midas1989/Mailclient`. Das stört nichts; eine Umbenennung ist möglich, berührt aber alle Quelldateien. Ggf. Secrets/Variablen und Verknüpfungen (SignPath-Projekt, Docker-Paket auf ghcr.io) auf den neuen Namen prüfen. | 🟢 | – |
 
 Bewusst offen bleiben: Authenticode-Signatur der Windows-Programme (Punkt F), Signaturen für Messenger-Plugins und eine
@@ -43,6 +44,7 @@ Sandbox für Plugins (sie laufen als derselbe Benutzer wie TuxMail).
 | 6 | Code-Signatur für Windows | 🟡 | 0 € (SignPath) bis ca. 69–359 € (Certum) | 1–2 Stunden + Wartezeit |
 | 7 | Test-Infrastruktur (Testkonten/Server) | 🟢 | 0–10 €/Monat | 1 Stunde |
 | 8 | Domain & Projektseite | 🟢 | ca. 10–20 €/Jahr | optional |
+| 9 | Apple Developer ID für macOS (optional) | 🟢 | 99 USD/Jahr | 1 Stunde + Wartezeit |
 
 ---
 
@@ -158,6 +160,26 @@ Für Google/Microsoft-Freigaben, SignPath und Vertrauen bei Nutzern hilfreich:
 - [ ] Domain (z. B. `tuxmail.org`/`tuxmail.app` – Verfügbarkeit prüfen), ca. 10–20 €/Jahr.
 - [ ] Einfache Projektseite (kann kostenlos über GitHub Pages laufen – ich kann sie erstellen) mit **Impressum** und **Datenschutzerklärung** (für Google/Microsoft Pflicht; in Deutschland für eine öffentliche Seite ebenfalls).
 - [ ] Optional: E-Mail-Adresse für das Projekt (z. B. `security@` für Sicherheitsmeldungen).
+
+---
+
+## 9. 🟢 Apple Developer ID für macOS (optional, kostenpflichtig)
+
+Der Release baut eine macOS-App (`TuxMail-<v>-macos-<arch>.dmg`). Ohne Developer ID ist sie nur ad-hoc signiert:
+Gatekeeper blockiert den ersten Start, Nutzer öffnen sie einmal per Rechtsklick → „Öffnen“ oder mit `xattr`
+([INSTALLATION.md](INSTALLATION.md), macOS). Fällt der macOS-Build aus, erscheint das Release ohne macOS-Dateien.
+
+Mit Developer ID signiert und notarisiert der Release-Job automatisch:
+
+1. Apple Developer Program beitreten (<https://developer.apple.com/programs/>, 99 USD/Jahr, Identitätsprüfung).
+2. Zertifikat **„Developer ID Application“** erstellen, mit privatem Schlüssel als `.p12` exportieren.
+   Secrets: `MACOS_CERTIFICATE_P12` (Base64 der `.p12`, z. B. `base64 -i cert.p12`) und `MACOS_CERTIFICATE_PASSWORD`.
+3. In App Store Connect unter *Users and Access → Integrations → App Store Connect API* einen Schlüssel (Rolle
+   „Developer“) anlegen. Secrets: `MACOS_NOTARY_KEY` (Base64 der `AuthKey_<id>.p8`), `MACOS_NOTARY_KEY_ID`,
+   `MACOS_NOTARY_ISSUER_ID`.
+4. Nächsten Release-Lauf beobachten: Schritt „Notarization“ muss grün sein.
+
+**Empfehlung:** erst, wenn es macOS-Nutzer gibt. Bis dahin genügt der einmalige Rechtsklick.
 
 ---
 

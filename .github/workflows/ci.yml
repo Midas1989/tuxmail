@@ -115,7 +115,11 @@ jobs:
       - name: yamllint
         run: yamllint -c .yamllint.yml .github build/linux/nfpm.yaml build/docker deploy/docker
       - name: shellcheck
-        run: shellcheck -x build/*.sh build/linux/*.sh build/linux/AppRun build/windows/*.sh web/build.sh
+        run: shellcheck -x build/*.sh build/linux/*.sh build/linux/AppRun build/windows/*.sh build/macos/*.sh web/build.sh
+      - name: Optional release platforms (macOS) do not block the release
+        run: |
+          build/release-optional.test.sh
+          build/macos/infoplist.test.sh
       # Pinned release binary (SHA-256 checked) instead of a tag-addressed image.
       - name: hadolint
         env:

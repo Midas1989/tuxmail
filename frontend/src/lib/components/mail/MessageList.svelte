@@ -17,6 +17,7 @@
   import X from '@lucide/svelte/icons/x';
   import FolderSearch from '@lucide/svelte/icons/folder-search';
   import RefreshCw from '@lucide/svelte/icons/refresh-cw';
+  import { PullGesture, PULL_TRIGGER } from './pullGesture';
   import Pencil from '@lucide/svelte/icons/pencil';
   import TagChips from '../common/TagChips.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
@@ -73,27 +74,22 @@
   });
 
   // Pull to refresh (touch: iPhone/iPad, Android): drag the list down from the top.
-  const PULL_TRIGGER = 64;
+  // Only a mostly vertical move pulls; a sideways one stays the row swipe (pullGesture.ts).
+  const gesture = new PullGesture();
   let pull = $state(0);
-  let pullStart: number | null = null;
 
   function onTouchStart(e: TouchEvent) {
-    pullStart = viewport && viewport.scrollTop <= 0 && e.touches.length === 1 && !app.refreshing ? e.touches[0].clientY : null;
+    if (e.touches.length !== 1) return gesture.cancel();
+    gesture.down(e.touches[0].clientX, e.touches[0].clientY, !!viewport && viewport.scrollTop <= 0, !app.refreshing);
+    pull = 0;
   }
   function onTouchMove(e: TouchEvent) {
-    if (pullStart == null || !viewport) return;
-    const dy = e.touches[0].clientY - pullStart;
-    if (dy <= 0 || viewport.scrollTop > 0) {
-      pull = 0;
-      if (dy <= 0) pullStart = null;
-      return;
-    }
-    pull = Math.min(PULL_TRIGGER * 1.5, dy * 0.5);
+    if (e.touches.length !== 1 || sw) return void ((pull = 0), gesture.cancel());
+    pull = gesture.move(e.touches[0].clientX, e.touches[0].clientY, !!viewport && viewport.scrollTop <= 0);
   }
   function onTouchEnd() {
-    const go = pull >= PULL_TRIGGER;
+    const go = gesture.up();
     pull = 0;
-    pullStart = null;
     if (go) void app.refreshNow();
   }
 
@@ -125,8 +121,11 @@
     if (!s) return;
     const dx = e.clientX - s.x;
     const dy = e.clientY - s.y;
+    if (!s.active && pull > 0) return; // the list is being pulled down
     if (!s.active && Math.abs(dx) > 14 && Math.abs(dx) > 2 * Math.abs(dy)) {
       s.active = true;
+      gesture.cancel();
+      pull = 0;
       (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     }
     if (s.active) sw = { id: s.id, dx: Math.max(-140, Math.min(140, dx)) };
@@ -489,7 +488,9 @@
     animation: tm-refresh-spin 0.9s linear infinite;
   }
   .viewport {
+    /* No browser pull-to-reload over the list; vertical scrolling and zoom stay with the browser, sideways moves go to the row swipe. */
     overscroll-behavior-y: contain;
+    touch-action: pan-y pinch-zoom;
     position: relative;
     flex: 1;
     overflow-y: auto;

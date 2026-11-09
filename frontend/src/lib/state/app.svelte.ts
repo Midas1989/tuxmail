@@ -46,6 +46,7 @@ import {
 } from '../types';
 import { prefs } from './prefs.svelte';
 import { connection } from './connection.svelte';
+import { AutoRefresh } from './autoRefresh';
 import { ApiError } from '../api/api';
 import { comfortFor } from '../api/comfort';
 import { isFocusActive } from '../chatfeatures';
@@ -535,17 +536,23 @@ export class AppState {
   // Refresh: automatic (timer, focus, back in the foreground) and "Refresh now"
   // -------------------------------------------------------------------------
 
-  /** A manual refresh is running (button in the list header). */
+  /** A manual refresh is running (button in the list header, pull to refresh). */
   refreshing = $state(false);
   private stopAutoRefresh: (() => void) | null = null;
 
-  /** Ask the server to sync every mail account right now, then reload what is shown. */
+  /**
+   * "Refresh now": ask the server to sync every mail account, then reload what is
+   * shown. Without a connection (offline store of the Android app, desktop in server
+   * mode) only the list is read again from the device.
+   */
   async refreshNow(): Promise<void> {
     if (this.refreshing) return;
     this.refreshing = true;
     try {
-      await Promise.allSettled(this.mailAccounts.map((a) => this.api.syncNow(a.id)));
-      await Promise.all([...this.mailAccounts.map((a) => this.reloadFolders(a.id)), this.loadSyncStatus()]);
+      if (!connection.offline) {
+        await Promise.allSettled(this.mailAccounts.map((a) => this.api.syncNow(a.id)));
+        await Promise.all([...this.mailAccounts.map((a) => this.reloadFolders(a.id)), this.loadSyncStatus()]);
+      }
       await this.reloadList({ keepSelection: true });
       if (this.selectedConversationId != null) this.reloadItemsDebounced();
     } catch {
@@ -555,25 +562,29 @@ export class AppState {
     }
   }
 
-  /** Reloads quietly every minute while the page is visible and when it returns to the foreground (also iPhone PWA / app). */
+  /**
+   * Light refresh for the automatic one (autoRefresh.ts): the list and the sync
+   * status only, never folders of every account or message contents (headers-only
+   * mails stay headers-only, the offline store loads nothing extra). Rejects on failure.
+   */
+  async refreshQuietly(): Promise<void> {
+    await this.reloadList({ keepSelection: true });
+    void this.loadSyncStatus();
+  }
+
+  /** Automatic refresh: only as a fallback while the event stream is down, and once when the page comes back. */
   private startAutoRefresh(): void {
     this.stopAutoRefresh?.();
-    if (typeof document === 'undefined') return;
-    const tick = () => {
-      if (document.visibilityState !== 'visible' || this.refreshing || this.connection !== 'online') return;
-      void this.reloadAfterReconnect();
-      void this.loadSyncStatus();
-    };
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') tick();
-    };
-    document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('online', tick);
-    const timer = setInterval(tick, 60_000);
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const auto = new AutoRefresh({
+      refresh: () => this.refreshQuietly(),
+      live: () => this.connection === 'online',
+      paused: () => this.refreshing || connection.offline,
+      doc: document,
+      win: window,
+    });
     this.stopAutoRefresh = () => {
-      document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('online', tick);
-      clearInterval(timer);
+      auto.stop();
       this.stopAutoRefresh = null;
     };
   }

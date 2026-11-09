@@ -34,6 +34,12 @@
 #                                          sets tuxmail_allow_unsigned_release)
 #   SIGNPATH_API_TOKEN (+ variables SIGNPATH_ORGANIZATION_ID, SIGNPATH_PROJECT_SLUG,
 #   SIGNPATH_SIGNING_POLICY_SLUG)          Authenticode signing of the Windows files
+#   MACOS_CERTIFICATE_P12 (base64 .p12 of a "Developer ID Application" certificate),
+#   MACOS_CERTIFICATE_PASSWORD             Developer ID signature of the macOS app and .dmg
+#   MACOS_NOTARY_KEY (base64 .p8 App Store Connect API key), MACOS_NOTARY_KEY_ID,
+#   MACOS_NOTARY_ISSUER_ID                 Apple notarization (needs the certificate too)
+#                                          (without them: ad-hoc signed, Gatekeeper asks once)
+# The macOS job is optional: when it fails, the release is published without macOS files.
 # The Android APKs are built and attached by android.yml.
 
 name: Release
@@ -534,10 +540,15 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # Optional: a failing macOS build never holds back the Linux, Windows and
+  # Docker release (publish checks the mandatory jobs itself). Without the
+  # secrets below the app is only ad-hoc signed and Gatekeeper asks on the first
+  # start (docs/INSTALLATION.md, macOS).
   macos-desktop:
     name: macOS desktop ${{ matrix.arch }}
     needs: [version, frontend]
     runs-on: macos-latest
+    continue-on-error: true
     strategy:
       fail-fast: false
       matrix:
@@ -546,6 +557,8 @@ jobs:
       TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
       # No signal-cli for macOS (build/macos/build.sh).
       TUXMAIL_SIGNAL_CLI: skip
+      MACOS_SIGNING_ENABLED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' }}
+      MACOS_NOTARY_ENABLED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_NOTARY_KEY != '' && secrets.MACOS_NOTARY_KEY_ID != '' && secrets.MACOS_NOTARY_ISSUER_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -558,12 +571,40 @@ jobs:
         with:
           go-version-file: go.mod
       - run: build/ci-retry.sh -- go mod download
+      - name: Developer ID certificate (optional)
+        if: env.MACOS_SIGNING_ENABLED == 'true'
+        env:
+          MACOS_CERTIFICATE_P12: ${{ secrets.MACOS_CERTIFICATE_P12 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: build/macos/keychain.sh
+      - name: Unsigned build
+        if: env.MACOS_SIGNING_ENABLED != 'true'
+        run: |
+          echo "::warning::macOS ${{ matrix.arch }} is only ad-hoc signed (no MACOS_CERTIFICATE_P12), Gatekeeper asks on the first start."
       - name: Build TuxMail.app
         env:
           TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
         run: build/macos/build.sh "${{ matrix.arch }}"
       - name: Disk image (.dmg)
         run: build/macos/package-dmg.sh "${{ matrix.arch }}"
+      - name: Notarization (optional)
+        if: env.MACOS_NOTARY_ENABLED == 'true'
+        env:
+          MACOS_NOTARY_KEY: ${{ secrets.MACOS_NOTARY_KEY }}
+          MACOS_NOTARY_KEY_ID: ${{ secrets.MACOS_NOTARY_KEY_ID }}
+          MACOS_NOTARY_ISSUER_ID: ${{ secrets.MACOS_NOTARY_ISSUER_ID }}
+        run: build/macos/notarize.sh dist/TuxMail-*-macos-${{ matrix.arch }}.dmg
+      - name: Remove the signing keychain
+        if: always() && env.MACOS_SIGNING_ENABLED == 'true'
+        run: security delete-keychain "$RUNNER_TEMP/tuxmail-signing.keychain-db" || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-desktop-${{ matrix.arch }}
+          path: dist/TuxMail-*-macos-*.dmg
+          if-no-files-found: error
+          retention-days: 14
+      # Written last: publish only accepts a .dmg whose checksum list exists, and
+      # drops a .dmg without one (upload of the list failed) instead of failing.
       - name: Checksums of this job's files
         run: |
           mkdir -p partsums-out && build/partsums.sh write "partsums-out/partsums-macos-desktop-${{ matrix.arch }}.txt" dist/TuxMail-*-macos-*.dmg
@@ -571,12 +612,6 @@ jobs:
         with:
           name: partsums-macos-desktop-${{ matrix.arch }}
           path: partsums-out/partsums-macos-desktop-${{ matrix.arch }}.txt
-          if-no-files-found: error
-          retention-days: 14
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: macos-desktop-${{ matrix.arch }}
-          path: dist/TuxMail-*-macos-*.dmg
           if-no-files-found: error
           retention-days: 14
 
@@ -638,6 +673,15 @@ jobs:
   publish:
     name: Checksums and GitHub release
     needs: [version, server, linux-desktop, windows-desktop, macos-desktop, docker]
+    # macOS is optional: publish runs when every mandatory job succeeded,
+    # whatever happened to macos-desktop (build/release-optional.sh drops what is incomplete).
+    if: >-
+      ${{ !cancelled()
+      && needs.version.result == 'success'
+      && needs.server.result == 'success'
+      && needs.linux-desktop.result == 'success'
+      && needs.windows-desktop.result == 'success'
+      && needs.docker.result == 'success' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -659,6 +703,8 @@ jobs:
           pattern: partsums-*
           path: partsums
           merge-multiple: true
+      - name: Optional macOS files only when complete
+        run: build/release-optional.sh dist partsums macos >> "$GITHUB_STEP_SUMMARY"
       - name: Verify the files against the checksums of the build jobs
         run: build/partsums.sh verify dist partsums
 
@@ -708,7 +754,10 @@ jobs:
 
       - name: Release notes (download table + installation guide)
         if: needs.version.outputs.release == 'true'
-        run: sed "s/<v>/$TUXMAIL_VERSION/g" build/release-notes.md > "$RUNNER_TEMP/release-notes.md"
+        run: |
+          # Without macOS files (optional job failed) the macOS rows go.
+          if ls dist/TuxMail-*-macos-*.dmg > /dev/null 2>&1; then filter=cat; else filter="grep -v macOS"; fi
+          sed "s/<v>/$TUXMAIL_VERSION/g" build/release-notes.md | $filter > "$RUNNER_TEMP/release-notes.md"
 
       - name: GitHub release
         if: needs.version.outputs.release == 'true'

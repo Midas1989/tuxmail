@@ -11,7 +11,7 @@ eigenen Server. Wer es eilig hat, liest nur den ersten Abschnitt.
 0. [Schnellinstallation](#0-schnellinstallation)
 1. [Vorbereitung: Welches Paket, Download prüfen](#1-vorbereitung)
 2. [Windows](#2-windows)
-3. [Linux (Desktop)](#3-linux-desktop)
+3. [Linux (Desktop)](#3-linux-desktop) · [macOS (Desktop)](#macos-desktop)
 4. [Android und Smartphone](#4-android-und-smartphone)
 5. [Kommandozeile (Server-Archive)](#5-kommandozeile-server-archive)
 6. [Eigener Server (Web, PWA, Android-Client)](#6-eigener-server)
@@ -86,6 +86,7 @@ Snapdragon-Notebooks, Ampere-Server). Bei `.rpm`-Dateien heißt es `x86_64` bzw.
 | **Fedora / openSUSE / RHEL / Rocky / Alma** | `tuxmail-<v>-1.<x86_64\|aarch64>.rpm` |
 | **jede andere Linux-Distribution** (ohne Installation) | `TuxMail-<v>-linux-<arch>.AppImage` |
 | Linux portabel (z. B. USB-Stick, GTK/WebKitGTK vom System) | `TuxMail-<v>-linux-<arch>-portable.tar.gz` |
+| **macOS** (Apple-Chip: `arm64`, Intel: `amd64`) | `TuxMail-<v>-macos-<arch>.dmg` (nur wenn der macOS-Build im Release dabei ist) |
 | **Android**-App | `TuxMail-<v>-foss.apk` (bis zum ersten signierten Release: `…-foss-debug.apk`) |
 | **eigenen TuxMail-Server** | `tuxmail_<v>_linux_<arch>.tar.gz` (Ansible) oder das Docker-Image `ghcr.io/midas1989/tuxmail` |
 | Server/Kommandozeile unter Windows | `tuxmail_<v>_windows_<arch>.zip` |
@@ -96,6 +97,7 @@ Snapdragon-Notebooks, Ampere-Server). Bei `.rpm`-Dateien heißt es `x86_64` bzw.
 |---|---|
 | Windows | Windows 10 22H2 oder Windows 11 (64 Bit). Microsoft Edge WebView2 ist normalerweise vorhanden; fehlt es, installiert das Setup es. |
 | Linux-Desktop | 64-Bit-Linux mit grafischer Oberfläche, GTK 3 und WebKitGTK 4.1 (Debian 12+, Ubuntu 22.04+ einschließlich 26.04, Fedora 39+, openSUSE Tumbleweed/Leap 15.6, RHEL/Rocky/Alma 9+). Für das AppImage genügt glibc ab 2.39 (Ubuntu 24.04+, Debian 13+, Fedora 40+). Zum sicheren Speichern der Passwörter: ein Schlüsselbund (GNOME Keyring, KWallet oder KeePassXC). |
+| macOS | macOS 11 (Big Sur) oder neuer, Apple-Chip oder Intel |
 | Android | Android 7.0 oder neuer; ein TuxMail-Server (Abschnitt 6) |
 | Server | Debian 12/13, Ubuntu 22.04/24.04/26.04 oder RHEL/Rocky/AlmaLinux 9, amd64 oder arm64, systemd, SSH-Zugang mit `sudo`; für Let's Encrypt eine Domain, die auf den Server zeigt, und offene Ports 80/443 |
 
@@ -223,6 +225,32 @@ cd TuxMail
 ```
 Alle Daten liegen im Ordner `data` daneben. Die Zugangsdaten sind mit einem Master-Passwort verschlüsselt, wie
 unter Windows.
+
+---
+
+## macOS (Desktop)
+
+`TuxMail-<v>-macos-arm64.dmg` für Macs mit Apple-Chip (M1 und neuer), `…-macos-amd64.dmg` für Macs mit Intel.
+Der macOS-Build ist optional: fehlt er in einem Release, ist dort keine `.dmg` dabei.
+
+1. Die `.dmg` öffnen und **TuxMail** auf **Programme** (Applications) ziehen.
+2. Solange TuxMail keine Apple-Developer-ID hat, ist die App nicht von Apple beglaubigt (nicht „notarisiert“).
+   macOS meldet dann beim ersten Start „kann nicht geöffnet werden, da der Entwickler nicht verifiziert werden kann“
+   bzw. „… ist beschädigt“. So öffnen Sie sie trotzdem, **einmalig**:
+   - Im Finder unter *Programme* mit **Rechtsklick (oder Ctrl-Klick) auf TuxMail → Öffnen** und im Dialog
+     **Öffnen** wählen. Ab macOS 15 (Sequoia) gibt es diesen Knopf nicht mehr: nach dem ersten Startversuch
+     *Systemeinstellungen → Datenschutz & Sicherheit → „Dennoch öffnen“* wählen.
+   - Oder im Terminal die Download-Markierung entfernen:
+     ```bash
+     xattr -dr com.apple.quarantine /Applications/TuxMail.app
+     ```
+   Vorher die Prüfsumme der `.dmg` kontrollieren (Abschnitt 1, *Download prüfen*): `shasum -a 256 TuxMail-<v>-macos-arm64.dmg`.
+   Ist die App signiert und notarisiert (im Release vermerkt), entfällt dieser Schritt.
+3. Passwörter liegen im macOS-Schlüsselbund. Messenger-Plugins sind enthalten; Signal (signal-cli) wird auf macOS
+   nicht mitgeliefert.
+
+Update: neue `.dmg` öffnen und die App in *Programme* ersetzen, die Daten bleiben erhalten. Deinstallieren: App in den
+Papierkorb; die Daten liegen unter `~/.local/share/tuxmail`.
 
 ---
 
@@ -570,6 +598,7 @@ Fehler melden: [Issues](https://github.com/Midas1989/tuxmail/issues). Sicherheit
 | Fedora/RHEL/openSUSE | `tuxmail-<v>-1.x86_64.rpm` | `sudo dnf install ./…rpm` / `sudo zypper install --allow-unsigned-rpm ./…rpm` |
 | Any Linux | `TuxMail-<v>-linux-amd64.AppImage` | `chmod +x` and run; without FUSE: `--appimage-extract-and-run` |
 | Linux portable | `…-linux-amd64-portable.tar.gz` | extract, run `./tuxmail` (needs GTK 3 + WebKitGTK 4.1) |
+| macOS (optional build) | `TuxMail-<v>-macos-arm64.dmg` (Intel: `amd64`) | drag to Applications. Not notarized yet: right-click → *Open* (macOS 15: *System Settings → Privacy & Security → Open Anyway*) or `xattr -dr com.apple.quarantine /Applications/TuxMail.app` |
 | Android | `TuxMail-<v>-foss.apk` | allow "install unknown apps", install, enter your TuxMail server URL |
 | Server | `tuxmail_<v>_linux_amd64.tar.gz` / `ghcr.io/midas1989/tuxmail:<v>` | Ansible: `deploy/ansible`; Docker: `deploy/docker`; see [deploy/README.md](../deploy/README.md) |
 

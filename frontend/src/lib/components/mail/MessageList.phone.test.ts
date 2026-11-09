@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { flushSync } from 'svelte';
 import { cleanup, render } from '../security/mountUtil';
 
 vi.hoisted(() => {
@@ -19,6 +20,7 @@ const h = vi.hoisted(() => ({
   toggleRead: vi.fn(),
   openCompose: vi.fn(),
   selectMessage: vi.fn(),
+  refreshNow: vi.fn(),
 }));
 
 vi.mock('../../state', () => {
@@ -49,6 +51,8 @@ vi.mock('../../state', () => {
     selectMessage: h.selectMessage,
     openMailWindow: () => {},
     bulk: () => {},
+    refreshing: false,
+    refreshNow: h.refreshNow,
   };
   const comfort = { filterMessages: (m: unknown[]) => m, category: 'all', settings: { categories: { enabled: false } }, counts: [], loadSettings: async () => {}, loadCounts: async () => {}, loadCategories: async () => {} };
   return { app, prefs: { density: 'normal' }, comfort };
@@ -60,6 +64,13 @@ function pointer(el: Element, type: string, x: number, y: number) {
   const e = new MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 });
   Object.defineProperty(e, 'pointerType', { value: 'touch' });
   Object.defineProperty(e, 'pointerId', { value: 3 });
+  el.dispatchEvent(e);
+}
+
+function touch(el: Element, type: string, x: number, y: number) {
+  const e = new Event(type, { bubbles: true, cancelable: true });
+  const list = type === 'touchend' ? [] : [{ clientX: x, clientY: y }];
+  Object.defineProperty(e, 'touches', { value: list });
   el.dispatchEvent(e);
 }
 
@@ -120,5 +131,45 @@ describe('MessageList on phones', () => {
     const root = render(MessageList, {});
     root.querySelector<HTMLButtonElement>('button.fab')!.click();
     expect(h.openCompose).toHaveBeenCalled();
+  });
+
+  it('the "Refresh" button in the list header refreshes now', () => {
+    const root = render(MessageList, {});
+    root.querySelector<HTMLButtonElement>('[data-testid="refresh-now"]')!.click();
+    expect(h.refreshNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('pulling the list down from the top refreshes; a short pull does not', () => {
+    const root = render(MessageList, {});
+    const vp = root.querySelector('[data-list="messages"]')!;
+    touch(vp, 'touchstart', 100, 100);
+    touch(vp, 'touchmove', 102, 140);
+    touch(vp, 'touchend', 0, 0);
+    expect(h.refreshNow).not.toHaveBeenCalled();
+    touch(vp, 'touchstart', 100, 100);
+    touch(vp, 'touchmove', 102, 160);
+    touch(vp, 'touchmove', 104, 260);
+    flushSync();
+    expect(root.querySelector('.ptr.ready')).toBeTruthy();
+    touch(vp, 'touchend', 0, 0);
+    expect(h.refreshNow).toHaveBeenCalledTimes(1);
+  });
+
+  it('a row swipe at the top of the list does not also pull to refresh', () => {
+    const root = render(MessageList, {});
+    const vp = root.querySelector('[data-list="messages"]')!;
+    const row = root.querySelector('#msg-1')!;
+    // diagonal, mostly sideways: the swipe wins
+    touch(row, 'touchstart', 200, 100);
+    pointer(row, 'pointerdown', 200, 100);
+    touch(row, 'touchmove', 90, 150);
+    pointer(row, 'pointermove', 90, 150);
+    pointer(row, 'pointermove', 60, 140);
+    touch(row, 'touchmove', 60, 240);
+    pointer(row, 'pointerup', 60, 240);
+    flushSync();
+    expect(root.querySelector('.ptr')).toBeNull();
+    touch(vp, 'touchend', 0, 0);
+    expect(h.refreshNow).not.toHaveBeenCalled();
   });
 });

@@ -10,7 +10,8 @@
 # The plugin host finds plugins/ next to the executable (internal/messenger/host).
 # signal-cli is not bundled for macOS (the app offers no on-demand install there either).
 # The app is ad-hoc signed (codesign -s -); with TUXMAIL_MACOS_IDENTITY set it is
-# signed with that Developer ID and the hardened runtime (notarization is a CI step).
+# signed with that Developer ID and the hardened runtime (CI: keychain.sh imports
+# it, notarize.sh notarizes the .dmg; both only when the secrets exist).
 #
 # Usage: build/macos/build.sh amd64|arm64
 set -eu
@@ -54,8 +55,7 @@ cp "$b/icon-1024.png" "$iconset/icon_512x512@2x.png"
 iconutil -c icns "$iconset" -o "$app/Contents/Resources/TuxMail.icns"
 rm -rf "$iconset"
 
-numeric=$(sh "$ROOT/build/version.sh" --numeric)
-sed -e "s/@VERSION@/$VERSION/g" -e "s/@NUMERIC@/$numeric/g" "$ROOT/build/macos/Info.plist" > "$app/Contents/Info.plist"
+sh "$ROOT/build/macos/infoplist.sh" "$VERSION" "$(sh "$ROOT/build/version.sh" --base)" "$app/Contents/Info.plist"
 
 stage_plugins darwin "$goarch" "$app/Contents/MacOS/plugins"
 
@@ -64,7 +64,7 @@ if [ -n "${TUXMAIL_MACOS_IDENTITY:-}" ]; then
 	find "$app/Contents/MacOS/plugins" -type f -perm -u+x -exec codesign --force --timestamp --options runtime -s "$TUXMAIL_MACOS_IDENTITY" {} \;
 	codesign --force --timestamp --options runtime -s "$TUXMAIL_MACOS_IDENTITY" "$app"
 else
-	log "ad-hoc signing (no Developer ID: Gatekeeper asks on first start, see README)"
+	log "ad-hoc signing (no Developer ID: Gatekeeper asks on first start, see docs/INSTALLATION.md, macOS)"
 	codesign --force --deep -s - "$app"
 fi
 "$app/Contents/MacOS/tuxmail" version
