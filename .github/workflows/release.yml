@@ -10,7 +10,8 @@
 #   workflow_dispatch          -> like a branch push
 #
 # Jobs: version -> frontend -> server (4x), linux-desktop (amd64/arm64),
-#       windows-desktop (amd64/arm64), docker -> publish
+#       windows-desktop (amd64/arm64),
+#       macos-desktop (arm64/amd64, .dmg), docker -> publish
 #
 # Every desktop and server package (and the Docker image) contains the
 # messenger plugins (build/plugins.sh): plugins/ next to the executable, or
@@ -533,6 +534,52 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  macos-desktop:
+    name: macOS desktop ${{ matrix.arch }}
+    needs: [version, frontend]
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [arm64, amd64]
+    env:
+      TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
+      # No signal-cli for macOS (build/macos/build.sh).
+      TUXMAIL_SIGNAL_CLI: skip
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: frontend-dist
+          path: web/dist
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: build/ci-retry.sh -- go mod download
+      - name: Build TuxMail.app
+        env:
+          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
+        run: build/macos/build.sh "${{ matrix.arch }}"
+      - name: Disk image (.dmg)
+        run: build/macos/package-dmg.sh "${{ matrix.arch }}"
+      - name: Checksums of this job's files
+        run: |
+          mkdir -p partsums-out && build/partsums.sh write "partsums-out/partsums-macos-desktop-${{ matrix.arch }}.txt" dist/TuxMail-*-macos-*.dmg
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: partsums-macos-desktop-${{ matrix.arch }}
+          path: partsums-out/partsums-macos-desktop-${{ matrix.arch }}.txt
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-desktop-${{ matrix.arch }}
+          path: dist/TuxMail-*-macos-*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
   docker:
     name: Docker image
     needs: [version, frontend]
@@ -590,7 +637,7 @@ jobs:
 
   publish:
     name: Checksums and GitHub release
-    needs: [version, server, linux-desktop, windows-desktop, docker]
+    needs: [version, server, linux-desktop, windows-desktop, macos-desktop, docker]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -602,7 +649,7 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
-          pattern: '{server,linux-desktop,windows-desktop}-*'
+          pattern: '{server,linux-desktop,windows-desktop,macos-desktop}-*'
           path: dist
           merge-multiple: true
 

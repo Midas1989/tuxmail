@@ -110,6 +110,7 @@ stage_plugins() {
 #                            app then offers the on-demand install
 #                   skip     package without signal-cli
 stage_signal_cli() {
+	[ "$1" = darwin ] && { log "signal-cli is not bundled for macOS"; return 0; }
 	_sc_mode=${TUXMAIL_SIGNAL_CLI:-auto}
 	case $_sc_mode in
 	skip)

@@ -72,6 +72,31 @@
     else if (top + rowH > viewport.scrollTop + height) viewport.scrollTop = top + rowH - height + (height > rowH * 3 ? rowH : 0);
   });
 
+  // Pull to refresh (touch: iPhone/iPad, Android): drag the list down from the top.
+  const PULL_TRIGGER = 64;
+  let pull = $state(0);
+  let pullStart: number | null = null;
+
+  function onTouchStart(e: TouchEvent) {
+    pullStart = viewport && viewport.scrollTop <= 0 && e.touches.length === 1 && !app.refreshing ? e.touches[0].clientY : null;
+  }
+  function onTouchMove(e: TouchEvent) {
+    if (pullStart == null || !viewport) return;
+    const dy = e.touches[0].clientY - pullStart;
+    if (dy <= 0 || viewport.scrollTop > 0) {
+      pull = 0;
+      if (dy <= 0) pullStart = null;
+      return;
+    }
+    pull = Math.min(PULL_TRIGGER * 1.5, dy * 0.5);
+  }
+  function onTouchEnd() {
+    const go = pull >= PULL_TRIGGER;
+    pull = 0;
+    pullStart = null;
+    if (go) void app.refreshNow();
+  }
+
   function onscroll() {
     if (!viewport) return;
     scrollTop = viewport.scrollTop;
@@ -240,8 +265,17 @@
     aria-label={scopeLabel}
     aria-activedescendant={app.selectedMessageId != null ? `msg-${app.selectedMessageId}` : undefined}
     {onkeydown}
+    ontouchstart={onTouchStart}
+    ontouchmove={onTouchMove}
+    ontouchend={onTouchEnd}
+    ontouchcancel={onTouchEnd}
     data-list="messages"
   >
+    {#if pull > 0 || (app.refreshing && phone.current)}
+      <div class="ptr" class:ready={pull >= PULL_TRIGGER} style:height="{app.refreshing ? 36 : pull}px" aria-hidden="true">
+        <RefreshCw size={16} class={app.refreshing ? 'ptr-spin' : ''} style={app.refreshing ? '' : `transform: rotate(${pull * 4}deg)`} />
+      </div>
+    {/if}
     {#if total === 0 && !app.search && app.listSync}
       <ListSyncState status={app.listSync} />
     {:else if total === 0 && !app.messagesLoading}
@@ -441,7 +475,21 @@
     font-size: 12px;
     color: var(--tm-muted);
   }
+  .ptr {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    color: var(--tm-muted);
+  }
+  .ptr.ready {
+    color: var(--tm-accent);
+  }
+  .ptr :global(.ptr-spin) {
+    animation: tm-refresh-spin 0.9s linear infinite;
+  }
   .viewport {
+    overscroll-behavior-y: contain;
     position: relative;
     flex: 1;
     overflow-y: auto;
