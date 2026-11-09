@@ -236,6 +236,19 @@ func TestHeadersOnlyEstimateAndPause(t *testing.T) {
 	})
 	ctx := context.Background()
 	f.waitMessage(t, "Alt zwei")
+	// The estimate counts what is not downloaded yet, so the background
+	// download must not shrink it between the calls below: pause it and wait
+	// until a download that was already running has finished.
+	must[app.MailStorageSettings](t)(f.a.SetMailStorageSettings(ctx, app.MailStorageSettings{HeadersOnlyOlderThanDays: 30, DownloadPaused: true}))
+	for last, stable := -1, 0; stable < 5; {
+		time.Sleep(100 * time.Millisecond)
+		p := must[app.MailStorageEstimate](t)(f.a.EstimateMailStorage(ctx, 0)).Messages
+		if p == last {
+			stable++
+		} else {
+			last, stable = p, 0
+		}
+	}
 	est := must[app.MailStorageEstimate](t)(f.a.EstimateMailStorage(ctx, 0))
 	if est.Messages < 2 || est.Bytes <= 0 {
 		t.Errorf("estimate for all = %+v", est)
