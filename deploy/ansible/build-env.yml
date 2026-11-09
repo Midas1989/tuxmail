@@ -1,0 +1,20 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Build-Umgebung für build/build-all.sh einrichten (Rolle tuxmail_buildenv).
+#
+#   ansible-playbook -i inventory/hosts.ini build-env.yml
+#   ansible-playbook build-env.yml -i localhost, -c local -e tuxmail_buildenv_hosts=localhost   # auf dem Rechner selbst
+#   ansible-playbook build-env.yml -e '{"tuxmail_buildenv_targets": ["server", "android"]}'
+#
+# Richtet ein: Distributionspakete (Node, JDK 21, …), Go in der Version aus go.mod, Android SDK
+# (Platform 36, Build-Tools 36), bei wenig RAM eine Swap-Datei und /etc/profile.d/tuxmail-build.sh
+# (PATH, ANDROID_HOME, bei wenig RAM GOFLAGS=-p=1). Zum Schluss prüft es mit build-all.sh --check.
+# Gebaut wird nichts – das macht danach build/build-all.sh in einer neuen Login-Shell.
+- name: TuxMail-Build-Umgebung einrichten
+  hosts: "{{ tuxmail_buildenv_hosts | default('tuxmail_build') }}"
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: tuxmail_buildenv

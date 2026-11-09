@@ -1,0 +1,52 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Betriebssystem wird unterstützt
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] == 'Debian'
+    fail_msg: >-
+      Die Build-Umgebung wird nur für Debian/Ubuntu eingerichtet (Debian 13, Ubuntu 26.04).
+      Auf {{ ansible_facts['distribution'] }} bitte die Voraussetzungen aus docs/RELEASE.md von Hand installieren.
+    quiet: true
+
+- name: Einstellungen sind gültig
+  ansible.builtin.assert:
+    that:
+      - tuxmail_buildenv_targets | difference(['server', 'windows-desktop', 'android', 'linux-desktop', 'docker']) | length == 0
+      - tuxmail_buildenv_node_shadow_action in ['rename', 'fail']
+      - tuxmail_buildenv_go_low_memory | string | lower in ['auto', 'true', 'false']
+      - tuxmail_buildenv_go_version is match('^[0-9]+\.[0-9]+(\.[0-9]+)?$')
+      - tuxmail_buildenv_android_cmdline_tools_build is match('^[0-9]+$')
+      - tuxmail_buildenv_android_cmdline_tools_sha256 == '' or tuxmail_buildenv_android_cmdline_tools_sha256 is match('^[0-9a-f]{64}$')
+    fail_msg: >-
+      Ungültige Einstellung. tuxmail_buildenv_targets darf server, windows-desktop, android, linux-desktop, docker
+      enthalten; tuxmail_buildenv_node_shadow_action=rename|fail; tuxmail_buildenv_go_low_memory=auto|true|false;
+      tuxmail_buildenv_go_version z. B. 1.26.10; cmdline-tools-Build nur Ziffern, SHA-256 leer oder 64 Hex-Zeichen.
+    quiet: true
+
+- name: Architektur für Go bestimmen
+  ansible.builtin.set_fact:
+    tuxmail_buildenv_goarch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] | default('') }}"
+
+- name: Architektur wird unterstützt
+  ansible.builtin.assert:
+    that: tuxmail_buildenv_goarch != ''
+    fail_msg: "Nicht unterstützte Architektur {{ ansible_facts['architecture'] }} (nur x86_64 und aarch64)."
+    quiet: true
+
+- name: Repository-Checkout suchen
+  ansible.builtin.stat:
+    path: "{{ tuxmail_buildenv_repo_dir }}/build/build-all.sh"
+  register: tuxmail_buildenv_repo_stat
+  when: tuxmail_buildenv_repo_dir | length > 0
+
+- name: Checkout merken
+  ansible.builtin.set_fact:
+    tuxmail_buildenv_has_repo: "{{ tuxmail_buildenv_repo_dir | length > 0 and (tuxmail_buildenv_repo_stat.stat.exists | default(false)) }}"
+
+- name: Hinweis, wenn kein Checkout gefunden wurde
+  ansible.builtin.debug:
+    msg: >-
+      Kein Checkout unter {{ tuxmail_buildenv_repo_dir }} gefunden. Die Werkzeuge werden trotzdem installiert;
+      local.properties und die abschließende Prüfung entfallen.
+  when: not (tuxmail_buildenv_has_repo | bool)

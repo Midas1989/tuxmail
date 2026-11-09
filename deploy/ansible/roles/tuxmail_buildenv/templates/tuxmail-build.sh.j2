@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Build-Umgebung für TuxMail (build/build-all.sh), eingerichtet von der Ansible-Rolle tuxmail_buildenv.
+{% if tuxmail_buildenv_go_install | bool %}
+case ":$PATH:" in *":{{ tuxmail_buildenv_go_root }}/current/bin:"*) ;; *) PATH="{{ tuxmail_buildenv_go_root }}/current/bin:$PATH" ;; esac
+{% endif %}
+case ":$PATH:" in *":$HOME/go/bin:"*) ;; *) PATH="$PATH:$HOME/go/bin" ;; esac
+{% if 'android' in tuxmail_buildenv_targets %}
+export ANDROID_HOME="{{ tuxmail_buildenv_android_sdk_root }}"
+case ":$PATH:" in *":$ANDROID_HOME/platform-tools:"*) ;; *) PATH="$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools" ;; esac
+{% endif %}
+export PATH
+{% set low = tuxmail_buildenv_go_low_memory | string | lower %}
+{% if low == 'true' or (low == 'auto' and (ansible_facts['memtotal_mb'] | int) < 8192) %}
+# Wenig RAM: nur ein Go-Compile-Job gleichzeitig, sonst beendet der Kernel den Compiler
+# beim Telegram-Plugin (github.com/gotd/td/tg, "signal: killed").
+case " ${GOFLAGS:-} " in *" -p="*) ;; *) export GOFLAGS="${GOFLAGS:+$GOFLAGS }-p=1" ;; esac
+export GOMEMLIMIT="${GOMEMLIMIT:-{{ tuxmail_buildenv_go_memlimit }}}"
+{% endif %}

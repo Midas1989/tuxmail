@@ -1,0 +1,69 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Go-Pfade festlegen
+  ansible.builtin.set_fact:
+    tuxmail_buildenv_go_dir: "{{ tuxmail_buildenv_go_root }}/go{{ tuxmail_buildenv_go_version }}"
+    tuxmail_buildenv_go_archive: "go{{ tuxmail_buildenv_go_version }}.linux-{{ tuxmail_buildenv_goarch }}.tar.gz"
+
+- name: Installierte Go-Version prüfen
+  ansible.builtin.stat:
+    path: "{{ tuxmail_buildenv_go_dir }}/go/bin/go"
+  register: tuxmail_buildenv_go_stat
+
+- name: Go installieren
+  when: not tuxmail_buildenv_go_stat.stat.exists
+  block:
+    - name: Go-Downloadliste laden
+      ansible.builtin.uri:
+        url: "https://go.dev/dl/?mode=json&include=all"
+        return_content: true
+      register: tuxmail_buildenv_go_releases
+
+    - name: Prüfsumme des Go-Archivs suchen
+      ansible.builtin.set_fact:
+        tuxmail_buildenv_go_sha256: >-
+          {{ tuxmail_buildenv_go_releases.json
+             | selectattr('version', 'equalto', 'go' ~ tuxmail_buildenv_go_version)
+             | map(attribute='files') | flatten
+             | selectattr('filename', 'equalto', tuxmail_buildenv_go_archive)
+             | map(attribute='sha256') | first | default('') }}
+
+    - name: Go-Version ist auf go.dev verfügbar
+      ansible.builtin.assert:
+        that: tuxmail_buildenv_go_sha256 is match('^[0-9a-f]{64}$')
+        fail_msg: "{{ tuxmail_buildenv_go_archive }} steht nicht in der Liste von go.dev (tuxmail_buildenv_go_version prüfen)."
+        quiet: true
+
+    - name: Go-Archiv herunterladen
+      ansible.builtin.get_url:
+        url: "https://go.dev/dl/{{ tuxmail_buildenv_go_archive }}"
+        dest: "/var/tmp/{{ tuxmail_buildenv_go_archive }}"
+        checksum: "sha256:{{ tuxmail_buildenv_go_sha256 }}"
+        mode: "0644"
+
+    - name: Go-Verzeichnis anlegen
+      ansible.builtin.file:
+        path: "{{ tuxmail_buildenv_go_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Go entpacken
+      ansible.builtin.unarchive:
+        src: "/var/tmp/{{ tuxmail_buildenv_go_archive }}"
+        dest: "{{ tuxmail_buildenv_go_dir }}"
+        remote_src: true
+        creates: "{{ tuxmail_buildenv_go_dir }}/go/bin/go"
+
+    - name: Go-Archiv entfernen
+      ansible.builtin.file:
+        path: "/var/tmp/{{ tuxmail_buildenv_go_archive }}"
+        state: absent
+
+- name: Aktuelle Go-Version verlinken
+  ansible.builtin.file:
+    src: "{{ tuxmail_buildenv_go_dir }}/go"
+    dest: "{{ tuxmail_buildenv_go_root }}/current"
+    state: link
+    force: true

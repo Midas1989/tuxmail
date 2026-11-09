@@ -1,0 +1,117 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Android-Pfade festlegen
+  ansible.builtin.set_fact:
+    tuxmail_buildenv_android_zip: "commandlinetools-linux-{{ tuxmail_buildenv_android_cmdline_tools_build }}_latest.zip"
+    tuxmail_buildenv_sdkmanager: "{{ tuxmail_buildenv_android_sdk_root }}/cmdline-tools/latest/bin/sdkmanager"
+
+- name: Java-Verzeichnis bestimmen
+  ansible.builtin.shell: set -o pipefail && readlink -f "$(command -v javac)" | sed 's#/bin/javac$##'
+  args:
+    executable: /bin/bash
+  register: tuxmail_buildenv_java_home
+  changed_when: false
+
+- name: Android-SDK-Verzeichnisse anlegen
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ tuxmail_buildenv_user }}"
+    mode: "0755"
+  loop:
+    - "{{ tuxmail_buildenv_android_sdk_root }}"
+    - "{{ tuxmail_buildenv_android_sdk_root }}/cmdline-tools"
+
+- name: Vorhandene cmdline-tools prüfen
+  ansible.builtin.stat:
+    path: "{{ tuxmail_buildenv_sdkmanager }}"
+  register: tuxmail_buildenv_sdkmanager_stat
+
+- name: Android cmdline-tools installieren
+  when: not tuxmail_buildenv_sdkmanager_stat.stat.exists
+  block:
+    - name: Paketliste von Google laden (für die Prüfsumme)
+      ansible.builtin.uri:
+        url: "{{ tuxmail_buildenv_android_repository_url }}/repository2-3.xml"
+        return_content: true
+      register: tuxmail_buildenv_android_repo
+      when: tuxmail_buildenv_android_cmdline_tools_sha256 == ''
+
+    - name: Prüfsumme festlegen
+      ansible.builtin.set_fact:
+        tuxmail_buildenv_android_checksum: >-
+          {{ ('sha256:' ~ tuxmail_buildenv_android_cmdline_tools_sha256) if tuxmail_buildenv_android_cmdline_tools_sha256 != ''
+             else ('sha1:' ~ (tuxmail_buildenv_android_repo.content
+                   | regex_findall('<checksum[^>]*>([0-9a-f]{40})</checksum>\s*<url>' ~ (tuxmail_buildenv_android_zip | regex_escape) ~ '</url>')
+                   | first | default(''))) }}
+
+    - name: Prüfsumme ist bekannt
+      ansible.builtin.assert:
+        that: tuxmail_buildenv_android_checksum is match('^sha(1|256):[0-9a-f]{40,64}$')
+        fail_msg: >-
+          {{ tuxmail_buildenv_android_zip }} steht nicht in Googles Paketliste. Aktuelle Build-Nummer auf
+          https://developer.android.com/studio nachsehen und tuxmail_buildenv_android_cmdline_tools_build
+          (und am besten tuxmail_buildenv_android_cmdline_tools_sha256) setzen.
+        quiet: true
+
+    - name: Android-cmdline-tools herunterladen
+      ansible.builtin.get_url:
+        url: "{{ tuxmail_buildenv_android_repository_url }}/{{ tuxmail_buildenv_android_zip }}"
+        dest: "/var/tmp/{{ tuxmail_buildenv_android_zip }}"
+        checksum: "{{ tuxmail_buildenv_android_checksum }}"
+        mode: "0644"
+
+    - name: Altes Entpackverzeichnis entfernen
+      ansible.builtin.file:
+        path: "{{ tuxmail_buildenv_android_sdk_root }}/cmdline-tools/cmdline-tools"
+        state: absent
+
+    - name: Android-cmdline-tools entpacken
+      ansible.builtin.unarchive:
+        src: "/var/tmp/{{ tuxmail_buildenv_android_zip }}"
+        dest: "{{ tuxmail_buildenv_android_sdk_root }}/cmdline-tools"
+        remote_src: true
+        owner: "{{ tuxmail_buildenv_user }}"
+
+    - name: Android-cmdline-tools nach "latest" verschieben
+      ansible.builtin.command: >-
+        mv {{ (tuxmail_buildenv_android_sdk_root ~ '/cmdline-tools/cmdline-tools') | quote }}
+        {{ (tuxmail_buildenv_android_sdk_root ~ '/cmdline-tools/latest') | quote }}
+      args:
+        creates: "{{ tuxmail_buildenv_sdkmanager }}"
+
+    - name: Android-cmdline-tools-Archiv entfernen
+      ansible.builtin.file:
+        path: "/var/tmp/{{ tuxmail_buildenv_android_zip }}"
+        state: absent
+
+- name: Android-SDK-Lizenzen annehmen
+  ansible.builtin.command:
+    cmd: "{{ tuxmail_buildenv_sdkmanager }} --sdk_root={{ tuxmail_buildenv_android_sdk_root }} --licenses"
+    stdin: '{{ "y\n" * 30 }}'
+    creates: "{{ tuxmail_buildenv_android_sdk_root }}/licenses/android-sdk-license"
+  become: true
+  become_user: "{{ tuxmail_buildenv_user }}"
+  environment:
+    JAVA_HOME: "{{ tuxmail_buildenv_java_home.stdout }}"
+
+- name: Android-SDK-Pakete installieren
+  ansible.builtin.command:
+    cmd: "{{ tuxmail_buildenv_sdkmanager }} --sdk_root={{ tuxmail_buildenv_android_sdk_root }} {{ item | quote }}"
+    stdin: '{{ "y\n" * 10 }}'
+    creates: "{{ tuxmail_buildenv_android_sdk_root }}/{{ item | replace(';', '/') }}"
+  loop: "{{ tuxmail_buildenv_android_packages }}"
+  become: true
+  become_user: "{{ tuxmail_buildenv_user }}"
+  environment:
+    JAVA_HOME: "{{ tuxmail_buildenv_java_home.stdout }}"
+
+- name: SDK-Pfad im Android-Projekt eintragen (local.properties)
+  ansible.builtin.lineinfile:
+    path: "{{ tuxmail_buildenv_repo_dir }}/mobile/android/local.properties"
+    regexp: '^sdk\.dir='
+    line: "sdk.dir={{ tuxmail_buildenv_android_sdk_root }}"
+    create: true
+    owner: "{{ tuxmail_buildenv_user }}"
+    mode: "0644"
+  when: tuxmail_buildenv_has_repo | bool

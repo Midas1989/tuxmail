@@ -869,3 +869,46 @@ docker build -f build/docker/Dockerfile --build-arg VERSION=$(build/version.sh) 
 docker buildx build -f build/docker/Dockerfile --platform linux/amd64,linux/arm64 -t tuxmail:local .
 ```
 
+
+## 13. Build-Umgebung einrichten (`build-env.yml`)
+
+Das Playbook `ansible/build-env.yml` (Rolle `tuxmail_buildenv`) bereitet einen Debian-13- oder Ubuntu-26.04-Rechner
+so vor, dass `build/build-all.sh` die gewählten Ziele bauen kann. Es baut selbst nichts.
+
+```bash
+cd deploy/ansible
+# direkt auf dem Build-Rechner (Repository liegt unter /opt/tuxmail):
+ansible-playbook build-env.yml -i localhost, -c local -e tuxmail_buildenv_hosts=localhost
+# oder für Rechner in der Gruppe [tuxmail_build] im Inventar:
+ansible-playbook -i inventory/hosts.ini build-env.yml
+```
+
+Was eingerichtet wird:
+
+| Bereich | Inhalt |
+|---|---|
+| Pakete | `git`, `curl`, `zip`/`unzip` …, `nodejs`/`npm` aus der Distribution; für `android` `openjdk-21-jdk-headless`, für `linux-desktop` GCC, `pkg-config`, GTK 3 und WebKitGTK 4.1, für `docker` `docker.io` und `docker-buildx` |
+| Go | offizielles Archiv von go.dev in der Version aus `go.mod`, geprüft gegen die SHA-256 aus der go.dev-Liste; unter `/opt/go/go<version>`, Link `/opt/go/current` |
+| Node | bricht ab, wenn `/usr/bin/node` älter als 22.12 ist. Eine ältere Node-Installation, die im `PATH` davor liegt (z. B. `/usr/local/bin/node`), wird in `*.old-v<version>` umbenannt (`tuxmail_buildenv_node_shadow_action: fail` meldet sie nur) |
+| Android | cmdline-tools nach `/opt/android-sdk/cmdline-tools/latest` (Prüfsumme aus Googles Paketliste oder `tuxmail_buildenv_android_cmdline_tools_sha256`), Lizenzen, `platform-tools`, `platforms;android-36`, `build-tools;36.0.0`; `sdk.dir` in `mobile/android/local.properties` |
+| Arbeitsspeicher | Swap-Datei `/swapfile` (8 GB, mit `/etc/fstab`), wenn RAM + Swap unter 12 GB liegen. Ohne genug Speicher beendet der Kernel den Go-Compiler beim Telegram-Plugin (`compile: signal: killed`) |
+| Shell | `/etc/profile.d/tuxmail-build.sh`: Go und `~/go/bin` im `PATH`, `ANDROID_HOME`; bei weniger als 8 GB RAM zusätzlich `GOFLAGS=-p=1` und `GOMEMLIMIT=3GiB` |
+
+Zum Schluss läuft `build/build-all.sh --check` für die gewählten Ziele. Meldet es ein `SKIP`, bricht das Playbook ab.
+
+Wichtige Variablen (alle in `roles/tuxmail_buildenv/defaults/main.yml`):
+
+| Variable | Standard | Bedeutung |
+|---|---|---|
+| `tuxmail_buildenv_targets` | `[server, windows-desktop, android]` | außerdem möglich: `linux-desktop`, `docker` |
+| `tuxmail_buildenv_repo_dir` | `/opt/tuxmail` | Checkout auf dem Zielrechner (für `local.properties` und die Prüfung) |
+| `tuxmail_buildenv_user` | `root` | Benutzer, der baut |
+| `tuxmail_buildenv_swap_enabled` / `_swap_size_mb` / `_min_memory_mb` | `true` / `8192` / `12288` | Swap-Datei |
+| `tuxmail_buildenv_go_version` | aus `go.mod` | Go-Version |
+| `tuxmail_buildenv_android_cmdline_tools_build` | `13114758` | Build-Nummer der Android-cmdline-tools |
+
+Danach in einer **neuen** Login-Shell bauen (damit `/etc/profile.d/tuxmail-build.sh` gilt):
+
+```bash
+cd /opt/tuxmail && build/build-all.sh server windows-desktop android
+```

@@ -1,0 +1,34 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Vorprüfungen
+  ansible.builtin.import_tasks: preflight.yml
+
+- name: Pakete
+  ansible.builtin.import_tasks: packages.yml
+
+- name: Swap
+  ansible.builtin.import_tasks: swap.yml
+  when: tuxmail_buildenv_swap_enabled | bool
+
+- name: Go
+  ansible.builtin.import_tasks: go.yml
+  when: tuxmail_buildenv_go_install | bool
+
+- name: Node
+  ansible.builtin.import_tasks: node.yml
+
+- name: Android SDK
+  ansible.builtin.import_tasks: android.yml
+  when: "'android' in tuxmail_buildenv_targets"
+
+- name: Umgebungsvariablen für Login-Shells
+  ansible.builtin.template:
+    src: tuxmail-build.sh.j2
+    dest: /etc/profile.d/tuxmail-build.sh
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Prüfung mit build-all.sh --check
+  ansible.builtin.import_tasks: verify.yml
+  when: tuxmail_buildenv_verify | bool

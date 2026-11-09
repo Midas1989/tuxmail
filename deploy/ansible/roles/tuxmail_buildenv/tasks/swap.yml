@@ -1,0 +1,53 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Swap-Bedarf bestimmen
+  ansible.builtin.set_fact:
+    tuxmail_buildenv_swap_needed: >-
+      {{ (ansible_facts['memtotal_mb'] | int) + (ansible_facts['swaptotal_mb'] | int) < (tuxmail_buildenv_min_memory_mb | int) }}
+
+- name: Swap-Datei anlegen
+  when: tuxmail_buildenv_swap_needed | bool
+  block:
+    - name: Vorhandene Swap-Datei prüfen
+      ansible.builtin.stat:
+        path: "{{ tuxmail_buildenv_swap_file }}"
+      register: tuxmail_buildenv_swap_stat
+
+    - name: Swap-Datei reservieren
+      ansible.builtin.shell: >-
+        fallocate -l {{ tuxmail_buildenv_swap_size_mb | int }}M {{ tuxmail_buildenv_swap_file | quote }}
+        || dd if=/dev/zero of={{ tuxmail_buildenv_swap_file | quote }} bs=1M count={{ tuxmail_buildenv_swap_size_mb | int }} status=none
+      args:
+        creates: "{{ tuxmail_buildenv_swap_file }}"
+
+    - name: Rechte der Swap-Datei
+      ansible.builtin.file:
+        path: "{{ tuxmail_buildenv_swap_file }}"
+        owner: root
+        group: root
+        mode: "0600"
+
+    - name: Swap-Datei formatieren
+      ansible.builtin.command: mkswap {{ tuxmail_buildenv_swap_file | quote }}
+      when: not tuxmail_buildenv_swap_stat.stat.exists
+      changed_when: true
+
+- name: Aktive Swap-Bereiche lesen
+  ansible.builtin.command: swapon --show=NAME --noheadings
+  register: tuxmail_buildenv_swapon
+  changed_when: false
+
+- name: Swap-Datei aktivieren
+  ansible.builtin.command: swapon {{ tuxmail_buildenv_swap_file | quote }}
+  when:
+    - tuxmail_buildenv_swap_needed | bool
+    - tuxmail_buildenv_swap_file not in tuxmail_buildenv_swapon.stdout_lines
+  changed_when: true
+
+- name: Swap-Datei beim Systemstart aktivieren
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^{{ tuxmail_buildenv_swap_file | regex_escape }}\s'
+    line: "{{ tuxmail_buildenv_swap_file }} none swap sw 0 0"
+    state: present
+  when: tuxmail_buildenv_swap_needed | bool or tuxmail_buildenv_swap_file in tuxmail_buildenv_swapon.stdout_lines

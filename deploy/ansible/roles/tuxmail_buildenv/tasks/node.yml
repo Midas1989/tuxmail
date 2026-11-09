@@ -1,0 +1,60 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Node aus der Distribution prüfen
+  ansible.builtin.command: "{{ tuxmail_buildenv_node_system_bin }} -v"
+  register: tuxmail_buildenv_node_system
+  changed_when: false
+
+- name: Node der Distribution ist neu genug
+  ansible.builtin.assert:
+    that: tuxmail_buildenv_node_system.stdout | regex_replace('^v', '') is version(tuxmail_buildenv_node_min_version, '>=')
+    fail_msg: >-
+      {{ tuxmail_buildenv_node_system_bin }} ist {{ tuxmail_buildenv_node_system.stdout }}, gebraucht wird {{ tuxmail_buildenv_node_min_version }}
+      oder neuer. Diese Distribution liefert kein passendes Node; bitte Node 22 LTS von nodejs.org installieren.
+    quiet: true
+
+- name: Node im PATH des Build-Benutzers suchen
+  ansible.builtin.command: >-
+    su - {{ tuxmail_buildenv_user | quote }} -s /bin/bash -c 'command -v node; node -v'
+  register: tuxmail_buildenv_node_path
+  changed_when: false
+  failed_when: tuxmail_buildenv_node_path.rc != 0 or tuxmail_buildenv_node_path.stdout_lines | length < 2
+
+- name: Gefundenes Node auswerten
+  ansible.builtin.set_fact:
+    tuxmail_buildenv_node_bin: "{{ tuxmail_buildenv_node_path.stdout_lines[0] }}"
+    tuxmail_buildenv_node_found: "{{ tuxmail_buildenv_node_path.stdout_lines[1] | regex_replace('^v', '') }}"
+
+- name: Ältere Node-Installation vor /usr/bin behandeln
+  when:
+    - tuxmail_buildenv_node_bin not in [tuxmail_buildenv_node_system_bin, '/usr/bin/node', '/bin/node']
+    - tuxmail_buildenv_node_found is version(tuxmail_buildenv_node_min_version, '<')
+  block:
+    - name: Abbrechen statt umbenennen
+      ansible.builtin.fail:
+        msg: >-
+          {{ tuxmail_buildenv_node_bin }} (v{{ tuxmail_buildenv_node_found }}) liegt im PATH vor /usr/bin/node und ist zu alt.
+          Entfernen oder mit tuxmail_buildenv_node_shadow_action=rename umbenennen lassen.
+      when: tuxmail_buildenv_node_shadow_action == 'fail'
+
+    - name: Ältere Node-Programme suchen
+      ansible.builtin.stat:
+        path: "{{ tuxmail_buildenv_node_bin | dirname }}/{{ item }}"
+        follow: false
+      loop: [node, npm, npx, corepack]
+      register: tuxmail_buildenv_node_old
+
+    - name: Ältere Node-Programme umbenennen
+      ansible.builtin.command: >-
+        mv {{ item.stat.path | quote }} {{ (item.stat.path ~ '.old-v' ~ tuxmail_buildenv_node_found) | quote }}
+      args:
+        creates: "{{ item.stat.path }}.old-v{{ tuxmail_buildenv_node_found }}"
+      loop: "{{ tuxmail_buildenv_node_old.results | selectattr('stat.exists') | list }}"
+      loop_control:
+        label: "{{ item.stat.path }}"
+
+    - name: Hinweis zur Umbenennung
+      ansible.builtin.debug:
+        msg: >-
+          Node v{{ tuxmail_buildenv_node_found }} in {{ tuxmail_buildenv_node_bin | dirname }} wurde in *.old-v{{ tuxmail_buildenv_node_found }}
+          umbenannt. Offene Shells brauchen "hash -r". Rückgängig: die Dateien zurückbenennen.

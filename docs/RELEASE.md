@@ -216,6 +216,8 @@ build/build-all.sh android --android-tasks "fossRelease playRelease"
 
 Hinweise:
 
+- **Build-Rechner einrichten:** `deploy/ansible/build-env.yml` installiert die Voraussetzungen für die gewählten
+  Gruppen (Go, Node, JDK 21, Android SDK, bei wenig RAM eine Swap-Datei), siehe `deploy/README.md`, Abschnitt 13.
 - **Signal-Komponente:** Ohne `TUXMAIL_SIGNAL_CLI=skip` lädt der Build signal-cli (geprüfte Pins in
   `internal/messenger/signalcli/pins.env`). Mit `--offline` wird sie weggelassen; die App bietet sie dann zum
   Nachinstallieren an.

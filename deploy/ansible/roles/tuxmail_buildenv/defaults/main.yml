@@ -1,0 +1,73 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Rolle tuxmail_buildenv – richtet einen Rechner so ein, dass build/build-all.sh die
+# gewählten Ziele bauen kann (siehe docs/RELEASE.md, „Alles auf einmal“).
+
+# Ziele, für die die Voraussetzungen installiert werden (Namen wie in build/build-all.sh):
+#   server, windows-desktop, android, linux-desktop, docker
+# Das Frontend (Node) wird für jedes Ziel gebraucht und immer eingerichtet.
+tuxmail_buildenv_targets: [server, windows-desktop, android]
+
+# Checkout des Repositorys auf dem Zielrechner. Wenn vorhanden, schreibt die Rolle
+# mobile/android/local.properties (sdk.dir) und prüft am Ende mit build-all.sh --check.
+# Leer lassen, wenn der Checkout woanders liegt oder noch fehlt.
+tuxmail_buildenv_repo_dir: "/opt/tuxmail"
+# Benutzer, der baut (Eigentümer von local.properties; sein Login-Shell wird geprüft).
+tuxmail_buildenv_user: "root"
+
+# --- Arbeitsspeicher ---------------------------------------------------------------
+# Das Telegram-Plugin (github.com/gotd/td/tg) braucht beim Kompilieren mehrere GB RAM.
+# Ist RAM + Swap kleiner als tuxmail_buildenv_min_memory_mb, wird eine Swap-Datei angelegt.
+tuxmail_buildenv_swap_enabled: true
+tuxmail_buildenv_min_memory_mb: 12288
+tuxmail_buildenv_swap_file: "/swapfile"
+tuxmail_buildenv_swap_size_mb: 8192
+# Go-Einstellungen für Login-Shells (/etc/profile.d/tuxmail-build.sh). auto = bei weniger
+# als 8 GB RAM nur ein Compile-Job gleichzeitig (GOFLAGS=-p=1), wie im Dockerfile begrenzt.
+tuxmail_buildenv_go_low_memory: "auto" # auto | true | false
+tuxmail_buildenv_go_memlimit: "3GiB"
+
+# --- Go ------------------------------------------------------------------------------
+# Offizielles Go-Archiv von go.dev, Prüfsumme aus https://go.dev/dl/?mode=json.
+# Standard: die Version aus go.mod (Zeile "toolchain" bzw. "go") neben diesem Playbook.
+tuxmail_buildenv_go_install: true
+tuxmail_buildenv_go_mod: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../../go.mod', errors='ignore') | default('', true) }}"
+tuxmail_buildenv_go_version: >-
+  {{ ((tuxmail_buildenv_go_mod | regex_findall('(?m)^toolchain\s+go(\d+\.\d+(?:\.\d+)?)\s*$'))
+      + (tuxmail_buildenv_go_mod | regex_findall('(?m)^go\s+(\d+\.\d+(?:\.\d+)?)\s*$'))
+      + ['1.26.10']) | first }}
+tuxmail_buildenv_go_root: "/opt/go"
+
+# --- Node ----------------------------------------------------------------------------
+# Vite 8 braucht Node 22.12 oder neuer; installiert wird nodejs/npm aus der Distribution.
+tuxmail_buildenv_node_min_version: "22.12.0"
+# Node aus dem Distributionspaket.
+tuxmail_buildenv_node_system_bin: "/usr/bin/node"
+# Ältere Node-Installation, die im PATH vor /usr/bin liegt (z. B. /usr/local/bin/node):
+#   rename = node/npm/npx/corepack in *.old-v<version> umbenennen (rückgängig: zurückbenennen)
+#   fail   = abbrechen und nur melden
+tuxmail_buildenv_node_shadow_action: "rename"
+
+# --- Android -------------------------------------------------------------------------
+tuxmail_buildenv_android_sdk_root: "/opt/android-sdk"
+# Versionsnummer der Android-cmdline-tools (https://developer.android.com/studio, „Command line tools only“).
+tuxmail_buildenv_android_cmdline_tools_build: "13114758"
+# SHA-256 des cmdline-tools-ZIP. Leer = SHA-1 aus Googles Paketliste (repository2-3.xml) verwenden.
+tuxmail_buildenv_android_cmdline_tools_sha256: ""
+tuxmail_buildenv_android_repository_url: "https://dl.google.com/android/repository"
+# Muss zu mobile/android/variables.gradle (compileSdkVersion) passen.
+tuxmail_buildenv_android_packages:
+  - "platform-tools"
+  - "platforms;android-36"
+  - "build-tools;36.0.0"
+
+# --- Pakete --------------------------------------------------------------------------
+tuxmail_buildenv_packages_base: [git, ca-certificates, curl, wget, unzip, zip, tar, xz-utils, file]
+tuxmail_buildenv_packages_frontend: [nodejs, npm]
+tuxmail_buildenv_packages_android: [openjdk-21-jdk-headless]
+tuxmail_buildenv_packages_linux_desktop: [build-essential, pkg-config, libgtk-3-dev, libwebkit2gtk-4.1-dev]
+tuxmail_buildenv_packages_docker: [docker.io, docker-buildx]
+
+# Am Ende build/build-all.sh --check für die Ziele ausführen und bei SKIP abbrechen.
+tuxmail_buildenv_verify: true

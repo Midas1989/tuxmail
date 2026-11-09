@@ -1,0 +1,24 @@
+---
+# SPDX-License-Identifier: AGPL-3.0-or-later
+- name: Voraussetzungen mit build-all.sh --check prüfen
+  ansible.builtin.command: >-
+    su - {{ tuxmail_buildenv_user | quote }} -s /bin/bash -c
+    {{ ('cd ' ~ (tuxmail_buildenv_repo_dir | quote) ~ ' && build/build-all.sh --check ' ~ (tuxmail_buildenv_targets | map('quote') | join(' '))) | quote }}
+  register: tuxmail_buildenv_check
+  changed_when: false
+  failed_when: false
+  when: tuxmail_buildenv_has_repo | bool
+
+- name: Ergebnis der Prüfung
+  ansible.builtin.debug:
+    msg: "{{ tuxmail_buildenv_check.stdout_lines }}"
+  when: tuxmail_buildenv_has_repo | bool
+
+- name: Alle gewählten Ziele sind baubar
+  ansible.builtin.assert:
+    that:
+      - tuxmail_buildenv_check.rc == 0
+      - "'SKIP' not in tuxmail_buildenv_check.stdout"
+    fail_msg: "build-all.sh --check meldet fehlende Voraussetzungen (siehe Ausgabe oben)."
+    quiet: true
+  when: tuxmail_buildenv_has_repo | bool
