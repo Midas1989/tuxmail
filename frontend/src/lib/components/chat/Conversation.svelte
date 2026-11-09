@@ -78,6 +78,7 @@
   import EmojiPicker, { QUICK_REACTIONS } from './EmojiPicker.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
   import ConfirmDialog from '../common/ConfirmDialog.svelte';
+  import AiAccessNote from './AiAccessNote.svelte';
 
   interface Props {
     /** Hybrid view: whole thread, bubbles of the selected folder highlighted. */
@@ -144,17 +145,26 @@
     try {
       summary = await app.api.aiSummarize(conv.id);
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'ai_not_configured') requireAi();
-      else app.toast(String(err), undefined, 'error');
+      aiError(err);
     } finally {
       summarizing = false;
     }
   }
 
+  function aiError(err: unknown) {
+    if (err instanceof ApiError && err.code === 'ai_not_configured') requireAi();
+    else if (err instanceof ApiError && err.code === 'ai_no_access') app.toast(t('chat.ai.noAccess'), { label: t('chat.ai.manage'), run: () => app.openAiSettings() });
+    else app.toast(String(err), undefined, 'error');
+  }
+
   async function translate(item: ConversationItem) {
     if (!conv || !requireAi()) return;
-    const r = await app.api.aiTranslate(conv.id, item.id, i18n.locale);
-    translations = { ...translations, [item.id]: { ...r, showOriginal: false } };
+    try {
+      const r = await app.api.aiTranslate(conv.id, item.id, i18n.locale);
+      translations = { ...translations, [item.id]: { ...r, showOriginal: false } };
+    } catch (err) {
+      aiError(err);
+    }
   }
 
   function cyclePinned() {
@@ -400,6 +410,7 @@
         <div class="sum-head"><Sparkles size={15} /> <strong>{t('chat.ai.summary')}</strong> <button class="icon-btn" aria-label={t('common.action.close')} onclick={() => (summary = null)}><X size={14} /></button></div>
         <ul>{#each summary.bullets as b (b)}<li>{b}</li>{/each}</ul>
         {#if summary.skipped}<small>{t('chat.ai.skipped', { count: summary.skipped })}</small>{/if}
+        <AiAccessNote accountIds={[...new Set(app.items.filter((i) => !i.system).map((i) => i.accountId))]} />
       </div>
     {/if}
     {#if searchOpen}

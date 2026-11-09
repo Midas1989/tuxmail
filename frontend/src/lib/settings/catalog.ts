@@ -131,7 +131,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
   },
   {
     id: 'ai',
-    sections: [sec('assistant', ['settings.ai.title', 'settings.ai.provider', 'settings.ai.model', 'settings.ai.apiKey', 'settings.ai.accounts', 'settings.ai.mask'])],
+    sections: [sec('assistant', ['settings.ai.title', 'settings.ai.provider', 'settings.ai.model', 'settings.ai.apiKey', 'settings.ai.access.title', 'settings.ai.mask'])],
   },
   {
     id: 'security',

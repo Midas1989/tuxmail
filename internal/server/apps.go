@@ -124,6 +124,7 @@ func (p *appPool) openApp(ctx context.Context, userID int64) (*appEntry, error) 
 		Logger: p.s.log.With("user", userID), Locales: p.s.locales, LocaleDir: filepath.Join(p.s.cfg.DataDir, "locales"),
 		Push: &pushBackend{s: p.s, userID: userID}, Sync: &app.SyncOptions{}, Send: &app.SendOptions{}, Messenger: &app.MessengerOptions{}}
 	opts.OAuth = p.s.oauthAppOptions()         // oauth.go
+	opts.AIMaxLevel = p.s.aiMaxLevel()         // admin cap of the AI access (ai_access.go)
 	opts.ImageSigner = p.s.imageSigner(userID) // imageproxy.go
 	p.s.configureUserApp(userID, &opts)        // team.go: team mailboxes, workflow notifier
 	if p.s.appOptions != nil {
@@ -381,4 +382,13 @@ func (b *pushBackend) Test(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// aiMaxLevel is the admin cap of the AI access of every user and team
+// mailbox (config ai.max_level; "" = no cap).
+func (s *Server) aiMaxLevel() string {
+	if l := s.cfg.AI.MaxLevel; l != "content" {
+		return l
+	}
+	return ""
 }

@@ -179,7 +179,7 @@ func TestPGPNoPlaintextInIndexOrInsights(t *testing.T) {
 	if strings.Contains(c.Text+c.Snippet, "GEHEIMWORT") {
 		t.Fatalf("index input has plain text: %+v", c)
 	}
-	an, err := a.analyze(ctx, store.Message{ID: 1}, raw)
+	an, err := a.analyze(ctx, store.Message{ID: 1}, raw, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestPGPPassphraseLifecycle(t *testing.T) {
 		t.Fatalf("locked state: %+v %v", pm.PGP, err)
 	}
 	// Background analysis does not decrypt, locked or not.
-	an, err := a.analyze(ctx, store.Message{ID: 1}, raw)
+	an, err := a.analyze(ctx, store.Message{ID: 1}, raw, "")
 	if err != nil || strings.Contains(an.msg.Text, "GEHEIMWORT") {
 		t.Fatalf("analysis: %v", err)
 	}

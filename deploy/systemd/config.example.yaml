@@ -93,6 +93,12 @@ security:
   # subdomain of the host name is served via HTTPS. "preload" is never sent.
   hsts_include_subdomains: false
 
+# AI assistant: upper limit of what any user may share with an AI provider,
+# per source (mail/messenger account, calendar, address book, files, projects).
+# content = no limit (default), metadata = sender/subject/time only, off = nothing.
+ai:
+  max_level: content
+
 # Token (mindestens 32 Zeichen) für /api/v1/monitoring/self und /healthz?deep=1.
 # Ohne Token antworten beide nur auf demselben Rechner.
 # monitoring:

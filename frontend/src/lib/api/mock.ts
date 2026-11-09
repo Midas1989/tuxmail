@@ -25,6 +25,7 @@ Account,
   ContactCard,
   AiSettings,
   AiSummary,
+  AiLevel,
   ChatDraft,
   ChatFolder,
   FocusSettings,
@@ -96,6 +97,7 @@ import type { AssignableRole, FolderBehaviour, FolderConfig, FolderRole } from '
 import { applyOverrides, roleEntries, type ServerRole } from '../folderconfig';
 // --- OAuth/Cloud accounts ---
 import { MockOAuth, mockOAuthProvider } from './mockOAuth';
+import { accountKey, buildCatalog, folderExcluded, minLevel, sourceLevel } from '../aiaccess';
 import type {
   CloudPimResult,
   IdentityDelegation,
@@ -1712,7 +1714,7 @@ export class MockTransport implements Api {
     includeFrequent: true,
     schedule: { enabled: false, start: '09:00', end: '12:00', days: [1, 2, 3, 4, 5] },
   };
-  private ai: AiSettings = { provider: 'none', baseUrl: '', model: '', apiKeySet: false, accountPermissions: {}, maskPersonalData: true };
+  private ai: AiSettings = { provider: 'none', baseUrl: '', model: '', apiKeySet: false, accountPermissions: {}, maskPersonalData: true, sources: {}, accessVersion: 2 };
 
   private wakeSnoozed(): void {
     const now = Date.now();
@@ -1901,20 +1903,46 @@ export class MockTransport implements Api {
 
   getAiSettings(): Promise<AiSettings> {
     const { apiKey: _k, ...rest } = this.ai;
-    return this.reply(rest as AiSettings);
+    const out = clone(rest) as AiSettings;
+    out.catalog = buildCatalog(out, this.accounts, this.folders, this.pim.listCalendars(), this.pim.listBooks(), this.cloud.listAccounts());
+    out.local = out.provider === 'ollama' || /^https?:\/\/(localhost|127\.|10\.|192\.168\.)/.test(out.baseUrl);
+    return this.reply(out);
   }
   async saveAiSettings(settings: AiSettings): Promise<AiSettings> {
     const apiKeySet = settings.apiKey ? true : settings.provider === this.ai.provider ? this.ai.apiKeySet : false;
-    this.ai = { ...clone(settings), apiKey: undefined, apiKeySet };
+    let sources = clone(settings.sources ?? {});
+    if ((settings.accessVersion ?? 0) < 2) {
+      // a client without sources can only switch accounts off (as the core)
+      sources = clone(this.ai.sources ?? {});
+      for (const [id, ok] of Object.entries(settings.accountPermissions ?? {})) if (!ok) sources[`account:${id}`] = { ...sources[`account:${id}`], level: 'off' };
+    }
+    for (const v of Object.values(sources)) v.level = minLevel(v.level, this.ai.maxLevel);
+    const { catalog: _c, local: _l, ...rest } = clone(settings);
+    this.ai = { ...rest, sources, accessVersion: 2, apiKey: undefined, apiKeySet };
     return this.getAiSettings();
   }
   private requireAi(): void {
     if (this.ai.provider === 'none') throw new ApiError('Kein KI-Anbieter eingerichtet', 412, 'ai_not_configured');
   }
+  /** Level of an item as the core computes it (ai_access.go). */
+  private aiItemLevel(i: ConversationItem): AiLevel {
+    if (i.encrypted || i.deleted) return 'off';
+    const key = accountKey(i.accountId);
+    const level = sourceLevel(this.ai, key);
+    if (level === 'off') return level;
+    const acc = this.ai.sources?.[key];
+    for (const id of i.folderIds ?? []) if (folderExcluded(acc, id, this.folders.find((f) => f.id === id)?.role)) return 'off';
+    return level;
+  }
+  private aiShared(conversationId: number): ConversationItem[] {
+    const items = this.findConversation(conversationId).items.filter((i) => !i.scheduledFor && !i.system && this.aiItemLevel(i) !== 'off');
+    if (!items.length) throw new ApiError('Der KI-Assistent hat keinen Zugriff auf diese Daten', 403, 'ai_no_access');
+    return items;
+  }
   async aiSuggestReplies(conversationId: number): Promise<string[]> {
     this.requireAi();
+    const items = this.aiShared(conversationId);
     await sleep(Math.max(this.latency * 6, 0));
-    const items = this.findConversation(conversationId).items.filter((i) => !i.scheduledFor && !i.system);
     const last = [...items].reverse().find((i) => !i.isOwn);
     if (last && /\?/.test(last.body)) return this.reply(['Ja, das passt mir gut!', 'Ich schaue nach und melde mich gleich.', 'Können wir kurz telefonieren?']);
     if (last?.channel === 'email') return this.reply(['Vielen Dank, ich prüfe das.', 'Danke für die Info – passt so.', 'Ich melde mich bis morgen dazu.']);
@@ -1922,8 +1950,9 @@ export class MockTransport implements Api {
   }
   async aiTranslate(conversationId: number, itemId: string, targetLang: string): Promise<{ text: string; sourceLang: string }> {
     this.requireAi();
-    await sleep(Math.max(this.latency * 5, 0));
     const item = this.findConversation(conversationId).items.find((i) => i.id === itemId);
+    if (!item || this.aiItemLevel(item) !== 'content') throw new ApiError('Der KI-Assistent hat keinen Zugriff auf diese Daten', 403, 'ai_no_access');
+    await sleep(Math.max(this.latency * 5, 0));
     const text = item?.body ?? '';
     const en: Record<string, string> = {
       'Hast du die Mail mit der Korrektur gesehen? 🙂': 'Did you see the e-mail with the correction? 🙂',
@@ -1939,9 +1968,10 @@ export class MockTransport implements Api {
   }
   async aiSummarize(conversationId: number): Promise<AiSummary> {
     this.requireAi();
-    await sleep(Math.max(this.latency * 8, 0));
     const c = this.findConversation(conversationId);
-    const items = c.items.filter((i) => !i.scheduledFor && !i.system);
+    const shared = this.aiShared(conversationId);
+    await sleep(Math.max(this.latency * 8, 0));
+    const items = shared.filter((i) => this.aiItemLevel(i) === 'content');
     const names = [...new Set(items.filter((i) => !i.isOwn).map((i) => i.senderName.split(' ')[0]))];
     const subjects = [...new Set(items.filter((i) => i.subject).map((i) => normalizeSubject(i.subject!)))].slice(-3);
     const unread = items.filter((i) => i.unread).length;
@@ -1952,7 +1982,7 @@ export class MockTransport implements Api {
       ...(unread ? [`${unread} unread – the latest asks: “${this.excerpt(last?.body ?? '', 80)}”`] : []),
       ...(items.some((i) => i.attachments.length) ? [`Shared files: ${[...new Set(items.flatMap((i) => i.attachments.map((a) => a.filename)))].slice(0, 3).join(', ')}.`] : []),
     ];
-    return this.reply({ summary: `Conversation “${c.conv.title}”: ${bullets[0]}`, bullets, skipped: items.filter((i) => i.encrypted).length });
+    return this.reply({ summary: `Conversation “${c.conv.title}”: ${bullets[0]}`, bullets, skipped: c.items.filter((i) => !i.scheduledFor && !i.system).length - shared.length });
   }
 
   // ---- meeting proposals -----------------------------------------------------------

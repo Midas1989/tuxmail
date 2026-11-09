@@ -150,9 +150,15 @@ describe('MockTransport chat features', () => {
   it('AI requires a provider, then returns canned results', async () => {
     const api = new MockTransport({ latencyMs: 0 });
     await expect(api.aiSuggestReplies(1002)).rejects.toMatchObject({ code: 'ai_not_configured' });
-    const s = await api.saveAiSettings({ provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'llama3.1:8b', apiKeySet: false, accountPermissions: {}, maskPersonalData: true, apiKey: 'secret' });
+    let s = await api.saveAiSettings({ provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'llama3.1:8b', apiKeySet: false, accountPermissions: {}, maskPersonalData: true, apiKey: 'secret', sources: {}, accessVersion: 2 });
     expect(s).not.toHaveProperty('apiKey');
     expect(s.apiKeySet).toBe(true);
+    // nothing shared yet: the assistant gets no data
+    await expect(api.aiSuggestReplies(1002)).rejects.toMatchObject({ code: 'ai_no_access' });
+    await expect(api.aiSummarize(1002)).rejects.toMatchObject({ code: 'ai_no_access' });
+    const accountIds = [...new Set((await api.listConversationItems(1002)).map((i) => i.accountId))];
+    const sources = Object.fromEntries(accountIds.map((id) => [`account:${id}`, { level: 'content' as const }]));
+    s = await api.saveAiSettings({ ...s, sources });
     expect((await api.aiSuggestReplies(1002)).length).toBe(3);
     expect((await api.aiTranslate(1002, 'c:1003', 'en')).text).toBe('Did you see the e-mail with the correction? 🙂');
     expect((await api.aiSummarize(1002)).bullets.length).toBeGreaterThan(0);

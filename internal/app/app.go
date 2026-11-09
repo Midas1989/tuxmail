@@ -65,6 +65,9 @@ type Options struct {
 	// the operating system's service, desktopnotify.go); mainly for tests.
 	DesktopNotify func(ctx context.Context, title, body string) error
 	AI            AIFactory // default: no provider (ai_not_configured)
+	// AIMaxLevel caps the AI access of every source (server: admin setting
+	// ai.max_level; "" = no cap, "metadata", "off"), ai_access.go.
+	AIMaxLevel string
 	// Messenger enables the messenger plugins (messenger_wiring.go).
 	Messenger *MessengerOptions
 	OAuth     *OAuthOptions // OAuth clients/redirect (default: environment), oauth_app.go

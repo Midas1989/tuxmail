@@ -94,7 +94,9 @@ func fromEmail(m *parse.Message) string {
 
 // analyze runs the spam filter, categorizer, e-invoice and unsubscribe
 // detection on a raw message.
-func (a *App) analyze(ctx context.Context, msg store.Message, raw []byte) (*analysis, error) {
+// role is the folder role the sync engine reports for a new mail ("" when
+// unknown); it guards the AI access while the location is not stored yet.
+func (a *App) analyze(ctx context.Context, msg store.Message, raw []byte, role domain.FolderRole) (*analysis, error) {
 	opts := parse.Options{SMIME: smimeReader{a: a, collect: true}}
 	pm, err := parse.ParseContext(ctx, raw, opts)
 	if err != nil {
@@ -135,7 +137,9 @@ func (a *App) analyze(ctx context.Context, msg store.Message, raw []byte) (*anal
 		cm.KnownContact = a.isKnownSender(ctx, from)
 		cc := *a.comfort.catC
 		if s.Categories.AIRefine {
-			cc.Refiner = aiRefiner{a: a}
+			folders, ferr := a.st.FoldersFor(ctx, []int64{msg.ID})
+			cc.Refiner = aiRefiner{a: a, account: msg.AccountID, folders: folders[msg.ID], role: role, foldersErr: ferr != nil,
+				spam: an.verdict.Level == spam.LevelSpam}
 		}
 		if an.cat, err = cc.Classify(ctx, cm); err != nil {
 			return nil, err
@@ -177,8 +181,8 @@ func (a *App) isKnownSender(ctx context.Context, email string) bool {
 }
 
 // processMessage analyzes and stores the insight of a message.
-func (a *App) processMessage(ctx context.Context, msg store.Message, raw []byte) (*analysis, error) {
-	an, err := a.analyze(ctx, msg, raw)
+func (a *App) processMessage(ctx context.Context, msg store.Message, raw []byte, role domain.FolderRole) (*analysis, error) {
+	an, err := a.analyze(ctx, msg, raw, role)
 	if err != nil {
 		return nil, err
 	}
@@ -195,7 +199,7 @@ func (p comfortProcessor) ProcessNewMail(ctx context.Context, msg store.Message,
 	if role == domain.RoleSent || role == domain.RoleDrafts {
 		return
 	}
-	if _, err := p.a.processMessage(ctx, msg, raw); err != nil {
+	if _, err := p.a.processMessage(ctx, msg, raw, role); err != nil {
 		p.a.log.Debug("comfort: analysis failed", "message", msg.ID, "err", err)
 	}
 }
@@ -247,7 +251,7 @@ func (a *App) backfillInsights(ctx context.Context, n int) {
 			_ = a.st.PutInsight(ctx, store.Insight{MessageID: id}) // do not retry forever
 			continue
 		}
-		if _, err := a.processMessage(ctx, m, raw); err != nil {
+		if _, err := a.processMessage(ctx, m, raw, ""); err != nil {
 			_ = a.st.PutInsight(ctx, store.Insight{MessageID: id})
 		}
 	}
@@ -263,7 +267,7 @@ func (a *App) MessageInsights(ctx context.Context, id int64) (MessageInsights, e
 	if errors.Is(err, store.ErrNotFound) || (err == nil && in.SpamLevel == "" && in.Category == "") {
 		raw, rerr := a.rawMessage(m)
 		if rerr == nil {
-			if an, perr := a.processMessage(ctx, m, raw); perr == nil {
+			if an, perr := a.processMessage(ctx, m, raw, ""); perr == nil {
 				in, err = an.insight, nil
 			}
 		}

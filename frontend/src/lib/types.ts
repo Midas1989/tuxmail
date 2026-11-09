@@ -965,15 +965,46 @@ export interface AiSettings {
   /** Write-only: the core never returns the key, only apiKeySet. */
   apiKey?: string;
   apiKeySet: boolean;
-  /** Per account: may content of this account be sent to the provider? */
+  /** Access of version 1 (absent = allowed); only kept for older versions, `sources` is authoritative. */
   accountPermissions: Record<string, boolean>;
   maskPersonalData: boolean;
+  /** What the assistant may see per source ("account:<id>", "calendar:<id>", "addressbook:<id>", "cloud:<id>", "projects"); absent = off. */
+  sources?: Record<string, AiSourceAccess>;
+  /** 2 = `sources` is set (a save without it can only switch accounts off). */
+  accessVersion?: number;
+  /** Output only: every current source with its effective level. */
+  catalog?: AiSource[];
+  /** Output only: upper limit set by the server admin. */
+  maxLevel?: AiLevel;
+  /** Output only: the provider runs on this machine or in the LAN. */
+  local?: boolean;
+}
+
+/** off = nothing, metadata = sender/subject/time, content = text too. */
+export type AiLevel = 'off' | 'metadata' | 'content';
+
+export interface AiSourceAccess {
+  level: AiLevel;
+  /** Mail: folders never sent (junk and trash unless allowJunkTrash). */
+  excludeFolders?: number[];
+  allowJunkTrash?: boolean;
+}
+
+export type AiSourceKind = 'mail' | 'messenger' | 'calendar' | 'addressbook' | 'cloud' | 'projects';
+
+export interface AiSource {
+  key: string;
+  kind: AiSourceKind;
+  name: string;
+  detail?: string;
+  level: AiLevel;
+  folders?: { id: number; name: string; role?: string }[];
 }
 
 export interface AiSummary {
   summary: string;
   bullets: string[];
-  /** Number of items that were left out (e.g. encrypted). */
+  /** Number of items that were left out (encrypted, or not shared with the assistant). */
   skipped: number;
 }
 

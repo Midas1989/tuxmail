@@ -113,6 +113,7 @@ func TestValidation(t *testing.T) {
 		"bg max users":  "limits: {background_sync_max_users: 0}\n",
 		"bg sync type":  "limits: {background_sync: maybe}\n",
 		"bad network":   "security: {allowed_networks: [intranet.example]}\n",
+		"ai max level":  "ai: {max_level: everything}\n",
 	}
 	for name, y := range cases {
 		if _, err := Parse([]byte(y)); err == nil {

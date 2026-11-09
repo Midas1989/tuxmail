@@ -423,11 +423,14 @@
       "openSettings": "Einrichten",
       "showOriginal": "Original anzeigen",
       "showTranslation": "Übersetzung anzeigen",
-      "skipped": "{count} verschlüsselte Nachrichten wurden nicht einbezogen.",
+      "skipped": "{count} Nachrichten wurden nicht einbezogen (verschlüsselt oder nicht freigegeben).",
       "suggestions": "Antwortvorschläge",
       "summarize": "Zusammenfassen",
       "summary": "Zusammenfassung",
-      "translated": "Übersetzt aus {lang}"
+      "translated": "Übersetzt aus {lang}",
+      "noAccess": "Der KI-Assistent hat für diesen Chat keine Freigabe.",
+      "sees": "KI sieht hier:",
+      "manage": "Freigaben"
     },
     "draft": {
       "label": "Entwurf"
@@ -1036,15 +1039,14 @@
     },
     "ai": {
       "title": "KI-Assistenz",
-      "intro": "Antwortvorschläge, Übersetzung und Zusammenfassungen in Chats. Es wird nichts übertragen, bevor du einen Anbieter wählst.",
+      "intro": "Antwortvorschläge, Übersetzung und Zusammenfassungen in Chats. Es wird nichts übertragen, bevor du einen Anbieter wählst und Quellen freigibst.",
       "provider": "Anbieter",
       "model": "Modell",
       "baseUrl": "Basis-URL",
       "apiKey": "API-Schlüssel",
       "keySaved": "•••••••• (gespeichert – zum Ersetzen eingeben)",
-      "accounts": "Für diese Konten erlaubt",
       "mask": "Personenbezogene Daten (Namen, Adressen, Nummern) vor dem Senden maskieren",
-      "pgpNote": "PGP/S-MIME-verschlüsselte Mails werden nie an Cloud-Anbieter gesendet.",
+      "pgpNote": "PGP/S-MIME-verschlüsselte Nachrichten werden nie an einen KI-Anbieter gesendet.",
       "providers": {
         "none": "Nicht eingerichtet",
         "ollama": "Ollama (lokal)",
@@ -1054,6 +1056,35 @@
         "anthropic": "Anthropic",
         "mistral": "Mistral",
         "custom": "Eigener Dienst (OpenAI-kompatibel)"
+      },
+      "access": {
+        "title": "Worauf der Assistent zugreifen darf",
+        "intro": "Für jedes Konto und jeden Bereich einzeln: Aus = nichts, Metadaten = nur Absender, Betreff und Zeit, Inhalt = auch der Text. Neue Konten sind zunächst aus.",
+        "external": "Externer Anbieter: Alles, was du hier freigibst, wird an {provider} übertragen und dort verarbeitet – ggf. außerhalb der EU.",
+        "local": "Lokaler Anbieter: Die Daten bleiben auf deinem Rechner bzw. in deinem Netz. Die Freigaben gelten trotzdem genauso.",
+        "capped": "Dein Administrator erlaubt höchstens: {level}.",
+        "notUsed": "Diese Bereiche liest derzeit keine KI-Funktion; die Freigabe gilt für künftige Funktionen.",
+        "empty": "Keine Einträge.",
+        "folders": "Ordner",
+        "foldersExcluded": "Ordner ({count} ausgenommen)",
+        "junkTrash": "Spam und Papierkorb einbeziehen",
+        "include": "{name} einbeziehen",
+        "levelOf": "Zugriff für {name}",
+        "allOff": "Alles aus",
+        "projectsAll": "Alle Projekte und Aufgaben"
+      },
+      "levels": {
+        "off": "Aus",
+        "metadata": "Metadaten",
+        "content": "Inhalt"
+      },
+      "kinds": {
+        "mail": "Mailkonten",
+        "messenger": "Messenger",
+        "calendar": "Kalender",
+        "addressbook": "Adressbücher",
+        "cloud": "Cloud und Dateien",
+        "projects": "Projekte und Aufgaben"
       }
     },
     "snippets": {

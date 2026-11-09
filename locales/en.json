@@ -424,11 +424,14 @@
       "openSettings": "Set up",
       "showOriginal": "Show original",
       "showTranslation": "Show translation",
-      "skipped": "{count} encrypted messages were not included.",
+      "skipped": "{count} messages were not included (encrypted or not shared).",
       "suggestions": "Reply suggestions",
       "summarize": "Summarize",
       "summary": "Summary",
-      "translated": "Translated from {lang}"
+      "translated": "Translated from {lang}",
+      "noAccess": "The AI assistant has no access to this chat.",
+      "sees": "AI sees here:",
+      "manage": "Permissions"
     },
     "draft": {
       "label": "Draft"
@@ -1037,15 +1040,14 @@
     },
     "ai": {
       "title": "AI assistant",
-      "intro": "Reply suggestions, translation and summaries in chats. Nothing is sent anywhere until you choose a provider.",
+      "intro": "Reply suggestions, translation and summaries in chats. Nothing is sent anywhere until you choose a provider and share sources.",
       "provider": "Provider",
       "model": "Model",
       "baseUrl": "Base URL",
       "apiKey": "API key",
       "keySaved": "•••••••• (saved – enter to replace)",
-      "accounts": "Allowed for these accounts",
       "mask": "Mask personal data (names, addresses, numbers) before sending",
-      "pgpNote": "PGP/S-MIME encrypted mails are never sent to cloud providers.",
+      "pgpNote": "PGP/S-MIME encrypted messages are never sent to an AI provider.",
       "providers": {
         "none": "Not set up",
         "ollama": "Ollama (local)",
@@ -1055,6 +1057,35 @@
         "anthropic": "Anthropic",
         "mistral": "Mistral",
         "custom": "Custom (OpenAI-compatible)"
+      },
+      "access": {
+        "title": "What the assistant may access",
+        "intro": "For each account and area separately: Off = nothing, Metadata = sender, subject and time only, Content = the text as well. New accounts start switched off.",
+        "external": "External provider: everything you share here is sent to {provider} and processed there – possibly outside the EU.",
+        "local": "Local provider: the data stays on your computer or in your network. The permissions apply all the same.",
+        "capped": "Your administrator allows at most: {level}.",
+        "notUsed": "No AI function reads these areas yet; the permission applies to future functions.",
+        "empty": "No entries.",
+        "folders": "Folders",
+        "foldersExcluded": "Folders ({count} excluded)",
+        "junkTrash": "Include spam and trash",
+        "include": "Include {name}",
+        "levelOf": "Access for {name}",
+        "allOff": "All off",
+        "projectsAll": "All projects and tasks"
+      },
+      "levels": {
+        "off": "Off",
+        "metadata": "Metadata",
+        "content": "Content"
+      },
+      "kinds": {
+        "mail": "Mail accounts",
+        "messenger": "Messengers",
+        "calendar": "Calendars",
+        "addressbook": "Address books",
+        "cloud": "Cloud and files",
+        "projects": "Projects and tasks"
       }
     },
     "snippets": {

@@ -9,25 +9,52 @@ import (
 	"strings"
 
 	"github.com/Midas1989/Mailclient/internal/categorize"
+	"github.com/Midas1989/Mailclient/internal/domain"
 )
 
 // aiRefiner lets a local AI model refine uncertain smart categories
 // (KONZEPT 8.8/8.10). Mail is never sent to cloud AI providers in the
-// background, so only local/LAN providers are used.
-type aiRefiner struct{ a *App }
+// background, so only local/LAN providers are used - and only within the AI
+// access of the account and folder (ai_access.go): content sends sender,
+// subject and text, metadata sender and subject only.
+type aiRefiner struct {
+	a       *App
+	account int64
+	folders []int64
+	// role: folder role reported by the sync engine, used while the mail
+	// has no stored location yet; without both the mail is not sent.
+	role       domain.FolderRole
+	foldersErr bool
+	spam       bool
+}
 
 // Refine implements categorize.Refiner.
 func (r aiRefiner) Refine(ctx context.Context, m categorize.Mail, res categorize.Result) (categorize.Result, error) {
+	if r.spam {
+		return res, errAINoAccess
+	}
 	p, s, err := r.a.aiProvider(ctx)
 	if err != nil || p == nil || !isLocalAI(s) {
 		return res, errAI
 	}
-	body := m.Text
-	if len(body) > 1500 {
-		body = body[:1500]
+	sc := r.a.newAiScope(s)
+	level := sc.accountLevel(ctx, r.account, r.folders)
+	if r.foldersErr || (len(r.folders) == 0 && !sc.roleAllowed(r.account, r.role)) {
+		level = AiLevelOff
+	}
+	if level == AiLevelOff {
+		return res, errAINoAccess
+	}
+	prompt := "From: " + m.From + "\nSubject: " + m.Subject
+	if level == AiLevelContent {
+		body := m.Text
+		if len(body) > 1500 {
+			body = body[:1500]
+		}
+		prompt += "\n\n" + body
 	}
 	out, err := p.Complete(ctx, "You sort e-mails into exactly one category: personal, newsletter, invoice, notification, social, appointment. Answer with the category id only.",
-		"From: "+m.From+"\nSubject: "+m.Subject+"\n\n"+body)
+		prompt)
 	if err != nil {
 		return res, err
 	}
