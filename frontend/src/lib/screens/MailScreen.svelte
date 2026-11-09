@@ -110,7 +110,7 @@
       {#if app.connection !== 'online'}
         <span class="conn" role="status"><WifiOff size={15} /> {t(`common.conn.${app.connection}`)}</span>
       {/if}
-      {#if !desktopWindow.custom}<SyncIndicator />{/if}
+      {#if !desktopWindow.custom}<SyncIndicator compact={phone.current} />{/if}
       <ViewSwitcher />
       <button
         class="icon-btn hide-xs"
@@ -315,6 +315,7 @@
     }
     .search {
       flex: 1 1 auto;
+      min-width: 112px;
       height: 44px;
       padding: 0 4px 0 10px;
     }

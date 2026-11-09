@@ -284,7 +284,7 @@
         <p class="e2">{app.search ? t('mail.list.noResultsHint') : t('mail.list.emptyHint')}</p>
       </div>
     {/if}
-    <div class="spacer" style:height="{total * rowH}px">
+    <div class="spacer" style:height="{total * rowH + (phone.current ? 84 : 0)}px">
       {#each visible as { m, index } (m.id)}
         {@const unread = !m.flags.includes(FLAG_SEEN)}
         {@const flagged = m.flags.includes(FLAG_FLAGGED)}
