@@ -138,7 +138,17 @@ func (s *Server) msgJSON(m *Message) map[string]any {
 	return map[string]any{"id": m.ID, "subject": m.Subject, "from": addr(m.From), "internetMessageId": m.InternetMessageID,
 		"conversationId": m.ConversationID, "isRead": m.IsRead, "flag": map[string]string{"flagStatus": flag},
 		"categories": cats, "receivedDateTime": m.Received.Format(time.RFC3339), "sentDateTime": m.Received.Format(time.RFC3339),
-		"parentFolderId": m.Folder, "toRecipients": []any{}, "ccRecipients": []any{}}
+		"parentFolderId": m.Folder, "toRecipients": []any{}, "ccRecipients": []any{}, "bodyPreview": bodyPreview(m.Raw)}
+}
+
+// bodyPreview is Graph's bodyPreview: the first 255 characters of the text.
+func bodyPreview(raw string) string {
+	_, body, _ := strings.Cut(strings.ReplaceAll(raw, "\r\n", "\n"), "\n\n")
+	body = strings.Join(strings.Fields(body), " ")
+	if r := []rune(body); len(r) > 255 {
+		body = string(r[:255])
+	}
+	return body
 }
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {

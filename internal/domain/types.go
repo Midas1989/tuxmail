@@ -201,6 +201,15 @@ type RemoteMessage struct {
 	Size           int64             `json:"size"`
 	ReceivedAt     time.Time         `json:"receivedAt"`
 	HasAttachments bool              `json:"hasAttachments"`
+	// Preview is a short plain-text preview delivered by the server with
+	// the header data (Graph bodyPreview, JMAP preview, Gmail snippet);
+	// empty if the provider has none. It lets mails that are kept with
+	// their header only ("nur Kopf") show a preview without the body.
+	Preview string `json:"preview,omitempty"`
+	// Partial is the beginning of the raw RFC 5322 message, if the provider
+	// received it with the header data anyway (EAS truncated MIME). Only a
+	// preview is derived from it; it is never stored as the body.
+	Partial []byte `json:"-"`
 }
 
 // SyncState is opaque, provider-specific sync state (UIDVALIDITY+MODSEQ, SyncKey, deltaLink ...).

@@ -38,6 +38,7 @@ Account,
   LinkPreview,
   DeviceAuthorization,
   DeviceTokenResult,
+  DiscoveryCandidate,
   DiscoveryResult,
   Flag,
   Folder,
@@ -436,7 +437,9 @@ export class MockTransport implements Api {
   private summary(m: MessageDetail): MessageSummary {
     const { inReplyTo: _a, references: _b, html: _c, text: _d, attachments: _e, hasRemoteContent: _f, bcc: _g, replyTo: _h, ...rest } = m;
     const ref: ItemRef = { kind: 'message', id: m.id };
-    return { ...rest, tagIds: this.org?.tagIds(ref) ?? [], projectIds: this.org?.projectIdsFor(ref) ?? [] };
+    const out: MessageSummary = { ...rest, tagIds: this.org?.tagIds(ref) ?? [], projectIds: this.org?.projectIdsFor(ref) ?? [] };
+    if (this.accountEdit && this.isHeadersOnly(m)) out.headersOnly = true;
+    return out;
   }
 
   private personByEmail(email: string): Person | undefined {
@@ -719,7 +722,15 @@ export class MockTransport implements Api {
         outgoing: { host: 'smtp.office365.com', port: 587, tls: 'starttls', auth: 'oauth2', username: email } });
     }
     const [inHost, outHost, inPort, outPort, outTls] = k ?? [`imap.${domain}`, `smtp.${domain}`, 993, 587, 'starttls'];
+    // Like the core: only servers of the mail domain (and the proposed one), reason codes instead of raw errors.
+    const srv = (host: string, port: number, tls: 'tls' | 'starttls') => ({ host, port, tls, auth: 'password' as const, username: email });
+    const candidates: DiscoveryCandidate[] = [
+      { source: k ? 'autoconfig' : 'guess', kind: 'imap', incoming: srv(inHost, inPort, 'tls'), outgoing: srv(outHost, outPort, outTls), in: { reachable: true, login: 'ok' }, out: { reachable: true, login: 'ok' }, verified: true, score: 300 },
+      { source: 'guess', kind: 'imap', incoming: srv(`mail.${domain}`, 143, 'starttls'), outgoing: srv(`mail.${domain}`, 587, 'starttls'), in: { reachable: false, error: 'dns' }, out: { reachable: false, error: 'dns' }, verified: false, score: 100 },
+    ];
     return this.reply({
+      candidates,
+      verified: true,
       source: k ? 'autoconfig' : 'guess',
       kind: 'imap',
       displayName: domain,
@@ -807,6 +818,10 @@ export class MockTransport implements Api {
     const m = this.messages.get(id);
     if (!m) return Promise.reject(new ApiError('Nachricht nicht gefunden', 404, 'not_found'));
     const ref: ItemRef = { kind: 'message', id: m.id };
+    if (this.isHeadersOnly(m) && typeof navigator !== 'undefined' && navigator.onLine === false) {
+      // Kept with header only and no network: header and preview ("Inhalt nur online verfügbar").
+      return this.reply({ ...this.summary(m), inReplyTo: [], references: [], attachments: [], text: m.preview, contentUnavailable: true, headersOnly: true });
+    }
     return this.reply({ ...m, tagIds: this.org.tagIds(ref), projectIds: this.org.projectIdsFor(ref) });
   }
 
@@ -1605,6 +1620,10 @@ export class MockTransport implements Api {
       },
       monthLabel: (y, m) => new Date(y, m, 1).toLocaleDateString(undefined, { month: 'short', year: '2-digit' }),
     });
+    for (const h of result.hits) {
+      const m = h.messageId != null ? this.messages.get(h.messageId) : undefined;
+      if (m && this.isHeadersOnly(m)) h.headersOnly = true;
+    }
     if (query.text.trim() && !query.cursor) {
       this.searchHistory = [{ text: query.text, mode: query.mode, at: new Date().toISOString() }, ...this.searchHistory.filter((h) => h.text !== query.text)].slice(0, 20);
     }
@@ -2815,6 +2834,38 @@ export class MockTransport implements Api {
       return this.accountEdit.diagnostics(s, this.folders.filter((f) => f.accountId === accountId), this.identities.filter((i) => i.accountId === accountId).length, 'demo');
     });
   }
+
+  // --- Einstellungen › Mail › Speicher (mail.headersOnlyOlderThanDays) ---
+  /** -1 = not set (as before), 0 = all completely, n = header only when older than n days. */
+  private mailStorageDays = -1;
+  getMailStorageSettings(): Promise<MailStorageSettings> {
+    return this.run(() => {
+      const all = [...this.messages.values()];
+      const h = all.filter((m) => this.isHeadersOnly(m)).length;
+      return { headersOnlyOlderThanDays: this.mailStorageDays, available: true, headersOnly: h, complete: all.length - h, pending: 0, pendingBytes: 0, downloadPaused: this.mailStorageDownloadPaused };
+    });
+  }
+  estimateMailStorage(days: number): Promise<MailStorageEstimate> {
+    // Demo: as if the server held about 4,000 older mails not stored yet.
+    return this.reply(days === 0 ? { messages: 4210, bytes: 1_840_000_000 } : days > 30 ? { messages: Math.round(days * 11), bytes: days * 4_800_000 } : { messages: 0, bytes: 0 });
+  }
+  private mailStorageDownloadPaused = false;
+  setMailStorageSettings(settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'> & { downloadPaused?: boolean }): Promise<MailStorageSettings> {
+    this.mailStorageDownloadPaused = !!settings.downloadPaused;
+    const n = settings.headersOnlyOlderThanDays;
+    if (!Number.isInteger(n) || n < -1 || n > 36500) return Promise.reject(new ApiError('headersOnlyOlderThanDays must be -1 or between 0 and 36500', 400, 'invalid_input'));
+    this.mailStorageDays = n;
+    return this.getMailStorageSettings();
+  }
+  /** Older than the day count (per account or global), not a draft: header and preview only on this device. */
+  protected isHeadersOnly(m: MessageSummary): boolean {
+    if (m.flags.includes(DRAFT)) return false;
+    const acc = this.accounts.find((a) => a.id === m.accountId);
+    if (!acc) return false;
+    const own = this.accountEdit.settings(acc).headersOnlyOlderThanDays ?? -1;
+    const days = own >= 0 ? own : this.mailStorageDays;
+    return days > 0 && !!this.accountEdit.settings(acc).headersOnlyAvailable && Date.parse(m.date) < Date.now() - days * 86_400_000;
+  }
 }
 
 import { MockMessenger } from './mockMessenger';
@@ -2826,7 +2877,7 @@ import { MockIO } from './mockIO';
 
 // --- Account edit ---
 import { MockAccountEdit } from './mockAccountEdit';
-import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult } from '../types';
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, MailStorageEstimate, MailStorageSettings } from '../types';
 // --- Diagnostics ---
 import type { AccountSyncStatus, DiagnosticsInfo } from '../types';
 const messengerKinds = new Set(['signal', 'whatsapp', 'telegram', 'matrix_bridge']);

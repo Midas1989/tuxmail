@@ -1420,6 +1420,16 @@ export class HttpTransport implements Api {
   accountDiagnostics(accountId: number): Promise<AccountDiagnostics> {
     return this.request('GET', `/api/accounts/${accountId}/diagnostics`);
   }
+  /** A setting of the desktop app's own storage: the server always keeps every mail completely. */
+  getMailStorageSettings(): Promise<MailStorageSettings> {
+    return Promise.resolve({ headersOnlyOlderThanDays: 0, available: false, headersOnly: 0, complete: 0 });
+  }
+  setMailStorageSettings(_settings: Pick<MailStorageSettings, 'headersOnlyOlderThanDays'> & { downloadPaused?: boolean }): Promise<MailStorageSettings> {
+    return Promise.reject(new ApiError('not available here', 0, 'not_supported'));
+  }
+  estimateMailStorage(_days: number): Promise<MailStorageEstimate> {
+    return Promise.resolve({ messages: 0, bytes: 0 });
+  }
 }
 
 import type { MessengerAccountState, MessengerPairing, MessengerPairingInput, MessengerPlugin, MessengerPluginPatch } from '../types';
@@ -1442,4 +1452,4 @@ import type { AccountSyncStatus, DiagnosticsInfo } from '../types';
 import type * as IO from '../types';
 
 // --- Account edit ---
-import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity } from '../types';
+import type { AccountDiagnostics, AccountSettings, AccountUpdate, ConnectionTestInput, ConnectionTestResult, Identity as AccountIdentity, MailStorageEstimate, MailStorageSettings } from '../types';

@@ -13,7 +13,7 @@ import type { MessageKey } from '../i18n/index.svelte';
 export type SettingsCategoryId = 'profile' | 'general' | 'accounts' | 'mail' | 'chats' | 'pim' | 'cloud' | 'automation' | 'notifications' | 'ai' | 'security' | 'data' | 'team' | 'admin' | 'about';
 
 /** Where a category or section applies; anything else is hidden, not disabled. */
-export type SettingsAvailability = 'desktop' | 'native' | 'team' | 'vault' | 'admin' | 'web';
+export type SettingsAvailability = 'desktop' | 'native' | 'team' | 'vault' | 'admin' | 'web' | 'mailStore';
 
 export interface SettingsEnv {
   /** Wails desktop shell (window settings). */
@@ -28,9 +28,11 @@ export interface SettingsEnv {
   admin?: boolean;
   /** Web client against `tuxmail serve`, whatever the role: the server account the user signed in with. */
   web?: boolean;
+  /** This app keeps mail on the device itself (desktop app in both modes; the demo): storage settings. */
+  mailStore?: boolean;
 }
 
-export const ALL_ENV: SettingsEnv = { desktop: true, native: true, team: true, vault: true, admin: true, web: true };
+export const ALL_ENV: SettingsEnv = { desktop: true, native: true, team: true, vault: true, admin: true, web: true, mailStore: true };
 
 export interface SettingsSection {
   id: string;
@@ -89,6 +91,7 @@ export const SETTINGS_CATEGORIES: readonly SettingsCategory[] = [
       sec('compose', ['comfort.settings.spell', 'comfort.settings.userDictionary', 'comfort.settings.meeting', 'comfort.settings.jitsiUrl', 'comfort.settings.mergePdf', 'comfort.settings.pdfName'], { group: 'compose' }),
       sec('snippets', ['chat.snippets.title'], { group: 'compose' }),
       sec('vacation', ['settings.vacation.title', 'settings.vacation.enabled', 'settings.vacation.forwardTo'], { group: 'absence' }),
+      sec('storage', ['settings.storage.title', 'settings.storage.mode.days', 'settings.accountEdit.headersOnly', 'mail.reader.contentOffline'], { group: 'advanced', only: 'mailStore' }),
     ],
   },
   {

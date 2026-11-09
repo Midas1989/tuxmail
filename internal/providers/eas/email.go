@@ -210,6 +210,9 @@ func emailMessage(folder, serverID string, d *wbxml.Node, flags itemFlags, toKey
 	if rm.Size == 0 {
 		rm.Size = int64(len(mimeData))
 	}
+	// The (truncated) MIME arrives with every item: the sync engine derives
+	// the preview of mails kept with their header only from it.
+	rm.Partial = mimeData
 	if hdr := mimeHeader(mimeData); hdr != nil {
 		if ids := normalizeIDs(hdr.Get("Message-Id")); len(ids) > 0 {
 			h.MessageID = ids[0]

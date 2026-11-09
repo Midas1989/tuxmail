@@ -370,10 +370,11 @@ type email struct {
 	ReplyTo       []emailAddr     `json:"replyTo"`
 	SentAt        *time.Time      `json:"sentAt"`
 	HasAttachment bool            `json:"hasAttachment"`
+	Preview       string          `json:"preview"`
 }
 
 var headerProps = []string{"id", "blobId", "threadId", "mailboxIds", "keywords", "size", "receivedAt", "messageId",
-	"inReplyTo", "references", "subject", "from", "to", "cc", "bcc", "replyTo", "sentAt", "hasAttachment"}
+	"inReplyTo", "references", "subject", "from", "to", "cc", "bcc", "replyTo", "sentAt", "hasAttachment", "preview"}
 
 // keyword <-> flag mapping (RFC 8621 section 4.1.1).
 var kwToFlag = map[string]domain.Flag{"$seen": domain.FlagSeen, "$flagged": domain.FlagFlagged, "$answered": domain.FlagAnswered,
@@ -435,7 +436,7 @@ func (e email) remote(folder string) domain.RemoteMessage {
 		h.Date = e.ReceivedAt
 	}
 	return domain.RemoteMessage{Ref: domain.RemoteRef{FolderRemoteID: folder, ID: e.ID}, Header: h, Flags: FlagsFromKeywords(e.Keywords),
-		Size: e.Size, ReceivedAt: e.ReceivedAt, HasAttachments: e.HasAttachment}
+		Size: e.Size, ReceivedAt: e.ReceivedAt, HasAttachments: e.HasAttachment, Preview: strings.TrimSpace(e.Preview)}
 }
 
 func (p *Provider) getEmails(ctx context.Context, ids []string, props []string) ([]email, string, error) {

@@ -166,6 +166,8 @@ type App struct {
 	bubbles        bodyCache         // items.go
 	rendered       renderCache       // rendercache.go
 	chromiumBroken atomic.Bool       // comfort_pdf.go
+	hoDays         atomic.Int64      // mail.headersOnlyOlderThanDays of this device, headersonly.go
+	hoPaused       atomic.Bool       // downloads of the day count paused, headersonly.go
 }
 
 // New creates the application layer.
@@ -221,7 +223,7 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		}
 	}
 	if a.opts.Discoverer == nil {
-		a.opts.Discoverer = autoconfigDiscoverer{}
+		a.opts.Discoverer = autoconfigDiscoverer{log: a.log}
 	}
 	a.proj = project.New(a.st, a.bus, project.Options{Now: opts.Now, Logger: opts.Logger})
 	a.comfort = newComfortState(a)
@@ -234,9 +236,14 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		}
 		a.opts.Sender = ms
 	}
+	a.loadHeadersOnlyDays(ctx)
 	if a.sync == nil && opts.Sync != nil && a.blobs != nil {
 		cfg := tsync.Config{Store: a.st, Blobs: a.blobs, Bus: a.bus, Secrets: a.opts.Secrets, Projects: a.proj, Tags: a.proj,
 			Logger: opts.Logger, Now: opts.Now, Extractor: ParseExtractor{}}
+		if opts.Mode != ModeServer { // the server keeps every mail completely
+			cfg.HeadersOnlyDays = a.headersOnlyDays
+			cfg.DownloadPaused = a.downloadPaused
+		}
 		if ms, ok := a.opts.Sender.(*MailSender); ok {
 			cfg.Sender = syncSender{act: func() *send.Actions { return ms.Actions }}
 		}

@@ -1072,7 +1072,9 @@ export class OfflineCore {
       if (this.st !== 'online' || (await this.cacheBytes()) > s.maxBytes * 0.8) break;
       const have = await this.d.db.getEntry(`/api/messages/${m.id}`);
       let detail = have && typeof have.body === 'string' ? parse<MessageDetail>(have.body) : null;
-      if (!detail) detail = parse<MessageDetail>(await this.get(`/api/messages/${m.id}`));
+      // A copy the server answered with "content only online" (headers-only mail, mail server unreachable)
+      // is fetched again, so the device gets the content once the server has it.
+      if (!detail || detail.contentUnavailable) detail = parse<MessageDetail>(await this.get(`/api/messages/${m.id}`));
       if (!detail || !s.attachmentMaxBytes) continue;
       for (const a of detail.attachments ?? []) {
         if (a.cloudLink || a.size > s.attachmentMaxBytes || !a.url) continue;

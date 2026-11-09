@@ -212,7 +212,7 @@ func (a *App) summaries(ctx context.Context, msgs []store.Message) ([]MessageSum
 		s := MessageSummary{ID: m.ID, AccountID: m.AccountID, FolderIDs: nonNilIDs(folders[m.ID]), ConversationID: m.ConversationID,
 			MessageID: m.MessageIDHdr, Subject: m.Subject, From: addrList(addrs[m.ID], store.RoleFrom), To: addrList(addrs[m.ID], store.RoleTo),
 			Cc: addrList(addrs[m.ID], store.RoleCc), Date: rfc3339(msgTime(m)), Preview: m.Snippet, Flags: m.Flags.Domain(),
-			HasAttachments: m.HasAttachments, Size: m.Size, TagIDs: tagIDs(tags[m.ID]), ProjectIDs: projects[m.ID]}
+			HasAttachments: m.HasAttachments, Size: m.Size, TagIDs: tagIDs(tags[m.ID]), ProjectIDs: projects[m.ID], HeadersOnly: m.BlobHash == ""}
 		if len(s.From) == 0 && m.From != "" {
 			s.From = []Address{{Email: m.From}}
 		}
@@ -236,6 +236,14 @@ func (a *App) rawMessage(m store.Message) ([]byte, error) {
 	}
 	r, err := a.blobs.Open(m.BlobHash)
 	if err != nil {
+		// Released in the meantime (mails kept with header only): load it again.
+		if f, ok := a.sync.(bodyFetcher); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if raw, ferr := f.FetchBody(ctx, m.ID); ferr == nil {
+				return raw, nil
+			}
+		}
 		return nil, err
 	}
 	defer r.Close()
@@ -273,6 +281,13 @@ func (a *App) GetMessage(ctx context.Context, id int64) (MessageDetail, error) {
 		d.ReplyTo = rt
 	}
 	r, rerr := a.renderCached(ctx, m)
+	if errors.Is(rerr, errNoBody) {
+		// Kept with header only and the content could not be loaded now
+		// (no connection, server unreachable): header and preview.
+		d.ContentUnavailable = true
+	} else {
+		d.HeadersOnly = false // the content is here now
+	}
 	if !errors.Is(rerr, errNoBody) {
 		if rerr == nil {
 			d.Text, d.HTML, d.HasRemoteContent = r.Text, r.HTML, r.HasRemoteContent

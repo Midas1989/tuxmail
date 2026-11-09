@@ -68,6 +68,7 @@
   import ComfortSettingsCard from '../components/comfort/ComfortSettingsCard.svelte';
   import RemoteContentSettings from '../components/settings/RemoteContentSettings.svelte';
   import SnippetSettings from '../components/settings/SnippetSettings.svelte';
+  import MailStorageSettings from '../components/settings/MailStorageSettings.svelte';
   import VacationSettings from '../components/settings/VacationSettings.svelte';
   import MessengerSettings from '../components/settings/MessengerSettings.svelte';
   import ChatSettings from '../components/settings/ChatSettings.svelte';
@@ -130,6 +131,7 @@
     vault: !!app.vault?.portable,
     admin: admin.isAdmin,
     web: security.available,
+    mailStore: connection.available || app.api.kind === 'mock',
   });
   const categories = $derived(visibleCategories(env));
 
@@ -250,7 +252,7 @@
 
   // Offline (desktop app in server mode) the settings live on the unreachable
   // server: visible, but switched off. These work anyway: they belong to this device.
-  const WORKS_OFFLINE = new Set(['accounts/server', 'general/appearance', 'general/window', 'general/shortcuts', 'general/app']);
+  const WORKS_OFFLINE = new Set(['accounts/server', 'general/appearance', 'general/window', 'general/shortcuts', 'general/app', 'mail/storage']);
 </script>
 
 <section class="settings" class:paged={!!loc.category} aria-labelledby="settings-title">
@@ -358,6 +360,7 @@
   {:else if k === 'mail/compose'}<ComfortSettingsCard part="compose" />
   {:else if k === 'mail/snippets'}<SnippetSettings />
   {:else if k === 'mail/vacation'}<VacationSettings />
+  {:else if k === 'mail/storage'}<MailStorageSettings />
   {:else if k === 'chats/messenger'}<MessengerSettings />
   {:else if k === 'chats/chat'}<ChatSettings />
   {:else if k === 'chats/folders'}<ChatFeatureSettings part="folders" />

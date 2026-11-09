@@ -200,6 +200,8 @@ export interface MessageSummary {
   tagIds?: number[];
   /** Projects the mail is linked to. */
   projectIds?: number[];
+  /** Only header and preview are stored on this device ("nur Kopf"); the content is loaded on opening. */
+  headersOnly?: boolean;
 }
 
 export interface MessageDetail extends MessageSummary {
@@ -217,6 +219,8 @@ export interface MessageDetail extends MessageSummary {
   remoteLoaded?: boolean;
   /** Android app offline: only the header lines of this mail are on the device ("content only online"). */
   offlineHeadersOnly?: boolean;
+  /** The content could not be loaded (no connection): `text` holds the preview ("Inhalt nur online verfügbar"). */
+  contentUnavailable?: boolean;
 }
 
 export type ConversationKind = 'email_thread' | 'chat' | 'person_view';
@@ -488,6 +492,7 @@ export interface DiscoveryCheck {
   reachable: boolean;
   /** "ok", "failed" (password rejected) or absent (not tried). */
   login?: 'ok' | 'failed';
+  /** Reason code, never a raw error text: dns | timeout | refused | tls | auth | other. */
   error?: string;
 }
 
@@ -792,6 +797,10 @@ export interface SearchHit {
   conversationId?: number;
   itemId?: string;
   personId?: number;
+  /** A mail kept with header only (found by header and preview, or on the server). */
+  headersOnly?: boolean;
+  /** Found by the search on the mail server (IMAP SEARCH), not in the local index. */
+  serverMatch?: boolean;
 }
 
 export interface FacetBucket {
@@ -2520,6 +2529,10 @@ export interface AccountSettings {
   jmapUrl?: string;
   pop3?: Pop3Options;
   bodyPolicy: BodyPolicy;
+  /** Own day count of mail.headersOnlyOlderThanDays: -1 = as in Settings › Mail, 0 = all completely, n = header only when older than n days. */
+  headersOnlyOlderThanDays?: number;
+  /** This device keeps the account's mails itself and can load contents again (desktop, not POP3/local). */
+  headersOnlyAvailable?: boolean;
   /** 0 = default poll interval. */
   pollMinutes: number;
   idleMode: IdleMode;
@@ -2545,6 +2558,8 @@ export interface AccountUpdate {
   jmapUrl?: string;
   pop3?: Pop3Options;
   bodyPolicy?: BodyPolicy;
+  /** -1 = as in Settings › Mail, 0 = all completely, n = header only when older than n days. */
+  headersOnlyOlderThanDays?: number;
   pollMinutes?: number;
   idleMode?: IdleMode;
   idleFolders?: number[];
@@ -2591,4 +2606,25 @@ export interface AccountDiagnostics {
   failedOps: { kind: string; attempts: number; lastError: string; createdAt: string }[];
   index: AccountIndexOptions;
   settings: AccountSettings;
+}
+
+/** Einstellungen › Mail › Speicher (this device only, never synced): mail.headersOnlyOlderThanDays. */
+export interface MailStorageSettings {
+  /** Mails older than this many days are kept with header and preview only; 0 = all completely (default). */
+  headersOnlyOlderThanDays: number;
+  /** This core keeps mail itself (desktop app). */
+  available: boolean;
+  /** Mails of this device's own accounts with header only / with content. */
+  headersOnly: number;
+  complete: number;
+  /** Still to download under the current setting (estimate) and whether that download is paused. */
+  pending?: number;
+  pendingBytes?: number;
+  downloadPaused?: boolean;
+}
+
+/** What a day count would download (asked before switching to "all" or a larger count). */
+export interface MailStorageEstimate {
+  messages: number;
+  bytes: number;
 }

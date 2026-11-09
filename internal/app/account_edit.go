@@ -68,6 +68,15 @@ type AccountSettings struct {
 	POP3          *POP3Options `json:"pop3,omitempty"`
 	// BodyPolicy: recent (last 30 days, default) | all | on_demand.
 	BodyPolicy string `json:"bodyPolicy"`
+	// HeadersOnlyOlderThanDays is the account's own day count of
+	// mail.headersOnlyOlderThanDays: mails older than this are kept with
+	// header and preview only (0 = all completely, -1 = the default from
+	// Einstellungen > Mail). Only with HeadersOnlyAvailable.
+	HeadersOnlyOlderThanDays int `json:"headersOnlyOlderThanDays"`
+	// HeadersOnlyAvailable: this core keeps the mails of the account itself
+	// and can load bodies again (desktop "Auf diesem Gerät"; not on the
+	// server, not for POP3 or local folders).
+	HeadersOnlyAvailable bool `json:"headersOnlyAvailable"`
 	// PollMinutes overrides the folder poll interval (0 = default).
 	PollMinutes int `json:"pollMinutes"`
 	// IdleMode: default (inbox) | custom (IdleFolders) | off (poll only).
@@ -95,7 +104,10 @@ type AccountUpdate struct {
 	JMAPURL     *string       `json:"jmapUrl,omitempty"`
 	POP3        *POP3Options  `json:"pop3,omitempty"`
 	BodyPolicy  *string       `json:"bodyPolicy,omitempty"`
-	PollMinutes *int          `json:"pollMinutes,omitempty"`
+	// HeadersOnlyOlderThanDays: -1 = default from the settings, 0 = all
+	// completely, n = header only for mails older than n days.
+	HeadersOnlyOlderThanDays *int `json:"headersOnlyOlderThanDays,omitempty"`
+	PollMinutes              *int `json:"pollMinutes,omitempty"`
 	// IdleMode (with IdleFolders for "custom") changes the IDLE folders.
 	IdleMode    *string       `json:"idleMode,omitempty"`
 	IdleFolders []int64       `json:"idleFolders,omitempty"`
@@ -283,7 +295,7 @@ func (a *App) accountSettings(ctx context.Context, acc domain.Account) (AccountS
 	}
 	out := AccountSettings{Account: acc, Email: accountEmail(acc), Status: a.accountStatus(ctx, acc.ID),
 		OAuthProvider: ex(oauth.ExtraProvider), EASURL: ex(eas.ExtraURL), JMAPURL: ex("jmapUrl"),
-		BodyPolicy: string(tsync.BodiesRecent), IdleMode: "default", IdleFolders: []int64{},
+		BodyPolicy: string(tsync.BodiesRecent), HeadersOnlyOlderThanDays: -1, IdleMode: "default", IdleFolders: []int64{},
 		Tests: connectionTests(acc), Editable: editableKinds[acc.Kind]}
 	if out.OAuthProvider == "" && acc.Incoming != nil && acc.Incoming.Auth == domain.AuthOAuth2 {
 		out.OAuthProvider = "oauth2"
@@ -295,6 +307,10 @@ func (a *App) accountSettings(ctx context.Context, acc domain.Account) (AccountS
 	}
 	if p := tsync.BodyPolicy(ex(tsync.ExtraBodyPolicy)); tsync.ValidBodyPolicy(p) {
 		out.BodyPolicy = string(p)
+	}
+	out.HeadersOnlyAvailable = a.headersOnlyAvailable(acc.Kind)
+	if n, ok := tsync.ParseHeadersOnlyDays(ex(tsync.ExtraHeadersOnlyDays)); ok && out.HeadersOnlyAvailable {
+		out.HeadersOnlyOlderThanDays = n
 	}
 	out.PollMinutes, _ = strconv.Atoi(ex(tsync.ExtraPollMinutes))
 	switch v := ex(tsync.ExtraIdleFolders); v {
@@ -538,6 +554,19 @@ func applyAccountUpdate(acc domain.Account, in AccountUpdate) (domain.Account, b
 		}
 		set(tsync.ExtraBodyPolicy, v)
 	}
+	if in.HeadersOnlyOlderThanDays != nil {
+		n := *in.HeadersOnlyOlderThanDays
+		switch {
+		case n == -1:
+			set(tsync.ExtraHeadersOnlyDays, "")
+		case n >= 0 && n <= tsync.MaxHeadersOnlyDays:
+			set(tsync.ExtraHeadersOnlyDays, strconv.Itoa(n))
+			// The day count replaces the older body policy of the account.
+			set(tsync.ExtraBodyPolicy, "")
+		default:
+			return acc, false, invalid("headersOnlyOlderThanDays must be -1 or between 0 and %d", tsync.MaxHeadersOnlyDays)
+		}
+	}
 	if in.PollMinutes != nil {
 		n := *in.PollMinutes
 		if n < 0 || n > 24*60 {
@@ -587,6 +616,9 @@ func (a *App) UpdateAccount(ctx context.Context, id int64, in AccountUpdate) (Ac
 	acc, err := a.st.GetAccount(ctx, id)
 	if err != nil {
 		return AccountSettings{}, err
+	}
+	if in.HeadersOnlyOlderThanDays != nil && !a.headersOnlyAvailable(acc.Kind) {
+		return AccountSettings{}, invalid("keeping older mails with header only is not available for this account here")
 	}
 	next, connChanged, err := applyAccountUpdate(acc, in)
 	if err != nil {

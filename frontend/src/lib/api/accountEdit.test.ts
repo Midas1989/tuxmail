@@ -14,6 +14,8 @@ describe('account edit (mock transport)', () => {
     expect(s.email).toBe('jonas.becker@posteo.de');
     expect(s.tests).toEqual(['imap', 'smtp', 'sieve']);
     expect(s.bodyPolicy).toBe('recent');
+    expect(s.headersOnlyAvailable).toBe(true);
+    expect(s.headersOnlyOlderThanDays).toBe(-1);
     const events: string[] = [];
     api.subscribe((e) => events.push(e.type));
     const u = await api.updateAccount(1, { displayName: 'Posteo', color: '#112233', bodyPolicy: 'all', pollMinutes: 10, idleMode: 'custom', idleFolders: [3, 1, 3] });

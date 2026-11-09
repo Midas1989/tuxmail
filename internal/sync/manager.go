@@ -75,6 +75,8 @@ type Manager struct {
 	repo    *store.ThreadRepo
 	engine  *threading.Engine
 	actions *Actions
+	// blobMu: storing bodies (read lock) against releasing them (headersonly.go).
+	blobMu stdsync.RWMutex
 
 	mu      stdsync.Mutex
 	ctx     context.Context

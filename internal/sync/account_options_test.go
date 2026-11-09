@@ -13,7 +13,7 @@ func TestAccountOverrides(t *testing.T) {
 	m := &Manager{cfg: Config{Bodies: BodiesRecent, PollInterval: 5 * time.Minute, WatchRoles: []domain.FolderRole{domain.RoleInbox}}}
 	inbox := domain.Folder{ID: 1, Role: domain.RoleInbox}
 	other := domain.Folder{ID: 7}
-	w := &Worker{m: m, acc: domain.Account{}}
+	w := &Worker{m: m, acc: domain.Account{Kind: domain.KindIMAP}}
 	if w.bodyPolicy() != BodiesRecent || w.pollInterval() != 5*time.Minute || !w.watchesFolders() || !w.watchFolder(inbox) || w.watchFolder(other) {
 		t.Fatal("defaults")
 	}

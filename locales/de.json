@@ -151,7 +151,13 @@
       "toMany_one": "An {name} und 1 weitere Person",
       "loadRemoteSender": "Immer für Absender laden",
       "loadRemoteDomain": "Immer für {domain}",
-      "contentOnlyOnline": "Inhalt nur online: Diese Mail liegt nur mit ihren Kopfzeilen auf dem Gerät. Den Inhalt und die Anhänge lädt die App, sobald wieder eine Verbindung besteht."
+      "contentOnlyOnline": "Inhalt nur online: Diese Mail liegt nur mit ihren Kopfzeilen auf dem Gerät. Den Inhalt und die Anhänge lädt die App, sobald wieder eine Verbindung besteht.",
+      "contentLoading": "Inhalt wird geladen …",
+      "contentOffline": "Inhalt nur online verfügbar",
+      "contentOfflineHint": "Diese Mail ist auf diesem Gerät nur mit Kopf und Vorschau gespeichert. Mit Netz lädt TuxMail den Inhalt beim Öffnen.",
+      "retry": "Erneut laden",
+      "headersOnly": "nur Kopf",
+      "headersOnlyTitle": "Auf diesem Gerät nur mit Kopf und Vorschau gespeichert; der Inhalt wird beim Öffnen geladen."
     },
     "sidebar": {
       "allAccounts": "Alle Konten",
@@ -1397,7 +1403,17 @@
       "diagnostics": "Diagnose",
       "diagnosticsHint": "Exportiert Einstellungen, Sync-Status, Ordnerzähler und fehlgeschlagene Vorgänge dieses Kontos als JSON-Datei für den Support. Passwörter und Tokens sind nie enthalten.",
       "diagnosticsExport": "Diagnose exportieren",
-      "diagnosticsDone": "Diagnose exportiert."
+      "diagnosticsDone": "Diagnose exportiert.",
+      "headersOnly": "Ältere Mails nur mit Kopf",
+      "headersOnlyMode": {
+        "default": "Wie in Einstellungen › Mail ({value})",
+        "all": "Alle Mails vollständig",
+        "days": "Nur Kopf, wenn älter als …"
+      },
+      "headersOnlyOff": "wie bisher",
+      "headersOnlyDays": "{days} Tage",
+      "headersOnlyHint": "Mails, die älter als X Tage sind, lädt TuxMail nur mit Absender, Betreff, Datum und Vorschau; den Inhalt erst beim Öffnen. Spart Speicher; ohne Netz sind diese Mails nur mit Kopf lesbar.",
+      "headersOnlyAll": "alle vollständig"
     },
     "passkeys": {
       "title": "Passkeys",
@@ -1567,7 +1583,8 @@
           "remote": "Externe Bilder",
           "compose": "Rechtschreibung, Meetings & Serienmail",
           "snippets": "Schnellantworten",
-          "vacation": "Abwesenheitsnotiz"
+          "vacation": "Abwesenheitsnotiz",
+          "storage": "Speicher & offline"
         }
       },
       "chats": {
@@ -1721,6 +1738,38 @@
         "signOut": "Abmelden",
         "failed": "Abmelden fehlgeschlagen: {error}. Ihre Sitzung ist auf dem Server möglicherweise noch aktiv; lokale Daten wurden entfernt."
       }
+    },
+    "storage": {
+      "title": "Ältere Mails nur mit Kopf speichern",
+      "intro": "Mails, die älter als X Tage sind, lädt TuxMail nur mit Absender, Betreff, Datum und Vorschau; den Inhalt erst beim Öffnen. Spart Speicher; ohne Netz sind diese Mails nur mit Kopf lesbar.",
+      "days": "Tage",
+      "daysLabel": "Anzahl Tage",
+      "off": "Wie bisher: Mails der letzten 30 Tage vollständig, ältere werden beim Öffnen geladen.",
+      "on": "Mails älter als {days} Tage: nur Kopf und Vorschau.",
+      "release": "Mit einer Tageszahl gibt TuxMail die Inhalte älterer Mails nach und nach frei (Kopf und Vorschau bleiben). Eine größere Zahl oder „Alle vollständig“ lädt sie wieder herunter.",
+      "exceptions": "Immer vollständig bleiben: POP3-Konten (der Server hat oft keine Kopie mehr), lokale Ordner, Entwürfe, importierte Mails und verschlüsselte Mails (PGP, S/MIME).",
+      "opening": "Beim Öffnen lädt TuxMail den Inhalt nach. Das markiert die Mail nicht als gelesen, sendet keine Lesebestätigung und lädt keine externen Bilder – dafür gelten die Regeln unter „Externe Bilder“.",
+      "search": "Die Suche findet diese Mails über Kopf und Vorschau. Mit Netz sucht TuxMail zusätzlich auf dem Mailserver (IMAP); solche Treffer sind mit „nur Kopf“ markiert.",
+      "providers": "Vorschau ohne Herunterladen: IMAP, Microsoft 365, Gmail, JMAP und ActiveSync. Exchange (EWS) zeigt die Vorschau erst nach dem Öffnen.",
+      "thin": "Im Modus „Über den Server“ hält der Offline-Lesespeicher dieses Geräts für ältere Mails nur Kopf und Vorschau. Der Server selbst speichert weiter alles vollständig.",
+      "perAccount": "Einzelne Konten können einen eigenen Wert haben: Konten › Bearbeiten › Erweitert.",
+      "stats": "Auf diesem Gerät: {headersOnly} Mails nur mit Kopf, {complete} vollständig.",
+      "saved": "Gespeichert.",
+      "invalid": "Bitte eine Zahl zwischen 1 und 36500 eingeben.",
+      "modeLabel": "Inhalte älterer Mails",
+      "mode": {
+        "default": "Wie bisher (Standard): Mails der letzten 30 Tage vollständig, ältere beim Öffnen",
+        "all": "Alle Mails vollständig speichern",
+        "days": "Nur Kopf und Vorschau für Mails, die älter sind als"
+      },
+      "all": "Alle Mails werden vollständig gespeichert; ältere Inhalte lädt TuxMail im Hintergrund nach.",
+      "confirm": "Damit lädt TuxMail etwa {count} Mails ({size}) nach – gedrosselt im Hintergrund, mit Pausen zwischen den Abschnitten. Fortfahren?",
+      "confirmYes": "Nachladen",
+      "confirmNo": "Abbrechen",
+      "progress": "Noch etwa {count} Mails ({size}) werden nachgeladen.",
+      "progressPaused": "Nachladen angehalten – noch etwa {count} Mails ({size}).",
+      "pause": "Anhalten",
+      "resume": "Fortsetzen"
     }
   },
   "search": {
@@ -1861,7 +1910,9 @@
       "badRange": "Bereich erwartet: [von TO bis]",
       "emptyTerm": "Leerer Suchbegriff",
       "unexpectedToken": "Unerwartetes „{token}“"
-    }
+    },
+    "headersOnly": "nur Kopf",
+    "serverMatch": "auf dem Server gefunden"
   },
   "compose": {
     "attach": "Datei anhängen",
@@ -2290,7 +2341,7 @@
         "autodiscover": "Einstellungen über Autodiscover gefunden",
         "guess": "Einstellungen geschätzt – bitte prüfen",
         "none": "Keine Einstellungen gefunden",
-        "srv": "Einstellungen über DNS-SRV gefunden"
+        "srv": "Einstellungen über DNS-Einträge der Domain gefunden"
       },
       "step1": "Anmeldedaten",
       "step2": "Gefundene Einstellungen",
@@ -2307,18 +2358,29 @@
         "deleteLocal": "Vom Server löschen, wenn in TuxMail gelöscht",
         "hint": "POP3 kennt nur einen Posteingang. Mails lassen sich in lokale Ordner verschieben; sie bleiben auf diesem Gerät, auch wenn die Serverkopie gelöscht wird."
       },
-      "others": "Andere gefundene Einstellungen ({count})",
-      "others_one": "Andere gefundene Einstellungen (1)",
       "useThis": "Diese verwenden",
       "check": {
         "verified": "geprüft",
         "reachable": "erreichbar",
         "loginOk": "Anmeldung erfolgreich",
         "loginFailed": "Anmeldung abgelehnt (Passwort oder Benutzername?)",
-        "unreachable": "nicht erreichbar: {error}",
+        "unreachable": "nicht erreichbar ({reason})",
         "unknown": "nicht geprüft",
-        "noneWorking": "Keiner der gefundenen Server konnte bestätigt werden. Prüfen Sie das Passwort oder geben Sie die Einstellungen manuell ein."
-      }
+        "noneWorking": "Keiner der gefundenen Server konnte bestätigt werden. Prüfen Sie das Passwort oder geben Sie die Einstellungen manuell ein.",
+        "reason": {
+          "dns": "Server-Name unbekannt",
+          "timeout": "keine Antwort",
+          "refused": "Verbindung abgelehnt",
+          "tls": "Zertifikat oder Verschlüsselung fehlerhaft",
+          "auth": "Anmeldung abgelehnt",
+          "other": "Verbindungsfehler"
+        }
+      },
+      "found": "Gefunden: {provider}",
+      "report": "Prüfbericht",
+      "reportSource": "Herkunft",
+      "reportSecurity": "Sicherheit",
+      "alternatives": "Weitere Möglichkeiten"
     },
     "connect": {
       "cardText": "Verbinde diese App mit deinem TuxMail-Server. Du wählst danach, ob die Mails über den Server oder direkt auf dieses Gerät kommen.",

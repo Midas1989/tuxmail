@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"log/slog"
 	"net/http"
@@ -336,7 +337,9 @@ type message struct {
 	SizeEstimate int64    `json:"sizeEstimate"`
 	Raw          string   `json:"raw,omitempty"`
 	HistoryID    string   `json:"historyId"`
-	Payload      *struct {
+	// Snippet is Gmail's preview text (HTML entities escaped).
+	Snippet string `json:"snippet"`
+	Payload *struct {
 		MimeType string   `json:"mimeType"`
 		Headers  []header `json:"headers"`
 	} `json:"payload,omitempty"`
@@ -430,7 +433,7 @@ func (p *Provider) remote(folder string, m message) domain.RemoteMessage {
 	}
 	hasAtt := m.Payload != nil && (m.Payload.MimeType == "multipart/mixed")
 	return domain.RemoteMessage{Ref: domain.RemoteRef{FolderRemoteID: folder, ID: m.ID}, Header: h, Flags: p.flags(m),
-		Size: m.SizeEstimate, ReceivedAt: received, HasAttachments: hasAtt}
+		Size: m.SizeEstimate, ReceivedAt: received, HasAttachments: hasAtt, Preview: strings.TrimSpace(html.UnescapeString(m.Snippet))}
 }
 
 const metaQuery = "?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject" +

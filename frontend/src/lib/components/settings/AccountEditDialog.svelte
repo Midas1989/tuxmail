@@ -55,6 +55,10 @@
   let pop3 = $state<Pop3Options>({ leaveOnServer: true, deleteAfterDays: 0, deleteOnLocalDelete: false });
   let sieve = $state<SieveConfig | null>(null);
   let bodyPolicy = $state<BodyPolicy>('recent');
+  // Older mails with header only (mail.headersOnlyOlderThanDays of the account).
+  let hoMode = $state<'default' | 'all' | 'days'>('default');
+  let hoDays = $state(90);
+  let globalHoDays = $state<number | null>(null);
   let pollMinutes = $state(0);
   let idleMode = $state<IdleMode>('default');
   let idleFolders = $state<number[]>([]);
@@ -107,6 +111,9 @@
     pop3 = { leaveOnServer: true, deleteAfterDays: 0, deleteOnLocalDelete: false, ...s.pop3 };
     sieve = s.sieve ? { ...s.sieve } : null;
     bodyPolicy = s.bodyPolicy;
+    const ho = s.headersOnlyOlderThanDays ?? -1;
+    hoMode = ho < 0 ? 'default' : ho === 0 ? 'all' : 'days';
+    if (ho > 0) hoDays = ho;
     pollMinutes = s.pollMinutes;
     idleMode = s.idleMode;
     idleFolders = [...s.idleFolders];
@@ -117,6 +124,12 @@
     try {
       fill(await app.api.getAccountSettings(accountId));
       if (isMail && !app.folders[accountId]) void app.reloadFolders(accountId).catch(() => undefined);
+      if (settings?.headersOnlyAvailable) {
+        void app.api.getMailStorageSettings().then(
+          (g) => (globalHoDays = g.headersOnlyOlderThanDays),
+          () => undefined,
+        );
+      }
     } catch (err) {
       loadError = msg(err);
     }
@@ -154,7 +167,12 @@
     if (insecure && allowInsecure) u.allowInsecure = true;
     if (k === 'pop3') u.pop3 = { ...pop3, deleteAfterDays: Math.max(0, Number(pop3.deleteAfterDays) || 0) };
     if (k === 'caldav' || k === 'carddav') return u;
-    u.bodyPolicy = bodyPolicy;
+    if (settings?.headersOnlyAvailable) {
+      // The day count takes precedence over the older body policy, which stays as it is.
+      u.headersOnlyOlderThanDays = hoMode === 'default' ? -1 : hoMode === 'all' ? 0 : Math.min(36500, Math.max(1, Math.round(Number(hoDays) || 1)));
+    } else {
+      u.bodyPolicy = bodyPolicy;
+    }
     u.pollMinutes = Math.max(0, Number(pollMinutes) || 0);
     u.idleMode = idleMode;
     u.idleFolders = idleMode === 'custom' ? idleFolders : [];
@@ -246,6 +264,17 @@
   const tlsModes: TLSMode[] = ['tls', 'starttls', 'none'];
   const authMethods: AuthMethod[] = ['password', 'oauth2', 'client_cert'];
   const bodyPolicies: BodyPolicy[] = ['recent', 'all', 'on_demand'];
+  const hoModes = ['default', 'all', 'days'] as const;
+  const hoDefaultLabel = $derived(
+    t('settings.accountEdit.headersOnlyMode.default', {
+      value:
+        globalHoDays == null || globalHoDays < 0
+          ? t('settings.accountEdit.headersOnlyOff')
+          : globalHoDays === 0
+            ? t('settings.accountEdit.headersOnlyAll')
+            : t('settings.accountEdit.headersOnlyDays', { days: globalHoDays }),
+    }),
+  );
   const idleModes: IdleMode[] = ['default', 'custom', 'off'];
 </script>
 
@@ -396,13 +425,32 @@
               </fieldset>
             {/if}
             {#if account.kind !== 'caldav' && account.kind !== 'carddav'}
+              {#if settings?.headersOnlyAvailable}
+                <div class="grid">
+                  <label class="wide">
+                    <span class="label">{t('settings.accountEdit.headersOnly')}</span>
+                    <select class="input" bind:value={hoMode} aria-describedby="acc-ho-hint" data-testid="account-headers-only">
+                      {#each hoModes as m (m)}<option value={m}>{m === 'default' ? hoDefaultLabel : t(`settings.accountEdit.headersOnlyMode.${m}`)}</option>{/each}
+                    </select>
+                  </label>
+                  {#if hoMode === 'days'}
+                    <label>
+                      <span class="label">{t('settings.storage.daysLabel')}</span>
+                      <input class="input" type="number" min="1" max="36500" step="1" bind:value={hoDays} data-testid="account-headers-only-days" />
+                    </label>
+                  {/if}
+                </div>
+                <p class="hint" id="acc-ho-hint">{t('settings.accountEdit.headersOnlyHint')}</p>
+              {/if}
               <div class="grid">
-                <label>
-                  <span class="label">{t('settings.accountEdit.bodyPolicy')}</span>
-                  <select class="input" bind:value={bodyPolicy}>
-                    {#each bodyPolicies as p (p)}<option value={p}>{t(`settings.accountEdit.body.${p}`)}</option>{/each}
-                  </select>
-                </label>
+                {#if !settings?.headersOnlyAvailable}
+                  <label>
+                    <span class="label">{t('settings.accountEdit.bodyPolicy')}</span>
+                    <select class="input" bind:value={bodyPolicy}>
+                      {#each bodyPolicies as p (p)}<option value={p}>{t(`settings.accountEdit.body.${p}`)}</option>{/each}
+                    </select>
+                  </label>
+                {/if}
                 <label>
                   <span class="label">{t('settings.accountEdit.pollMinutes')}</span>
                   <input class="input" type="number" min="0" max="1440" bind:value={pollMinutes} />
