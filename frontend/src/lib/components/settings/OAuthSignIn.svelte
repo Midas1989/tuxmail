@@ -40,6 +40,23 @@
   let errorText = $state('');
   let timer: ReturnType<typeof setInterval> | null = null;
 
+  // Is a client for this provider set up (built in, admin or user)? Unknown until loaded.
+  // Not set up: the wizard skips straight to the password step (no dead end for the user),
+  // the edit dialog shows a hint instead of a button that can only fail.
+  let configured = $state<boolean | null>(null);
+  $effect(() => {
+    const p = provider;
+    void app.api
+      .listOAuthProviders()
+      .then((list) => {
+        if (provider !== p) return;
+        const info = list.find((x) => x.id === p);
+        configured = info ? info.configured : true;
+        if (info && !info.configured && onpassword) onpassword();
+      })
+      .catch(() => (configured = true));
+  });
+
   const isWeb = $derived(app.api.kind === 'http');
   const deviceAvailable = $derived(provider === 'microsoft');
 
@@ -112,7 +129,12 @@
 
 <div class="oauth">
   <p class="lead">{t('cloud.signIn.lead', { provider: displayName })}</p>
-  {#if !flow}
+  {#if configured === false && !flow}
+    <p class="hint">{t('cloud.signIn.notConfigured', { provider: displayName })}</p>
+    <div class="row-actions">
+      {#if onsettings}<button type="button" class="btn btn-ghost" onclick={onsettings}>{t('cloud.signIn.openSettings')}</button>{/if}
+    </div>
+  {:else if !flow}
     {#if !accountKind}
     <label>
       <span class="label">{t('cloud.signIn.method')}</span>
@@ -159,6 +181,11 @@
     margin: 0;
     color: var(--tm-muted);
     font-size: 13.5px;
+  }
+  .hint {
+    margin: 0;
+    color: var(--tm-muted);
+    font-size: 13px;
   }
   .error {
     margin: 0;
