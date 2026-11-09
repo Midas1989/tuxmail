@@ -126,6 +126,53 @@ type convCandidate struct {
 	agg   store.ConvAggregate
 	conv  store.Conversation
 	state store.ConversationState
+	// scope: the channels the list is narrowed to ("email", "signal", ...; empty = all).
+	// Counts, last time and preview then only cover these channels.
+	scope []string
+}
+
+// scopeChannels names the channels a chat list is narrowed to: a channel filter ("mail",
+// "whatsapp", ...) or the channels of the chosen folder tab. Empty = all channels.
+func scopeChannels(filter string, folder *ChatFolder) []string {
+	switch filter {
+	case "mail":
+		return []string{"email"}
+	case "whatsapp", "signal", "telegram", "matrix":
+		return []string{filter}
+	}
+	if folder != nil {
+		var out []string
+		for _, ch := range folder.Rules.Channels {
+			out = append(out, string(ch))
+		}
+		return out
+	}
+	return nil
+}
+
+// narrowToChannels restricts the aggregation to the channels: mails only count for "email",
+// chat messages only for the named chat channels.
+func narrowToChannels(cq *store.ConvQuery, channels []string) {
+	if len(channels) == 0 {
+		return
+	}
+	var chat []string
+	mail := false
+	for _, c := range channels {
+		if c == "email" {
+			mail = true
+		} else {
+			chat = append(chat, c)
+		}
+	}
+	if !mail {
+		cq.Mail = nil
+	}
+	if len(chat) == 0 {
+		cq.Chat = nil
+	} else if cq.Chat != nil {
+		cq.Chat.Channels = chat
+	}
 }
 
 func (c convCandidate) channels() []string {
@@ -193,9 +240,14 @@ func (a *App) ListConversations(ctx context.Context, q ConversationQuery) (Page[
 			restrict(&cq, mails, chats)
 		}
 	}
+	scope := scopeChannels(q.Filter, folder)
+	narrowToChannels(&cq, scope)
 	cands, err := a.candidates(ctx, cq)
 	if err != nil {
 		return Page[Conversation]{}, err
+	}
+	for i := range cands {
+		cands[i].scope = scope
 	}
 	needPeople := (folder != nil && len(folder.Rules.IncludePersonIDs) > 0) || q.Focus != ""
 	var people map[int64][]int64
@@ -611,8 +663,9 @@ func (a *App) fillLast(ctx context.Context, conv *Conversation, c convCandidate,
 	if err != nil {
 		return err
 	}
+	inScope := func(ch string) bool { return len(c.scope) == 0 || slices.Contains(c.scope, ch) }
 	var lastMail *store.Message
-	if len(src.mailIDs) > 0 {
+	if len(src.mailIDs) > 0 && inScope("email") {
 		ms, _, err := a.st.ListFilteredMessages(ctx, store.MessageFilter{IDs: src.mailIDs}, 1, 0)
 		if err != nil {
 			return err
@@ -624,6 +677,9 @@ func (a *App) fillLast(ctx context.Context, conv *Conversation, c convCandidate,
 	var lastChat *store.ChatMessage
 	var lastChatOf store.Chat
 	for _, ch := range src.chats {
+		if !inScope(ch.Channel) {
+			continue
+		}
 		ms, err := a.st.ListChatMessages(ctx, ch.ID, store.ChatCursor{}, 1)
 		if err != nil {
 			return err

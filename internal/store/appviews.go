@@ -261,6 +261,25 @@ type ChatMessageFilter struct {
 	AccountIDs []int64
 	// IDs restricts to these chat message ids (nil = all).
 	IDs []int64
+	// Channels restricts to chats of these channels ("whatsapp", "signal", ...; nil = all).
+	Channels []string
+}
+
+// knownChatChannels are the values of chats.channel a filter may name (never taken
+// from input into SQL otherwise).
+var knownChatChannels = map[string]bool{"whatsapp": true, "signal": true, "telegram": true, "matrix": true}
+
+func channelList(ch []string) string {
+	var q []string
+	for _, c := range ch {
+		if knownChatChannels[c] {
+			q = append(q, "'"+c+"'")
+		}
+	}
+	if len(q) == 0 {
+		return "''"
+	}
+	return strings.Join(q, ",")
 }
 
 func (f ChatMessageFilter) where() string {
@@ -273,6 +292,9 @@ func (f ChatMessageFilter) where() string {
 	}
 	if len(f.AccountIDs) > 0 {
 		conds = append(conds, `c.account_id IN (`+int64List(f.AccountIDs)+`)`)
+	}
+	if len(f.Channels) > 0 {
+		conds = append(conds, `c.channel IN (`+channelList(f.Channels)+`)`)
 	}
 	return strings.Join(conds, " AND ")
 }
