@@ -515,6 +515,7 @@ export class AppState {
       this.unsubscribe = this.api.subscribe((e) => this.onEvent(e));
       void this.loadSyncStatus();
       await this.reloadList();
+      this.startAutoRefresh();
       this.ready = true;
     } catch (err) {
       this.loadError = err instanceof Error ? err.message : String(err);
@@ -523,6 +524,54 @@ export class AppState {
 
   destroy(): void {
     this.unsubscribe?.();
+    this.stopAutoRefresh?.();
+  }
+
+  // -------------------------------------------------------------------------
+  // Refresh: automatic (timer, focus, back in the foreground) and "Refresh now"
+  // -------------------------------------------------------------------------
+
+  /** A manual refresh is running (button in the list header). */
+  refreshing = $state(false);
+  private stopAutoRefresh: (() => void) | null = null;
+
+  /** Ask the server to sync every mail account right now, then reload what is shown. */
+  async refreshNow(): Promise<void> {
+    if (this.refreshing) return;
+    this.refreshing = true;
+    try {
+      await Promise.allSettled(this.mailAccounts.map((a) => this.api.syncNow(a.id)));
+      await Promise.all([...this.mailAccounts.map((a) => this.reloadFolders(a.id)), this.loadSyncStatus()]);
+      await this.reloadList({ keepSelection: true });
+      if (this.selectedConversationId != null) this.reloadItemsDebounced();
+    } catch {
+      /* offline: the next try or event reloads */
+    } finally {
+      this.refreshing = false;
+    }
+  }
+
+  /** Reloads quietly every minute while the page is visible and when it returns to the foreground (also iPhone PWA / app). */
+  private startAutoRefresh(): void {
+    this.stopAutoRefresh?.();
+    if (typeof document === 'undefined') return;
+    const tick = () => {
+      if (document.visibilityState !== 'visible' || this.refreshing || this.connection !== 'online') return;
+      void this.reloadAfterReconnect();
+      void this.loadSyncStatus();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('online', tick);
+    const timer = setInterval(tick, 60_000);
+    this.stopAutoRefresh = () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('online', tick);
+      clearInterval(timer);
+      this.stopAutoRefresh = null;
+    };
   }
 
   async reloadFolders(accountId: number): Promise<void> {

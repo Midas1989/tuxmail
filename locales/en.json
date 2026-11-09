@@ -117,6 +117,8 @@
     },
     "list": {
       "answered": "Answered",
+      "refresh": "Refresh",
+      "refreshing": "Refreshing …",
       "count": "{count} messages",
       "count_one": "{count} message",
       "empty": "No messages",

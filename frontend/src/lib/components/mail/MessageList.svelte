@@ -16,6 +16,7 @@
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import X from '@lucide/svelte/icons/x';
   import FolderSearch from '@lucide/svelte/icons/folder-search';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Pencil from '@lucide/svelte/icons/pencil';
   import TagChips from '../common/TagChips.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
@@ -221,6 +222,7 @@
         <h1>{#if sf}<FolderSearch size={16} class="sf-ic" aria-hidden="true" /> {/if}{scopeLabel}</h1>
         <span class="sub">{scopeAccount} · {t('mail.list.count', { count: app.messagesTotal })}</span>
       </div>
+      <button class="icon-btn" class:spinning={app.refreshing} disabled={app.refreshing} title={app.refreshing ? t('mail.list.refreshing') : t('mail.list.refresh')} aria-label={t('mail.list.refresh')} data-testid="refresh-now" onclick={() => void app.refreshNow()}><RefreshCw size={15} /></button>
       {#if sf}
         <button class="icon-btn" title={t('organize.searchFolder.editTitle')} aria-label={t('organize.searchFolder.editTitle')} onclick={() => (app.organizeDialog = { kind: 'searchFolder', folder: sf })}><Pencil size={15} /></button>
       {/if}
@@ -360,6 +362,14 @@
     min-width: 0;
     min-height: 0;
     background: var(--tm-surface);
+  }
+  .spinning :global(svg) {
+    animation: tm-refresh-spin 0.9s linear infinite;
+  }
+  @keyframes tm-refresh-spin {
+    to {
+      transform: rotate(360deg);
+    }
   }
   .list-head {
     display: flex;
