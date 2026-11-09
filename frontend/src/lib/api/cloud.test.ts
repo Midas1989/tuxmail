@@ -154,4 +154,20 @@ describe('transports', () => {
     expect(await (await w.downloadCloudFile(1, '/a.txt')).text()).toBe('hallo');
     await expect(w.startCloudLogin({ provider: 'nextcloud', server: 'x' })).rejects.toMatchObject({ code: 'cloud_auth' });
   });
+
+  it('WailsTransport unpacks the error even if WebView2 prefixes it with "Error: "', async () => {
+    const payload = JSON.stringify({ code: 'cloud_error', message: "invalid character '<' looking for beginning of value" });
+    const bound = {
+      StartCloudLogin: vi.fn(async () => {
+        throw new Error(payload);
+      }),
+      ListCloudFiles: vi.fn(async () => {
+        throw 'Error: ' + payload;
+      }),
+    };
+    const w = new WailsTransport({ go: { app: { Api: bound } } } as WailsWindow);
+    await expect(w.startCloudLogin({ provider: 'vaultwarden', server: 'x' })).rejects.toMatchObject({ code: 'cloud_error' });
+    await expect(w.listCloudFiles(1, '/')).rejects.toMatchObject({ code: 'cloud_error' });
+    await expect(w.listCloudFiles(1, '/')).rejects.not.toHaveProperty('message', expect.stringContaining('{"code"'));
+  });
 });

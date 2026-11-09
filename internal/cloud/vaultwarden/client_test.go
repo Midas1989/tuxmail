@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -154,5 +156,77 @@ func TestNotLoggedIn(t *testing.T) {
 	bw, _ := vaultwarden.New("https://vault.bitwarden.com", nil)
 	if bw.API != "https://api.bitwarden.com" || bw.Identity != "https://identity.bitwarden.com" {
 		t.Errorf("bitwarden.com urls %s %s", bw.API, bw.Identity)
+	}
+}
+
+// A server that answers every path with an HTML page (web vault SPA, proxy
+// login page): Login must report ErrNotAPI, never a JSON decoding error.
+func TestHTMLAnswerIsNotAPI(t *testing.T) {
+	for name, status := range map[string]int{"ok": 200, "notfound": 404, "unauth": 401, "bad": 400} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/html")
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte("<!doctype html><html><body>vault</body></html>"))
+			}))
+			defer srv.Close()
+			c, _ := vaultwarden.New(srv.URL, srv.Client())
+			_, err := c.Login(context.Background(), "a@example.de", "pw", vaultwarden.LoginOptions{})
+			if status == 404 {
+				// 404 on both prelogin URLs: not found, not a decoding error.
+				if err == nil || strings.Contains(err.Error(), "invalid character") {
+					t.Fatalf("got %v", err)
+				}
+				return
+			}
+			if !errors.Is(err, vaultwarden.ErrNotAPI) || strings.Contains(err.Error(), "invalid character") || strings.Contains(err.Error(), "<") {
+				t.Fatalf("got %v", err)
+			}
+		})
+	}
+}
+
+// Current Vaultwarden: prelogin on /identity and /api, the identity route
+// falls through to the SPA (HTML 200) -> the /api route is tried next.
+func TestPreloginFallsBackAfterHTML(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("User-Agent") == "" || strings.HasPrefix(r.Header.Get("User-Agent"), "Go-http") {
+			t.Errorf("user agent %q", r.Header.Get("User-Agent"))
+		}
+		if r.URL.Path == "/api/accounts/prelogin" {
+			_, _ = w.Write([]byte(`{"kdf":0,"kdfIterations":600000,"kdfMemory":null,"kdfParallelism":null,"kdfSettings":{"iterations":600000,"kdfType":0},"salt":null}`))
+			return
+		}
+		_, _ = w.Write([]byte("<html></html>"))
+	}))
+	defer srv.Close()
+	c, _ := vaultwarden.New(srv.URL, srv.Client())
+	k, err := c.Prelogin(context.Background(), "a@example.de")
+	if err != nil || k.Iterations != 600000 {
+		t.Fatalf("%v %+v", k, err)
+	}
+}
+
+// A redirect on /connect/token must not carry the password hash to another host.
+func TestNoRedirectWithCredentials(t *testing.T) {
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "token") {
+			leaked = true
+		}
+	}))
+	defer other.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "prelogin") {
+			_, _ = w.Write([]byte(`{"kdf":0,"kdfIterations":600000}`))
+			return
+		}
+		http.Redirect(w, r, other.URL+"/identity/connect/token", http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+	c, _ := vaultwarden.New(srv.URL, srv.Client())
+	_, err := c.Login(context.Background(), "a@example.de", "pw", vaultwarden.LoginOptions{})
+	if !errors.Is(err, cloud.ErrRedirect) || leaked {
+		t.Fatalf("err %v leaked %v", err, leaked)
 	}
 }

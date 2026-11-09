@@ -31,6 +31,9 @@ var (
 	ErrForbidden    = errors.New("cloud: permission denied")
 	ErrInsufficient = errors.New("cloud: insufficient storage")
 	ErrUnsupported  = errors.New("cloud: not supported by this provider")
+	// ErrRedirect: the server answered with a redirect, which is never followed
+	// (credentials would go to wherever it points).
+	ErrRedirect = errors.New("cloud: the server redirects to another address")
 )
 
 // Entry is a file or directory.
@@ -169,16 +172,18 @@ func UniquePath(ctx context.Context, s Storage, p string) (string, error) {
 // StatusError maps an HTTP status to the shared errors.
 func StatusError(op string, status int, body string) error {
 	var base error
-	switch status {
-	case http.StatusNotFound:
+	switch {
+	case status >= 300 && status < 400:
+		base = ErrRedirect
+	case status == http.StatusNotFound:
 		base = ErrNotFound
-	case http.StatusUnauthorized:
+	case status == http.StatusUnauthorized:
 		base = ErrUnauthorized
-	case http.StatusForbidden:
+	case status == http.StatusForbidden:
 		base = ErrForbidden
-	case http.StatusInsufficientStorage:
+	case status == http.StatusInsufficientStorage:
 		base = ErrInsufficient
-	case http.StatusMethodNotAllowed, http.StatusPreconditionFailed:
+	case status == http.StatusMethodNotAllowed, status == http.StatusPreconditionFailed:
 		base = ErrExists
 	default:
 		body = strings.TrimSpace(body)
@@ -250,4 +255,16 @@ func randInt(n int) int {
 		panic("cloud: crypto/rand failed: " + err.Error())
 	}
 	return int(v.Int64())
+}
+
+// NoRedirect returns a copy of hc that never follows redirects. Every client
+// that sends credentials must use it: a 307 would carry the password (hash)
+// to a foreign host.
+func NoRedirect(hc *http.Client) *http.Client {
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	c := *hc
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+	return &c
 }

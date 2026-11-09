@@ -78,9 +78,7 @@ func New(server, loginName, userID, appPassword string, hc *http.Client) (*Clien
 	if err != nil {
 		return nil, err
 	}
-	if hc == nil {
-		hc = http.DefaultClient
-	}
+	hc = cloud.NoRedirect(hc)
 	if userID == "" {
 		userID = loginName
 	}
@@ -487,9 +485,7 @@ func StartLogin(ctx context.Context, hc *http.Client, server string) (LoginFlow,
 	if err != nil {
 		return LoginFlow{}, err
 	}
-	if hc == nil {
-		hc = http.DefaultClient
-	}
+	hc = cloud.NoRedirect(hc)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, srv+"/index.php/login/v2", nil)
 	if err != nil {
 		return LoginFlow{}, err
@@ -520,9 +516,7 @@ func StartLogin(ctx context.Context, hc *http.Client, server string) (LoginFlow,
 
 // PollLogin checks once whether the flow is complete (ErrPending if not).
 func PollLogin(ctx context.Context, hc *http.Client, f LoginFlow) (Credentials, error) {
-	if hc == nil {
-		hc = http.DefaultClient
-	}
+	hc = cloud.NoRedirect(hc)
 	endpoint := f.Endpoint
 	if endpoint == "" {
 		endpoint = f.Server + "/index.php/login/v2/poll"

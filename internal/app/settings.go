@@ -227,9 +227,13 @@ func (a *App) UnsubscribePush(ctx context.Context, endpoint string) error {
 	return a.opts.Push.Unsubscribe(ctx, endpoint)
 }
 
-// SendTestNotification sends a test push (server mode).
+// SendTestNotification sends a test push (server mode) or shows a native
+// operating system notification (desktop).
 func (a *App) SendTestNotification(ctx context.Context) error {
 	if a.opts.Push == nil {
+		if a.opts.Mode == ModeDesktop {
+			return a.notifyDesktop(ctx, "TuxMail", "Test-Benachrichtigung: Benachrichtigungen funktionieren.")
+		}
 		return noPush()
 	}
 	return a.opts.Push.Test(ctx)

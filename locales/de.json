@@ -174,6 +174,7 @@
       "moved": "{ids} verschoben nach {folder}",
       "keysHint": "Tasten: j/k wählen, Enter öffnen, r antworten, R allen antworten, c verfassen, s Stern, u gelesen/ungelesen, e archivieren, # Papierkorb, / suchen, : Befehlszeile, Esc zurück",
       "listLabel": "Nachrichten",
+      "splitLabel": "Trennlinie zwischen Liste und Lesebereich (Pfeiltasten links und rechts verschieben sie)",
       "readerLabel": "Nachricht",
       "actionsLabel": "Aktionen",
       "outputLabel": "Ausgabe der Befehle",
@@ -2242,6 +2243,14 @@
     "openServer": "Server öffnen",
     "deviceTokenForbidden": "Geht aus Sicherheitsgründen nur im Browser.",
     "passwordRequired": "Für einen anderen Server, Port oder Benutzer das Passwort eingeben; das gespeicherte wird dort nicht verwendet. Konten mit Anbieter-Anmeldung (OAuth) neu anlegen.",
+    "cloudNotApi": "Unter dieser Adresse antwortet kein Vaultwarden/Bitwarden-Server, sondern eine Webseite. Prüfe die Server-Adresse (ohne Pfad) und ob ein vorgeschalteter Proxy oder eine Anmeldeseite die Pfade /identity und /api abfängt.",
+    "cloudRedirect": "Der Server leitet auf eine andere Adresse um. Aus Sicherheitsgründen folgt TuxMail dem nicht. Trage die endgültige Adresse (meist mit https://) direkt ein.",
+    "cloudAuth": "Der Cloud-Server hat die Anmeldedaten abgelehnt. Prüfe E-Mail-Adresse und Passwort und melde dich gegebenenfalls neu an.",
+    "cloudForbidden": "Der Cloud-Server verweigert diese Aktion.",
+    "cloudQuota": "Auf dem Cloud-Server ist nicht genug Speicherplatz frei.",
+    "cloudUnreachable": "Der Cloud-Server ist nicht erreichbar. Prüfe die Adresse und deine Internetverbindung.",
+    "cloudError": "Der Cloud-Server hat die Anfrage nicht angenommen. Prüfe die Server-Adresse und versuche es erneut.",
+    "notifyUnavailable": "Das Betriebssystem konnte die Benachrichtigung nicht anzeigen. Unter Linux wird „notify-send“ (Paket libnotify) benötigt; prüfe außerdem die Benachrichtigungs-Einstellungen des Systems.",
     "loadTitle": "TuxMail konnte nicht geladen werden",
     "retry": "Erneut versuchen"
   },
@@ -3891,6 +3900,10 @@
         "jitsi": "Jitsi Meet",
         "nextcloud_talk": "Nextcloud Talk",
         "teams": "Microsoft Teams"
+      },
+      "hint": {
+        "nextcloud_talk": "Nextcloud Talk legt den Raum auf dem verbundenen Nextcloud-Konto an (Einstellungen > Cloud-Konten).",
+        "teams": "Microsoft Teams erstellt die Besprechung über das verbundene Microsoft-Konto."
       },
       "defaultTitle": "Online-Meeting",
       "join": "Meeting beitreten ({provider})",

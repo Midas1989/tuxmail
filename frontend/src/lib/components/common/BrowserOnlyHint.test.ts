@@ -34,3 +34,15 @@ describe('error wording', () => {
     expect(new ApiError('kept', 500, 'internal').message).toBe('kept');
   });
 });
+
+describe('cloud and notification error wording', () => {
+  it('maps the codes to own German/English wording, never the raw text', () => {
+    ApiError.translate = errorWording;
+    for (const code of ['cloud_not_api', 'cloud_auth', 'cloud_forbidden', 'cloud_quota', 'cloud_unreachable', 'cloud_error', 'notify_unavailable']) {
+      const m = new ApiError('{"raw":"<html>"}', 502, code).message;
+      expect(m, code).not.toContain('{');
+      expect(m, code).not.toContain('errors.');
+    }
+    expect(new ApiError('x', 502, 'cloud_not_api').message).toMatch(/Vaultwarden/);
+  });
+});

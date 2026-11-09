@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -411,5 +412,17 @@ func TestCloudWebDAVAccount(t *testing.T) {
 	}
 	if _, err := f.a.CreateCloudShare(ctx, app.CloudShareInput{AccountID: fl.Account.ID, Path: "/A"}); code(err) != "not_supported" {
 		t.Errorf("share on webdav: %v", err)
+	}
+}
+
+func TestCloudVaultwardenHTMLAnswer(t *testing.T) {
+	f := newCloudFixture(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("<!doctype html><html><body>login</body></html>"))
+	}))
+	defer srv.Close()
+	_, err := f.a.StartCloudLogin(context.Background(), app.CloudLoginInput{Provider: "vaultwarden", Server: srv.URL, Email: "a@example.de", Password: "pw"})
+	if code(err) != "cloud_not_api" || strings.Contains(err.Error(), "invalid character") {
+		t.Fatalf("got %v", err)
 	}
 }
