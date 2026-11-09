@@ -983,7 +983,7 @@ export class AppState {
     }
     if (this.replyingTo?.conversationId !== id) this.replyingTo = null;
     this.conversation = this.conversations.find((c) => c.id === id) ?? (await this.api.getConversation(id));
-    const items = await this.api.listConversationItems(id, this.itemsQuery());
+    const items = this.inChannelScope(await this.api.listConversationItems(id, this.itemsQuery()));
     if (this.selectedConversationId !== id) return;
     this.items = items;
     const firstUnread = items.find((i) => i.unread && !i.isOwn);
@@ -1000,7 +1000,7 @@ export class AppState {
   async reloadItems(newItemId?: string): Promise<void> {
     const id = this.selectedConversationId;
     if (id == null) return;
-    const items = await this.api.listConversationItems(id, this.itemsQuery());
+    const items = this.inChannelScope(await this.api.listConversationItems(id, this.itemsQuery()));
     if (this.selectedConversationId !== id) return;
     const grew = items.length > this.items.length;
     this.items = items;
@@ -1017,6 +1017,24 @@ export class AppState {
 
   focusItem(itemId: string): void {
     this.focusedItemId = itemId;
+  }
+
+  /**
+   * Channels the chat list is narrowed to: the channel filter chip or a tab whose rules name
+   * channels (e.g. the "Signal" tab). Empty = all. A chat shows only the messages of these
+   * channels, so WhatsApp and Signal are not mixed inside one conversation.
+   */
+  get channelScope(): Channel[] {
+    if (this.viewMode !== 'chat') return [];
+    const f = this.chatFilter;
+    if (f === 'mail') return ['email'];
+    if (f === 'whatsapp' || f === 'signal' || f === 'telegram' || f === 'matrix') return [f];
+    return this.chatFolders.find((x) => x.id === this.activeFolderId)?.rules?.channels ?? [];
+  }
+
+  private inChannelScope(items: ConversationItem[]): ConversationItem[] {
+    const ch = this.channelScope;
+    return ch.length ? items.filter((i) => ch.includes(i.channel)) : items;
   }
 
   private itemsQuery(): { scope?: ConversationScope } | undefined {
@@ -1417,6 +1435,7 @@ export class AppState {
   async setActiveFolder(id: string | null): Promise<void> {
     this.activeFolderId = id;
     await this.loadConversations(true);
+    if (this.selectedConversationId != null) void this.reloadItems();
   }
 
   async saveChatFolder(folder: ChatFolder): Promise<void> {
@@ -1531,6 +1550,7 @@ export class AppState {
   async setChatFilter(f: ChatFilter): Promise<void> {
     this.chatFilter = f;
     await this.loadConversations(true);
+    if (this.selectedConversationId != null) void this.reloadItems();
   }
 
   async setChatQuery(q: string): Promise<void> {
@@ -1563,8 +1583,13 @@ export class AppState {
   }
 
   async react(item: ConversationItem, emoji: string): Promise<void> {
-    const res = await this.api.reactToItem(item.conversationId, item.id, emoji);
-    this.items = this.items.map((i) => (i.id === item.id ? { ...i, reactions: res.reactions } : i));
+    try {
+      const res = await this.api.reactToItem(item.conversationId, item.id, emoji);
+      this.items = this.items.map((i) => (i.id === item.id ? { ...i, reactions: res.reactions } : i));
+    } catch (err) {
+      // The messenger plugin refused (not connected, message too old, ...): say so instead of doing nothing.
+      this.toast(err instanceof Error && err.message ? err.message : t('chat.reactFailed'));
+    }
   }
 
   async deleteItem(item: ConversationItem): Promise<void> {

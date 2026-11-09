@@ -210,7 +210,7 @@
           <button class="pill" role="radio" aria-checked={app.chatFilter === f} onclick={() => app.setChatFilter(f)}>{t(`chat.filter.${f}`)}</button>
         {/each}
       </div>
-      <CategoryTabs variant="pills" />
+      {#if app.chatFilter === 'mail'}<CategoryTabs variant="pills" />{/if}
       {#if app.tags.length}
         <div class="pills tag-pills" role="group" aria-label={t('organize.tags.filter')}>
           {#each app.tags.filter((x) => x.total > 0) as x (x.tag.id)}
@@ -270,7 +270,7 @@
 
 {#if phone.current && filterOpen}
   <Modal title={t('chat.filterButton')} onclose={() => (filterOpen = false)}>
-    <CategoryTabs variant="pills" />
+    {#if app.chatFilter === 'mail'}<CategoryTabs variant="pills" />{/if}
     {#if app.tags.length}
       <div class="pills tag-pills" role="group" aria-label={t('organize.tags.filter')}>
         {#each app.tags.filter((x) => x.total > 0) as x (x.tag.id)}

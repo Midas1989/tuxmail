@@ -345,6 +345,7 @@
       "unpin": "Unpin message",
       "unstar": "Remove star"
     },
+    "reactFailed": "The reaction could not be sent.",
     "reactWith": "React with {emoji}",
     "moreReactions": "More reactions",
     "reactionCount": "{emoji} {count}",

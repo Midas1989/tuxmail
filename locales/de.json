@@ -344,6 +344,7 @@
       "unpin": "Nachricht lösen",
       "unstar": "Markierung entfernen"
     },
+    "reactFailed": "Reaktion konnte nicht gesendet werden.",
     "reactWith": "Mit {emoji} reagieren",
     "moreReactions": "Weitere Reaktionen",
     "reactionCount": "{emoji} {count}",
