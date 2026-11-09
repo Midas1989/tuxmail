@@ -5,7 +5,7 @@
 #
 #   build/plugins.sh                      # host platform -> bin/plugins/
 #   build/plugins.sh target OS ARCH [DIR] # one platform -> DIR (default build/out/plugins/<os>-<arch>/)
-#   build/plugins.sh all                  # linux/windows x amd64/arm64 -> build/out/plugins/<os>-<arch>/
+#   build/plugins.sh all                  # linux/windows/darwin x amd64/arm64 -> build/out/plugins/<os>-<arch>/
 #   OUT=dir build/plugins.sh              # custom output directory (host platform)
 #
 # Release packaging (build/lib.sh stage_plugins) ships the binaries of the
@@ -45,7 +45,7 @@ build() { # os arch outdir
 
 case "${1:-host}" in
 all)
-	for os in linux windows; do
+	for os in linux windows darwin; do
 		for arch in amd64 arm64; do
 			build "$os" "$arch" "build/out/plugins/$os-$arch"
 		done

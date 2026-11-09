@@ -116,6 +116,8 @@
     },
     "list": {
       "answered": "Beantwortet",
+      "refresh": "Aktualisieren",
+      "refreshing": "Aktualisiere …",
       "count": "{count} Nachrichten",
       "count_one": "{count} Nachricht",
       "empty": "Keine Nachrichten",

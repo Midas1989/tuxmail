@@ -16,6 +16,7 @@
   import FolderKanban from '@lucide/svelte/icons/folder-kanban';
   import X from '@lucide/svelte/icons/x';
   import FolderSearch from '@lucide/svelte/icons/folder-search';
+  import RefreshCw from '@lucide/svelte/icons/refresh-cw';
   import Pencil from '@lucide/svelte/icons/pencil';
   import TagChips from '../common/TagChips.svelte';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
@@ -70,6 +71,31 @@
     if (top < viewport.scrollTop) viewport.scrollTop = top;
     else if (top + rowH > viewport.scrollTop + height) viewport.scrollTop = top + rowH - height + (height > rowH * 3 ? rowH : 0);
   });
+
+  // Pull to refresh (touch: iPhone/iPad, Android): drag the list down from the top.
+  const PULL_TRIGGER = 64;
+  let pull = $state(0);
+  let pullStart: number | null = null;
+
+  function onTouchStart(e: TouchEvent) {
+    pullStart = viewport && viewport.scrollTop <= 0 && e.touches.length === 1 && !app.refreshing ? e.touches[0].clientY : null;
+  }
+  function onTouchMove(e: TouchEvent) {
+    if (pullStart == null || !viewport) return;
+    const dy = e.touches[0].clientY - pullStart;
+    if (dy <= 0 || viewport.scrollTop > 0) {
+      pull = 0;
+      if (dy <= 0) pullStart = null;
+      return;
+    }
+    pull = Math.min(PULL_TRIGGER * 1.5, dy * 0.5);
+  }
+  function onTouchEnd() {
+    const go = pull >= PULL_TRIGGER;
+    pull = 0;
+    pullStart = null;
+    if (go) void app.refreshNow();
+  }
 
   function onscroll() {
     if (!viewport) return;
@@ -221,6 +247,7 @@
         <h1>{#if sf}<FolderSearch size={16} class="sf-ic" aria-hidden="true" /> {/if}{scopeLabel}</h1>
         <span class="sub">{scopeAccount} · {t('mail.list.count', { count: app.messagesTotal })}</span>
       </div>
+      <button class="icon-btn" class:spinning={app.refreshing} disabled={app.refreshing} title={app.refreshing ? t('mail.list.refreshing') : t('mail.list.refresh')} aria-label={t('mail.list.refresh')} data-testid="refresh-now" onclick={() => void app.refreshNow()}><RefreshCw size={15} /></button>
       {#if sf}
         <button class="icon-btn" title={t('organize.searchFolder.editTitle')} aria-label={t('organize.searchFolder.editTitle')} onclick={() => (app.organizeDialog = { kind: 'searchFolder', folder: sf })}><Pencil size={15} /></button>
       {/if}
@@ -238,8 +265,17 @@
     aria-label={scopeLabel}
     aria-activedescendant={app.selectedMessageId != null ? `msg-${app.selectedMessageId}` : undefined}
     {onkeydown}
+    ontouchstart={onTouchStart}
+    ontouchmove={onTouchMove}
+    ontouchend={onTouchEnd}
+    ontouchcancel={onTouchEnd}
     data-list="messages"
   >
+    {#if pull > 0 || (app.refreshing && phone.current)}
+      <div class="ptr" class:ready={pull >= PULL_TRIGGER} style:height="{app.refreshing ? 36 : pull}px" aria-hidden="true">
+        <RefreshCw size={16} class={app.refreshing ? 'ptr-spin' : ''} style={app.refreshing ? '' : `transform: rotate(${pull * 4}deg)`} />
+      </div>
+    {/if}
     {#if total === 0 && !app.search && app.listSync}
       <ListSyncState status={app.listSync} />
     {:else if total === 0 && !app.messagesLoading}
@@ -361,6 +397,14 @@
     min-height: 0;
     background: var(--tm-surface);
   }
+  .spinning :global(svg) {
+    animation: tm-refresh-spin 0.9s linear infinite;
+  }
+  @keyframes tm-refresh-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
   .list-head {
     display: flex;
     align-items: center;
@@ -431,7 +475,21 @@
     font-size: 12px;
     color: var(--tm-muted);
   }
+  .ptr {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    color: var(--tm-muted);
+  }
+  .ptr.ready {
+    color: var(--tm-accent);
+  }
+  .ptr :global(.ptr-spin) {
+    animation: tm-refresh-spin 0.9s linear infinite;
+  }
   .viewport {
+    overscroll-behavior-y: contain;
     position: relative;
     flex: 1;
     overflow-y: auto;
