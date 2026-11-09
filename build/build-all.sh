@@ -18,6 +18,7 @@
 #   linux-desktop    .deb, .rpm, portable tar.gz, AppImage for the HOST architecture
 #                    (needs GTK 3 + WebKitGTK 4.1 development packages, CGO)
 #   windows-desktop  portable ZIP and TuxMail-Setup.exe, amd64+arm64 (cross build, pure Go)
+#   macos-desktop    TuxMail.app + .dmg, amd64+arm64 (macOS host only: needs Xcode command line tools)
 #   android          foss APK (debug, or release when signing variables are set)
 #   docker           container image tuxmail:local (needs docker or podman)
 #   checksums        dist/checksums.txt over everything in dist/
@@ -84,7 +85,7 @@ while [ $# -gt 0 ]; do
 	shift
 done
 
-all_targets=(frontend server linux-desktop windows-desktop android docker checksums)
+all_targets=(frontend server linux-desktop windows-desktop macos-desktop android docker checksums)
 [ ${#targets[@]} -eq 0 ] && targets=("${all_targets[@]}")
 for t in "${targets[@]}"; do
 	case " ${all_targets[*]} " in
@@ -162,6 +163,12 @@ check_windows_desktop() {
 		add_missing windows-desktop "go-winres not found (go install github.com/tc-hib/go-winres@$GO_WINRES_VERSION)"
 	fi
 }
+check_macos_desktop() {
+	[ "$(uname -s)" = Darwin ] || add_missing macos-desktop "not a macOS host (the app needs cgo and the Apple SDK)"
+	have clang || add_missing macos-desktop "clang not found (xcode-select --install)"
+	have hdiutil || add_missing macos-desktop "hdiutil not found"
+	have iconutil || add_missing macos-desktop "iconutil not found"
+}
 check_android() {
 	have java || add_missing android "JDK 21 not found"
 	if have java; then
@@ -182,11 +189,12 @@ check_go
 # The frontend is built when asked for, or when another target needs it and web/dist is missing.
 if want frontend; then
 	check_node
-elif { want server || want linux-desktop || want windows-desktop || want docker; } && [ ! -f web/dist/index.html ]; then
+elif { want server || want linux-desktop || want windows-desktop || want macos-desktop || want docker; } && [ ! -f web/dist/index.html ]; then
 	check_node
 fi
 want linux-desktop && check_linux_desktop
 want windows-desktop && check_windows_desktop
+want macos-desktop && check_macos_desktop
 want android && check_android
 want docker && check_docker
 
@@ -275,6 +283,14 @@ t_windows_desktop() {
 		build/windows/package-setup.sh "$a" || return 1
 	done
 }
+t_macos_desktop() {
+	ensure_frontend || return 1
+	local a
+	for a in "${arch_list[@]}"; do
+		build/macos/build.sh "$a" || return 1
+		build/macos/package-dmg.sh "$a" || return 1
+	done
+}
 t_android() {
 	local tasks=${android_tasks:-}
 	if [ -z "$tasks" ]; then
@@ -306,6 +322,7 @@ want frontend && run_target frontend t_frontend
 want server && run_target server t_server
 want linux-desktop && run_target linux-desktop t_linux_desktop
 want windows-desktop && run_target windows-desktop t_windows_desktop
+want macos-desktop && run_target macos-desktop t_macos_desktop
 want android && run_target android t_android
 want docker && run_target docker t_docker
 want checksums && run_target checksums t_checksums
