@@ -1,0 +1,1 @@
+Zwei-Faktor einfacher einrichten, Geräte mit Passkey verbinden, Anmeldung per Passkey in der App.

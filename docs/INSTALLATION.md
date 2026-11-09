@@ -25,7 +25,7 @@ eigenen Server. Wer es eilig hat, liest nur den ersten Abschnitt.
 ## 0. Schnellinstallation
 
 Alle Pakete liegen unter **[Releases](https://github.com/Midas1989/tuxmail/releases)**. `<v>` steht für die
-Versionsnummer, zurzeit `1.0.1`.
+Versionsnummer, zurzeit `1.0.2`.
 
 **Meine Empfehlung je nach Ziel:**
 
@@ -57,7 +57,7 @@ ansible-playbook -i inventory/hosts.ini site.yml -e tuxmail_domain=mail.example.
   -e tuxmail_tls_letsencrypt_email=admin@example.de \
   -e tuxmail_binary_src=/opt/tuxmail/dist/tuxmail_<Version>_linux_amd64.tar.gz -e tuxmail_version=<Version>
 ```
-(`<Version>` steht im Dateinamen, z. B. `1.0.1-dev.ab12cd3`.) Der Schalter für die Signatur entfällt dabei.
+(`<Version>` steht im Dateinamen, z. B. `1.0.2-dev.ab12cd3`.) Der Schalter für die Signatur entfällt dabei.
 
 Das Passwort des ersten Administrators (`admin`) steht danach in `credentials/<Servername>/admin_password` auf
 deinem Rechner. Der letzte Schalter ist eine Ausnahme für den ersten Test (siehe
@@ -111,7 +111,7 @@ Erwartet wird für jede heruntergeladene Datei die Ausgabe `<Datei>: OK`.
 
 **Windows (PowerShell):**
 ```powershell
-Get-FileHash .\TuxMail-1.0.1-windows-amd64-setup.exe -Algorithm SHA256
+Get-FileHash .\TuxMail-1.0.2-windows-amd64-setup.exe -Algorithm SHA256
 ```
 Den angezeigten Wert mit der Zeile in `checksums.txt` vergleichen.
 
@@ -144,7 +144,7 @@ Fehlt die WebView2-Laufzeit, lädt das Setup sie von Microsoft und prüft deren 
 
 **Für Administratoren (stille Installation):**
 ```bat
-TuxMail-1.0.1-windows-amd64-setup.exe /S --scope=machine --desktop-shortcut --log=C:\Temp\tuxmail-setup.log
+TuxMail-1.0.2-windows-amd64-setup.exe /S --scope=machine --desktop-shortcut --log=C:\Temp\tuxmail-setup.log
 "C:\Program Files\TuxMail\TuxMail-Setup.exe" --uninstall --silent
 ```
 Weitere Schalter: `--scope=user|machine|portable`, `--dir=C:\Pfad`, `--no-start-menu`, `--default-mail`,
@@ -182,7 +182,7 @@ automatisch nach; das AppImage bringt sie selbst mit.
 ### 3a) Debian, Ubuntu, Linux Mint: `.deb`
 
 ```bash
-sudo apt install ./tuxmail_1.0.1-1_amd64.deb
+sudo apt install ./tuxmail_1.0.2-1_amd64.deb
 ```
 Der Punkt-Schrägstrich `./` ist wichtig, sonst sucht `apt` in den Paketquellen.
 
@@ -192,23 +192,23 @@ Start: im Anwendungsmenü **TuxMail** oder im Terminal `tuxmail`.
 
 ```bash
 # Fedora, RHEL, Rocky, Alma
-sudo dnf install ./tuxmail-1.0.1-1.x86_64.rpm
+sudo dnf install ./tuxmail-1.0.2-1.x86_64.rpm
 # openSUSE
-sudo zypper install --allow-unsigned-rpm ./tuxmail-1.0.1-1.x86_64.rpm
+sudo zypper install --allow-unsigned-rpm ./tuxmail-1.0.2-1.x86_64.rpm
 ```
 Unter RHEL/Rocky/Alma kommt WebKitGTK aus EPEL: vorher `sudo dnf install epel-release`.
 
 ### 3c) AppImage (jede Distribution)
 
 ```bash
-chmod +x TuxMail-1.0.1-linux-amd64.AppImage
-./TuxMail-1.0.1-linux-amd64.AppImage
+chmod +x TuxMail-1.0.2-linux-amd64.AppImage
+./TuxMail-1.0.2-linux-amd64.AppImage
 ```
 Oder im Dateimanager: Rechtsklick → Eigenschaften → „Als Programm ausführen“ erlauben → Doppelklick.
 
 Meldet das AppImage, dass FUSE fehlt:
 - Ubuntu 22.04: `sudo apt install libfuse2`; Ubuntu 24.04 und neuer: `sudo apt install libfuse2t64`
-- oder ohne FUSE starten: `./TuxMail-1.0.1-linux-amd64.AppImage --appimage-extract-and-run`
+- oder ohne FUSE starten: `./TuxMail-1.0.2-linux-amd64.AppImage --appimage-extract-and-run`
 
 Für einen Eintrag im Anwendungsmenü eignen sich [Gear Lever](https://flathub.org/apps/it.mijorus.gearlever) oder
 AppImageLauncher.
@@ -217,7 +217,7 @@ AppImageLauncher.
 
 Braucht GTK 3 und WebKitGTK 4.1 vom System (Debian/Ubuntu: `sudo apt install libgtk-3-0 libwebkit2gtk-4.1-0`).
 ```bash
-tar -xzf TuxMail-1.0.1-linux-amd64-portable.tar.gz
+tar -xzf TuxMail-1.0.2-linux-amd64-portable.tar.gz
 cd TuxMail
 ./tuxmail
 ```

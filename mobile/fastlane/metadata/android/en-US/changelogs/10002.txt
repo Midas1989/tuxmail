@@ -1,0 +1,1 @@
+Easier two-factor setup, connect devices with a passkey, sign in with a passkey in the app.
