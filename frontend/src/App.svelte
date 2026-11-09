@@ -37,6 +37,13 @@
     prefs.apply(document.documentElement);
   });
 
+  // Window/tab title with unread count and folder: readable in the taskbar preview and Alt+Tab.
+  $effect(() => {
+    const n = app.unifiedUnread;
+    const folder = app.sel.kind === 'folder' ? app.folderLabel(app.sel.folderId) : '';
+    desktopWindow.setTitle(`${n > 0 ? `(${n}) ` : ''}${folder ? `${folder} – ` : ''}TuxMail`);
+  });
+
   onMount(() => {
     const stopRouter = startRouter((r, hash) => {
       app.route = r;

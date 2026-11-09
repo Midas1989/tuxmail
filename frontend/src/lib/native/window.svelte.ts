@@ -18,6 +18,7 @@ interface WailsRuntime {
   WindowToggleMaximise?: () => void;
   WindowIsMaximised?: () => Promise<boolean>;
   Quit?: () => void;
+  WindowSetTitle?: (title: string) => void;
 }
 
 interface DesktopBinding {
@@ -57,6 +58,12 @@ class DesktopWindow {
     const sync = () => void rt().WindowIsMaximised?.().then((m) => (this.maximised = m));
     sync();
     addEventListener('resize', sync);
+  }
+
+  /** Window title (taskbar button, Alt+Tab, thumbnail preview): "(3) Posteingang – TuxMail". */
+  setTitle(title: string): void {
+    if (typeof document !== 'undefined') document.title = title;
+    rt().WindowSetTitle?.(title);
   }
 
   minimise(): void {
