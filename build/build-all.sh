@@ -14,7 +14,7 @@
 #
 # Target groups (default: all):
 #   frontend         web/dist (npm ci + vite build), needed by everything else
-#   server           server/CLI archives, linux+windows, amd64+arm64 (pure Go)
+#   server           server/CLI archives, linux+windows+macOS, amd64+arm64 (pure Go)
 #   linux-desktop    .deb, .rpm, portable tar.gz, AppImage for the HOST architecture
 #                    (needs GTK 3 + WebKitGTK 4.1 development packages, CGO)
 #   windows-desktop  portable ZIP and TuxMail-Setup.exe, amd64+arm64 (cross build, pure Go)
@@ -257,6 +257,7 @@ t_server() {
 	for a in "${arch_list[@]}"; do
 		build/package-server.sh linux "$a" || return 1
 		build/package-server.sh windows "$a" || return 1
+		build/package-server.sh darwin "$a" || return 1
 	done
 }
 t_linux_desktop() {

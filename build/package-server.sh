@@ -7,6 +7,9 @@
 #
 #   build/package-server.sh linux   amd64|arm64  -> dist/tuxmail_<version>_linux_<arch>.tar.gz
 #   build/package-server.sh windows amd64|arm64  -> dist/tuxmail_<version>_windows_<arch>.zip
+#   build/package-server.sh darwin  amd64|arm64  -> dist/tuxmail_<version>_darwin_<arch>.tar.gz
+#                           (macOS command line program and server, built on Linux; no window:
+#                            the app itself is build/macos/build.sh, which needs a Mac)
 #
 # The Linux archive layout is a contract with deploy/ansible (roles/tuxmail):
 # the binary "tuxmail" at the top level, plus LICENSE, NOTICE and README.md.
@@ -17,10 +20,10 @@ set -eu
 # shellcheck source=lib.sh
 . "$(dirname "$0")/lib.sh"
 
-goos=${1:?usage: package-server.sh linux|windows amd64|arm64}
-goarch=${2:?usage: package-server.sh linux|windows amd64|arm64}
+goos=${1:?usage: package-server.sh linux|windows|darwin amd64|arm64}
+goarch=${2:?usage: package-server.sh linux|windows|darwin amd64|arm64}
 case "$goos/$goarch" in
-linux/amd64 | linux/arm64 | windows/amd64 | windows/arm64) ;;
+linux/amd64 | linux/arm64 | windows/amd64 | windows/arm64 | darwin/amd64 | darwin/arm64) ;;
 *) die "unsupported target $goos/$goarch" ;;
 esac
 
@@ -43,7 +46,7 @@ entries="$exe LICENSE NOTICE README.md"
 
 mkdir -p "$DIST"
 name=tuxmail_${VERSION}_${goos}_${goarch}
-if [ "$goos" = linux ]; then
+if [ "$goos" = linux ] || [ "$goos" = darwin ]; then
 	chmod 0755 "$work/$exe"
 	# shellcheck disable=SC2086 # fixed file names without spaces
 	mktar "$DIST/$name.tar.gz" "$work" $entries
