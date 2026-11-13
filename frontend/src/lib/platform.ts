@@ -53,12 +53,13 @@ export function isIosSafari(env: Pick<IosEnv, 'userAgent' | 'platform' | 'maxTou
 
 /**
  * iOS only delivers Web Push to PWAs installed on the home screen, so we
- * explain "Zum Home-Bildschirm hinzufügen" until the app runs standalone.
+ * explain "Zum Home-Bildschirm hinzufügen" until the app runs standalone. Since
+ * iOS 16.4 Chrome, Edge and Firefox can add web apps to the home screen as well.
  */
 export function shouldShowIosInstallHint(env: IosEnv): boolean {
   if (env.dismissed) return false;
   if (env.standalone || env.displayStandalone) return false;
-  return isIosSafari(env);
+  return isIos(env);
 }
 
 export function currentIosEnv(dismissed: boolean): IosEnv {

@@ -19,6 +19,9 @@ import (
 var pageTmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark"><title>{{.Title}} – TuxMail</title>
+<link rel="manifest" href="/manifest.webmanifest"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="TuxMail">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png"><link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 <style{{if .StyleNonce}} nonce="{{.StyleNonce}}"{{end}}>
 body{font-family:system-ui,sans-serif;margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f5f7;color:#111}
 @media (prefers-color-scheme:dark){body{background:#111318;color:#e6e6e6}main{background:#1b1e25!important}input{background:#111318;color:#e6e6e6}}
@@ -47,7 +50,8 @@ const loginBody = `<h1>TuxMail</h1>
 <label for="p">Password</label><input id="p" name="password" type="password" autocomplete="current-password" required>
 <div id="totp" class="hidden"><label for="t">Two-factor code</label><input id="t" name="totp" inputmode="numeric" autocomplete="one-time-code"></div>
 <button type="submit" id="submit">Log in</button>
-<button type="button" id="passkey" class="secondary hidden">Sign in with a passkey</button><div class="err" id="err" role="alert"></div></form>`
+<button type="button" id="passkey" class="secondary hidden">Sign in with a passkey</button><div class="err" id="err" role="alert"></div></form>
+<p id="ioshint" class="note hidden"></p>`
 
 // commonJS reads the CSRF token and posts JSON.
 const commonJS = `async function csrf(){const r=await fetch('/api/auth/csrf',{credentials:'same-origin'});return (await r.json()).csrfToken}
@@ -61,6 +65,14 @@ function msg(j){return j.message||j.error||'Error'}
 //
 //go:embed passkey_login.js
 var passkeyLoginJS string
+
+// iosHintJS: on an iPhone/iPad outside the installed app, explain "Add to Home Screen" right on the
+// login page - most people add the app from here, and only an installed web app gets push on iOS.
+const iosHintJS = `(function(){const n=navigator,ios=/iPhone|iPad|iPod/.test(n.userAgent)||(n.platform==='MacIntel'&&n.maxTouchPoints>1);
+if(!ios||n.standalone||matchMedia('(display-mode: standalone)').matches)return;const h=document.getElementById('ioshint');if(!h)return;
+h.textContent=(n.language||'').toLowerCase().indexOf('de')===0?'Tipp: Im Teilen-Menü \u201EZum Home-Bildschirm\u201C wählen. Dann läuft TuxMail als App, auch mit Benachrichtigungen (ab iOS 16.4).':'Tip: choose "Add to Home Screen" in the Share menu. TuxMail then runs as an app, with notifications (iOS 16.4 or later).';
+h.classList.remove('hidden')})();
+`
 
 const loginJS = `const f=document.getElementById('login'),err=document.getElementById('err');let challenge='';
 function next(){const n=new URLSearchParams(location.search).get('next');if(!n||n[0]!=='/'||n[1]==='/'||n[1]==='\\')return '/';
@@ -179,7 +191,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLoginScript(w http.ResponseWriter, r *http.Request) {
-	serveScript(w, commonJS+passkeyLoginJS+loginJS)
+	serveScript(w, commonJS+passkeyLoginJS+loginJS+iosHintJS)
 }
 
 func (s *Server) handleDevicePage(w http.ResponseWriter, r *http.Request) {

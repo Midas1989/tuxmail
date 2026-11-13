@@ -156,3 +156,31 @@ func TestSecretLinkAuditFixes(t *testing.T) {
 		}
 	}
 }
+
+// The pages people add to the iPhone home screen (usually /login) must carry the web app manifest
+// and the Apple meta tags, or iOS saves a plain bookmark without standalone mode and push.
+func TestServerPagesAreInstallableWebApp(t *testing.T) {
+	e := newEnv(t, Options{})
+	for _, p := range []string{"/login", "/device", "/secret/AAAAAAAAAAAAAAAAAAAAAA"} {
+		resp, err := http.Get(e.ts.URL + p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		for _, want := range []string{`rel="manifest" href="/manifest.webmanifest"`, `name="apple-mobile-web-app-capable" content="yes"`, `rel="apple-touch-icon"`} {
+			if !strings.Contains(string(body), want) {
+				t.Fatalf("%s lacks %s", p, want)
+			}
+		}
+	}
+	resp, err := http.Get(e.ts.URL + "/login.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(js), "ioshint") {
+		t.Fatal("login script without the iOS install hint")
+	}
+}

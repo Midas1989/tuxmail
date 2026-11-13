@@ -27,7 +27,7 @@ describe('platform detection', () => {
     expect(shouldShowIosInstallHint({ userAgent: IPHONE_SAFARI, standalone: true })).toBe(false);
     expect(shouldShowIosInstallHint({ userAgent: IPHONE_SAFARI, displayStandalone: true })).toBe(false);
     expect(shouldShowIosInstallHint({ userAgent: IPHONE_SAFARI, dismissed: true })).toBe(false);
-    expect(shouldShowIosInstallHint({ userAgent: IPHONE_CHROME })).toBe(false);
+    expect(shouldShowIosInstallHint({ userAgent: IPHONE_CHROME })).toBe(true); // iOS 16.4+: other browsers install too
     expect(shouldShowIosInstallHint({ userAgent: ANDROID })).toBe(false);
   });
 
