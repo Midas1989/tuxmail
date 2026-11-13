@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/Midas1989/Mailclient/internal/netguard"
 )
 
 // Errors of Fetch.
@@ -54,32 +56,14 @@ type Fetcher struct {
 	client *http.Client
 }
 
-// blocked reports whether an address must not be contacted.
+// blocked reports whether an address must not be contacted: everything
+// netguard does not classify as public, plus NAT64 ranges in general.
 func blocked(a netip.Addr) bool {
 	a = a.Unmap()
-	if !a.IsValid() || a.IsLoopback() || a.IsPrivate() || a.IsLinkLocalUnicast() || a.IsLinkLocalMulticast() ||
-		a.IsMulticast() || a.IsUnspecified() || a.IsInterfaceLocalMulticast() {
-		return true
-	}
-	for _, p := range specialPrefixes {
-		if p.Contains(a) {
-			return true
-		}
-	}
-	return false
+	return !netguard.IsPublic(a) || nat64.Contains(a)
 }
 
-var specialPrefixes = func() []netip.Prefix {
-	var out []netip.Prefix
-	for _, s := range []string{
-		"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "198.18.0.0/15", "198.51.100.0/24",
-		"203.0.113.0/24", "240.0.0.0/4", "255.255.255.255/32", "64:ff9b::/96", "64:ff9b:1::/48", "100::/64",
-		"2001::/32", "2001:db8::/32", "2002::/16", "fc00::/7", "fec0::/10",
-	} {
-		out = append(out, netip.MustParsePrefix(s))
-	}
-	return out
-}()
+var nat64 = netip.MustParsePrefix("64:ff9b::/96")
 
 // control runs after DNS resolution for every connection attempt, so a
 // host name that resolves (or re-resolves) to an internal address is

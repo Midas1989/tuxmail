@@ -451,7 +451,7 @@ Vollständige Liste mit Kommentaren: `roles/*/defaults/main.yml` und `inventory/
 | `tuxmail_auth_session_idle_timeout` | `2h` | Web-Sitzung endet nach dieser Zeit ohne Anfrage (längere Werte werden auf 2 h begrenzt) |
 | `tuxmail_login_rate_per_minute` | `10` | Login-Ratenbegrenzung |
 | `tuxmail_security_allow_private_networks` | `false` | SSRF-Schutz: `true` erlaubt Benutzern Verbindungen in private Netze/zu Loopback (z. B. Mailserver im LAN) – gilt für alle Benutzer (`security.allow_private_networks`) |
-| `tuxmail_security_allowed_networks_extra` | `[]` | immer erlaubte Ziele, IP/CIDR optional mit Port, z. B. `["192.168.10.5:993"]`; der lokale Matrix-Homeserver der Bridges wird automatisch ergänzt (`security.allowed_networks`) |
+| `tuxmail_security_allowed_networks_extra` | `[]` | immer erlaubte Ziele, IP/CIDR optional mit Port, z. B. `["192.168.10.5:993"]`; gilt für alle Benutzer und Funktionen (`security.allowed_networks`). Der lokale Matrix-Homeserver der Bridges wird dagegen nur für die Messenger-Plugins freigegeben (`tuxmail_security_messenger_allowed_networks`, automatisch; `security.messenger_allowed_networks`) |
 | `tuxmail_background_sync` | `true` | Hintergrund-Sync (Mail, Workflows, Abwesenheit, Push) für nicht angemeldete Benutzer mit aktivem Konto (`limits.background_sync`) |
 | `tuxmail_oidc_enabled` | `false` | OIDC-Anmeldung |
 | `tuxmail_oidc_issuer` / `_client_id` | `""` | OIDC-Provider |

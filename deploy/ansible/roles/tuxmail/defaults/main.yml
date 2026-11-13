@@ -125,9 +125,12 @@ tuxmail_security_hsts: true
 # includeSubDomains im HSTS-Header der Anwendung (false, wenn eine Subdomain kein HTTPS nutzt;
 # "preload" wird nie gesendet). Hinter nginx gilt tuxmail_nginx_hsts_include_subdomains.
 tuxmail_security_hsts_include_subdomains: true
-# Der lokale Matrix-Homeserver der Bridges (nur 127.0.0.1:Port) wird automatisch erlaubt.
-tuxmail_security_allowed_networks: >-
-  {{ (['127.0.0.1:' ~ (tuxmail_matrix_port | string)] if tuxmail_bridges_enabled | bool else []) + tuxmail_security_allowed_networks_extra }}
+# Allgemein erlaubte Ziele (gelten fuer alle Benutzer und alle ausgehenden Funktionen).
+tuxmail_security_allowed_networks: "{{ tuxmail_security_allowed_networks_extra }}"
+# Nur fuer die Messenger-Plugins erlaubt: der lokale Matrix-Homeserver der Bridges
+# (nur 127.0.0.1:Port) wird automatisch ergaenzt (security.messenger_allowed_networks).
+tuxmail_security_messenger_allowed_networks: >-
+  {{ ['127.0.0.1:' ~ (tuxmail_matrix_port | string)] if tuxmail_bridges_enabled | bool else [] }}
 
 # --- Android-Push über Firebase Cloud Messaging (optional, KONZEPT 15.9) ---------
 # JSON-Schlüssel eines Firebase-Dienstkontos (Rolle "Firebase Cloud Messaging API Admin")

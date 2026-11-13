@@ -77,6 +77,13 @@ security:
 {% else %}
     []
 {% endfor %}
+  # Nur fuer die Messenger-Plugins zusaetzlich erlaubt (z. B. lokaler Matrix-Homeserver "127.0.0.1:8008").
+  messenger_allowed_networks:
+{% for net in tuxmail_security_messenger_allowed_networks %}
+    - {{ net | to_json }}
+{% else %}
+    []
+{% endfor %}
   # Exakte Version in /healthz und /api/auth/config für anonyme Clients (Standard: aus).
   expose_version: {{ tuxmail_security_expose_version | bool | to_json }}
   # HSTS der Anwendung (hinter nginx setzt nginx den Header, siehe tuxmail_nginx_hsts_*).

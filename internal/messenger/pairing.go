@@ -322,13 +322,13 @@ func (s *Service) checkHomeserver(ctx context.Context, raw string) error {
 	switch u.Scheme {
 	case "https":
 	case "http":
-		if !explicitlyAllowed(netguard.Current(), u.Hostname(), port) {
-			return wire.Errorf(wire.CodeInvalidParams, "the homeserver must use https (plain http only for an address listed in security.allowed_networks)")
+		if !explicitlyAllowed(netguard.MessengerPolicy(), u.Hostname(), port) {
+			return wire.Errorf(wire.CodeInvalidParams, "the homeserver must use https (plain http only for an address listed in security.messenger_allowed_networks)")
 		}
 	default:
 		return wire.Errorf(wire.CodeInvalidParams, "the homeserver must use https")
 	}
-	if err := netguard.CheckHost(ctx, u.Hostname(), port); err != nil {
+	if err := netguard.CheckHostPolicy(ctx, netguard.MessengerPolicy(), u.Hostname(), port); err != nil {
 		return wire.Errorf(wire.CodeInvalidParams, "homeserver not reachable from this server: %v", err)
 	}
 	return nil
