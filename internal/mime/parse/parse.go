@@ -409,6 +409,10 @@ func (p *parser) entity(h textproto.Header, body []byte, partPath string, depth 
 			p.warn("invalid Content-Type %q at part %q", ct, partPath)
 		}
 		mt = "text/plain"
+	} else if !validMediaType(mt) {
+		// e.g. "image/png,text/html": never passed on as a type (L-7)
+		p.warn("invalid Content-Type %q at part %q", ct, partPath)
+		mt = "application/octet-stream"
 	}
 	disp, dparams := p.dec.mediaType(h.Get("Content-Disposition"))
 	if disp != "inline" && disp != "attachment" && disp != "" {
@@ -1042,4 +1046,18 @@ func firstToken(v string) string {
 		return v[:i]
 	}
 	return v
+}
+
+// validMediaType reports whether mt is exactly type/subtype of RFC 2045 tokens.
+func validMediaType(mt string) bool {
+	typ, sub, ok := strings.Cut(mt, "/")
+	if !ok || typ == "" || sub == "" {
+		return false
+	}
+	for _, r := range typ + sub {
+		if r <= ' ' || r >= 0x7f || strings.ContainsRune(`()<>@,;:\"/[]?=`, r) {
+			return false
+		}
+	}
+	return true
 }

@@ -127,7 +127,9 @@ func (a *App) forwardRead(ctx context.Context, c *serverConnection, method strin
 			if cacheable && res.Status == http.StatusOK {
 				a.cacheResponse(ctx, u, res)
 			}
-			return resultOf(res), nil
+			out := resultOf(res)
+			hardenBlobResult(u.Path, out)
+			return out, nil
 		}
 	}
 	return a.offlineRead(ctx, u)

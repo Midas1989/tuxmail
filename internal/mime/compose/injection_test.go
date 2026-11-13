@@ -73,3 +73,18 @@ func TestExtraHeaderNameValidated(t *testing.T) {
 		}
 	}
 }
+
+// A quoted local part with "<", ">" and "," never becomes more recipients (L-10).
+func TestComposeQuotedLocalPartRejected(t *testing.T) {
+	evil := `"a>,<evil@y.org>,<b"@x.org`
+	d := &Draft{Identity: domain.Identity{Email: "me@example.org"}, To: []domain.Address{{Email: evil}}, Subject: "s", TextBody: "x"}
+	if _, err := Compose(context.Background(), d, Options{}); !errors.Is(err, ErrBadAddress) {
+		t.Fatalf("err = %v", err)
+	}
+	if l, err := mail.ParseAddressList(formatAddress(domain.Address{Email: evil})); err != nil || len(l) != 1 {
+		t.Fatalf("formatAddress splits: %v %v", l, err)
+	}
+	if got := formatAddress(domain.Address{Email: "a@b.org"}); got != "<a@b.org>" {
+		t.Fatalf("formatAddress = %s", got)
+	}
+}

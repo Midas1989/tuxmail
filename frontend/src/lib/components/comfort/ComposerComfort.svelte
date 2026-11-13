@@ -13,6 +13,7 @@
   import { app, comfort } from '../../state';
   import { i18n, t } from '../../i18n/index.svelte';
   import type { Address } from '../../types';
+  import { isAllowedLink } from '../../signature';
   import PgpUnlockDialog from './PgpUnlockDialog.svelte';
   import type { MeetingProvider, Misspelling, OutgoingCrypto, PgpStatus, SmimeStatus } from '../../api/comfort';
   import ContextMenu, { type MenuItem } from '../common/ContextMenu.svelte';
@@ -189,6 +190,7 @@
     try {
       const l = await comfort.api.createMeeting({ provider, title: subject || t('comfort.meeting.defaultTitle'), participants: recipients.map((r) => r.email), lang: i18n.locale });
       if (!editor) return;
+      if (!isAllowedLink(l.url)) throw new Error('invalid meeting link');
       const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
       const p = document.createElement('p');
       p.innerHTML = `🎥 <a href="${esc(l.url)}">${esc(t('comfort.meeting.join', { provider: l.label }))}</a>${l.password ? ` – ${esc(t('comfort.meeting.password', { password: l.password }))}` : ''}`;

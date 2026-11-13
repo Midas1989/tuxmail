@@ -227,10 +227,7 @@ func encodeText(s string) string {
 // formatAddress renders an address for a header.
 func formatAddress(a domain.Address) string {
 	addr := mail.Address{Name: sanitizeHeaderText(a.Name), Address: sanitizeHeaderText(strings.TrimSpace(a.Email))}
-	if addr.Name == "" {
-		return "<" + addr.Address + ">"
-	}
-	return addr.String()
+	return addr.String() // quotes special characters of the local part
 }
 
 func formatAddressList(list []domain.Address) string {

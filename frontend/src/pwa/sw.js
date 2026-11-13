@@ -52,8 +52,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(req)
         .then((res) => {
+          // Only the real shell is stored, never /login, /device, /secret/* or a
+          // redirected answer (L-16).
+          const shell = new URL(SHELL_URL, self.location.href);
+          const isShell = url.pathname === shell.pathname || url.pathname === shell.pathname + 'index.html';
           const copy = res.clone();
-          if (res.ok) caches.open(CACHE).then((c) => c.put(SHELL_URL, copy)).catch(() => {});
+          if (res.ok && !res.redirected && isShell) caches.open(CACHE).then((c) => c.put(SHELL_URL, copy)).catch(() => {});
           return res;
         })
         .catch(async () => (await caches.match(SHELL_URL)) || (await caches.match(OFFLINE_URL)) || Response.error()),

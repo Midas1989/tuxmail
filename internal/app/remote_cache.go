@@ -116,6 +116,8 @@ func cachedMessage(m *MessageSummary, body string) store.RemoteCachedMessage {
 	return store.RemoteCachedMessage{ID: m.ID, AccountID: m.AccountID, FolderIDs: folders, Date: m.Date, SummaryJSON: string(js), SearchText: messageSearchText(m, body)}
 }
 
+var reBlobRoute = regexp.MustCompile(`^/api/messages/\d+/(attachments/\d+|cid/[^/]+)$`)
+
 var reMessageContent = regexp.MustCompile(`^/api/messages/(\d+)/(attachments/\d+|cid/[^/]+|remote-content)$`)
 
 // remoteContentOld reports whether an answer is the content of a mail older
@@ -191,7 +193,9 @@ func (a *App) offlineRead(ctx context.Context, u *url.URL) (*connResult, error) 
 		if e.Disposition != "" {
 			h.Set("Content-Disposition", e.Disposition)
 		}
-		return &connResult{status: http.StatusOK, header: h, body: body}, nil
+		res := &connResult{status: http.StatusOK, header: h, body: body}
+		hardenBlobResult(u.Path, res)
+		return res, nil
 	}
 	return a.offlineFallback(ctx, u)
 }
