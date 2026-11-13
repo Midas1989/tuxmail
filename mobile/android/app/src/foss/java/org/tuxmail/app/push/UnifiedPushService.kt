@@ -18,6 +18,8 @@ class UnifiedPushService : PushService() {
 
     override fun onMessage(message: PushMessage, instance: String) {
         // Decrypted by the connector when the endpoint has keys (always, since we registered with VAPID).
+        // Never render a payload that could not be decrypted (unauthenticated, from anyone who knows the endpoint).
+        if (!message.decrypted) return
         PushRenderer.render(this, String(message.content, Charsets.UTF_8))
     }
 

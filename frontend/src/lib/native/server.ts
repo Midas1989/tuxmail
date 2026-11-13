@@ -13,7 +13,7 @@
 // Pure functions with an injectable fetch (unit-tested without Capacitor).
 
 import { normalizeServerUrl } from '../platform';
-import { PasskeyError, type PasskeyBridge } from './passkey';
+import { PasskeyError, rpIdMatchesServer, type PasskeyBridge } from './passkey';
 
 export type Fetch = typeof fetch;
 
@@ -288,9 +288,12 @@ export async function passkeyLogin(
   if (begin.status !== 200) throw errorFor(begin.status, begin.body);
   const challengeId = begin.body.challengeId;
   if (typeof challengeId !== 'string' || !begin.body.publicKey) throw new ServerError('server_error', 'no passkey options');
+  if (!rpIdMatchesServer(serverUrl, (begin.body.publicKey as { rpId?: unknown }).rpId)) {
+    throw new ServerError('passkey_failed', 'passkey relying party does not match the server');
+  }
   let credential: unknown;
   try {
-    credential = JSON.parse(await bridge.get(JSON.stringify(begin.body.publicKey)));
+    credential = JSON.parse(await bridge.get(JSON.stringify(begin.body.publicKey), serverUrl));
   } catch (err) {
     if (err instanceof PasskeyError) {
       if (err.code === 'cancelled') throw new ServerError('passkey_cancelled', err.message);
