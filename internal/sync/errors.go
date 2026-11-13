@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	easprov "github.com/Midas1989/Mailclient/internal/providers/eas"
 	imapprov "github.com/Midas1989/Mailclient/internal/providers/imap"
 )
 
@@ -75,6 +76,25 @@ func IsNetworkError(err error) bool {
 	msg := strings.ToLower(err.Error())
 	for _, s := range []string{"connection closed", "use of closed network connection", "broken pipe",
 		"connection reset", "connection refused", "i/o timeout", "no route to host", "network is unreachable", "eof"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsAuthError reports whether err means the server rejected the credentials
+// (or none are stored). Retrying with the same credentials cannot succeed.
+func IsAuthError(err error) bool {
+	if err == nil || IsNetworkError(err) {
+		return false
+	}
+	if errors.Is(err, ErrNoCredentials) || errors.Is(err, easprov.ErrAuth) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"authenticationfailed", "authentication failed", "authenticate", "login failed",
+		"invalid credentials", "invalid_grant", "unauthorized", "auth failed", "no credentials"} {
 		if strings.Contains(msg, s) {
 			return true
 		}

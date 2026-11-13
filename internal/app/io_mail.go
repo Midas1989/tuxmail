@@ -317,8 +317,10 @@ func (a *App) importMail(ctx context.Context, j *ioJob, src ie.Source, req Impor
 		}
 	}
 	throttle := time.Duration(req.Options.ThrottleMs) * time.Millisecond
-	if req.Target.Kind == "folder" && throttle == 0 {
-		throttle = 200 * time.Millisecond
+	if req.Target.Kind == "folder" {
+		throttle = max(throttle, 200*time.Millisecond) // negative / too small values do not bypass it (audit I-11)
+	} else {
+		throttle = max(throttle, 0)
 	}
 	dd := ie.NewDedupe()
 	idx := 0

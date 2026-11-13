@@ -291,6 +291,9 @@ func (a *App) SyncNow(ctx context.Context, accountID int64) error {
 	if _, err := a.st.GetAccount(ctx, accountID); err != nil {
 		return err
 	}
+	if err := a.allowSyncNow(accountID); err != nil {
+		return err
+	}
 	if a.mgr != nil {
 		a.mgr.SyncNow(accountID)
 	}

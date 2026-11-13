@@ -745,6 +745,11 @@ func (a *App) ChangeAccountPassword(ctx context.Context, id int64, password stri
 // TestAccountConnection logs in to the servers of an account (stored or
 // unsaved settings, stored or new password) without changing anything.
 func (a *App) TestAccountConnection(ctx context.Context, id int64, in ConnectionTestInput) (ConnectionTestResult, error) {
+	release, err := a.acquireLoginProbe("account_test")
+	if err != nil {
+		return ConnectionTestResult{}, err
+	}
+	defer release()
 	acc, err := a.st.GetAccount(ctx, id)
 	if err != nil {
 		return ConnectionTestResult{}, err
@@ -1009,6 +1014,9 @@ func (a *App) SyncAccountNow(ctx context.Context, id int64) error {
 		return nil
 	case a.mgr == nil:
 		return nil
+	}
+	if err := a.allowSyncNow(id); err != nil {
+		return err
 	}
 	if !acc.Enabled {
 		return Errorf(http.StatusConflict, CodeConflict, "the account is disabled")

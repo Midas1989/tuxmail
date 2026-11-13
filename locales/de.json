@@ -2361,6 +2361,7 @@
     "cloudQuota": "Auf dem Cloud-Server ist nicht genug Speicherplatz frei.",
     "cloudUnreachable": "Der Cloud-Server ist nicht erreichbar. Prüfe die Adresse und deine Internetverbindung.",
     "cloudError": "Der Cloud-Server hat die Anfrage nicht angenommen. Prüfe die Server-Adresse und versuche es erneut.",
+    "rateLimited": "Zu viele Anfragen in kurzer Zeit. Bitte einen Moment warten und erneut versuchen.",
     "notifyUnavailable": "Das Betriebssystem konnte die Benachrichtigung nicht anzeigen. Unter Linux wird „notify-send“ (Paket libnotify) benötigt; prüfe außerdem die Benachrichtigungs-Einstellungen des Systems.",
     "loadTitle": "TuxMail konnte nicht geladen werden",
     "retry": "Erneut versuchen"

@@ -128,6 +128,11 @@ const (
 	MaxAllowedDepth = 32
 	DefaultRateMax  = 60
 	DefaultRatePer  = Duration(60e9)
+	// MaxRateMax caps a configured rate_max (audit M-10).
+	MaxRateMax = 10000
+	// MaxSendRate is the most runs per hour of a workflow that sends mail
+	// (forward, automatic reply, reply_template with send).
+	MaxSendRate = 60
 )
 
 func (o Options) maxPerMessage() int {
@@ -159,7 +164,33 @@ func (o Options) rate() (int, Duration) {
 	if per <= 0 {
 		per = DefaultRatePer
 	}
-	return max, per
+	return min(max, MaxRateMax), per
+}
+
+// sendsMail reports whether the workflow has an action that sends mail.
+func (w *Workflow) sendsMail() bool {
+	for _, a := range w.Actions {
+		switch a.Type {
+		case ActForward, ActReplyAuto, ActVacation:
+			return true
+		case ActReplyTemplate:
+			if b, _ := a.Params["send"].(bool); b {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// rateLimit is the effective rate limit of w: workflows that send mail are
+// limited to MaxSendRate runs per hour whatever rate_max / rate_per say.
+func (w *Workflow) rateLimit() (int, Duration) {
+	n, per := w.Options.rate()
+	if w.sendsMail() {
+		per = max(per, Duration(3600e9))
+		n = min(n, MaxSendRate)
+	}
+	return n, per
 }
 
 // Parse decodes a workflow from YAML. Unknown top-level fields are rejected.

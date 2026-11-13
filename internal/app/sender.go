@@ -63,7 +63,7 @@ func newMailSender(a *App, opts *SendOptions) (*MailSender, error) {
 		c.WorkingHours.Location = loc
 		return c
 	}, sendcheck.Deps{}, a.opts.Now))
-	return &MailSender{a: a, Service: svc, Actions: &send.Actions{Service: svc, Loader: ad, Drafts: ad}}, nil
+	return &MailSender{a: a, Service: svc, Actions: &send.Actions{Service: svc, Loader: ad, Drafts: ad, Replies: a.st, Now: a.opts.Now}}, nil
 }
 
 // Send implements Sender.

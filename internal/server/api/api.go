@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -109,6 +110,9 @@ func writeErr(w http.ResponseWriter, err error) {
 	if status >= 500 && e.Code == app.CodeInternal {
 		slog.Error("api: request failed", "err", err)
 		msg = "internal server error"
+	}
+	if e.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(e.RetryAfter.Seconds()))))
 	}
 	writeJSON(w, status, errorBody{Error: e.Code, Message: msg})
 }

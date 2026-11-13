@@ -24,6 +24,8 @@ export function errorWording(code: string): string | undefined {
       return t('errors.cloudUnreachable');
     case 'cloud_error':
       return t('errors.cloudError');
+    case 'rate_limited':
+      return t('errors.rateLimited');
     case 'notify_unavailable':
       return t('errors.notifyUnavailable');
     default:
