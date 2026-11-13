@@ -18,15 +18,17 @@
         url: "https://go.dev/dl/?mode=json&include=all"
         return_content: true
       register: tuxmail_buildenv_go_releases
+      when: tuxmail_buildenv_go_pinned_sha256 == ''
 
     - name: Prüfsumme des Go-Archivs suchen
       ansible.builtin.set_fact:
         tuxmail_buildenv_go_sha256: >-
-          {{ tuxmail_buildenv_go_releases.json
-             | selectattr('version', 'equalto', 'go' ~ tuxmail_buildenv_go_version)
-             | map(attribute='files') | flatten
-             | selectattr('filename', 'equalto', tuxmail_buildenv_go_archive)
-             | map(attribute='sha256') | first | default('') }}
+          {{ tuxmail_buildenv_go_pinned_sha256 if tuxmail_buildenv_go_pinned_sha256 != '' else
+             (tuxmail_buildenv_go_releases.json
+              | selectattr('version', 'equalto', 'go' ~ tuxmail_buildenv_go_version)
+              | map(attribute='files') | flatten
+              | selectattr('filename', 'equalto', tuxmail_buildenv_go_archive)
+              | map(attribute='sha256') | first | default('')) }}
 
     - name: Go-Version ist auf go.dev verfügbar
       ansible.builtin.assert:

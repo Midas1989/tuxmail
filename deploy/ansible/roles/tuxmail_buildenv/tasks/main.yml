@@ -6,6 +6,16 @@
 - name: Pakete
   ansible.builtin.import_tasks: packages.yml
 
+- name: Unprivilegierter Build-Benutzer
+  ansible.builtin.user:
+    name: "{{ tuxmail_buildenv_user }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+  when:
+    - tuxmail_buildenv_create_user | bool
+    - tuxmail_buildenv_user != 'root'
+
 - name: Swap
   ansible.builtin.import_tasks: swap.yml
   when: tuxmail_buildenv_swap_enabled | bool

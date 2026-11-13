@@ -52,10 +52,10 @@ ansible-playbook -i inventory/hosts.ini site.yml \
 
 **Solange es kein Server-Archiv im Release gibt**, baust du es auf dem Server und gibst es dem Playbook mit:
 ```bash
-cd /opt/tuxmail && TUXMAIL_SIGNAL_CLI=skip build/build-all.sh server --arch amd64     # braucht Go und Node 22.12+
+cd /opt/tuxmail-build && TUXMAIL_SIGNAL_CLI=skip build/build-all.sh server --arch amd64     # braucht Go und Node 22.12+
 ansible-playbook -i inventory/hosts.ini site.yml -e tuxmail_domain=mail.example.de \
   -e tuxmail_tls_letsencrypt_email=admin@example.de \
-  -e tuxmail_binary_src=/opt/tuxmail/dist/tuxmail_<Version>_linux_amd64.tar.gz -e tuxmail_version=<Version>
+  -e tuxmail_binary_src=/opt/tuxmail-build/dist/tuxmail_<Version>_linux_amd64.tar.gz -e tuxmail_version=<Version>
 ```
 (`<Version>` steht im Dateinamen, z. B. `1.1.0-dev.ab12cd3`.) Der Schalter für die Signatur entfällt dabei.
 
@@ -248,6 +248,11 @@ Der macOS-Build ist optional: fehlt er in einem Release, ist dort keine `.dmg` d
    Ist die App signiert und notarisiert (im Release vermerkt), entfällt dieser Schritt.
 3. Passwörter liegen im macOS-Schlüsselbund. Messenger-Plugins sind enthalten; Signal (signal-cli) wird auf macOS
    nicht mitgeliefert.
+
+Das **macOS-Server-Archiv** `tuxmail_<v>_darwin_<arch>.tar.gz` ist weder signiert noch notarisiert (nur die
+`.dmg` kann es sein). Prüfsumme gegen `checksums.txt` bzw. dessen GPG-Signatur kontrollieren, dann ausführen mit
+`tar xzf tuxmail_<v>_darwin_<arch>.tar.gz` und danach `xattr -dr com.apple.quarantine <entpacktes Verzeichnis oder Binary>`
+(einzelne Datei: `xattr -d com.apple.quarantine <datei>`); sonst blockiert Gatekeeper den Start.
 
 Update: neue `.dmg` öffnen und die App in *Programme* ersetzen, die Daten bleiben erhalten. Deinstallieren: App in den
 Papierkorb; die Daten liegen unter `~/.local/share/tuxmail`.

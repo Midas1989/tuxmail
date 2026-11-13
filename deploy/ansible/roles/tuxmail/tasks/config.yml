@@ -35,10 +35,25 @@
   notify: tuxmail restart
   when: tuxmail_fcm_enabled | bool
 
+# Das Log-Verzeichnis ist für den Dienstbenutzer beschreibbar: kein Symlink-Folgen als root (Audit M-4).
+- name: Logdatei prüfen (kein Symlink)
+  ansible.builtin.stat:
+    path: "{{ tuxmail_log_file }}"
+    follow: false
+  register: tuxmail_log_file_stat
+  when: tuxmail_log_file | length > 0
+
+- name: Abbruch bei Symlink statt Logdatei
+  ansible.builtin.assert:
+    that: not (tuxmail_log_file_stat.stat.islnk | default(false))
+    fail_msg: "{{ tuxmail_log_file }} ist ein Symlink - Abbruch (Verdacht auf Manipulation durch den Dienstbenutzer)."
+  when: tuxmail_log_file | length > 0
+
 - name: Logdatei anlegen (check-config prüft, ob sie beschreibbar ist)
   ansible.builtin.file:
     path: "{{ tuxmail_log_file }}"
     state: touch
+    follow: false
     owner: "{{ tuxmail_user }}"
     group: "{{ tuxmail_group }}"
     mode: "0640"

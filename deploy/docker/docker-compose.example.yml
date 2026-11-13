@@ -26,7 +26,13 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - tuxmail-data:/data
-      # Own configuration (OIDC, limits, trusted proxies ...), read-only:
+      # Own configuration (OIDC, limits, trusted proxies ...), read-only.
+      # The image trusts X-Forwarded-* from loopback only. A reverse proxy on the
+      # host reaches the container via the bridge gateway (e.g. 172.18.0.1,
+      # see `docker network inspect <network>`) or is a container in the same
+      # network: copy build/docker/config.yaml and add ITS exact address, e.g.
+      #   trusted_proxies: ["127.0.0.1/32", "::1/128", "172.18.0.1/32"]
+      # Never a whole private range such as 10.0.0.0/8 or 172.16.0.0/12.
       # - ./config.yaml:/etc/tuxmail/config.yaml:ro
     read_only: true
     tmpfs:

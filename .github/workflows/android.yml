@@ -124,6 +124,8 @@ jobs:
     name: Signed release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
+    # Signing secrets live in the protected environment "release" (docs/RELEASE.md).
+    environment: release
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     permissions:
@@ -242,6 +244,15 @@ jobs:
           fi
           (cd dist-android && sha256sum ./* > SHA256SUMS)
           ls -l dist-android
+
+      # SHA256SUMS gets a detached GPG signature (SHA256SUMS.asc) with the same
+      # release key as checksums.txt (audit I-12). Without GPG_PRIVATE_KEY it is skipped.
+      - name: GPG signature of SHA256SUMS (optional)
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          DIST: ${{ runner.temp }}/gpg-public
+        run: build/sign-gpg.sh dist-android/SHA256SUMS
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

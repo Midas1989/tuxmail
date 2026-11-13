@@ -26,9 +26,11 @@ smtp_port=${E2E_SMTP_PORT:-1587}
 shots=${SCREENSHOTS:-$work/screenshots}
 mkdir -p "$work" "$shots"
 pids=""
+# Directory of the throw-away Dovecot (root-owned, see scripts/dovecot-dev.sh).
+dove=${E2E_DOVECOT_DIR:-/run/tuxmail-dovecot}
 cleanup() {
 	for p in $pids; do kill "$p" 2>/dev/null || true; done
-	if [ "${E2E_DOVECOT:-}" = 1 ]; then "$root/scripts/dovecot-dev.sh" stop || true; fi
+	if [ "${E2E_DOVECOT:-}" = 1 ]; then "$root/scripts/dovecot-dev.sh" stop "$dove" || true; fi
 }
 trap cleanup EXIT INT TERM
 
@@ -50,10 +52,10 @@ wait_http() { # URL [seconds]
 echo "== starting mail servers"
 serve_env=""
 if [ "${E2E_DOVECOT:-}" = 1 ]; then
-	"$root/scripts/dovecot-dev.sh" start
+	"$root/scripts/dovecot-dev.sh" start "$dove"
 	"$bin" devserver --http "127.0.0.1:$dev_port" --external-imap 127.0.0.1:993 \
-		--external-ca /tmp/tuxmail-dovecot/ca.pem >"$work/devserver.json" 2>"$work/devserver.log" &
-	serve_env="SSL_CERT_FILE=/tmp/tuxmail-dovecot/ca.pem"
+		--external-ca "$dove/ca.pem" >"$work/devserver.json" 2>"$work/devserver.log" &
+	serve_env="SSL_CERT_FILE=$dove/ca.pem"
 else
 	"$bin" devserver --http "127.0.0.1:$dev_port" --imap "127.0.0.1:$imap_port" --smtp "127.0.0.1:$smtp_port" \
 		>"$work/devserver.json" 2>"$work/devserver.log" &

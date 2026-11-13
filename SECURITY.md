@@ -41,6 +41,18 @@ veröffentlichte Version** (und den Branch `main`). Ältere 0.x-Versionen bitte 
 | neueste 0.x | ja |
 | ältere 0.x | nein |
 
+### Release-Signaturschlüssel
+
+**Fingerabdruck hier eintragen** (Platzhalter, wird vom Maintainer nach dem Anlegen des Release-Schlüssels
+gesetzt, siehe `docs/RELEASE.md`):
+
+```
+Release-Signaturschlüssel: Fingerabdruck hier eintragen
+```
+
+Vergleiche den Fingerabdruck von `tuxmail-release-key.asc` aus dem Release mit diesem Wert **und** mit dem Wert
+auf der Projektseite, bevor du Signaturen vertraust.
+
 ### Geltungsbereich
 
 Server (`tuxmail serve`, Web-App/PWA, API), Desktop-App, Setup-Programm und Pakete, Android-App,

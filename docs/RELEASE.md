@@ -243,6 +243,30 @@ Alle Signaturschritte sind vorbereitet und werden übersprungen, solange die Sec
 | **GPG** für Linux-Pakete (optional, aber **Voraussetzung für das Ansible-Deployment**) | `GPG_PRIVATE_KEY` (ASCII-armored, `gpg --armor --export-secret-keys KEYID`), `GPG_PASSPHRASE` | eingebettete Signaturen in `.deb` (`_gpgorigin`) und `.rpm`, dazu `checksums.txt.asc` und `tuxmail-release-key.asc` im Release. Die Ansible-Rolle `tuxmail` prüft `checksums.txt.asc` gegen den Fingerabdruck `tuxmail_release_gpg_fingerprint` und bricht ohne Signatur ab (außer `tuxmail_allow_unsigned_release: true`, siehe `deploy/README.md`). Den Fingerabdruck nach dem Anlegen des Schlüssels notieren: `gpg --show-keys --with-colons tuxmail-release-key.asc`. |
 | Docker | – (`GITHUB_TOKEN` mit `packages: write`) | Push nach `ghcr.io/midas1989/tuxmail`; nach dem ersten Push das Paket unter *Packages* auf „public“ stellen |
 
+### Geschützte Umgebung `release` (Audit M-3)
+
+Alle Signatur-Secrets (`GPG_*`, `SIGNPATH_API_TOKEN`, `MACOS_*`, `KEYSTORE_*`, `GOOGLE_SERVICES_JSON`,
+`TUXMAIL_GOOGLE_CLIENT_SECRET`) werden **nur im Tag-Build** (`refs/tags/v*`) verwendet; Branch-Builds
+(`main`, `claude/**`) laufen ohne sie und sind unsigniert. Der Repository-Eigentümer muss einmalig anlegen:
+
+1. *Settings → Environments → New environment* `release`: **Required reviewers** eintragen (mindestens eine
+   weitere Person oder sich selbst), *Deployment branches and tags* auf *Selected* mit Tag-Regel `v*`.
+2. Die oben genannten Secrets von *Repository secrets* in die **Environment secrets** von `release` verschieben
+   und aus den Repository-Secrets löschen (sonst bleiben sie für Branch-Workflows lesbar).
+3. *Settings → Rules → Rulesets*: Tags `v*` schützen (Anlegen, Verschieben und Löschen nur für Maintainer).
+4. Optional die leere Umgebung `branch-build` (wird für Branch-Builds automatisch angelegt) ohne Secrets belassen.
+
+Die Jobs `linux-desktop`, `windows-desktop`, `macos-desktop`, `publish` (release.yml) und `release` (android.yml)
+verwenden auf Tags die Umgebung `release`; der Lauf wartet dort auf die Freigabe.
+
+### Fingerabdruck des Release-Schlüssels veröffentlichen (Audit L-17)
+
+Der Fingerabdruck von `tuxmail-release-key.asc` steht in `SECURITY.md` (Abschnitt „Release-Signaturschlüssel“,
+dort noch Platzhalter) und muss zusätzlich auf einem unabhängigen Kanal stehen (Projektseite/Website, Profil des
+Maintainers). Nach dem Anlegen des Schlüssels: `gpg --show-keys --with-colons tuxmail-release-key.asc | awk -F: '$1=="fpr"{print $10; exit}'`,
+den Wert in `SECURITY.md` eintragen (per signiertem Commit) und auf der Projektseite veröffentlichen. Nutzer und
+Ansible (`tuxmail_release_gpg_fingerprint`) vergleichen dagegen.
+
 Prüfen der Downloads:
 
 ```bash

@@ -23,6 +23,7 @@
       ansible.builtin.file:
         path: "{{ tuxmail_bridges_dir }}/synapse/appservices"
         state: directory
+        follow: false
         mode: "0755"
 
 - name: Continuwuity-Datenverzeichnis

@@ -10,14 +10,24 @@ title = "TuxMail gitleaks config"
 useDefault = true
 
 [allowlist]
-description = "Test fixtures, known-answer test vectors and documented public values"
+description = "Specific test fixtures, known-answer test vectors and documented public values"
 paths = [
-  # Go test files and fixtures: dummy tokens/passwords used by unit tests.
-  '''(^|/)[^/]+_test\.go$''',
-  '''(^|/)testdata/''',
-  # e2e fixtures of the frontend/mobile test suites.
-  '''^frontend/(e2e|tests?)/''',
-  '''^mobile/(e2e|tests?)/''',
+  # Exactly the fixture files with dummy tokens/passwords/keys (audit L-24: no
+  # blanket *_test.go / testdata/ allowlist, so a real secret pasted into a
+  # new test file or fixture is still found). Add a file only after triage.
+  '''^frontend/src/lib/api/admin\.test\.ts$''',
+  '''^internal/app/diagnostics_redact_internal_test\.go$''',
+  '''^internal/auth/auth_test\.go$''',
+  '''^internal/cloud/vaultwarden/crypto_test\.go$''',
+  '''^internal/config/passkeys_apps_test\.go$''',
+  '''^internal/messenger/host/env_test\.go$''',
+  '''^internal/secretbox/testdata/testvektoren\.json$''',
+  '''^internal/server/api_admin_backup_test\.go$''',
+  '''^internal/server/background_test\.go$''',
+  '''^internal/server/reaudit_ws_test\.go$''',
+  '''^internal/server/sicherheit_test\.go$''',
+  '''^internal/server/team_test\.go$''',
+  '''^internal/server/team_workflow_test\.go$''',
 ]
 # Regexes are matched against the whole rule match (key name + value).
 regexTarget = "match"
@@ -28,6 +38,8 @@ regexes = [
   '''UBntmLjC2yYCeHwsyj73Uwo9TAaecAetRwMw0xYcvNL9yRdLSUi0hUAHfvCHFeFh''',
   # Public GPG fingerprint of the Matrix/Synapse APT repository (Ansible role defaults).
   '''tuxmail_synapse_apt_key_fingerprint''',
+  # Documentation: names of CI secrets in docs/AUFGABEN-PROJEKTINHABER.md (no values).
+  '''Secrets: `MACOS_CERTIFICATE_P12`''',
   # WebSocket handshake nonce from RFC 6455 (sample value in security/pentest/harness.py).
   '''Sec-WebSocket-Key"?:\s*"dGhlIHNhbXBsZSBub25jZQ=="''',
 ]

@@ -253,6 +253,9 @@ tuxmail_release_gpg_fingerprint: "ABCD EF01 2345 6789 ABCD  EF01 2345 6789 ABCD 
 # tuxmail_release_gpg_key_src: files/tuxmail-release-key.asc
 ```
 
+Den erwarteten Fingerabdruck **immer mit dem Eintrag in `SECURITY.md`** (Abschnitt „Release-Signaturschlüssel“)
+und dem Wert auf der Projektseite abgleichen, nicht mit dem Schlüssel aus demselben Release.
+
 Fingerabdruck ermitteln (nach dem Anlegen des Release-Schlüssels, `GPG_PRIVATE_KEY` in der Pipeline, docs/RELEASE.md):
 `gpg --show-keys --with-colons tuxmail-release-key.asc | awk -F: '$1=="fpr"{print $10; exit}'`.
 Die Prüfung läuft auf dem Zielsystem in einem leeren, temporären Schlüsselbund (Paket `gpg`/`gnupg2` wird
@@ -835,8 +838,11 @@ Eigenschaften des Images (`build/docker/Dockerfile`):
 
 Weitere Einstellungen (OIDC, Limits, `trusted_proxies`) über eine eigene Datei:
 `-v ./config.yaml:/etc/tuxmail/config.yaml:ro` (alle Schlüssel: `systemd/config.example.yaml`).
-Die Standardkonfiguration vertraut `X-Forwarded-*`-Headern aus den privaten Netzen (Docker-Netzwerke);
-ist der Container aus solchen Netzen auch direkt erreichbar, `trusted_proxies` einschränken.
+Die Standardkonfiguration vertraut `X-Forwarded-*`-Headern nur von Loopback (`127.0.0.1`, `::1`). Erreicht ein
+Reverse-Proxy den Container über das Docker-/Podman-Netz (Proxy auf dem Host: Gateway-Adresse des Netzes,
+`docker network inspect <netz>`; Proxy als Container: dessen Adresse), die Datei `build/docker/config.yaml` kopieren
+und die **genaue** Proxy-Adresse ergänzen, z. B. `trusted_proxies: ["127.0.0.1/32", "::1/128", "172.18.0.1/32"]` –
+keine ganzen privaten Bereiche. Ohne diesen Eintrag sieht TuxMail als Client-Adresse die des Proxys.
 
 **Schnellstart mit Compose**
 
@@ -877,7 +883,7 @@ so vor, dass `build/build-all.sh` die gewählten Ziele bauen kann. Es baut selbs
 
 ```bash
 cd deploy/ansible
-# direkt auf dem Build-Rechner (Repository liegt unter /opt/tuxmail):
+# direkt auf dem Build-Rechner (Repository liegt unter /opt/tuxmail-build):
 ansible-playbook build-env.yml -i localhost, -c local -e tuxmail_buildenv_hosts=localhost
 # oder für Rechner in der Gruppe [tuxmail_build] im Inventar:
 ansible-playbook -i inventory/hosts.ini build-env.yml
@@ -901,8 +907,10 @@ Wichtige Variablen (alle in `roles/tuxmail_buildenv/defaults/main.yml`):
 | Variable | Standard | Bedeutung |
 |---|---|---|
 | `tuxmail_buildenv_targets` | `[server, windows-desktop, android]` | außerdem möglich: `linux-desktop`, `docker` |
-| `tuxmail_buildenv_repo_dir` | `/opt/tuxmail` | Checkout auf dem Zielrechner (für `local.properties` und die Prüfung) |
-| `tuxmail_buildenv_user` | `root` | Benutzer, der baut |
+| `tuxmail_buildenv_repo_dir` | `/opt/tuxmail-build` | Checkout auf dem Zielrechner (für `local.properties` und die Prüfung); bewusst nicht `/opt/tuxmail` (Installationsverzeichnis des Servers). Den Checkout als `tuxmail_buildenv_user` anlegen |
+| `tuxmail_buildenv_user` / `_create_user` | `tuxmail-build` / `true` | unprivilegierter Benutzer, der baut (wird angelegt); `root` nur für Wegwerf-Rechner |
+| `tuxmail_buildenv_go_pinned_sha256` | leer | feste SHA-256 des Go-Archivs (leer = go.dev-Liste, gleicher Ursprung wie der Download) |
+| `tuxmail_buildenv_android_cmdline_tools_sha256` | leer | feste SHA-256 des cmdline-tools-ZIP (leer = SHA-1 aus Googles Paketliste). Beide Werte unabhängig vom Download ermitteln (z. B. von einem zweiten Rechner/Netz) und eintragen; es werden keine Werte mitgeliefert |
 | `tuxmail_buildenv_swap_enabled` / `_swap_size_mb` / `_min_memory_mb` | `true` / `8192` / `12288` | Swap-Datei |
 | `tuxmail_buildenv_go_version` | aus `go.mod` | Go-Version |
 | `tuxmail_buildenv_android_cmdline_tools_build` | `13114758` | Build-Nummer der Android-cmdline-tools |
@@ -910,5 +918,5 @@ Wichtige Variablen (alle in `roles/tuxmail_buildenv/defaults/main.yml`):
 Danach in einer **neuen** Login-Shell bauen (damit `/etc/profile.d/tuxmail-build.sh` gilt):
 
 ```bash
-cd /opt/tuxmail && build/build-all.sh server windows-desktop android
+cd /opt/tuxmail-build && build/build-all.sh server windows-desktop android
 ```
