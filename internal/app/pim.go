@@ -306,9 +306,15 @@ func (a *App) computeInstances(ctx context.Context, id int64, cal *ical.Componen
 		}
 	}
 	from, to := a.instanceWindow()
-	occ, err := rrule.Expand(items, tz, from, to)
+	ectx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	occ, err := rrule.ExpandContext(ectx, items, tz, from, to)
 	if err != nil {
-		return a.st.ReplaceKeyedInstances(ctx, id, nil)
+		if !errors.Is(err, rrule.ErrTooExpensive) && !errors.Is(err, context.DeadlineExceeded) {
+			return a.st.ReplaceKeyedInstances(ctx, id, nil)
+		}
+		// Too expensive: store the degraded result (first instance only).
+		a.log.Warn("app: recurrence too expensive, storing first instance only", "object", id, "err", err)
 	}
 	insts := make([]store.KeyedInstance, 0, len(occ))
 	for _, o := range occ {

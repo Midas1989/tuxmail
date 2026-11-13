@@ -5,6 +5,7 @@ package pimapi
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -207,7 +208,43 @@ func deleteMissingObjects(ctx context.Context, st Store, calID int64, kind strin
 // ==== iCalendar / vCard rendering ============================================
 
 func icalEscape(s string) string {
-	return strings.NewReplacer(`\`, `\\`, ";", `\;`, ",", `\,`, "\r\n", `\n`, "\n", `\n`).Replace(s)
+	return stripCtl(strings.NewReplacer(`\`, `\\`, ";", `\;`, ",", `\,`, "\r\n", `\n`, "\r", `\n`, "\n", `\n`).Replace(s))
+}
+
+// stripCtl removes control characters (including a lone CR/LF and DEL) so a
+// value cannot start a new content line (property/component injection).
+func stripCtl(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 && r != '\t' || r == 0x7f {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// safeToken cleans a value that is written unescaped (e-mail address, RRULE)
+// and drops it entirely (empty result) if it contains whitespace or
+// delimiters that could break out of the property.
+func safeToken(s string, extra string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.ContainsAny(s, " \t\r\n\"\\<>"+extra) || stripCtl(s) != s {
+		return ""
+	}
+	return s
+}
+
+// safeURL returns s if it is a plain http(s) URL without control characters
+// or whitespace, else "".
+func safeURL(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" || strings.ContainsAny(s, " \t\"<>\\") || stripCtl(s) != s {
+		return ""
+	}
+	u, err := url.Parse(s)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return ""
+	}
+	return s
 }
 
 // fold folds a content line at 75 octets (RFC 5545 3.1).
@@ -264,15 +301,15 @@ func EventICal(uid string, ev Event) string {
 	if ev.Body != "" {
 		w("DESCRIPTION:" + icalEscape(ev.Body))
 	}
-	if ev.RRule != "" {
-		w("RRULE:" + ev.RRule)
+	if rr := safeToken(ev.RRule, ""); rr != "" {
+		w("RRULE:" + rr)
 	}
 	if ev.Status != "" {
 		w("STATUS:" + strings.ToUpper(ev.Status))
 	}
-	if ev.OnlineURL != "" {
-		w("URL:" + ev.OnlineURL)
-		w("CONFERENCE;VALUE=URI;FEATURE=VIDEO:" + ev.OnlineURL)
+	if u := safeURL(ev.OnlineURL); u != "" {
+		w("URL:" + u)
+		w("CONFERENCE;VALUE=URI;FEATURE=VIDEO:" + u)
 	}
 	if len(ev.Categories) > 0 {
 		cs := make([]string, len(ev.Categories))
@@ -281,10 +318,14 @@ func EventICal(uid string, ev Event) string {
 		}
 		w("CATEGORIES:" + strings.Join(cs, ","))
 	}
-	if ev.Organizer != nil && ev.Organizer.Email != "" {
-		w("ORGANIZER;CN=" + quoteParam(ev.Organizer.Name) + ":mailto:" + ev.Organizer.Email)
+	if ev.Organizer != nil && safeToken(ev.Organizer.Email, ";,:") != "" {
+		w("ORGANIZER;CN=" + quoteParam(ev.Organizer.Name) + ":mailto:" + safeToken(ev.Organizer.Email, ";,:"))
 	}
 	for _, a := range ev.Attendees {
+		addr := safeToken(a.Email, ";,:")
+		if addr == "" {
+			continue
+		}
 		role := "REQ-PARTICIPANT"
 		switch a.Role {
 		case "optional":
@@ -296,7 +337,7 @@ func EventICal(uid string, ev Event) string {
 		if ps == "" {
 			ps = "NEEDS-ACTION"
 		}
-		w("ATTENDEE;CN=" + quoteParam(a.Name) + ";ROLE=" + role + ";PARTSTAT=" + ps + ":mailto:" + a.Email)
+		w("ATTENDEE;CN=" + quoteParam(a.Name) + ";ROLE=" + role + ";PARTSTAT=" + ps + ":mailto:" + addr)
 	}
 	if ev.Reminder > 0 {
 		w("BEGIN:VALARM")
@@ -311,8 +352,9 @@ func EventICal(uid string, ev Event) string {
 }
 
 func quoteParam(s string) string {
-	s = strings.ReplaceAll(s, `"`, "'")
-	return `"` + s + `"`
+	// RFC 6868 caret encoding; other control characters are dropped.
+	s = strings.NewReplacer("^", "^^", `"`, "^'", "\r\n", "^n", "\r", "^n", "\n", "^n").Replace(s)
+	return `"` + stripCtl(s) + `"`
 }
 
 // TaskICal renders t as a VCALENDAR with one VTODO.
@@ -356,7 +398,7 @@ func TaskICal(t Task) string {
 }
 
 func vcEscape(s string) string {
-	return strings.NewReplacer(`\`, `\\`, ",", `\,`, ";", `\;`, "\n", `\n`).Replace(s)
+	return stripCtl(strings.NewReplacer(`\`, `\\`, ",", `\,`, ";", `\;`, "\r\n", `\n`, "\r", `\n`, "\n", `\n`).Replace(s))
 }
 
 // ContactVCard renders c as vCard 4.0.
@@ -388,7 +430,7 @@ func ContactVCard(c Contact) string {
 		w("TITLE:" + vcEscape(c.JobTitle))
 	}
 	if c.Birthday != "" {
-		w("BDAY:" + strings.ReplaceAll(c.Birthday, "-", ""))
+		w("BDAY:" + stripCtl(strings.ReplaceAll(c.Birthday, "-", "")))
 	}
 	if c.Notes != "" {
 		w("NOTE:" + vcEscape(c.Notes))

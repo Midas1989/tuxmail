@@ -3,6 +3,7 @@
 package rrule
 
 import (
+	"context"
 	"errors"
 	"sort"
 	"strings"
@@ -104,7 +105,21 @@ func addLength(start time.Time, ev *ical.Event) time.Time {
 // (STATUS:CANCELLED) and EXDATEs are skipped. All-day occurrences have
 // Start/End at midnight UTC of their dates; callers compare dates for
 // those. tz resolves TZIDs and floating times.
+//
+// Expansion is bounded (maxSteps iterator steps per series). If a series is
+// too expensive, Expand degrades: the returned occurrences then contain only
+// the first instance (DTSTART) of that series plus the overrides, and the
+// error wraps ErrTooExpensive so that callers can log it. Callers that
+// ignore ErrTooExpensive still get a usable, bounded result.
 func Expand(comps []*ical.Component, tz *ical.TZ, from, to time.Time) ([]Occurrence, error) {
+	return ExpandContext(context.Background(), comps, tz, from, to)
+}
+
+// ExpandContext is Expand with a context; a cancelled or expired context
+// aborts the expansion of the series like ErrTooExpensive does (the context
+// error is wrapped).
+func ExpandContext(ctx context.Context, comps []*ical.Component, tz *ical.TZ, from, to time.Time) ([]Occurrence, error) {
+	var degraded error
 	master, overrides := SplitComponents(comps)
 	var out []Occurrence
 	type ov struct {
@@ -143,9 +158,18 @@ func Expand(comps []*ical.Component, tz *ical.TZ, from, to time.Time) ([]Occurre
 				out = append(out, Occurrence{Start: mev.Start.Time, End: end, AllDay: mev.Start.AllDay, Component: master})
 			}
 		} else {
-			starts, err := occurrences(&mev, from.Add(-mev.Length()-24*time.Hour), to)
+			starts, err := occurrences(ctx, &mev, from.Add(-mev.Length()-24*time.Hour), to)
 			if err != nil {
-				return nil, err
+				if !errors.Is(err, ErrTooExpensive) && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+					return nil, err
+				}
+				// Hostile or pathological rule: fall back to the first
+				// instance only (RFC 5545: DTSTART is always instance one).
+				degraded = err
+				starts = nil
+				if !mev.Start.Time.Before(from.Add(-mev.Length()-24*time.Hour)) && !mev.Start.Time.After(to) {
+					starts = []time.Time{mev.Start.Time}
+				}
 			}
 			for _, s := range starts {
 				if isExcluded(s, exdates, mev.Start.AllDay) || isOverridden(s, mev.Start.AllDay) {
@@ -186,7 +210,7 @@ func Expand(comps []*ical.Component, tz *ical.TZ, from, to time.Time) ([]Occurre
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Start.Before(out[j].Start) })
-	return out, nil
+	return out, degraded
 }
 
 func isExcluded(t time.Time, ex []ical.TimeValue, allDay bool) bool {
@@ -200,7 +224,12 @@ func isExcluded(t time.Time, ex []ical.TimeValue, allDay bool) bool {
 
 // occurrences returns the starts of the RRULE/RDATE set of ev within
 // [after, before] (EXDATE not applied).
-func occurrences(ev *ical.Event, after, before time.Time) ([]time.Time, error) {
+//
+// Every iterator step counts against maxSteps, also those before the window
+// (and those yielding nothing the caller keeps), so rules producing huge
+// numbers of instances per period cannot run away; ErrTooExpensive is
+// returned when the budget is exhausted, the context error when ctx ends.
+func occurrences(ctx context.Context, ev *ical.Event, after, before time.Time) ([]time.Time, error) {
 	var out []time.Time
 	if ev.RRule != "" {
 		rule, err := build(ev, before)
@@ -211,7 +240,15 @@ func occurrences(ev *ical.Event, after, before time.Time) ([]time.Time, error) {
 			after = ev.Start.Time
 		}
 		it := rule.Iterator()
-		for {
+		for steps := 0; ; steps++ {
+			if steps >= maxSteps {
+				return nil, ErrTooExpensive
+			}
+			if steps&0x3ff == 0 {
+				if err := ctx.Err(); err != nil {
+					return nil, err
+				}
+			}
 			t, ok := it()
 			if !ok || t.After(before) {
 				break
@@ -262,6 +299,12 @@ func containsTime(list []time.Time, t time.Time) bool {
 // "DTSTART:19000101T000000Z, FREQ=SECONDLY" or an impossible rule would
 // otherwise keep a CPU busy for hours (audit B, docs/security).
 const maxPeriods = 1_000_000
+
+// maxSteps is the hard budget of iterator steps (instances produced by the
+// rule, whether inside the window or not) per series. maxPeriods alone does
+// not bound rules with very many instances per period such as
+// "FREQ=DAILY;BYHOUR=0,...,23;BYMINUTE=0,...,59;BYSECOND=0,...,59".
+const maxSteps = 1_000_000
 
 // ErrTooExpensive is returned for rules whose expansion would be unbounded.
 var ErrTooExpensive = errors.New("rrule: recurrence rule too expensive to expand")
@@ -319,7 +362,7 @@ func IndexOf(ev *ical.Event, rid time.Time) int {
 	if ev.RRule == "" {
 		return -1
 	}
-	starts, err := occurrences(ev, ev.Start.Time, rid.Add(time.Second))
+	starts, err := occurrences(context.Background(), ev, ev.Start.Time, rid.Add(time.Second))
 	if err != nil {
 		return -1
 	}
