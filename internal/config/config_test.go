@@ -3,6 +3,7 @@
 package config
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -140,6 +141,35 @@ func TestLoadFileAndSecret(t *testing.T) {
 	}
 	if _, err := Load(filepath.Join(dir, "missing.yaml")); err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+func TestMessengerAllowedNetworks(t *testing.T) {
+	c, err := Parse([]byte("security: {allowed_networks: [\"10.0.0.0/8\"], messenger_allowed_networks: [\"127.0.0.1:8008\"]}\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	gp, err := c.NetPolicy()
+	if err != nil || len(gp.Allowed) != 1 {
+		t.Fatal("general policy must not contain messenger-only entries", gp, err)
+	}
+	if err := gp.Check(netip.MustParseAddrPort("127.0.0.1:8008")); err == nil {
+		t.Fatal("general policy allows the messenger-only homeserver")
+	}
+	mp, err := c.MessengerNetPolicy()
+	if err != nil || len(mp.Allowed) != 2 {
+		t.Fatal(mp, err)
+	}
+	if err := mp.Check(netip.MustParseAddrPort("127.0.0.1:8008")); err != nil {
+		t.Fatal(err)
+	}
+	// The old key keeps working for the messenger plugins as well.
+	old, _ := Parse([]byte("security: {allowed_networks: [\"127.0.0.1:8008\"]}\n"))
+	if mp, _ := old.MessengerNetPolicy(); mp.Check(netip.MustParseAddrPort("127.0.0.1:8008")) != nil {
+		t.Fatal("allowed_networks must stay valid for messengers")
+	}
+	if _, err := Parse([]byte("security: {messenger_allowed_networks: [intranet.example]}\n")); err == nil {
+		t.Fatal("invalid messenger network accepted")
 	}
 }
 

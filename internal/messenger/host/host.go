@@ -581,7 +581,7 @@ func (s *supervisor) runOnce(m Manifest, stop chan struct{}) (crashed bool, err 
 	hctx, cancel := context.WithTimeout(s.h.ctx, s.h.opts.StartTimeout)
 	var info wire.HelloResult
 	herr := conn.Call(hctx, wire.MethodHello, wire.HelloParams{ProtocolVersion: wire.ProtocolVersion, HostVersion: s.h.opts.HostVersion,
-		DataDir: dataDir, Config: cfg, NetPolicy: NetPolicyFor(netguard.Current())}, &info)
+		DataDir: dataDir, Config: cfg, NetPolicy: NetPolicyFor(netguard.MessengerPolicy())}, &info)
 	cancel()
 	if herr == nil && info.ProtocolVersion != wire.ProtocolVersion {
 		herr = wire.Errorf(wire.CodeOutdated, "plugin speaks protocol %d, host %d", info.ProtocolVersion, wire.ProtocolVersion)

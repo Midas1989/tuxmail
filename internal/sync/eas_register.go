@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"time"
 
@@ -128,15 +129,27 @@ func EASConfig(ctx context.Context, acc domain.Account, creds Credentials, opts 
 	return cfg, nil
 }
 
+const (
+	easDialTimeout     = 30 * time.Second
+	easIdleConnTimeout = 90 * time.Second
+)
+
 func easHTTPClient(opts ProviderOptions) *http.Client {
 	tr := http.DefaultTransport.(*http.Transport).Clone()
 	if opts.TLSConfig != nil {
 		tr.TLSClientConfig = opts.TLSConfig.Clone()
 	}
 	if opts.DialContext != nil {
-		tr.DialContext = opts.DialContext
+		dial := opts.DialContext
+		tr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			ctx, cancel := context.WithTimeout(ctx, easDialTimeout)
+			defer cancel()
+			return dial(ctx, network, addr)
+		}
 	}
-	tr.ResponseHeaderTimeout = 0 // Ping blocks for the heartbeat
+	tr.TLSHandshakeTimeout = easDialTimeout
+	tr.IdleConnTimeout = easIdleConnTimeout
+	tr.ResponseHeaderTimeout = 0 // Ping blocks for the heartbeat; no overall client timeout either
 	return &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 }
 

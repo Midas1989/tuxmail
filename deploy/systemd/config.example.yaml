@@ -83,7 +83,10 @@ security:
   # Always reachable: IP or CIDR, optionally with a port.
   allowed_networks: []
   #  - "192.168.10.5:993"
-  #  - "127.0.0.1:8008"   # local Matrix homeserver
+  # Additionally reachable for the messenger plugins only (not for users' mail,
+  # webhooks etc.), e.g. a local Matrix homeserver.
+  messenger_allowed_networks: []
+  #  - "127.0.0.1:8008"
   # true = /healthz and /api/auth/config report the exact program version to
   # anonymous clients (default: false, they only report "product": "tuxmail").
   # Logged-in users and `tuxmail version` always show it.

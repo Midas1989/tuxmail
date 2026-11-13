@@ -30,6 +30,11 @@ type Security struct {
 	// optionally with a port, e.g. "192.168.10.5", "10.20.0.0/16:993",
 	// "127.0.0.1:8008" (local Matrix homeserver), "[fd00::/8]:443".
 	AllowedNetworks []string `yaml:"allowed_networks"`
+	// MessengerAllowedNetworks are additionally reachable for the messenger
+	// plugins only (same syntax as AllowedNetworks), e.g. "127.0.0.1:8008"
+	// for a local Matrix homeserver. Unlike AllowedNetworks they do not
+	// apply to users' mail, webhook, calendar or other outbound features.
+	MessengerAllowedNetworks []string `yaml:"messenger_allowed_networks"`
 
 	// ExposeVersion lets the unauthenticated endpoints /healthz and
 	// /api/auth/config report the exact program version (default off: it
@@ -55,6 +60,23 @@ type Security struct {
 func (c *Config) NetPolicy() (*netguard.Policy, error) {
 	p := &netguard.Policy{AllowPrivate: c.Security.AllowPrivateNetworks}
 	for _, s := range c.Security.AllowedNetworks {
+		r, err := netguard.ParseRule(s)
+		if err != nil {
+			return nil, err
+		}
+		p.Allowed = append(p.Allowed, r)
+	}
+	return p, nil
+}
+
+// MessengerNetPolicy returns the policy for the messenger plugins: the
+// general policy plus security.messenger_allowed_networks.
+func (c *Config) MessengerNetPolicy() (*netguard.Policy, error) {
+	p, err := c.NetPolicy()
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range c.Security.MessengerAllowedNetworks {
 		r, err := netguard.ParseRule(s)
 		if err != nil {
 			return nil, err

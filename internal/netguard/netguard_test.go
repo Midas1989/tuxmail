@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"sync"
 	"testing"
 )
 
@@ -34,6 +35,12 @@ func TestClassify(t *testing.T) {
 		"64:ff9b::a9fe:a9fe": classBlocked, // NAT64 of 169.254.169.254
 		"64:ff9b::808:808":   classPublic,  // NAT64 of 8.8.8.8
 		"2002:7f00:1::":      classBlocked, // 6to4 of 127.0.0.1
+		"168.63.129.16":      classBlocked, // Azure WireServer
+		"100.100.100.200":    classBlocked, // Alibaba metadata
+		"100.100.100.201":    classPrivate,
+		"::7f00:1":           classBlocked, // IPv4-compatible 127.0.0.1
+		"::a00:1":            classBlocked, // IPv4-compatible 10.0.0.1
+		"::ffff:0:7f00:1":    classBlocked, // IPv4-translated 127.0.0.1
 	}
 	for s, want := range cases {
 		if got := classify(netip.MustParseAddr(s)); got != want {
@@ -69,6 +76,11 @@ func TestPolicyCheck(t *testing.T) {
 	}
 	if err := priv.Check(netip.MustParseAddrPort("169.254.169.254:80")); err == nil {
 		t.Error("metadata endpoint allowed with allow_private_networks")
+	}
+	for _, s := range []string{"168.63.129.16:80", "100.100.100.200:80", "[::7f00:1]:80", "[::ffff:0:7f00:1]:80"} {
+		if err := priv.Check(netip.MustParseAddrPort(s)); !errors.Is(err, ErrBlocked) {
+			t.Errorf("%s allowed with allow_private_networks", s)
+		}
 	}
 }
 
@@ -143,4 +155,50 @@ func TestDefaultTransportGuarded(t *testing.T) {
 	if _, err := http.Get("http://localhost:" + port); err == nil {
 		t.Fatal("localhost reachable by name")
 	}
+}
+
+func TestMessengerPolicy(t *testing.T) {
+	t.Cleanup(func() { SetPolicy(nil); SetMessengerPolicy(nil) })
+	gp := &Policy{}
+	SetPolicy(gp)
+	if MessengerPolicy() != gp {
+		t.Fatal("messenger policy must fall back to the general one")
+	}
+	r, _ := ParseRule("127.0.0.1:8008")
+	SetMessengerPolicy(&Policy{Allowed: []Rule{r}})
+	if err := MessengerPolicy().Check(netip.MustParseAddrPort("127.0.0.1:8008")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Current().Check(netip.MustParseAddrPort("127.0.0.1:8008")); err == nil {
+		t.Fatal("general policy must not allow the messenger-only entry")
+	}
+}
+
+// TestProxyAddressNotDialedDirectly: a user URL pointing at the environment
+// proxy (e.g. matched by NO_PROXY) must not skip the policy check.
+func TestProxyAddressNotDialedDirectly(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("internal")) }))
+	defer ts.Close()
+	addr := ts.Listener.Addr().String()
+	t.Setenv("HTTP_PROXY", "http://"+addr)
+	t.Setenv("NO_PROXY", "127.0.0.1")
+	t.Setenv("http_proxy", "http://"+addr)
+	t.Setenv("no_proxy", "127.0.0.1")
+	proxyOnce = sync.Once{}
+	t.Cleanup(func() { SetPolicy(nil); proxyOnce = sync.Once{} })
+	SetPolicy(&Policy{})
+
+	req, _ := http.NewRequest("GET", ts.URL, nil)
+	if _, err := proxyDefault(req); !errors.Is(err, ErrBlocked) {
+		t.Fatalf("direct dial of the proxy address allowed: %v", err)
+	}
+	if _, err := http.Get(ts.URL); !errors.Is(err, ErrBlocked) {
+		t.Fatalf("proxy address reachable as target: %v", err)
+	}
+	// The connection to the proxy itself stays unchecked.
+	c, err := dialDefault(context.Background(), "tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.Close()
 }

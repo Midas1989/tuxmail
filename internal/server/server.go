@@ -122,6 +122,11 @@ func New(cfg *config.Config, svc *auth.Service, opts Options) (*Server, error) {
 		return nil, err
 	}
 	netguard.SetPolicy(policy)
+	mpolicy, err := cfg.MessengerNetPolicy()
+	if err != nil {
+		return nil, err
+	}
+	netguard.SetMessengerPolicy(mpolicy)
 	s := &Server{
 		cfg: cfg, auth: svc, log: opts.Logger, version: opts.Version, static: opts.Static,
 		trusted: trusted, mailData: opts.MailData, locales: opts.Locales, appOptions: opts.AppOptions,

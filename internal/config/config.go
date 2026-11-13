@@ -306,6 +306,8 @@ func (c *Config) Validate() error {
 	}
 	if _, err := c.NetPolicy(); err != nil {
 		add("security.allowed_networks: %v", err)
+	} else if _, err := c.MessengerNetPolicy(); err != nil {
+		add("security.messenger_allowed_networks: %v", err)
 	}
 	return errors.Join(errs...)
 }

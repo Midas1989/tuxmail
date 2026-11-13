@@ -165,9 +165,14 @@ var (
 		"203.0.113.0/24", "224.0.0.0/3", // multicast, reserved (240/4) and broadcast
 		"::/128", "::ffff:0:0/96", "64:ff9b:1::/48", "100::/64", "2001::/23", "2001:db8::/32", "2002::/16",
 		"fe80::/10", "fec0::/10", "ff00::/8",
-		"fd00:ec2::254/128", // AWS IMDS over IPv6 (inside fc00::/7)
+		"fd00:ec2::254/128",  // AWS IMDS over IPv6 (inside fc00::/7)
+		"168.63.129.16/32",   // Azure WireServer / IMDS helper (public range)
+		"100.100.100.200/32", // Alibaba Cloud metadata (inside 100.64.0.0/10)
+		"::/96",              // IPv4-compatible (deprecated); ::1 is handled in classify
+		"::ffff:0:0:0/96",    // IPv4-translated (SIIT)
 	)
-	nat64 = netip.MustParsePrefix("64:ff9b::/96")
+	nat64     = netip.MustParsePrefix("64:ff9b::/96")
+	loopback6 = netip.MustParseAddr("::1")
 )
 
 func mustPrefixes(ss ...string) []netip.Prefix {
@@ -186,6 +191,9 @@ func classify(a netip.Addr) class {
 	if nat64.Contains(a) { // NAT64: judge the embedded IPv4 address
 		b := a.As16()
 		return classify(netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}))
+	}
+	if a == loopback6 {
+		return classPrivate
 	}
 	for _, p := range blockedPrefixes {
 		if p.Contains(a) {
@@ -217,6 +225,22 @@ func SetPolicy(p *Policy) { current.Store(p) }
 
 // Current returns the installed policy (nil: unrestricted).
 func Current() *Policy { return current.Load() }
+
+var messenger atomic.Pointer[Policy]
+
+// SetMessengerPolicy installs the policy handed to messenger plugins (the
+// general policy plus allowances that apply to the plugins only, e.g. the
+// local Matrix homeserver). nil removes it.
+func SetMessengerPolicy(p *Policy) { messenger.Store(p) }
+
+// MessengerPolicy returns the policy for messenger plugins and the
+// homeserver pre-check; without a dedicated one it is the general policy.
+func MessengerPolicy() *Policy {
+	if p := messenger.Load(); p != nil {
+		return p
+	}
+	return current.Load()
+}
 
 // Control is a net.Dialer Control function enforcing the current policy.
 func Control(network, address string, _ syscall.RawConn) error {
@@ -304,6 +328,9 @@ func loadProxies() {
 // administrator), everything else is checked.
 func dialDefault(ctx context.Context, network, addr string) (net.Conn, error) {
 	proxyOnce.Do(loadProxies)
+	// A destination equal to the proxy address is refused by proxyDefault
+	// for direct connections, so this only skips the check for dials the
+	// transport opens to the proxy itself.
 	if isTrusted(ctx) || proxyAddrs[strings.ToLower(addr)] {
 		return plainDialer.DialContext(ctx, network, addr)
 	}
@@ -316,8 +343,18 @@ func dialDefault(ctx context.Context, network, addr string) (net.Conn, error) {
 func proxyDefault(req *http.Request) (*url.URL, error) {
 	proxyOnce.Do(loadProxies)
 	u, err := http.ProxyFromEnvironment(req)
-	if err != nil || u == nil {
+	if err != nil {
 		return u, err
+	}
+	if u == nil {
+		// Direct connection: dialDefault does not check dials to the proxy
+		// address, so a user URL pointing at the proxy (e.g. matched by
+		// NO_PROXY) must not be dialed directly.
+		if current.Load() != nil && !isTrusted(req.Context()) &&
+			proxyAddrs[strings.ToLower(net.JoinHostPort(req.URL.Hostname(), strconv.Itoa(int(portOf(req.URL)))))] {
+			return nil, fmt.Errorf("%w: %s (proxy address)", ErrBlocked, req.URL.Host)
+		}
+		return nil, nil
 	}
 	if p := current.Load(); p != nil && !isTrusted(req.Context()) {
 		if err := CheckHost(req.Context(), req.URL.Hostname(), portOf(req.URL)); err != nil {
@@ -340,7 +377,11 @@ func portOf(u *url.URL) uint16 {
 // CheckHost resolves host and checks all its addresses against the current
 // policy (for paths where the dial itself cannot be checked).
 func CheckHost(ctx context.Context, host string, port uint16) error {
-	p := current.Load()
+	return CheckHostPolicy(ctx, current.Load(), host, port)
+}
+
+// CheckHostPolicy is CheckHost against an explicit policy (nil: allowed).
+func CheckHostPolicy(ctx context.Context, p *Policy, host string, port uint16) error {
 	if p == nil {
 		return nil
 	}

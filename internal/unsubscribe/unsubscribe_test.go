@@ -58,7 +58,7 @@ func TestSafeClientRefusesLoopback(t *testing.T) {
 	if !errors.Is(err, ErrForbiddenAddress) {
 		t.Fatalf("expected SSRF refusal, got %v", err)
 	}
-	for _, s := range []string{"10.0.0.1", "192.168.1.1", "169.254.169.254", "::1", "fd00::1", "100.64.1.1"} {
+	for _, s := range []string{"10.0.0.1", "192.168.1.1", "169.254.169.254", "::1", "fd00::1", "100.64.1.1", "168.63.129.16", "100.100.100.200", "::7f00:1", "::ffff:0:7f00:1"} {
 		if IsPublic(netip.MustParseAddr(s)) {
 			t.Errorf("%s must not be public", s)
 		}
