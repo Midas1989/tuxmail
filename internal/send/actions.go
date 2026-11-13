@@ -7,12 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Midas1989/Mailclient/internal/domain"
+	"github.com/Midas1989/Mailclient/internal/events"
 	"github.com/Midas1989/Mailclient/internal/mime/compose"
 	"github.com/Midas1989/Mailclient/internal/mime/parse"
 	"github.com/Midas1989/Mailclient/internal/workflow"
+	"github.com/Midas1989/Mailclient/internal/workflow/vacation"
 )
 
 // OriginalLoader loads the raw message a workflow action refers to
@@ -38,6 +42,70 @@ type Actions struct {
 	Locale string
 	// Parse options (e.g. a key ring to decrypt originals).
 	Parse parse.Options
+	// Replies remembers whom an automatic reply was sent to (optional; the
+	// store implements it). Without it every mail is answered (tests).
+	Replies ReplyLog
+	// Now defaults to time.Now.
+	Now func() time.Time
+}
+
+// ReplyLog is the sent-to log of automatic replies (store.ClaimVacationReply).
+type ReplyLog interface {
+	ClaimVacationReply(ctx context.Context, scope, sender string, now time.Time, window time.Duration) (bool, error)
+	ForgetVacationReply(ctx context.Context, scope, sender string) error
+}
+
+// autoReplyWindow is the period in which a sender gets at most one automatic
+// reply from a workflow.
+const autoReplyWindow = 24 * time.Hour
+
+// ErrAutoForwardBlocked is returned when an automated or looping original
+// must not be forwarded by a workflow (audit M-10).
+var ErrAutoForwardBlocked = errors.New("send: automatic forward of an automatic message suppressed")
+
+// ErrAutoReplyRepeated is returned when the sender already got an automatic
+// reply within the period.
+var ErrAutoReplyRepeated = errors.New("send: sender already got an automatic reply recently")
+
+var loopHeaders = []string{"Auto-Submitted", "Precedence", "X-Loop", "X-Auto-Response-Suppress", "Return-Path",
+	"List-Id", "List-Unsubscribe", "List-Post", "X-Mailing-List"}
+
+func (a *Actions) now() time.Time {
+	if a.Now != nil {
+		return a.Now()
+	}
+	return time.Now()
+}
+
+// isOwn reports whether the sender of orig is the receiving identity itself
+// (mail loop).
+func isOwn(orig *parse.Message, ident domain.Identity) bool {
+	return ident.Email != "" && strings.EqualFold(strings.TrimSpace(fromAddr(orig).Email), strings.TrimSpace(ident.Email))
+}
+
+// automated reports whether orig is bulk, list or machine generated mail
+// (RFC 3834), reusing the vacation responder's rules.
+func automated(orig *parse.Message) bool {
+	m := &events.Mail{From: fromAddr(orig), Headers: map[string][]string{}}
+	for _, h := range loopHeaders {
+		if v := orig.Headers.Get(h); v != "" {
+			m.Headers[h] = []string{v}
+		}
+	}
+	auto, _ := vacation.IsAutomated(m)
+	return auto || orig.IsAutomated()
+}
+
+// loop reports whether forwarding orig could feed a mail loop: automatic
+// mail (Auto-Submitted), junk precedence, X-Loop or an own sender.
+func loop(orig *parse.Message, ident domain.Identity) bool {
+	if isOwn(orig, ident) || orig.Headers.Get("X-Loop") != "" {
+		return true
+	}
+	if orig.AutoSubmitted != "" && orig.AutoSubmitted != "no" {
+		return true
+	}
+	return strings.EqualFold(strings.TrimSpace(orig.Headers.Get("Precedence")), "junk")
 }
 
 // ErrNoDraftSaver is returned when a draft should be created without saver.
@@ -129,6 +197,9 @@ func (a *Actions) Forward(ctx context.Context, ref workflow.ItemRef, req workflo
 	if err != nil {
 		return err
 	}
+	if loop(orig, ident) {
+		return ErrAutoForwardBlocked
+	}
 	to, err := parseAddrs(req.To)
 	if err != nil {
 		return err
@@ -140,6 +211,7 @@ func (a *Actions) Forward(ctx context.Context, ref workflow.ItemRef, req workflo
 	_, err = a.Service.Send(ctx, Request{
 		Draft: compose.Draft{
 			Identity: ident, Kind: kind, Original: orig, To: to, TextBody: req.Note, Locale: a.locale(),
+			AutoSubmitted: "auto-forwarded",
 		},
 		OriginalKey: ref.Key, OriginalAccountID: ref.AccountID, Source: "workflow",
 	})
@@ -185,7 +257,7 @@ func (a *Actions) replyDraft(ctx context.Context, ref workflow.ItemRef, req work
 // ReplyTemplate implements workflow.MailActions.ReplyTemplate: it sends the
 // reply (req.Send) or stores it as draft.
 func (a *Actions) ReplyTemplate(ctx context.Context, ref workflow.ItemRef, req workflow.ReplyRequest) error {
-	_, d, err := a.replyDraft(ctx, ref, req)
+	orig, d, err := a.replyDraft(ctx, ref, req)
 	if err != nil {
 		return err
 	}
@@ -198,6 +270,12 @@ func (a *Actions) ReplyTemplate(ctx context.Context, ref workflow.ItemRef, req w
 			return err
 		}
 		return a.Drafts.SaveDraft(ctx, d.Identity, msg.Bytes())
+	}
+	if automated(orig) || isOwn(orig, d.Identity) {
+		return ErrAutoReplyBlocked
+	}
+	if d.AutoSubmitted == "" {
+		d.AutoSubmitted = "auto-replied"
 	}
 	_, err = a.Service.Send(ctx, Request{Draft: d, OriginalKey: ref.Key, OriginalAccountID: ref.AccountID, Source: "workflow"})
 	return err
@@ -213,15 +291,43 @@ func (a *Actions) ReplyAutomatic(ctx context.Context, ref workflow.ItemRef, req 
 	if err != nil {
 		return err
 	}
-	if orig.AutoSubmitted != "" && orig.AutoSubmitted != "no" {
+	if automated(orig) || isOwn(orig, d.Identity) {
 		return ErrAutoReplyBlocked
+	}
+	scope, sender := "workflow:"+strconv.FormatInt(ref.AccountID, 10), replyTarget(orig, d)
+	if a.Replies != nil && sender != "" {
+		ok, err := a.Replies.ClaimVacationReply(ctx, scope, sender, a.now(), autoReplyWindow)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return ErrAutoReplyRepeated
+		}
 	}
 	d.AutoSubmitted = "auto-replied"
 	d.Quote.Mode = compose.QuoteNone
 	d.SignatureMode = compose.SignatureNone
 	d.Cc = nil
 	_, err = a.Service.Send(ctx, Request{Draft: d, OriginalKey: ref.Key, OriginalAccountID: ref.AccountID, Source: "workflow"})
+	if err != nil && a.Replies != nil && sender != "" {
+		_ = a.Replies.ForgetVacationReply(ctx, scope, sender)
+	}
 	return err
+}
+
+func fromAddr(m *parse.Message) domain.Address {
+	if len(m.Header.From) > 0 {
+		return m.Header.From[0]
+	}
+	return domain.Address{}
+}
+
+// replyTarget is the address an automatic reply goes to (key of the sent-to log).
+func replyTarget(orig *parse.Message, d compose.Draft) string {
+	if len(d.To) > 0 {
+		return d.To[0].Email
+	}
+	return fromAddr(orig).Email
 }
 
 func (s *Service) composeOptions() compose.Options {

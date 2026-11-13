@@ -52,6 +52,8 @@ type Worker struct {
 	bodyResumeAt time.Time
 	// lastProgress is when the last progress update was published.
 	lastProgress time.Time
+	// lastEarlyRetry is when a manual sync last cut a backoff short.
+	lastEarlyRetry time.Time
 }
 
 // protection describes what a pending operation changed locally, so that a
@@ -283,12 +285,18 @@ func (w *Worker) run(ctx context.Context) {
 		}
 		if err != nil {
 			d := bo.Next()
+			authErr := IsAuthError(err)
+			if authErr {
+				// Wrong credentials stay wrong: wait long (until they change,
+				// which restarts the worker) instead of hammering the server.
+				d = max(d, w.m.cfg.MaxBackoff)
+			}
 			retryAt := w.m.now().Add(d)
 			w.setStatus(func(st *AccountStatus) {
 				st.State, st.Folder, st.LastError, st.LastErrorAt, st.NextRetry = StateError, "", err.Error(), w.m.now(), retryAt
 			})
 			w.log.Warn("sync: cycle failed", "err", err, "retry_in", d.Round(time.Millisecond), "network", IsNetworkError(err))
-			if !w.sleep(ctx, d) {
+			if !w.sleep(ctx, d, authErr) {
 				return
 			}
 			w.setState(StateConnecting, "")
@@ -318,17 +326,31 @@ func (w *Worker) safeCycle(ctx context.Context) (err error) {
 	return w.cycle(ctx)
 }
 
-// sleep waits d (or until a retry is requested); false if ctx ended.
-func (w *Worker) sleep(ctx context.Context, d time.Duration) bool {
+// earlyRetryWindow is the minimum distance between two manual syncs that cut
+// a backoff short.
+const earlyRetryWindow = 30 * time.Second
+
+// sleep waits d (or until a retry is requested); false if ctx ended. A manual
+// retry never ends the wait after an authentication error and after other
+// errors at most once per earlyRetryWindow (audit M-7).
+func (w *Worker) sleep(ctx context.Context, d time.Duration, authErr bool) bool {
 	t := time.NewTimer(d)
 	defer t.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-t.C:
-	case <-w.retry:
+	for {
+		select {
+		case <-ctx.Done():
+			return false
+		case <-t.C:
+			return true
+		case <-w.retry:
+			now := w.m.now()
+			if authErr || now.Sub(w.lastEarlyRetry) < earlyRetryWindow {
+				continue
+			}
+			w.lastEarlyRetry = now
+			return true
+		}
 	}
-	return true
 }
 
 // wait blocks until new work arrives or the next scheduled sync is due.

@@ -30,6 +30,13 @@ const (
 // DefaultSearchLimit is used when no positive limit is given.
 const DefaultSearchLimit = 50
 
+// Bounds of a single search (audit I-2): its run time and how deep offset
+// paging may go (use the cursor beyond that).
+const (
+	SearchTimeout   = 10 * time.Second
+	MaxSearchOffset = 10000
+)
+
 // ErrBadCursor is returned for a cursor that does not belong to the query's sort order.
 var ErrBadCursor = errors.New("store: invalid search cursor")
 
@@ -244,6 +251,8 @@ func (o SortOrder) spec(hasText bool) (sortSpec, error) {
 // wildcard candidates come from the trigram index).
 func (s *Store) SearchAdvanced(ctx context.Context, req SearchRequest) (SearchResult, error) {
 	var res SearchResult
+	ctx, cancel := context.WithTimeout(ctx, SearchTimeout)
+	defer cancel()
 	root := req.Root
 	if strings.TrimSpace(req.Query) != "" {
 		var n query.Node
@@ -288,7 +297,7 @@ func (s *Store) SearchAdvanced(ctx context.Context, req SearchRequest) (SearchRe
 	}
 	offset := 0
 	if cursor == nil {
-		offset = max(req.Offset, 0)
+		offset = min(max(req.Offset, 0), MaxSearchOffset)
 	}
 	dir, cmp := " ASC", ">"
 	if spec.desc {

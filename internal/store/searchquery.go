@@ -373,21 +373,3 @@ func ftsString(s string) string {
 func hasWordChar(s string) bool {
 	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0
 }
-
-// ftsExpr builds the MATCH expression for one search arm. columns restricts
-// the free-text terms to the given fts_items columns (nil = all). It returns
-// "" if there is nothing to match.
-func ftsExpr(text []string, subject []string, columns []string) string {
-	var parts []string
-	if len(text) > 0 {
-		e := strings.Join(text, " AND ")
-		if len(columns) > 0 {
-			e = "{" + strings.Join(columns, " ") + "} : (" + e + ")"
-		}
-		parts = append(parts, e)
-	}
-	if len(subject) > 0 {
-		parts = append(parts, "subject : ("+strings.Join(subject, " AND ")+")")
-	}
-	return strings.Join(parts, " AND ")
-}

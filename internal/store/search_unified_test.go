@@ -350,12 +350,6 @@ func TestFTSTerms(t *testing.T) {
 			t.Errorf("ftsTerms(%q) = %q, want %q", c.in, got, c.want)
 		}
 	}
-	if e := ftsExpr([]string{`"a"`, `"b"`}, []string{`"s"`}, []string{"subject", "body"}); e != `{subject body} : ("a" AND "b") AND subject : ("s")` {
-		t.Fatalf("ftsExpr: %s", e)
-	}
-	if e := ftsExpr(nil, nil, nil); e != "" {
-		t.Fatalf("empty ftsExpr: %q", e)
-	}
 }
 
 func TestParseQuery(t *testing.T) {

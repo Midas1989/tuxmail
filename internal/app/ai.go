@@ -228,7 +228,7 @@ func (a *App) aiTranscript(ctx context.Context, convID int64, s AiSettings) (str
 			}
 			continue
 		}
-		fmt.Fprintf(&b, "[%s] %s: %s\n", it.SentAt, name, excerpt(mask(it.Body), 2000))
+		fmt.Fprintf(&b, "[%s] %s: %s\n", it.SentAt, mask(name), excerpt(mask(it.Body), 2000))
 	}
 	if shared == 0 {
 		return "", skipped, errAINoAccess
@@ -284,8 +284,12 @@ func (a *App) AiTranslate(ctx context.Context, convID int64, itemID, lang string
 	if a.newAiScope(s).itemLevel(ctx, it) != AiLevelContent {
 		return AiTranslation{}, errAINoAccess
 	}
+	body := it.Body
+	if s.MaskPersonalData {
+		body = maskPersonal(body)
+	}
 	out, err := p.Complete(ctx, fmt.Sprintf(`Translate the user's text into the language with the code %q. Answer with JSON `+
-		`{"sourceLang": "<ISO 639-1 code of the original>", "text": "<translation>"} and nothing else.`, lang), it.Body)
+		`{"sourceLang": "<ISO 639-1 code of the original>", "text": "<translation>"} and nothing else.`, lang), body)
 	if err != nil {
 		return AiTranslation{}, err
 	}

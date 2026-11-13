@@ -66,6 +66,13 @@ func NewZip(r io.ReaderAt, size int64) (*Source, error) {
 	return &Source{kind: "zip", zr: zr}, nil
 }
 
+// Limits of a ZIP archive of messages (audit I-11): entries and the sum of
+// the uncompressed sizes (as for unzip in the app layer).
+const (
+	MaxZipEntries = 200000
+	MaxZipTotal   = 8 << 30
+)
+
 func isEML(name string) bool {
 	ext := strings.ToLower(path.Ext(name))
 	return ext == ".eml" || ext == ".msg822" || ext == ".mime"
@@ -117,9 +124,16 @@ func (s *Source) Walk(ctx context.Context, fn func(ie.Message) error) error {
 		}
 		return nil
 	case "zip":
+		if len(s.zr.File) > MaxZipEntries {
+			return ie.Corrupt("zip: more than %d entries", MaxZipEntries)
+		}
 		files := make([]*zip.File, 0, len(s.zr.File))
+		var total uint64
 		for _, f := range s.zr.File {
 			if !f.FileInfo().IsDir() && isEML(f.Name) && !strings.HasPrefix(path.Base(f.Name), "._") {
+				if total += f.UncompressedSize64; total > MaxZipTotal {
+					return ie.Corrupt("zip: content too large")
+				}
 				files = append(files, f)
 			}
 		}

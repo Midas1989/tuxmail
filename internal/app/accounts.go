@@ -101,6 +101,11 @@ func (a *App) DiscoverAccount(ctx context.Context, email, password string) (Disc
 	if !strings.Contains(email, "@") {
 		return DiscoveryResult{}, invalid("invalid e-mail address")
 	}
+	release, err := a.acquireLoginProbe("discover")
+	if err != nil {
+		return DiscoveryResult{}, err
+	}
+	defer release()
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	return a.opts.Discoverer.Discover(ctx, strings.TrimSpace(email), password)

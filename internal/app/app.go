@@ -162,6 +162,10 @@ type App struct {
 	comfort   *comfortState // comfort_state.go (spam, categories, S/MIME, PDF, ...)
 	diag      diagState     // diagnostics.go
 
+	probeLimit *tokenBucket // account test / discovery (ratelimit.go)
+	syncMu     sync.Mutex
+	syncNow    map[int64]*tokenBucket // manual sync per account
+
 	// Per-App state that used to live in package-level maps (audit NH-02,
 	// NH-04, NH-05, NH-06): nothing here is shared between users.
 	ioOnce         sync.Once
@@ -198,7 +202,8 @@ func New(ctx context.Context, opts Options) (*App, error) {
 		opts.HTTPClient = &http.Client{Timeout: 60 * time.Second}
 	}
 	a := &App{kick: make(chan struct{}, 1), opts: opts, st: opts.Store, bus: opts.Bus, hub: NewHub(), log: opts.Logger, idxDirty: true,
-		remote: map[string]*remoteSession{}}
+		probeLimit: newTokenBucket(loginProbePerMinute, opts.Now()),
+		remote:     map[string]*remoteSession{}}
 	if a.bus == nil {
 		a.bus, a.ownsBus = events.New(), true
 	}

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync/atomic"
+	"time"
 	"unicode"
 
 	"github.com/Midas1989/Mailclient/internal/secrets"
@@ -24,6 +25,8 @@ type Error struct {
 	Status  int
 	Message string
 	Err     error
+	// RetryAfter (429 only) tells the client how long to wait.
+	RetryAfter time.Duration
 }
 
 func (e *Error) Error() string {

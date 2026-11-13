@@ -46,7 +46,7 @@ func (l *limiter) allow(w *Workflow, ref string, now time.Time) (bool, string) {
 	if l.calls%1024 == 0 {
 		l.sweep(now)
 	}
-	max, per := w.Options.rate()
+	max, per := w.rateLimit()
 	wfTimes := prune(l.perWf[w.ID], now.Add(-per.D()))
 	if len(wfTimes) >= max {
 		l.perWf[w.ID] = wfTimes
