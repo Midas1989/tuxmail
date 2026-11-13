@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Midas1989/Mailclient/internal/auth"
 	"github.com/Midas1989/Mailclient/internal/server/secretlink"
 )
 
@@ -45,8 +46,17 @@ func (s *Server) handleSecretCreate(w http.ResponseWriter, r *http.Request, a *a
 		writeError(w, http.StatusTooManyRequests, "throttled", "too many requests")
 		return
 	}
+	// Read-only (guest) accounts store nothing; the check of appHandler does not cover these routes.
+	if a.User.Role == auth.RoleReadonly {
+		writeError(w, http.StatusForbidden, "read_only", "this account is read-only")
+		return
+	}
 	var req secretCreateRequest
 	if !readJSON(w, r, &req) {
+		return
+	}
+	if req.TTLSeconds < 0 || req.TTLSeconds > int64(secretlink.MaxTTL/time.Second) {
+		writeError(w, http.StatusBadRequest, "bad_request", "size, lifetime or number of views out of range")
 		return
 	}
 	ct, err := base64.RawURLEncoding.DecodeString(req.Ciphertext)
@@ -67,7 +77,7 @@ func (s *Server) handleSecretCreate(w http.ResponseWriter, r *http.Request, a *a
 		writeError(w, http.StatusInternalServerError, "internal", "could not store the link")
 		return
 	}
-	// The id is not logged anywhere: with the key it is the secret.
+	// The id is not logged (logPath masks /api/secrets/ and /secret/): with the key it is the secret.
 	s.auth.Audit(r.Context(), "secretlink.create", a.User.Username, true, "")
 	// url is where the recipient opens it (public_url may carry a path prefix); the browser appends #<key>.
 	writeJSON(w, http.StatusCreated, struct {

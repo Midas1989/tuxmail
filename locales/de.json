@@ -1999,7 +1999,7 @@
     "secret": {
       "button": "Geheimen Text als Einmal-Link einfügen",
       "title": "Geheimen Text als Einmal-Link senden",
-      "intro": "Der Text wird in deinem Browser verschlüsselt. Der Schlüssel steht nur im Link; der Server speichert den verschlüsselten Text und löscht ihn nach Ablauf oder nach dem letzten erlaubten Abruf.",
+      "intro": "Der Text wird in deinem Browser verschlüsselt. Der Server speichert nur den verschlüsselten Text und löscht ihn nach Ablauf oder nach dem letzten erlaubten Abruf. Der Schlüssel steht im Link: Fügst du den Link in diese Mail ein, liegt er wie die Mail selbst im Entwurf und im Gesendet-Ordner auf diesem Server, bis der Link benutzt ist. Wer möchte, kopiert den Link nur und schickt ihn auf einem anderen Weg.",
       "warnTitle": "Für wirklich geheime Passwörter nicht geeignet",
       "warn": "Bei sehr geheimen Passwörtern (Bank, Administrator-Zugänge, Hauptpasswörter) nutze lieber Bitwarden Send oder die Teilen-Funktion deines Passwortmanagers. Hier kann jeder lesen, der den ganzen Link bekommt (auch aus einem Mail-Postfach oder Chat-Verlauf), und der Betreiber dieses Servers liefert die Seite aus, die den Text entschlüsselt.",
       "text": "Geheimer Text",

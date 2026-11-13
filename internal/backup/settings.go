@@ -203,6 +203,8 @@ var serverDBTables = map[string]TableClass{
 	"device_authorizations": TablePurge,
 	"passkey_challenges":    TablePurge,
 	"rate_limit":            TablePurge,
+	// One-time secret links are short-lived ciphertexts; they never travel in a backup.
+	"secret_links": TablePurge,
 }
 
 // UserStoreTables returns a copy of the classification of tuxmail.db (tests).

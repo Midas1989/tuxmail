@@ -131,3 +131,28 @@ func TestSecretLinkPage(t *testing.T) {
 		t.Fatal("script does not look right")
 	}
 }
+
+func TestSecretLinkAuditFixes(t *testing.T) {
+	e := newEnv(t, Options{})
+	e.user("gast", auth.RoleReadonly)
+	e.user("dora", auth.RoleUser)
+	guest := e.browser()
+	guest.login("gast")
+	if resp, m := guest.do("POST", "/api/secrets", map[string]any{"ciphertext": secretCT(), "ttlSeconds": 3600, "maxViews": 1}); resp.StatusCode != http.StatusForbidden || m["error"] != "read_only" {
+		t.Fatalf("read-only account created a link: %s %v", resp.Status, m)
+	}
+	dora := e.browser()
+	dora.login("dora")
+	// A lifetime that would overflow time.Duration is refused, not wrapped into the allowed range.
+	for _, ttl := range []int64{-1, 1 << 62, 9223372036} {
+		if resp, m := dora.do("POST", "/api/secrets", map[string]any{"ciphertext": secretCT(), "ttlSeconds": ttl, "maxViews": 1}); resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("ttl %d: %s %v", ttl, resp.Status, m)
+		}
+	}
+	// Link ids never reach the request log.
+	for _, p := range []string{"/api/secrets/AAAAAAAAAAAAAAAAAAAAAA/open", "/api/secrets/AAAAAAAAAAAAAAAAAAAAAA", "/secret/AAAAAAAAAAAAAAAAAAAAAA"} {
+		if strings.Contains(logPath(p), "AAAAAAAAAAAAAAAAAAAAAA") {
+			t.Fatalf("logPath(%q) = %q", p, logPath(p))
+		}
+	}
+}

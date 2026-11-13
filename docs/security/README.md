@@ -13,6 +13,7 @@ Meldung von Schwachstellen: [SECURITY.md](../../SECURITY.md) (GitHub Private Vul
 | D | Desktop, Installer, Android, Messenger-Plugins / desktop, installer, Android, plugins | [AUDIT-D-endpoint.md](AUDIT-D-endpoint.md) |
 | E | CI-Sicherheitsscans und dynamischer Black-Box-Pentest / CI scanning and dynamic pentest | [PENTEST-E-dynamic.md](PENTEST-E-dynamic.md) |
 | Re-Audit | Vollständige Wiederholung aller Bereiche A–E, 5.11.2026 / full re-audit of all scopes | [REAUDIT-2026-11-05.md](REAUDIT-2026-11-05.md) |
+| Audit 13.11. | Alle Bereiche, Schwerpunkt Code nach dem Re-Audit, mit Werkzeugläufen / all scopes, focus on code after the re-audit | [AUDIT-2026-11-13.md](AUDIT-2026-11-13.md) |
 
 
 ## Kontinuierliche Prüfungen / Continuous checks

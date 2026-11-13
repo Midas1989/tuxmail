@@ -2000,7 +2000,7 @@
     "secret": {
       "button": "Insert a secret as a one-time link",
       "title": "Send a secret as a one-time link",
-      "intro": "The text is encrypted in your browser. The key is only part of the link; the server stores the encrypted text and deletes it when it expires or after the last permitted view.",
+      "intro": "The text is encrypted in your browser. The server only stores the encrypted text and deletes it when it expires or after the last permitted view. The key is part of the link: if you insert the link into this message, it is kept like the message itself in the draft and the Sent folder on this server until the link is used. If you prefer, copy the link only and send it another way.",
       "warnTitle": "Not suitable for truly secret passwords",
       "warn": "For very secret passwords (banking, administrator access, master passwords) use Bitwarden Send or the sharing function of your password manager instead. Here anyone who gets the whole link can read it (also from a mailbox or chat history), and the operator of this server delivers the page that decrypts the text.",
       "text": "Secret text",

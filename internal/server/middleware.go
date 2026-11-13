@@ -172,7 +172,7 @@ func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 }
 
 // secretPathPrefixes are paths whose rest is a secret token.
-var secretPathPrefixes = []string{"/api/auth/invites/", "/api/io/downloads/"}
+var secretPathPrefixes = []string{"/api/auth/invites/", "/api/io/downloads/", "/api/secrets/", "/secret/"}
 
 // logPath is the path of a request as it may appear in the log.
 func logPath(p string) string {
