@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/mail"
 	"strings"
 	"time"
 
@@ -28,9 +29,18 @@ var (
 )
 
 // badEnvelopeAddress reports whether an envelope address contains
-// whitespace or control characters.
+// whitespace or control characters or does not survive a round trip through
+// mail.ParseAddress unchanged (quoted local parts such as "a>,<x@y>,<b"@x.org
+// would split into further recipients in a header).
 func badEnvelopeAddress(s string) bool {
-	return strings.IndexFunc(s, func(r rune) bool { return r <= ' ' || r == 0x7f }) >= 0
+	if strings.IndexFunc(s, func(r rune) bool { return r <= ' ' || r == 0x7f }) >= 0 {
+		return true
+	}
+	if s == "" {
+		return false
+	}
+	a, err := mail.ParseAddress(s)
+	return err != nil || a.Address != s || a.Name != ""
 }
 
 // reservedHeaders may not be set through Draft.Headers.

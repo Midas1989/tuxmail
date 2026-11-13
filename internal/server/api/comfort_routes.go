@@ -47,7 +47,7 @@ func comfortRoutes() []Route {
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data: 'self'; frame-ancestors 'self'")
+			w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data: 'self'; frame-ancestors 'self'; sandbox allow-modals allow-same-origin; form-action 'none'; base-uri 'none'") // no scripts: allow-same-origin only keeps the session cookie for cid images
 			w.Header().Set("X-Content-Type-Options", "nosniff")
 			_, _ = io.WriteString(w, html)
 		}},

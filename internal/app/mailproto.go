@@ -164,7 +164,11 @@ func (a *App) purgeProxyCache() {
 // renderRemote sanitizes the HTML part of raw with remote images routed
 // through signed proxy URLs.
 func (a *App) renderRemote(ctx context.Context, messageID int64, raw []byte) (string, error) {
-	m, err := parse.ParseContext(ctx, raw, parse.Options{SkipAttachmentData: true})
+	opts := parse.Options{SkipAttachmentData: true}
+	if r, ok := a.render.(*MIMERenderer); ok {
+		opts = r.ParseOptions() // same options as the protected view
+	}
+	m, err := parse.ParseContext(ctx, raw, opts)
 	if err != nil {
 		return "", err
 	}

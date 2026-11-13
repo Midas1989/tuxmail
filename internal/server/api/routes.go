@@ -481,17 +481,15 @@ func send(w http.ResponseWriter) func(any, error) {
 }
 
 func serveBlob(w http.ResponseWriter, c app.AttachmentContent, inline bool) {
-	ct := c.MIMEType
-	if ct == "" {
-		ct = "application/octet-stream"
-	}
-	// Active content is never rendered inline from the API origin.
-	safeInline := inline && (strings.HasPrefix(ct, "image/") && ct != "image/svg+xml" || ct == "application/pdf" ||
-		strings.HasPrefix(ct, "audio/") || strings.HasPrefix(ct, "video/"))
+	// Only an exact allowlist is rendered inline from the API origin; anything
+	// else (also malformed types like "image/png,text/html") is a download.
+	ct, safeInline := app.BlobContentType(c.MIMEType)
+	safeInline = safeInline && inline
 	disp := "attachment"
 	if safeInline {
 		disp = "inline"
 	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Content-Disposition", mime.FormatMediaType(disp, map[string]string{"filename": c.Filename}))
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox")

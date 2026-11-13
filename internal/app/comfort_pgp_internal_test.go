@@ -658,6 +658,10 @@ func TestPGPForeignPartsAreDropped(t *testing.T) {
 				t.Errorf("%s: attachment %q shown", name, at.Filename)
 			}
 		}
+		// "Bilder laden" uses the same protected parse options (M-9).
+		if rh, err := a.renderRemote(ctx, 1, raw); err != nil || strings.Contains(rh, "UNSIGNIERT-EVIL") {
+			t.Errorf("%s: remote view shows foreign part: %q %v", name, rh, err)
+		}
 		pm, err := parse.Parse(raw, parse.Options{KeyRing: a.pgpRing()})
 		if err != nil || !pm.PGP.PartiallyProtected || !pm.PGP.Verified {
 			t.Errorf("%s: no warning: %+v %v", name, pm.PGP, err)
@@ -676,6 +680,9 @@ func TestPGPForeignPartsAreDropped(t *testing.T) {
 	r, err := a.render.Render(ctx, raw)
 	if err != nil || strings.Contains(r.Text+r.HTML, "UNSIGNIERT-EVIL") || !strings.Contains(r.Text, "GEHEIMER TEXT") {
 		t.Fatalf("encrypted mixture: %+v %v", r, err)
+	}
+	if rh, err := a.renderRemote(ctx, 1, raw); err != nil || strings.Contains(rh, "UNSIGNIERT-EVIL") {
+		t.Fatalf("encrypted mixture remote view: %q %v", rh, err)
 	}
 	if pm, err := parse.Parse(raw, parse.Options{KeyRing: a.pgpRing()}); err != nil || !pm.PGP.PartiallyProtected {
 		t.Fatalf("encrypted mixture without warning: %+v %v", pm.PGP, err)

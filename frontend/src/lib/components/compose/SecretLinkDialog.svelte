@@ -118,8 +118,8 @@
         {#if busy}<LoaderCircle size={15} class="spin" /> {t('compose.secret.creating')}{:else}{t('compose.secret.create')}{/if}
       </button>
     {:else}
-      <button class="btn" onclick={copy}><Copy size={14} /> {copied ? t('compose.secret.copied') : t('compose.secret.copy')}</button>
-      {#if oninsert}<button class="btn btn-primary" onclick={insert}>{t('compose.secret.insert')}</button>{:else}<button class="btn btn-primary" onclick={onclose}>{t('compose.secret.done')}</button>{/if}
+      <button class="btn btn-primary" onclick={copy}><Copy size={14} /> {copied ? t('compose.secret.copied') : t('compose.secret.copy')}</button>
+      {#if oninsert}<button class="btn" onclick={insert}>{t('compose.secret.insert')}</button>{:else}<button class="btn" onclick={onclose}>{t('compose.secret.done')}</button>{/if}
     {/if}
   {/snippet}
 </Modal>

@@ -49,11 +49,19 @@ func attachmentsOf(m *parse.Message) []RenderedAttachment {
 	return out
 }
 
-// Render implements MessageRenderer.
-func (r *MIMERenderer) Render(ctx context.Context, raw []byte) (RenderedMessage, error) {
+// ParseOptions returns the parse options of the message view (S/MIME, PGP
+// keyring, sender keys). Every view of a message body, including the
+// remote-content view, uses them so that no view shows parts the protected
+// view drops (PGP "foreign parts").
+func (r *MIMERenderer) ParseOptions() parse.Options {
 	opts := r.Parse
 	opts.SkipAttachmentData = true
-	m, err := parse.ParseContext(ctx, raw, opts)
+	return opts
+}
+
+// Render implements MessageRenderer.
+func (r *MIMERenderer) Render(ctx context.Context, raw []byte) (RenderedMessage, error) {
+	m, err := parse.ParseContext(ctx, raw, r.ParseOptions())
 	if err != nil {
 		return RenderedMessage{}, err
 	}

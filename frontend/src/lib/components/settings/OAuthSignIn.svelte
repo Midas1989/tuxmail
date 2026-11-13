@@ -11,6 +11,7 @@
   import { app } from '../../state';
   import { t } from '../../i18n/index.svelte';
   import { ApiError } from '../../api';
+  import { safeHref } from '../../safeurl';
   import type { AccountKind, OAuthFlowStatus, OAuthProviderId } from '../../types';
 
   interface Props {
@@ -77,7 +78,7 @@
     errorCode = null;
     try {
       flow = await app.api.startOAuth({ provider, email, kind, name, displayName: email, mode, accountId });
-      if (flow.mode === 'redirect' && flow.authUrl) window.open(flow.authUrl, '_blank', 'noopener');
+      if (flow.mode === 'redirect' && safeHref(flow.authUrl)) window.open(safeHref(flow.authUrl), '_blank', 'noopener');
       timer = setInterval(poll, 1000);
     } catch (err) {
       fail(err instanceof ApiError ? err.code : 'error', err instanceof Error ? err.message : String(err));
@@ -161,7 +162,7 @@
         <p>{t('cloud.signIn.deviceCode', { url: flow.verificationUri ?? '' })}</p>
         <p class="code">{flow.userCode}</p>
       {:else if flow.authUrl}
-        <a href={flow.authUrl} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> {t('cloud.signIn.openLink')}</a>
+        <a href={safeHref(flow.authUrl)} target="_blank" rel="noopener noreferrer"><ExternalLink size={13} /> {t('cloud.signIn.openLink')}</a>
       {/if}
       <div class="row-actions">
         <button type="button" class="btn btn-ghost" onclick={cancel}>{t('cloud.signIn.cancel')}</button>
