@@ -151,7 +151,7 @@ func noEscapes(t *testing.T, m *Model) {
 	t.Helper()
 	view := m.View()
 	// Only styling that the view adds itself may remain: SGR sequences.
-	if rest := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(view, ""); strings.ContainsAny(rest, "\x1b\x07\x9b") {
+	if rest := regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(view, ""); strings.ContainsAny(rest, "\x1b\x07\u009b") {
 		t.Fatalf("control characters in view: %q", rest)
 	}
 }

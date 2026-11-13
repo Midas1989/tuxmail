@@ -509,9 +509,16 @@ func (a *App) pendingInvitationEvents(ctx context.Context, from, to time.Time, l
 		}
 		tz := ical.NewTZ(cal, loc)
 		items := itip.Items(cal)
-		occ, err := rrule.Expand(items, tz, from.Add(-36*time.Hour), to.Add(36*time.Hour))
+		ectx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		occ, err := rrule.ExpandContext(ectx, items, tz, from.Add(-36*time.Hour), to.Add(36*time.Hour))
+		cancel()
 		if err != nil {
-			continue
+			if !errors.Is(err, rrule.ErrTooExpensive) && !errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			// Hostile/expensive rule: show the degraded result (first
+			// instance only) instead of dropping the invitation.
+			a.log.Debug("app: invitation recurrence too expensive", "uid", inv.UID, "err", err)
 		}
 		master, _ := rrule.SplitComponents(items)
 		for _, o := range occ {

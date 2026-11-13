@@ -467,10 +467,15 @@ func eventFromComponent(cal store.CalendarWithMeta, obj store.CalObject, c *ical
 
 // expandObject expands one stored object within [from, to).
 func (a *App) expandObject(p *parsedObject, from, to time.Time) []rrule.Occurrence {
-	occ, err := rrule.Expand(p.items, p.tz, from, to)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	occ, err := rrule.ExpandContext(ctx, p.items, p.tz, from, to)
 	if err != nil {
 		a.log.Warn("app: expanding recurrence failed", "object", p.obj.ID, "err", err)
-		return nil
+		if !errors.Is(err, rrule.ErrTooExpensive) && ctx.Err() == nil {
+			return nil
+		}
+		// Too expensive: show the degraded result (first instance only).
 	}
 	return occ
 }
