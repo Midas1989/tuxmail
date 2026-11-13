@@ -238,9 +238,10 @@ func CreateSettings(ctx context.Context, dataDir, outDir string) (*SettingsRepor
 		return nil, err
 	}
 	rep := &SettingsReport{}
-	if err := cleanSnapshot(ctx, filepath.Join(dataDir, "server.db"), filepath.Join(root, "server.db"), serverDBTables, nil); err != nil {
-		return nil, fmt.Errorf("backup: server.db: %w", err)
-	}
+	// L-23: copy the key ring BEFORE the database snapshot. A key retired
+	// in between leaves a ring that still holds the old key (harmless);
+	// the reverse order could pair a database with a ring that no longer
+	// contains the key its secrets were sealed with.
 	// The key ring and the older master.key (gone once retired). One of them must exist.
 	keys := 0
 	for _, name := range []string{"secretbox.json", "master.key"} {
@@ -254,6 +255,9 @@ func CreateSettings(ctx context.Context, dataDir, outDir string) (*SettingsRepor
 	}
 	if keys == 0 {
 		return nil, fmt.Errorf("backup: neither secretbox.json nor master.key found in %s", dataDir)
+	}
+	if err := cleanSnapshot(ctx, filepath.Join(dataDir, "server.db"), filepath.Join(root, "server.db"), serverDBTables, nil); err != nil {
+		return nil, fmt.Errorf("backup: server.db: %w", err)
 	}
 	for _, optional := range []string{"vapid.json", filepath.Join("backup", "recipients.txt")} {
 		err := copyPrivate(filepath.Join(dataDir, optional), filepath.Join(root, optional))

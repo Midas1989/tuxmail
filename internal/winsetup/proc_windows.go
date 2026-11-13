@@ -194,7 +194,12 @@ func WaitProcess(h windows.Handle, poll func()) (uint32, error) {
 // Explorer so that TuxMail does not inherit administrator rights.
 func Launch(exe string) error {
 	if IsElevated() {
-		return exec.Command(filepath.Join(os.Getenv("SystemRoot"), "explorer.exe"), exe).Start()
+		// Absolute path from the API, not from the environment (L-14).
+		winDir, err := windows.GetWindowsDirectory()
+		if err != nil {
+			return err
+		}
+		return exec.Command(filepath.Join(winDir, "explorer.exe"), exe).Start()
 	}
 	cmd := exec.Command(exe)
 	cmd.Dir = filepath.Dir(exe)

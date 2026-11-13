@@ -77,12 +77,7 @@ func HTMLToPDF(ctx context.Context, browser string, html []byte) ([]byte, error)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, browser, "--headless", "--disable-gpu", "--no-sandbox", "--no-first-run",
-		"--disable-extensions", "--disable-background-networking", "--disable-component-update", "--user-data-dir="+filepath.Join(dir, "profile"), "--proxy-server=127.0.0.1:9",
-		// Chromium bypasses proxies for loopback by default; "<-loopback>"
-		// removes that rule so that 127.0.0.1/localhost are unreachable too.
-		"--proxy-bypass-list=<-loopback>", "--disable-javascript", "--blink-settings=scriptEnabled=false",
-		"--no-pdf-header-footer", "--print-to-pdf-no-header", "--print-to-pdf="+out, "file://"+filepath.ToSlash(in))
+	cmd := exec.CommandContext(ctx, browser, chromiumArgs(dir, out, in, noSandbox())...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -93,6 +88,27 @@ func HTMLToPDF(ctx context.Context, browser string, html []byte) ([]byte, error)
 		return nil, fmt.Errorf("pdf: browser produced no PDF: %s", lastLine(stderr.String()))
 	}
 	return data, nil
+}
+
+// noSandbox reports whether Chromium's sandbox must be disabled: it cannot
+// start as root, and some containers lack the user namespaces it needs
+// (TUXMAIL_PDF_NO_SANDBOX=1). Otherwise the sandbox stays on (L-13).
+func noSandbox() bool {
+	return os.Geteuid() == 0 || os.Getenv("TUXMAIL_PDF_NO_SANDBOX") == "1"
+}
+
+// chromiumArgs builds the command line of the headless print run.
+func chromiumArgs(dir, out, in string, nosandbox bool) []string {
+	args := []string{"--headless", "--disable-gpu"}
+	if nosandbox {
+		args = append(args, "--no-sandbox")
+	}
+	return append(args, "--no-first-run",
+		"--disable-extensions", "--disable-background-networking", "--disable-component-update", "--user-data-dir="+filepath.Join(dir, "profile"), "--proxy-server=127.0.0.1:9",
+		// Chromium bypasses proxies for loopback by default; "<-loopback>"
+		// removes that rule so that 127.0.0.1/localhost are unreachable too.
+		"--proxy-bypass-list=<-loopback>", "--disable-javascript", "--blink-settings=scriptEnabled=false",
+		"--no-pdf-header-footer", "--print-to-pdf-no-header", "--print-to-pdf="+out, "file://"+filepath.ToSlash(in))
 }
 
 func lastLine(s string) string {

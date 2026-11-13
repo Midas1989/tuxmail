@@ -3256,6 +3256,7 @@
     "restore": "Restore",
     "restartRequired": "Restart TuxMail to finish the restore.",
     "migrated": "The backup was migrated from schema {from} to {to}.",
+    "keysNotTrusted": "Merged without trust: {untrusted} certificates/keys were imported as untrusted, {skipped} own keys and private keys were not imported. Confirm important keys again.",
     "done": "Done",
     "archivesHint": "Archives at your backup targets:",
     "useArchive": "Use"

@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/url"
 	"os"
@@ -344,6 +345,35 @@ func within(dir, target string) bool {
 	return j != ".." && !strings.HasPrefix(j, "../")
 }
 
+// noSymlinkBelow refuses to write through a symlink (L-11): every existing
+// component between root and the parent of dst must be a real directory.
+// The per-link check in within() is not enough, because chained links
+// ("a/up -> ..", "a/up/up2 -> ..") escape the stage directory together.
+func noSymlinkBelow(root, dst string) error {
+	rel, err := filepath.Rel(root, filepath.Dir(dst))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("archive entry outside the target: %s", dst)
+	}
+	cur := root
+	if rel == "." {
+		return nil
+	}
+	for _, part := range strings.Split(rel, string(filepath.Separator)) {
+		cur = filepath.Join(cur, part)
+		fi, err := os.Lstat(cur)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if fi.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("archive entry written through a symlink: %s", dst)
+		}
+	}
+	return nil
+}
+
 type tarFilter func(name string, h *tar.Header) (string, bool)
 
 func untar(file, target string, strip int, filter tarFilter) error {
@@ -380,6 +410,9 @@ func untar(file, target string, strip int, filter tarFilter) error {
 			}
 		}
 		dst := filepath.Join(target, filepath.FromSlash(rel))
+		if err := noSymlinkBelow(target, dst); err != nil {
+			return err
+		}
 		switch h.Typeflag {
 		case tar.TypeDir:
 			if err := os.MkdirAll(dst, 0o755); err != nil {
@@ -428,6 +461,9 @@ func unzip(file, target string, strip int) error {
 			continue
 		}
 		dst := filepath.Join(target, filepath.FromSlash(rel))
+		if err := noSymlinkBelow(target, dst); err != nil {
+			return err
+		}
 		if strings.HasSuffix(zf.Name, "/") || zf.FileInfo().IsDir() {
 			if err := os.MkdirAll(dst, 0o755); err != nil {
 				return err

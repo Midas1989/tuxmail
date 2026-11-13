@@ -2118,6 +2118,8 @@ export interface RestoreResult {
   messages: number;
   blobs: number;
   secrets: number;
+  keysUntrusted?: number;
+  keysSkipped?: number;
   schemaFrom: number;
   schemaTo: number;
   warnings?: string[];
