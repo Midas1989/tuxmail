@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Midas Wollinger and TuxMail contributors
 import { describe, expect, it, vi } from 'vitest';
 import { ServerError, directLogin, passkeyLogin, pollDeviceToken, secondFactor, safeVerificationUrl, startDeviceAuthorization, validateServer, type DeviceGrant } from './server';
+import { rpIdMatchesServer } from './passkey';
 
 type Route = (url: string, init?: RequestInit) => { status: number; body?: unknown } | Promise<{ status: number; body?: unknown }>;
 
@@ -165,19 +166,20 @@ describe('passkeyLogin (Credential Manager)', () => {
 
   it('begin -> bridge -> login, token like the password login', async () => {
     const f = fakeFetch((url, init) => {
-      if (url === 'https://s/api/device/passkey/begin') return { status: 200, body: { challengeId: 'c1', publicKey: options } };
-      if (url === 'https://s/api/device/passkey/login') {
+      if (url === 'https://mail.example.org/api/device/passkey/begin') return { status: 200, body: { challengeId: 'c1', publicKey: options } };
+      if (url === 'https://mail.example.org/api/device/passkey/login') {
         const b = JSON.parse(String(init?.body));
         expect(b).toEqual({ challengeId: 'c1', credential: assertion, device_name: 'TuxMail Android (Pixel)', scope: 'data' });
         return { status: 200, body: { access_token: 'tok', expires_in: 60, session_id: 7, user: { username: 'anna' } } };
       }
       return { status: 404 };
     });
-    const get = vi.fn(async (req: string) => {
+    const get = vi.fn(async (req: string, _serverUrl: string) => {
       expect(JSON.parse(req)).toEqual(options); // the options go to Credential Manager unchanged
       return JSON.stringify(assertion);
     });
-    const res = await passkeyLogin('https://s', { available: async () => true, get }, 'TuxMail Android (Pixel)', f);
+    const res = await passkeyLogin('https://mail.example.org', { available: async () => true, get }, 'TuxMail Android (Pixel)', f);
+    expect(get.mock.calls[0][1]).toBe('https://mail.example.org');
     expect(res).toMatchObject({ token: 'tok', sessionId: 7, user: { username: 'anna' } });
     expect(f.mock.calls.every((c: unknown[]) => (c[1] as RequestInit).credentials === 'omit')).toBe(true);
   });
@@ -186,16 +188,40 @@ describe('passkeyLogin (Credential Manager)', () => {
     const { PasskeyError } = await import('./passkey');
     const begin = fakeFetch((url) => (url.endsWith('/begin') ? { status: 200, body: { challengeId: 'c', publicKey: options } } : { status: 401, body: { error: 'invalid_credentials', message: 'passkey sign-in failed' } }));
     const bridge = (err: unknown) => ({ available: async () => true, get: async () => Promise.reject(err) });
-    await expect(passkeyLogin('https://s', bridge(new PasskeyError('cancelled')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_cancelled' });
-    await expect(passkeyLogin('https://s', bridge(new PasskeyError('no_credential')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_unavailable' });
-    await expect(passkeyLogin('https://s', bridge(new Error('boom')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_failed' });
+    await expect(passkeyLogin('https://mail.example.org', bridge(new PasskeyError('cancelled')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_cancelled' });
+    await expect(passkeyLogin('https://mail.example.org', bridge(new PasskeyError('no_credential')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_unavailable' });
+    await expect(passkeyLogin('https://mail.example.org', bridge(new Error('boom')), 'X', begin)).rejects.toMatchObject({ code: 'passkey_failed' });
     // The server refuses the assertion: never "wrong password".
     const ok = { available: async () => true, get: async () => JSON.stringify(assertion) };
-    await expect(passkeyLogin('https://s', ok, 'X', begin)).rejects.toMatchObject({ code: 'passkey_failed', status: 401 });
+    await expect(passkeyLogin('https://mail.example.org', ok, 'X', begin)).rejects.toMatchObject({ code: 'passkey_failed', status: 401 });
     // Throttled networks and switched-off passkeys keep their own codes.
     const throttled = fakeFetch(() => ({ status: 429, body: { error: 'throttled' } }));
-    await expect(passkeyLogin('https://s', ok, 'X', throttled)).rejects.toMatchObject({ code: 'throttled' });
+    await expect(passkeyLogin('https://mail.example.org', ok, 'X', throttled)).rejects.toMatchObject({ code: 'throttled' });
     const off = fakeFetch(() => ({ status: 404, body: { error: 'passkeys_disabled', message: 'off' } }));
-    await expect(passkeyLogin('https://s', ok, 'X', off)).rejects.toMatchObject({ code: 'server_error' });
+    await expect(passkeyLogin('https://mail.example.org', ok, 'X', off)).rejects.toMatchObject({ code: 'server_error' });
+  });
+
+  it('refuses a foreign rpId before Credential Manager is called (relay protection)', async () => {
+    const get = vi.fn(async () => JSON.stringify(assertion));
+    for (const rpId of ['evil.example', 'org', 'com', 'attacker-mail.example.org', undefined]) {
+      const f = fakeFetch(() => ({ status: 200, body: { challengeId: 'c', publicKey: { ...options, rpId } } }));
+      await expect(passkeyLogin('https://sub.mail.example.org', { available: async () => true, get }, 'X', f)).rejects.toMatchObject({ code: 'passkey_failed' });
+    }
+    expect(get).not.toHaveBeenCalled();
+  });
+});
+
+describe('rpIdMatchesServer', () => {
+  it('accepts the host itself and a parent registrable domain', () => {
+    expect(rpIdMatchesServer('https://mail.example.org', 'mail.example.org')).toBe(true);
+    expect(rpIdMatchesServer('https://Mail.Example.org:8443/x', 'MAIL.example.org')).toBe(true);
+    expect(rpIdMatchesServer('https://mail.example.org', 'example.org')).toBe(true);
+    expect(rpIdMatchesServer('http://localhost:8080', 'localhost')).toBe(true);
+  });
+  it('refuses foreign, lookalike and public-suffix-like rpIds', () => {
+    for (const rp of ['evil.example', 'xample.org', 'ample.org', 'org', 'com', '.org', 'org.', 'mail.example.org.evil.example', '', undefined, 5]) {
+      expect(rpIdMatchesServer('https://mail.example.org', rp)).toBe(false);
+    }
+    expect(rpIdMatchesServer('not a url', 'example.org')).toBe(false);
   });
 });

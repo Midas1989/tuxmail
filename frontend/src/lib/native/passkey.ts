@@ -18,7 +18,26 @@ export interface PasskeyBridge {
   /** Credential Manager is usable on this device (Android 9+, Play services or Android 14+ provider). */
   available(): Promise<boolean>;
   /** requestJson: PublicKeyCredentialRequestOptions JSON; resolves with the PublicKeyCredential JSON. */
-  get(requestJson: string): Promise<string>;
+  get(requestJson: string, serverUrl: string): Promise<string>;
+}
+
+/**
+ * The origin of every assertion is the same apk-key-hash for all servers, so the
+ * relying party must be pinned to the server the user connected to: rpId is that
+ * server's host or a parent domain of it (never a bare public suffix: needs a dot).
+ */
+export function rpIdMatchesServer(serverUrl: string, rpId: unknown): boolean {
+  if (typeof rpId !== 'string') return false;
+  const id = rpId.toLowerCase();
+  let host: string;
+  try {
+    host = new URL(serverUrl).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  if (!id || !host) return false;
+  if (host === id) return true;
+  return id.includes('.') && !id.startsWith('.') && !id.endsWith('.') && host.endsWith('.' + id);
 }
 
 /** Error codes of the plugin (call.reject(message, code)). */
@@ -36,7 +55,7 @@ export class PasskeyError extends Error {
 
 interface TuxMailPasskeyPlugin {
   isAvailable(): Promise<{ available: boolean }>;
-  getCredential(options: { requestJson: string }): Promise<{ responseJson: string }>;
+  getCredential(options: { requestJson: string; serverUrl: string }): Promise<{ responseJson: string }>;
 }
 
 function codeOf(err: unknown): PasskeyErrorCode {
@@ -55,9 +74,9 @@ export function nativePasskeys(): PasskeyBridge {
         return false; // older app build without the plugin
       }
     },
-    async get(requestJson) {
+    async get(requestJson, serverUrl) {
       try {
-        const r = await plugin.getCredential({ requestJson });
+        const r = await plugin.getCredential({ requestJson, serverUrl });
         if (typeof r?.responseJson !== 'string' || !r.responseJson) throw new PasskeyError('failed', 'empty answer');
         return r.responseJson;
       } catch (err) {

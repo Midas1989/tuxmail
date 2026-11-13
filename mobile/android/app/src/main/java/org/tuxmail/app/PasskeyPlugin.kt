@@ -60,6 +60,11 @@ class PasskeyPlugin : Plugin() {
         if (requestJson.isNullOrEmpty() || requestJson.length > 64 * 1024) {
             return call.reject("invalid request", "failed")
         }
+        // Same relying-party pinning as the web part: all servers share one apk-key-hash origin.
+        val serverUrl = call.getString("serverUrl")
+        if (serverUrl.isNullOrEmpty() || !rpIdMatchesServer(serverUrl, requestJson)) {
+            return call.reject("passkey relying party does not match the server", "failed")
+        }
         if (!supported()) return call.reject("passkeys are not supported on this device", "unsupported")
         // The system dialog needs the activity, not the application context.
         val act = activity ?: return call.reject("no activity", "failed")

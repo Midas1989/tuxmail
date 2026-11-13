@@ -152,6 +152,7 @@ dependencies {
     playImplementation 'com.google.firebase:firebase-messaging'
 
     testImplementation "junit:junit:$junitVersion"
+    testImplementation "org.json:json:20231013" // android.jar only stubs org.json in unit tests
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
 }

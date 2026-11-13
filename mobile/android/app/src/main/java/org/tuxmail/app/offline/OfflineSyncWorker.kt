@@ -91,14 +91,27 @@ class OfflineSyncWorker(context: Context, params: WorkerParameters) : Worker(con
             if (status != 200) return null
             val ct = conn.contentType ?: "application/json"
             if (!ct.contains("json")) return null
-            val body = conn.inputStream.use { it.readBytes() }
-            if (body.size > MAX_BODY) return null
+            // Bounded read: give up as soon as the body exceeds MAX_BODY instead of buffering all of it.
+            val body = conn.inputStream.use { readLimited(it, MAX_BODY) } ?: return null
             val text = String(body, Charsets.UTF_8)
             OfflineSync.stage(applicationContext, c.profileId, path, ct, text)
             return text
         } finally {
             conn.disconnect()
         }
+    }
+
+    /** Reads at most [limit] bytes; null when the stream is longer. */
+    private fun readLimited(input: java.io.InputStream, limit: Int): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(8192)
+        while (true) {
+            val n = input.read(buf)
+            if (n < 0) break
+            if (out.size() + n > limit) return null
+            out.write(buf, 0, n)
+        }
+        return out.toByteArray()
     }
 
     private fun enc(v: String) = java.net.URLEncoder.encode(v, "UTF-8")
