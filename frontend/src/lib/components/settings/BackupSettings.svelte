@@ -411,6 +411,7 @@
       <IOJobProgress job={restoreJob} onfinished={(j) => (restoreResult = (j.result as RestoreResult) ?? null)} />
       {#if restoreResult?.restartRequired}<p class="warn">{t('backup.restartRequired')}</p>{/if}
       {#if restoreResult && restoreResult.schemaFrom !== restoreResult.schemaTo}<p class="hint">{t('backup.migrated', { from: restoreResult.schemaFrom, to: restoreResult.schemaTo })}</p>{/if}
+      {#if restoreResult && (restoreResult.keysUntrusted || restoreResult.keysSkipped)}<p class="hint">{t('backup.keysNotTrusted', { untrusted: restoreResult.keysUntrusted ?? 0, skipped: restoreResult.keysSkipped ?? 0 })}</p>{/if}
       <div class="nav"><span></span><button class="btn" onclick={restartRestore}>{t('backup.done')}</button></div>
     {/if}
     {#if schedules.length}

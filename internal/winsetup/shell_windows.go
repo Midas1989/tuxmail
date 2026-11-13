@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"syscall"
 	"unicode/utf16"
@@ -95,7 +96,12 @@ func powershellShortcut(link string, s Shortcut) error {
 	for i, c := range u {
 		b[2*i], b[2*i+1] = byte(c), byte(c>>8)
 	}
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+	sysDir, err := windows.GetSystemDirectory()
+	if err != nil {
+		return err
+	}
+	// Absolute path, no PATH lookup (L-14).
+	cmd := exec.Command(filepath.Join(sysDir, "WindowsPowerShell", "v1.0", "powershell.exe"), "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
 		"-EncodedCommand", base64.StdEncoding.EncodeToString(b))
 	cmd.Env = append(os.Environ(), "TM_LNK="+link, "TM_TARGET="+s.Target, "TM_ARGS="+s.Args,
 		"TM_DIR="+s.WorkDir, "TM_ICON="+s.Icon, "TM_DESC="+s.Description)

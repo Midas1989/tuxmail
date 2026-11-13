@@ -418,11 +418,16 @@ type RestoreOptions struct {
 
 // RestoreResult reports what was restored.
 type RestoreResult struct {
-	Mode            RestoreMode    `json:"mode"`
-	Accounts        int            `json:"accounts"`
-	Messages        int            `json:"messages"`
-	Blobs           int            `json:"blobs"`
-	Secrets         int            `json:"secrets"`
+	Mode     RestoreMode `json:"mode"`
+	Accounts int         `json:"accounts"`
+	Messages int         `json:"messages"`
+	Blobs    int         `json:"blobs"`
+	Secrets  int         `json:"secrets"`
+	// KeysUntrusted counts certificates and keys of the backup that were
+	// merged without their trust (M-5); KeysSkipped counts own keys and
+	// private keys that a merge does not import.
+	KeysUntrusted   int            `json:"keysUntrusted,omitempty"`
+	KeysSkipped     int            `json:"keysSkipped,omitempty"`
 	Counts          map[string]int `json:"counts,omitempty"`
 	SchemaFrom      int            `json:"schemaFrom"`
 	SchemaTo        int            `json:"schemaTo"`
@@ -692,14 +697,35 @@ func restoreMerge(ctx context.Context, ex *Extracted, opts RestoreOptions, res *
 	// Workflows from a backup must be confirmed again before they may run
 	// external actions (webhook, send, ...): external_confirmed is reset
 	// (AUDIT-C).
-	for _, q := range []struct{ table, cols, sel string }{
-		{"app_settings", "key, value_json, updated_at", "key, value_json, updated_at"},
-		{"smime_certs", "fingerprint, email, subject, issuer, not_before, not_after, der, own, trusted, source, secret_ref, created_at", "fingerprint, email, subject, issuer, not_before, not_after, der, own, trusted, source, secret_ref, created_at"},
-		{"pgp_keys", "fingerprint, email, user_id, public_key, source, secret_ref, created_at, updated_at", "fingerprint, email, user_id, public_key, source, secret_ref, created_at, updated_at"},
-		{"pgp_trust", "address, fingerprint, level, source, first_seen, last_seen, verified_at, seen_count", "address, fingerprint, level, source, first_seen, last_seen, verified_at, seen_count"},
-		{"workflows", "id, name, enabled, yaml, external_confirmed, created_at, updated_at", "id, name, enabled, yaml, 0, created_at, updated_at"},
+	//
+	// M-5: a merged backup must not grant trust. S/MIME certificates come in
+	// untrusted (source 'backup'), PGP trust is capped at "unknown", and
+	// own keys with their private-key references are not imported at all
+	// (a full restore of the own backup is the Replace mode).
+	for _, q := range []struct{ table, cols, sel, where, downgraded string }{
+		{"app_settings", "key, value_json, updated_at", "key, value_json, updated_at", "", ""},
+		{"smime_certs", "fingerprint, email, subject, issuer, not_before, not_after, der, own, trusted, source, secret_ref, created_at", "fingerprint, email, subject, issuer, not_before, not_after, der, 0, 0, 'backup', NULL, created_at",
+			"own = 0 AND (secret_ref IS NULL OR secret_ref = '')", "trusted <> 0"},
+		{"pgp_keys", "fingerprint, email, user_id, public_key, source, secret_ref, created_at, updated_at", "fingerprint, email, user_id, public_key, 'manual', NULL, created_at, updated_at",
+			"source <> 'own' AND (secret_ref IS NULL OR secret_ref = '')", ""},
+		{"pgp_trust", "address, fingerprint, level, source, first_seen, last_seen, verified_at, seen_count", "address, fingerprint, 'unknown', 'manual', first_seen, last_seen, NULL, seen_count",
+			"source <> 'own' AND fingerprint NOT IN (SELECT fingerprint FROM pgp_keys WHERE source = 'own' OR secret_ref <> '')", "level <> 'unknown'"},
+		{"workflows", "id, name, enabled, yaml, external_confirmed, created_at, updated_at", "id, name, enabled, yaml, 0, created_at, updated_at", "", ""},
 	} {
-		rows, err := src.DB().QueryContext(ctx, `SELECT `+q.sel+` FROM `+q.table) // #nosec G202 -- table and column lists are constants above
+		where := ""
+		if q.where != "" {
+			where = ` WHERE ` + q.where
+			var total, kept int
+			_ = src.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM `+q.table).Scan(&total)      // #nosec G202 -- constants above
+			_ = src.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM `+q.table+where).Scan(&kept) // #nosec G202 -- constants above
+			res.KeysSkipped += total - kept
+		}
+		if q.downgraded != "" {
+			var n int
+			_ = src.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM `+q.table+` WHERE (`+q.downgraded+`)`+strings.Replace(where, " WHERE ", " AND ", 1)).Scan(&n) // #nosec G202 -- constants above
+			res.KeysUntrusted += n
+		}
+		rows, err := src.DB().QueryContext(ctx, `SELECT `+q.sel+` FROM `+q.table+where) // #nosec G202 -- table and column lists are constants above
 		if err != nil {
 			continue
 		}
@@ -725,15 +751,10 @@ func restoreMerge(ctx context.Context, ex *Extracted, opts RestoreOptions, res *
 			}
 		}
 	}
-	// Private keys (OpenPGP, S/MIME) that do not exist here yet.
-	if opts.SecretStore != nil {
-		for ref, v := range secrets {
-			if !strings.HasPrefix(ref, "pgp:") && !strings.HasPrefix(ref, "smime:") {
-				continue
-			}
-			if _, err := opts.SecretStore.Get(ref); err != nil && opts.SecretStore.Set(ref, v) == nil {
-				res.Secrets++
-			}
+	// M-5: private keys (OpenPGP, S/MIME) are not imported by a merge.
+	for ref := range secrets {
+		if strings.HasPrefix(ref, "pgp:") || strings.HasPrefix(ref, "smime:") {
+			res.KeysSkipped++
 		}
 	}
 	if v, ok := secrets["ai:api-key"]; ok && opts.SecretStore != nil {

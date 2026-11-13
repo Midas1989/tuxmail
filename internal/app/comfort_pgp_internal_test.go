@@ -271,7 +271,8 @@ func TestPGPUserBackupRoundTrip(t *testing.T) {
 	if _, err := backup.Restore(ctx, ex, backup.RestoreOptions{Mode: backup.Merge, Store: other.st, Blobs: other.blobs, Secrets: true, SecretStore: other.opts.Secrets}); err != nil {
 		t.Fatal(err)
 	}
-	if keys, err := other.ListPGPKeys(ctx); err != nil || len(keys) != 1 || !keys[0].Own {
+	// M-5: a merge imports neither own keys nor private keys.
+	if keys, err := other.ListPGPKeys(ctx); err != nil || len(keys) != 0 {
 		t.Fatalf("merge: %+v %v", keys, err)
 	}
 
@@ -613,7 +614,10 @@ func TestPGPProtectedKeyBackup(t *testing.T) {
 	if _, err := backup.Restore(ctx, ex, backup.RestoreOptions{Mode: backup.Merge, Store: other.st, Blobs: other.blobs, Secrets: true, SecretStore: other.opts.Secrets}); err != nil {
 		t.Fatal(err)
 	}
-	check("merge", other)
+	// M-5: a merge does not import own/protected private keys.
+	if keys, err := other.ListPGPKeys(ctx); err != nil || len(keys) != 0 {
+		t.Fatalf("merge: %+v %v", keys, err)
+	}
 }
 
 // Parts outside what RFC 3156 allows never stand under a status (reviewer probe
@@ -739,12 +743,13 @@ func TestFailedSendsAndSMIMEMerge(t *testing.T) {
 	if _, err := backup.Restore(ctx, ex, backup.RestoreOptions{Mode: backup.Merge, Store: other.st, Blobs: other.blobs, Secrets: true, SecretStore: other.opts.Secrets}); err != nil {
 		t.Fatal(err)
 	}
+	// M-5: a merge imports neither own certificates nor private keys.
 	certs, err := other.st.ListSMIMECerts(ctx, "m@example.org")
-	if err != nil || len(certs) != 1 || !certs[0].Own {
+	if err != nil || len(certs) != 0 {
 		t.Fatalf("merged certs: %+v %v", certs, err)
 	}
-	if v, err := other.opts.Secrets.Get("smime:FP"); err != nil || string(v) != "k" {
-		t.Fatalf("merged key: %q %v", v, err)
+	if _, err := other.opts.Secrets.Get("smime:FP"); err == nil {
+		t.Fatal("private key imported by merge")
 	}
 }
 

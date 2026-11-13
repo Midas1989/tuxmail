@@ -3336,6 +3336,7 @@
     "restore": "Wiederherstellen",
     "restartRequired": "TuxMail neu starten, um die Wiederherstellung abzuschließen.",
     "migrated": "Die Sicherung wurde von Schema {from} auf {to} migriert.",
+    "keysNotTrusted": "Ohne Vertrauen zusammengeführt: {untrusted} Zertifikate/Schlüssel wurden als nicht vertrauenswürdig importiert, {skipped} eigene und private Schlüssel wurden nicht importiert. Wichtige Schlüssel bitte erneut bestätigen.",
     "done": "Fertig",
     "archivesHint": "Archive an deinen Sicherungszielen:",
     "useArchive": "Verwenden"
