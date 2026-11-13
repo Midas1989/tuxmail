@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/emersion/go-vcard"
 
@@ -502,6 +503,12 @@ func readAddressBooks(ctx context.Context, dir string, prefs Prefs) ([]AddressBo
 	return out, warn
 }
 
+// Limits for reading a Thunderbird address book (abook.sqlite, audit 2026-11-13 I-3).
+const (
+	abookTimeout = 2 * time.Minute
+	abookMaxRows = 2_000_000
+)
+
 // ReadAddressBook reads a Thunderbird 102+ address book (abook.sqlite).
 // The database is copied first, so a running Thunderbird does not block it.
 func ReadAddressBook(ctx context.Context, path string) (AddressBook, error) {
@@ -526,13 +533,29 @@ func ReadAddressBook(ctx context.Context, path string) (AddressBook, error) {
 		return AddressBook{}, err
 	}
 	defer db.Close()
+	// The file comes from the user's disk (or a prepared download): a view in place of a table could
+	// make the queries arbitrarily expensive. Only real tables are read, with a deadline and a row cap.
+	ctx, cancel := context.WithTimeout(ctx, abookTimeout)
+	defer cancel()
+	for _, table := range []string{"properties", "lists", "list_cards"} {
+		var kind string
+		err := db.QueryRowContext(ctx, `SELECT type FROM sqlite_master WHERE name = ?`, table).Scan(&kind)
+		if err == nil && kind != "table" {
+			return AddressBook{}, ie.Corrupt("%s: %s is not a table", filepath.Base(path), table)
+		}
+	}
 	rows, err := db.QueryContext(ctx, `SELECT card, name, value FROM properties ORDER BY card`)
 	if err != nil {
 		return AddressBook{}, ie.Corrupt("%s: %v", filepath.Base(path), err)
 	}
 	props := map[string]map[string]string{}
 	var order []string
+	n := 0
 	for rows.Next() {
+		if n++; n > abookMaxRows {
+			rows.Close()
+			return AddressBook{}, ie.Corrupt("%s: more than %d properties", filepath.Base(path), abookMaxRows)
+		}
 		var card, name string
 		var value sql.NullString
 		if err := rows.Scan(&card, &name, &value); err != nil {
