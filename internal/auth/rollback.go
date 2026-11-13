@@ -20,6 +20,7 @@ import (
 // format of master.key and removes what migration 8 added, so that the previous
 // program version runs on the same data. Sessions and device tokens stay valid,
 // superseded tokens of a device and the audit chain's hashes are forgotten.
+// Device tokens with narrowed scopes are revoked, as the old version ignores scopes.
 // Recovery codes from before the upgrade work again; codes generated since then
 // cannot (only their HMAC exists), they are removed and reported. It needs
 // master.key and may be repeated after an interruption.
@@ -54,6 +55,10 @@ type RollbackReport struct {
 	RecoveryCodesRemoved int
 	// UsersWithoutCodes are the accounts that had such codes and must generate new ones.
 	UsersWithoutCodes []string
+	// ScopedTokensRevoked is the number of device tokens (and pending device
+	// authorizations) with fewer rights than the default that were deleted: the
+	// previous version knows no scopes and would give them full rights (L-21).
+	ScopedTokensRevoked int
 }
 
 // RollbackToLegacy performs the rollback described above. On success the Service
@@ -128,8 +133,11 @@ func (s *Service) rollback(ctx context.Context, rep *RollbackReport) error {
 	if err := s.rollbackRecoveryCodes(ctx, rep); err != nil {
 		return err
 	}
+	if err := s.rollbackScopedTokens(ctx, rep); err != nil {
+		return err
+	}
 	// The last entry of the chain; the row stays for the previous version.
-	if err := s.Audit(ctx, "keys.rollback", "schema 7", true, fmt.Sprintf("recovery_codes_removed=%d", rep.RecoveryCodesRemoved)); err != nil {
+	if err := s.Audit(ctx, "keys.rollback", "schema 7", true, fmt.Sprintf("recovery_codes_removed=%d scoped_tokens_revoked=%d", rep.RecoveryCodesRemoved, rep.ScopedTokensRevoked)); err != nil {
 		return fmt.Errorf("auth: rollback: audit: %w", err)
 	}
 	if err := s.withTx(ctx, func(tx *sql.Tx) error {
@@ -141,4 +149,23 @@ func (s *Service) rollback(ctx context.Context, rep *RollbackReport) error {
 	// Kept for the record; a later upgrade creates a new ring.
 	dst := s.ringPath() + ".rolled-back-" + strconv.FormatInt(s.now().Unix(), 10)
 	return os.Rename(s.ringPath(), dst)
+}
+
+// rollbackScopedTokens deletes the device sessions and pending device
+// authorizations whose scopes are not the default: dropping the scopes column
+// would turn them into tokens with full rights.
+func (s *Service) rollbackScopedTokens(ctx context.Context, rep *RollbackReport) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE kind = ? AND scopes <> ?`, KindDevice, DefaultDeviceScopes)
+	if err != nil {
+		return fmt.Errorf("auth: rollback: scoped tokens: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	rep.ScopedTokensRevoked = int(n)
+	res, err = s.db.ExecContext(ctx, `DELETE FROM device_authorizations WHERE scopes <> ?`, DefaultDeviceScopes)
+	if err != nil {
+		return fmt.Errorf("auth: rollback: scoped authorizations: %w", err)
+	}
+	n, _ = res.RowsAffected()
+	rep.ScopedTokensRevoked += int(n)
+	return nil
 }

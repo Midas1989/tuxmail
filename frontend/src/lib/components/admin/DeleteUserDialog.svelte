@@ -7,17 +7,21 @@
 <script lang="ts">
   import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
   import Modal from '../common/Modal.svelte';
+  import StepUpForm from '../security/StepUpForm.svelte';
+  import type { Reauth } from '../../api/security';
   import { t } from '../../i18n/index.svelte';
-  import type { AdminClient, AdminUser } from '../../api/admin';
+  import type { AdminClient, AdminMe, AdminUser } from '../../api/admin';
   import { adminErrorMessage } from '../../admin/errors';
 
   interface Props {
     client: AdminClient;
+    /** The signed-in administrator (which proofs a step-up asks for). */
+    me?: AdminMe;
     user: AdminUser;
     ondeleted: (user: AdminUser, keptData: boolean) => void;
     onclose: () => void;
   }
-  let { client, user, ondeleted, onclose }: Props = $props();
+  let { client, me, user, ondeleted, onclose }: Props = $props();
 
   let typed = $state('');
   let keepData = $state(false);
@@ -25,13 +29,25 @@
   let error = $state('');
   const confirmed = $derived(typed.trim() === user.username);
 
-  async function run(e: SubmitEvent) {
+  /** Deleting an administrator needs a fresh proof (M-2). */
+  let askProof = $state(false);
+
+  function run(e: SubmitEvent) {
     e.preventDefault();
     if (!confirmed || busy) return;
+    if (user.role === 'admin') {
+      error = '';
+      askProof = true;
+      return;
+    }
+    void remove();
+  }
+
+  async function remove(reauth?: Reauth) {
     busy = true;
     error = '';
     try {
-      await client.deleteUser(user.id, keepData);
+      await client.deleteUser(user.id, keepData, reauth);
       ondeleted(user, keepData);
     } catch (err) {
       error = adminErrorMessage(err, t);
@@ -50,11 +66,14 @@
       <label class="label" for="del-confirm">{t('admin.delete.typeName', { name: user.username })}</label>
       <input id="del-confirm" class="input" bind:value={typed} autocomplete="off" autocapitalize="none" spellcheck="false" data-autofocus data-testid="delete-confirm" />
     </div>
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if error && !askProof}<p class="error" role="alert">{error}</p>{/if}
   </form>
+  {#if askProof}
+    <StepUpForm hasPassword={me?.hasPassword ?? true} hasSecondFactor={me?.totpEnabled ?? false} submitLabel={t('admin.delete.confirm')} danger {busy} {error} onsubmit={(r) => void remove(r)} oncancel={() => ((askProof = false), (error = ''))} />
+  {/if}
   {#snippet footer()}
     <button class="btn" type="button" onclick={onclose}>{t('common.action.cancel')}</button>
-    <button class="btn btn-primary danger" type="submit" form="admin-delete-form" disabled={!confirmed || busy} data-testid="delete-submit">{t('admin.delete.confirm')}</button>
+    <button class="btn btn-primary danger" type="submit" form="admin-delete-form" disabled={!confirmed || busy || askProof} data-testid="delete-submit">{t('admin.delete.confirm')}</button>
   {/snippet}
 </Modal>
 

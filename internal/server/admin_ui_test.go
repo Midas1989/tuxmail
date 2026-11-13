@@ -103,7 +103,7 @@ func TestAdminCreateUserReturnsLockFieldsAndPasswordOnce(t *testing.T) {
 	e.user("root", auth.RoleAdmin)
 	admin := e.browser()
 	admin.login("root")
-	resp, m := admin.do("POST", "/api/admin/users", map[string]any{"username": "neu", "email": "neu@example.de", "role": "readonly"})
+	resp, m := admin.do("POST", "/api/admin/users", map[string]any{"username": "neu", "email": "neu@example.de", "role": "readonly", "reauth": map[string]string{"password": pw}})
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatal(resp.Status, m)
 	}

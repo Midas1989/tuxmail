@@ -62,6 +62,9 @@ export interface AdminMe {
   role: AdminRole;
   /** The administrator still has to enrol a second factor; admin routes answer 403 mfa_setup_required until then. */
   mfaSetupRequired: boolean;
+  /** Which proofs a step-up asks for (see StepUpForm); unknown counts as password only. */
+  hasPassword?: boolean;
+  totpEnabled?: boolean;
 }
 
 export interface AdminServerConfig {
@@ -187,12 +190,19 @@ export interface AdminClient {
   me(): Promise<AdminMe>;
   config(): Promise<AdminServerConfig>;
   listUsers(): Promise<AdminUser[]>;
-  createUser(input: NewAdminUser): Promise<{ user: AdminUser; password?: string }>;
-  updateUser(id: number, patch: AdminUserPatch): Promise<AdminUser>;
-  deleteUser(id: number, keepData: boolean): Promise<void>;
-  /** Sets a random password, ends all sessions of the user and returns the password (shown once). */
-  resetPassword(id: number): Promise<string>;
-  reset2FA(id: number): Promise<void>;
+  /**
+   * The calls marked "step-up" need a fresh re-authentication of the administrator
+   * (`reauth`); without it the server answers 403 reauth_required. Creating users,
+   * role changes from/to administrator and deleting an administrator are such
+   * calls (M-2).
+   */
+  createUser(input: NewAdminUser, reauth?: Reauth): Promise<{ user: AdminUser; password?: string }>;
+  updateUser(id: number, patch: AdminUserPatch, reauth?: Reauth): Promise<AdminUser>;
+  deleteUser(id: number, keepData: boolean, reauth?: Reauth): Promise<void>;
+  /** Sets a random password, ends all sessions of the user and returns the password (shown once). Step-up; never for the own account. */
+  resetPassword(id: number, reauth?: Reauth): Promise<string>;
+  /** Step-up; never for the own account. */
+  reset2FA(id: number, reauth?: Reauth): Promise<void>;
   /** Clears the failed-login locks of the account. */
   unlock(id: number): Promise<void>;
   listSessions(id: number): Promise<AdminSession[]>;
@@ -313,8 +323,8 @@ export class HttpAdminClient implements AdminClient {
   }
 
   async me(): Promise<AdminMe> {
-    const r = await this.req<{ user: { id: number; username: string; role: AdminRole }; mfaSetupRequired?: boolean }>('GET', '/api/auth/me');
-    return { id: r.user.id, username: r.user.username, role: r.user.role, mfaSetupRequired: !!r.mfaSetupRequired };
+    const r = await this.req<{ user: { id: number; username: string; role: AdminRole; hasPassword?: boolean; totpEnabled?: boolean }; mfaSetupRequired?: boolean }>('GET', '/api/auth/me');
+    return { id: r.user.id, username: r.user.username, role: r.user.role, mfaSetupRequired: !!r.mfaSetupRequired, hasPassword: r.user.hasPassword, totpEnabled: r.user.totpEnabled };
   }
   async config(): Promise<AdminServerConfig> {
     const r = await this.req<Partial<AdminServerConfig>>('GET', '/api/auth/config');
@@ -324,23 +334,23 @@ export class HttpAdminClient implements AdminClient {
     const r = await this.req<{ users: AdminUser[] }>('GET', '/api/admin/users');
     return r.users.map(normalizeAdminUser);
   }
-  async createUser(input: NewAdminUser) {
-    const r = await this.req<{ user: AdminUser; password?: string }>('POST', '/api/admin/users', input);
+  async createUser(input: NewAdminUser, reauth?: Reauth) {
+    const r = await this.req<{ user: AdminUser; password?: string }>('POST', '/api/admin/users', { ...input, reauth });
     return { user: normalizeAdminUser(r.user), password: r.password };
   }
-  async updateUser(id: number, patch: AdminUserPatch) {
-    const r = await this.req<{ user: AdminUser }>('PATCH', `/api/admin/users/${id}`, patch);
+  async updateUser(id: number, patch: AdminUserPatch, reauth?: Reauth) {
+    const r = await this.req<{ user: AdminUser }>('PATCH', `/api/admin/users/${id}`, { ...patch, reauth });
     return normalizeAdminUser(r.user);
   }
-  deleteUser(id: number, keepData: boolean) {
-    return this.req<void>('DELETE', `/api/admin/users/${id}${keepData ? '?keepData=true' : ''}`);
+  deleteUser(id: number, keepData: boolean, reauth?: Reauth) {
+    return this.req<void>('DELETE', `/api/admin/users/${id}${keepData ? '?keepData=true' : ''}`, { reauth });
   }
-  async resetPassword(id: number) {
-    const r = await this.req<{ password: string }>('POST', `/api/admin/users/${id}/reset-password`, {});
+  async resetPassword(id: number, reauth?: Reauth) {
+    const r = await this.req<{ password: string }>('POST', `/api/admin/users/${id}/reset-password`, { reauth });
     return r.password;
   }
-  reset2FA(id: number) {
-    return this.req<void>('POST', `/api/admin/users/${id}/reset-2fa`, {});
+  reset2FA(id: number, reauth?: Reauth) {
+    return this.req<void>('POST', `/api/admin/users/${id}/reset-2fa`, { reauth });
   }
   unlock(id: number) {
     return this.req<void>('POST', `/api/admin/users/${id}/unlock`, {});
@@ -506,7 +516,7 @@ export class MockAdminClient implements AdminClient {
   }
 
   async me(): Promise<AdminMe> {
-    return this.wait({ id: MockAdminClient.ME, username: 'admin', role: this.role, mfaSetupRequired: false });
+    return this.wait({ id: MockAdminClient.ME, username: 'admin', role: this.role, mfaSetupRequired: false, hasPassword: true, totpEnabled: true });
   }
   async config(): Promise<AdminServerConfig> {
     return this.wait({ registration: 'invite', passwordMinLength: MOCK_MIN_PASSWORD });

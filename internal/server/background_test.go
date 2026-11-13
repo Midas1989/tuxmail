@@ -92,11 +92,13 @@ func TestBackgroundAppKeptAndNotifies(t *testing.T) {
 	a, _ := e.srv.apps.loadedApp(anna.ID)
 	a.Bus().Publish(events.Event{Type: events.MailReceived, Source: "sync", Mail: &events.Mail{AccountID: 1, Key: "k1",
 		FolderRole: "inbox", From: domain.Address{Name: "Bob"}, Subject: "Angebot", Date: time.Now()}})
-	if p := f.wait(t, func(p push.Payload) bool { return p.Type == "mail" }); p.Title != "Bob" {
+	if p := f.wait(t, func(p push.Payload) bool { return p.Type == "mail" }); p.Title != push.PrivacyTitle || p.Sender != "" || p.Tag != "mail-k1" {
 		t.Fatalf("mail payload %+v", p)
 	}
 	a.Bus().Publish(events.Event{Type: events.ChatReceived, Chat: &events.Chat{AccountID: 1, ChatID: "c1", Sender: "Clara", Text: "Hallo"}})
-	f.wait(t, func(p push.Payload) bool { return p.Type == "chat" && p.Title == "Clara" })
+	f.wait(t, func(p push.Payload) bool {
+		return p.Type == "chat" && p.Tag == "chat-c1" && p.Title == push.PrivacyTitle && p.Body == push.PrivacyBody
+	})
 
 	// UI use turns it back into a normal App.
 	if _, err := e.srv.App(context.Background(), anna.ID); err != nil {

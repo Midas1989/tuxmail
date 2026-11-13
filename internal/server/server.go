@@ -97,6 +97,8 @@ type Server struct {
 
 	ipLimiter   *rateLimiter
 	userLimiter *rateLimiter
+	// pushTestLimiter limits POST /api/push/test per user.
+	pushTestLimiter *rateLimiter
 	// deviceTokenIP / deviceTokenCode limit the polling of /api/device/token
 	// per client network and per device code (NA-08).
 	deviceTokenIP   *rateLimiter
@@ -165,6 +167,7 @@ func New(cfg *config.Config, svc *auth.Service, opts Options) (*Server, error) {
 	s.ipLimiter = newRateLimiter(5*perMin, 5*perMin) // per IP across usernames
 	// A client polls every 5 s (12/min) and slows down on request; allow
 	// headroom per device code, and a generous cap per network (NAT) (NA-08).
+	s.pushTestLimiter = newRateLimiter(6, 3)
 	s.deviceTokenCode = newRateLimiter(deviceTokenCodePerMinute, deviceTokenCodeBurst)
 	s.deviceTokenIP = newRateLimiter(deviceTokenIPPerMinute, deviceTokenIPBurst)
 	s.streamRevalidate = opts.StreamRevalidateEvery

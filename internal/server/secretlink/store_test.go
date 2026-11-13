@@ -27,7 +27,7 @@ func testStore(t *testing.T) (*Store, *time.Time) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, q := range []string{`CREATE TABLE users (id INTEGER PRIMARY KEY)`, `INSERT INTO users(id) VALUES (1), (2)`, string(mig)} {
+	for _, q := range []string{`CREATE TABLE users (id INTEGER PRIMARY KEY, disabled INTEGER NOT NULL DEFAULT 0)`, `INSERT INTO users(id) VALUES (1), (2)`, string(mig)} {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatal(err)
 		}
@@ -146,5 +146,32 @@ func TestOwnerOnlyAndQuota(t *testing.T) {
 	}
 	if _, err := s.Create(ctx, 2, ct(), time.Hour, 1); err != nil {
 		t.Fatalf("quota is per user: %v", err)
+	}
+}
+
+// L-22: the links of a disabled user cannot be opened, and work again once the
+// account is enabled.
+func TestDisabledOwnerLinksNotOpenable(t *testing.T) {
+	ctx := context.Background()
+	s, _ := testStore(t)
+	l, err := s.Create(ctx, 1, ct(), time.Hour, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.Exec(`UPDATE users SET disabled = 1 WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Open(ctx, l.ID); !errors.Is(err, ErrGone) {
+		t.Fatalf("open of a disabled owner's link: %v", err)
+	}
+	var views int
+	if err := s.DB.QueryRow(`SELECT views FROM secret_links WHERE id = ?`, l.ID).Scan(&views); err != nil || views != 0 {
+		t.Fatalf("a refused open must not count: %d %v", views, err)
+	}
+	if _, err := s.DB.Exec(`UPDATE users SET disabled = 0 WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Open(ctx, l.ID); err != nil {
+		t.Fatal(err)
 	}
 }

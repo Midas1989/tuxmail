@@ -206,7 +206,7 @@ func TestTeamCollaborationFlow(t *testing.T) {
 		t.Fatal(resp.Status, m)
 	}
 	p := te.fcm.wait(t, func(p push.Payload) bool { return p.Type == "team" })
-	if p.TeamID != fmt.Sprint(te.id) || p.ConversationID != fmt.Sprint(conv) || !strings.Contains(p.Body, "Angebot") {
+	if p.TeamID != fmt.Sprint(te.id) || p.ConversationID != fmt.Sprint(conv) || strings.Contains(p.Body, "Angebot") {
 		t.Fatalf("%+v", p)
 	}
 	var ms []team.Mention

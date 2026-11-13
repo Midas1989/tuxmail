@@ -163,6 +163,13 @@ func decodeKey(s string) ([]byte, error) {
 	return base64.RawStdEncoding.DecodeString(s)
 }
 
+// MaxSubscriptionsPerUser caps the registrations of one user; saving one more
+// removes the oldest.
+const MaxSubscriptionsPerUser = 10
+
+// ErrEndpointTaken is returned when the endpoint is registered for another user.
+var ErrEndpointTaken = errors.New("push: endpoint is already registered")
+
 // Save inserts or updates (by endpoint) a subscription.
 func (s *Store) Save(ctx context.Context, sub Subscription) (int64, error) {
 	if err := ValidateSubscription(sub); err != nil {
@@ -176,14 +183,33 @@ func (s *Store) Save(ctx context.Context, sub Subscription) (int64, error) {
 	if kind == "" {
 		kind = KindWebPush
 	}
-	_, err := s.DB.ExecContext(ctx, `INSERT INTO push_subscriptions(user_id, session_id, endpoint, p256dh, auth, device_name,
+	// An endpoint belongs to the user who registered it first: another user
+	// cannot take it over by registering the same endpoint (L-8).
+	var owner int64
+	switch err := s.DB.QueryRowContext(ctx, `SELECT user_id FROM push_subscriptions WHERE endpoint = ?`, sub.Endpoint).Scan(&owner); {
+	case errors.Is(err, sql.ErrNoRows):
+		// New endpoint: keep at most MaxSubscriptionsPerUser, the oldest ones make room.
+		if _, err := s.DB.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE user_id = ? AND id IN (
+			SELECT id FROM push_subscriptions WHERE user_id = ? ORDER BY id DESC LIMIT -1 OFFSET ?)`,
+			sub.UserID, sub.UserID, MaxSubscriptionsPerUser-1); err != nil {
+			return 0, err
+		}
+	case err != nil:
+		return 0, err
+	case owner != sub.UserID:
+		return 0, ErrEndpointTaken
+	}
+	res, err := s.DB.ExecContext(ctx, `INSERT INTO push_subscriptions(user_id, session_id, endpoint, p256dh, auth, device_name,
 		user_agent, created_at, kind) VALUES (?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(endpoint) DO UPDATE SET user_id = excluded.user_id, session_id = excluded.session_id,
+		ON CONFLICT(endpoint) DO UPDATE SET session_id = excluded.session_id,
 		p256dh = excluded.p256dh, auth = excluded.auth, device_name = excluded.device_name, user_agent = excluded.user_agent,
-		kind = excluded.kind`,
+		kind = excluded.kind WHERE push_subscriptions.user_id = excluded.user_id`,
 		sub.UserID, sess, sub.Endpoint, sub.P256dh, sub.Auth, trunc(sub.DeviceName, 100), trunc(sub.UserAgent, 300), s.now(), kind)
 	if err != nil {
 		return 0, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return 0, ErrEndpointTaken // lost a race against another user's registration
 	}
 	var id int64
 	err = s.DB.QueryRowContext(ctx, `SELECT id FROM push_subscriptions WHERE endpoint = ?`, sub.Endpoint).Scan(&id)

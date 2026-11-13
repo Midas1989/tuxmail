@@ -3,7 +3,10 @@
 package server
 
 import (
+	"errors"
+	"math"
 	"net/http"
+	"strconv"
 
 	"github.com/Midas1989/Mailclient/internal/app"
 
@@ -82,6 +85,10 @@ func (s *Server) handlePushSubscribe(w http.ResponseWriter, r *http.Request, a *
 		return
 	}
 	id, err := s.pushStore.Save(r.Context(), sub)
+	if errors.Is(err, push.ErrEndpointTaken) {
+		writeError(w, http.StatusConflict, "invalid_subscription", "this endpoint is already registered")
+		return
+	}
 	if err != nil {
 		s.writeAuthError(w, err)
 		return
@@ -141,6 +148,9 @@ func (s *Server) handlePushPutPrefs(w http.ResponseWriter, r *http.Request, a *a
 // handlePushTest sends a test notification to all of the user's devices,
 // ignoring quiet hours and toggles.
 func (s *Server) handlePushTest(w http.ResponseWriter, r *http.Request, a *authInfo) {
+	if !s.allowPushTest(w, a.User.ID) {
+		return
+	}
 	subs, err := s.pushStore.List(r.Context(), a.User.ID)
 	if err != nil {
 		s.writeAuthError(w, err)
@@ -158,4 +168,15 @@ func (s *Server) handlePushTest(w http.ResponseWriter, r *http.Request, a *authI
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]int{"sent": sent, "failed": failed})
+}
+
+// allowPushTest limits test notifications per user: every one is a request to
+// each of the user's push services (L-8).
+func (s *Server) allowPushTest(w http.ResponseWriter, userID int64) bool {
+	ok, wait := s.pushTestLimiter.allow(strconv.FormatInt(userID, 10))
+	if !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(wait.Seconds()))))
+		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many test notifications, try again later")
+	}
+	return ok
 }

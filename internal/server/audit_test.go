@@ -71,7 +71,7 @@ func TestAuditA01DeletedUserDataNotInherited(t *testing.T) {
 		if resp, m := admin.do("DELETE", fmt.Sprintf("/api/admin/users/%d%s", victim.ID, q), nil); resp.StatusCode != http.StatusNoContent {
 			t.Fatal(resp.Status, m)
 		}
-		resp, m := admin.do("POST", "/api/admin/users", map[string]string{"username": fmt.Sprintf("next%v", keep), "password": pw})
+		resp, m := admin.do("POST", "/api/admin/users", map[string]any{"username": fmt.Sprintf("next%v", keep), "password": pw, "reauth": map[string]string{"password": pw}})
 		if resp.StatusCode != http.StatusCreated {
 			t.Fatal(resp.Status, m)
 		}

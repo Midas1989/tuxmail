@@ -495,7 +495,7 @@ func TestPasskeyAdminReset2FA(t *testing.T) {
 	if _, m := admin.do("GET", "/api/admin/users/"+itoa(int(u.ID)), nil); m["user"].(map[string]any)["passkeys"] != float64(1) {
 		t.Fatalf("admin user: %v", m)
 	}
-	if resp, _ := admin.do("POST", "/api/admin/users/"+itoa(int(u.ID))+"/reset-2fa", nil); resp.StatusCode != 204 {
+	if resp, _ := admin.do("POST", "/api/admin/users/"+itoa(int(u.ID))+"/reset-2fa", map[string]any{"reauth": map[string]string{"password": pw}}); resp.StatusCode != 204 {
 		t.Fatal(resp.Status)
 	}
 	_, m = admin.do("GET", "/api/admin/users/"+itoa(int(u.ID)), nil)

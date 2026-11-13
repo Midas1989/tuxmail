@@ -8,13 +8,17 @@
 -->
 <script lang="ts">
   import Modal from '../common/Modal.svelte';
+  import StepUpForm from '../security/StepUpForm.svelte';
+  import type { Reauth } from '../../api/security';
   import { t } from '../../i18n/index.svelte';
-  import { ADMIN_ROLES, type AdminClient, type AdminRole, type AdminUser } from '../../api/admin';
+  import { ADMIN_ROLES, type AdminClient, type AdminMe, type AdminRole, type AdminUser } from '../../api/admin';
   import { adminErrorMessage } from '../../admin/errors';
   import type { GuardReason } from '../../admin/users';
 
   interface Props {
     client: AdminClient;
+    /** The signed-in administrator (which proofs a step-up asks for). */
+    me?: AdminMe;
     /** The user to edit; null creates one. */
     user: AdminUser | null;
     /** Server password policy (0 = unknown). */
@@ -24,7 +28,7 @@
     onsaved: (r: { user: AdminUser; password?: string; created: boolean }) => void;
     onclose: () => void;
   }
-  let { client, user, minPasswordLength = 0, roleLocked = null, onsaved, onclose }: Props = $props();
+  let { client, me, user, minPasswordLength = 0, roleLocked = null, onsaved, onclose }: Props = $props();
 
   // The form edits a copy; `user` is only the starting point.
   // svelte-ignore state_referenced_locally
@@ -39,15 +43,29 @@
   let password = $state('');
   let busy = $state(false);
   let error = $state('');
+  /** The server wants a fresh proof of the administrator (M-2): creating a user, a role change from or to administrator. */
+  let askProof = $state(false);
 
   const editing = $derived(user !== null);
   const valid = $derived(
     (editing || /^[A-Za-z0-9][A-Za-z0-9._@-]{0,63}$/.test(username.trim())) && (editing || passwordMode === 'generate' || password.length > 0),
   );
 
-  async function submit(e: SubmitEvent) {
+  const roleChange = $derived(!!user && !roleLocked && role !== user.role && (role === 'admin' || user.role === 'admin'));
+  const needsProof = $derived(!editing || roleChange);
+
+  function submit(e: SubmitEvent) {
     e.preventDefault();
     if (busy || !valid) return;
+    if (needsProof) {
+      error = '';
+      askProof = true;
+      return;
+    }
+    void save();
+  }
+
+  async function save(reauth?: Reauth) {
     busy = true;
     error = '';
     try {
@@ -56,7 +74,7 @@
         if (displayName.trim() !== user.displayName) patch.displayName = displayName.trim();
         if (email.trim() !== user.email) patch.email = email.trim();
         if (role !== user.role && !roleLocked) patch.role = role;
-        const saved = Object.keys(patch).length ? await client.updateUser(user.id, patch) : user;
+        const saved = Object.keys(patch).length ? await client.updateUser(user.id, patch, reauth) : user;
         onsaved({ user: saved, created: false });
       } else {
         const r = await client.createUser({
@@ -65,7 +83,7 @@
           displayName: displayName.trim(),
           role,
           password: passwordMode === 'custom' ? password : undefined,
-        });
+        }, reauth);
         onsaved({ user: r.user, password: r.password, created: true });
       }
     } catch (err) {
@@ -113,11 +131,14 @@
         {/if}
       </fieldset>
     {/if}
-    {#if error}<p class="error" role="alert">{error}</p>{/if}
+    {#if error && !askProof}<p class="error" role="alert">{error}</p>{/if}
   </form>
+  {#if askProof}
+    <StepUpForm hasPassword={me?.hasPassword ?? true} hasSecondFactor={me?.totpEnabled ?? false} submitLabel={editing ? t('common.action.save') : t('admin.form.create')} {busy} {error} onsubmit={(r) => void save(r)} oncancel={() => ((askProof = false), (error = ''))} />
+  {/if}
   {#snippet footer()}
     <button class="btn" type="button" onclick={onclose}>{t('common.action.cancel')}</button>
-    <button class="btn btn-primary" type="submit" form="admin-user-form" disabled={busy || !valid} data-testid="user-form-submit">{editing ? t('common.action.save') : t('admin.form.create')}</button>
+    <button class="btn btn-primary" type="submit" form="admin-user-form" disabled={busy || !valid || askProof} data-testid="user-form-submit">{editing ? t('common.action.save') : t('admin.form.create')}</button>
   {/snippet}
 </Modal>
 

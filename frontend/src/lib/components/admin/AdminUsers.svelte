@@ -18,6 +18,8 @@
   import UserActionsDialog from './UserActionsDialog.svelte';
   import UserSessionsDialog from './UserSessionsDialog.svelte';
   import DeleteUserDialog from './DeleteUserDialog.svelte';
+  import StepUpDialog from './StepUpDialog.svelte';
+  import type { Reauth } from '../../api/security';
   import { t, fmt } from '../../i18n/index.svelte';
   import { ADMIN_ROLES, type AdminUser } from '../../api/admin';
   import { adminErrorMessage } from '../../admin/errors';
@@ -39,6 +41,8 @@
     | { kind: 'sessions'; id: number }
     | { kind: 'delete'; id: number }
     | { kind: 'confirm'; id: number; what: 'disable' | 'resetPassword' | 'reset2fa' }
+    /** Fresh proof of the administrator before resetting a password or second factor. */
+    | { kind: 'stepup'; id: number; what: 'resetPassword' | 'reset2fa' }
     /** A password the server generated; shown once, then dropped with the dialog. */
     | { kind: 'secret'; title: string; intro: string; value: string };
   let dlg = $state<Dlg | null>(null);
@@ -116,21 +120,23 @@
   }
 
   async function confirmed(u: AdminUser, what: 'disable' | 'resetPassword' | 'reset2fa') {
-    dlg = null;
-    if (what === 'disable') await run(u, async () => void (await client.updateUser(u.id, { disabled: true })), t('admin.toast.disabled', { name: u.username }));
-    else if (what === 'reset2fa') await run(u, () => client.reset2FA(u.id), t('admin.toast.reset2fa', { name: u.username }));
-    else {
-      busyId = u.id;
-      try {
-        const password = await client.resetPassword(u.id);
-        dlg = { kind: 'secret', title: t('admin.secret.resetTitle'), intro: t('admin.secret.resetIntro', { name: u.username }), value: password };
-        await load();
-      } catch (err) {
-        notify(adminErrorMessage(err, t, minLength), 'error');
-      } finally {
-        busyId = null;
-      }
+    if (what === 'disable') {
+      dlg = null;
+      await run(u, async () => void (await client.updateUser(u.id, { disabled: true })), t('admin.toast.disabled', { name: u.username }));
+    } else dlg = { kind: 'stepup', id: u.id, what };
+  }
+
+  /** The reset itself, with the administrator's fresh proof; errors stay in the step-up dialog. */
+  async function resetWithProof(u: AdminUser, what: 'resetPassword' | 'reset2fa', reauth: Reauth) {
+    if (what === 'reset2fa') {
+      await client.reset2FA(u.id, reauth);
+      dlg = null;
+      notify(t('admin.toast.reset2fa', { name: u.username }));
+    } else {
+      const password = await client.resetPassword(u.id, reauth);
+      dlg = { kind: 'secret', title: t('admin.secret.resetTitle'), intro: t('admin.secret.resetIntro', { name: u.username }), value: password };
     }
+    await load();
   }
 
   function saved(r: { user: AdminUser; password?: string; created: boolean }) {
@@ -244,9 +250,9 @@
 </div>
 
 {#if dlg?.kind === 'create'}
-  <UserFormDialog {client} user={null} minPasswordLength={minLength} onsaved={saved} onclose={() => (dlg = null)} />
+  <UserFormDialog {client} {me} user={null} minPasswordLength={minLength} onsaved={saved} onclose={() => (dlg = null)} />
 {:else if dlg?.kind === 'edit' && target}
-  <UserFormDialog {client} user={target} minPasswordLength={minLength} roleLocked={guardsOf(target).role} onsaved={saved} onclose={() => (dlg = null)} />
+  <UserFormDialog {client} {me} user={target} minPasswordLength={minLength} roleLocked={guardsOf(target).role} onsaved={saved} onclose={() => (dlg = null)} />
 {:else if dlg?.kind === 'actions' && target}
   <UserActionsDialog user={target} guards={guardsOf(target)} onaction={(a) => onAction(target, a)} onclose={() => (dlg = null)} />
 {:else if dlg?.kind === 'sessions' && target}
@@ -254,6 +260,7 @@
 {:else if dlg?.kind === 'delete' && target}
   <DeleteUserDialog
     {client}
+    {me}
     user={target}
     ondeleted={(u, kept) => {
       dlg = null;
@@ -265,6 +272,9 @@
 {:else if dlg?.kind === 'confirm' && target}
   {@const what = dlg.what}
   <ConfirmDialog title={confirmTitle(what)} message={confirmText(what, target)} confirmLabel={confirmTitle(what)} danger={what !== 'resetPassword'} onconfirm={() => void confirmed(target, what)} oncancel={() => (dlg = null)} />
+{:else if dlg?.kind === 'stepup' && target}
+  {@const what = dlg.what}
+  <StepUpDialog {me} title={confirmTitle(what)} danger={what !== 'resetPassword'} run={(r) => resetWithProof(target, what, r)} onclose={() => (dlg = null)} />
 {:else if dlg?.kind === 'secret'}
   <SecretDialog title={dlg.title} intro={dlg.intro} label={t('admin.secret.password')} value={dlg.value} onclose={() => (dlg = null)} />
 {/if}

@@ -525,9 +525,17 @@ func TestMigrationForwardBackwardForward(t *testing.T) {
 		t.Fatal(err)
 	}
 	s.Audit(ctx, "vor.rollback", "x", true, "")
+	// A device token with narrowed scopes must not survive as a full-rights token (L-21).
+	scopedTok, _, err := s.createSession(ctx, 1, KindDevice, MethodDeviceCode, false, ClientInfo{DeviceName: "scoped", Scopes: ScopeData})
+	if err != nil {
+		t.Fatal(err)
+	}
 	rep, err := s.RollbackToLegacy(ctx)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if rep.ScopedTokensRevoked != 1 {
+		t.Fatalf("scoped tokens revoked: %d", rep.ScopedTokensRevoked)
 	}
 	if rep.RecoveryCodesRemoved != len(newCodes) || len(rep.UsersWithoutCodes) != 1 || rep.UsersWithoutCodes[0] != "user4" {
 		t.Fatalf("%+v", rep)
@@ -583,6 +591,10 @@ func TestMigrationForwardBackwardForward(t *testing.T) {
 	}
 	if _, err := db.Exec(`INSERT INTO audit_log(at, action) VALUES (1, 'alte.version')`); err != nil {
 		t.Fatal(err)
+	}
+	db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE token_hash = ?`, hashToken(scopedTok)).Scan(&n)
+	if n != 0 {
+		t.Fatal("scoped device token survived the rollback")
 	}
 	db.QueryRow(`SELECT COUNT(*) FROM sessions WHERE id = 10 AND token_hash = ?`, hashToken(next)).Scan(&n)
 	if n != 1 {
