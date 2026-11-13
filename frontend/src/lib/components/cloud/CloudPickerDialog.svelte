@@ -4,6 +4,7 @@
   attach them (downloaded into uploads) or insert share links.
 -->
 <script lang="ts">
+  import CloudConnectEmpty from './CloudConnectEmpty.svelte';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { app, cloud } from '../../state';
   import { t } from '../../i18n/index.svelte';
@@ -28,6 +29,10 @@
     void cloud.ensureLoaded().then(() => {
       if (!accountId && cloud.storageAccounts.length) accountId = cloud.storageAccounts[0].id;
     });
+  });
+  // An account connected from the empty state (CloudConnectEmpty) is taken right away.
+  $effect(() => {
+    if (!accountId && cloud.storageAccounts.length) accountId = cloud.storageAccounts[0].id;
   });
 
   const account = $derived(cloud.account(accountId));
@@ -71,7 +76,7 @@
 
 <Modal title={t('cloud.picker.title')} {onclose} width="720px">
   {#if cloud.storageAccounts.length === 0}
-    <p class="empty">{t('cloud.picker.noAccounts')}</p>
+    <CloudConnectEmpty />
   {:else}
     <div class="pick">
       {#if cloud.storageAccounts.length > 1}
@@ -118,7 +123,6 @@
     font-size: 12.5px;
     color: var(--tm-muted);
   }
-  .empty,
   .error {
     margin: 0;
     font-size: 13px;

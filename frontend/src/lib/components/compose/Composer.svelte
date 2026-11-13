@@ -509,9 +509,8 @@
       {#if app.api.kind === 'http'}
         <button class="icon-btn" title={t('compose.secret.button')} aria-label={t('compose.secret.button')} onclick={() => (secretDialog = true)}><KeyRound size={16} /></button>
       {/if}
-      {#if cloud.storageAccounts.length}
-        <button class="icon-btn" title={t('cloud.picker.title')} aria-label={t('cloud.picker.title')} onclick={() => (pickCloud = true)}><CloudDownload size={16} /></button>
-      {/if}
+      <!-- Always offered: without a cloud account the picker connects one (CloudConnectEmpty). -->
+      <button class="icon-btn" title={t('cloud.picker.title')} aria-label={t('cloud.picker.title')} onclick={() => (pickCloud = true)}><CloudDownload size={16} /></button>
       {#if unlockKey}
         <PgpUnlockDialog id={unlockKey} email={identity?.email ?? ''} onclose={() => (unlockKey = null)} ondone={() => { unlockKey = null; error = null; void doSend(); }} />
       {/if}

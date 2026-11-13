@@ -4,6 +4,7 @@
   target folder picker (KONZEPT 12.1 #2). Opened through cloud.openSave().
 -->
 <script lang="ts">
+  import CloudConnectEmpty from './CloudConnectEmpty.svelte';
   import FolderPlus from '@lucide/svelte/icons/folder-plus';
   import LoaderCircle from '@lucide/svelte/icons/loader-circle';
   import { app, cloud } from '../../state';
@@ -40,6 +41,10 @@
     void cloud.ensureLoaded().then(() => {
       if (!accountId && cloud.storageAccounts.length) accountId = cloud.storageAccounts[0].id;
     });
+  });
+  // An account connected from the empty state (CloudConnectEmpty) is taken right away.
+  $effect(() => {
+    if (!accountId && cloud.storageAccounts.length) accountId = cloud.storageAccounts[0].id;
   });
 
   async function newFolder() {
@@ -83,7 +88,7 @@
 
 <Modal title={t('cloud.save.title', { name: source.filename })} {onclose} width="640px">
   {#if cloud.storageAccounts.length === 0}
-    <p class="muted">{t('cloud.picker.noAccounts')}</p>
+    <CloudConnectEmpty />
   {:else}
     <div class="body">
       <div class="row">

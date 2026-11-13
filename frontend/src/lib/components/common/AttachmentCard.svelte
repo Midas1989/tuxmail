@@ -25,7 +25,8 @@
   );
   /** "Save to cloud" (KONZEPT 12.1 #2) for stored mail/chat attachments. */
   const saveSource = $derived(a.cloudLink ? null : attachmentSource(a));
-  const canSave = $derived(saveSource != null && cloud.storageAccounts.length > 0);
+  // Always offered for stored attachments: without a cloud account the dialog connects one.
+  const canSave = $derived(saveSource != null);
   // Core-served attachments are downloaded with ?download=1 (Content-Disposition: attachment).
   const href = $derived(a.cloudLink ? (/^https?:\/\//i.test(a.cloudLink.url) ? a.cloudLink.url : undefined) : a.url ? a.url + (a.url.includes('?') ? '&' : '?') + 'download=1' : undefined);
   const ext = $derived((a.filename.split('.').pop() ?? '').toUpperCase().slice(0, 4));
