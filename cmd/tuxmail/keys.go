@@ -120,6 +120,9 @@ func (c *cli) keys(ctx context.Context, args []string) error {
 			fmt.Fprintf(c.stdout, "%d recovery codes made since the upgrade are gone; these accounts must generate new ones: %s\n",
 				rep.RecoveryCodesRemoved, strings.Join(rep.UsersWithoutCodes, ", "))
 		}
+		if rep.ScopedTokensRevoked > 0 {
+			fmt.Fprintf(c.stdout, "%d device tokens with restricted scopes were revoked (the previous version ignores scopes); those devices must sign in again\n", rep.ScopedTokensRevoked)
+		}
 		return nil
 	default:
 		c.usage()

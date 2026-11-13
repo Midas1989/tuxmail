@@ -49,7 +49,14 @@ func (s *Sender) sendFCM(ctx context.Context, sub Subscription, n Notification) 
 	if s.FCM == nil {
 		return ErrFCMNotConfigured
 	}
-	body, err := json.Marshal(n.Payload)
+	// FCM passes through Google's servers: sender, subject and chat text never
+	// travel there in plaintext (M-11). Only the generic text and the ids the
+	// app needs to open the conversation or reply (conversationId, itemId, tag,
+	// type, accountId, teamId, url) are sent; the app builds the notification
+	// from those and loads the content from the server itself.
+	pl := n.Payload
+	pl.Title, pl.Body, pl.Sender = PrivacyTitle, PrivacyBody, ""
+	body, err := json.Marshal(pl)
 	if err != nil {
 		return err
 	}

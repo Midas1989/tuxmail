@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"time"
 
@@ -304,8 +305,13 @@ func (b *pushBackend) Subscribe(ctx context.Context, in app.PushSubscriptionInpu
 	if err := push.ValidateSubscription(sub); err != nil {
 		return app.Errorf(http.StatusBadRequest, "invalid_subscription", "%v", err)
 	}
-	_, err := b.s.pushStore.Save(ctx, sub)
-	return err
+	if _, err := b.s.pushStore.Save(ctx, sub); err != nil {
+		if errors.Is(err, push.ErrEndpointTaken) {
+			return app.Errorf(http.StatusConflict, "invalid_subscription", "this endpoint is already registered")
+		}
+		return err
+	}
+	return nil
 }
 
 func (b *pushBackend) Unsubscribe(ctx context.Context, endpoint string) error {
@@ -367,6 +373,9 @@ func (b *pushBackend) SaveSettings(ctx context.Context, in app.NotificationSetti
 }
 
 func (b *pushBackend) Test(ctx context.Context) error {
+	if ok, _ := b.s.pushTestLimiter.allow(strconv.FormatInt(b.userID, 10)); !ok {
+		return app.Errorf(http.StatusTooManyRequests, "rate_limited", "too many test notifications, try again later")
+	}
 	subs, err := b.s.pushStore.List(ctx, b.userID)
 	if err != nil {
 		return err

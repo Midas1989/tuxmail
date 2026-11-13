@@ -71,7 +71,7 @@ func TestTeamWorkflowExternalEffectConfirmedAttributedAudited(t *testing.T) {
 	}
 
 	// The other manager is told (push), the actor is not.
-	p := te.fcm.wait(t, func(p push.Payload) bool { return p.Type == "team" && strings.Contains(p.Body, "drop@evil.example") })
+	p := te.fcm.wait(t, func(p push.Payload) bool { return p.Type == "team" && p.TeamID != "" })
 	if p.TeamID == "" {
 		t.Fatalf("%+v", p)
 	}

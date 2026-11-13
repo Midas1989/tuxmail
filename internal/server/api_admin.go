@@ -27,6 +27,14 @@ type adminUserView struct {
 	PressureUntil time.Time `json:"pressureUntil,omitzero"`
 }
 
+// adminStepUp demands a fresh re-authentication (password and second factor, as
+// for the self-service security changes) before a privileged administrator
+// action. The proof travels in the "reauth" object of the request body, because
+// the body may carry a "password" of its own (M-2).
+func (s *Server) adminStepUp(w http.ResponseWriter, r *http.Request, a *authInfo, re reauthReq) bool {
+	return s.reauth(w, r, a, re.Password, re.Code, re.RecoveryCode)
+}
+
 func adminUserViews(users []*auth.User, locks map[string]auth.LockState) []adminUserView {
 	out := make([]adminUserView, 0, len(users))
 	for _, u := range users {
@@ -64,8 +72,11 @@ func (s *Server) handleAdminCreateUser(w http.ResponseWriter, r *http.Request, a
 		DisplayName string    `json:"displayName"`
 		Role        auth.Role `json:"role"`
 		Password    string    `json:"password"`
+		Reauth      reauthReq `json:"reauth"`
 	}
-	if !readJSON(w, r, &req) {
+	// Creating an account (possibly an administrator, with a password the
+	// caller picks) is a privileged act: fresh proof first (M-2).
+	if !readJSON(w, r, &req) || !s.adminStepUp(w, r, a, req.Reauth) {
 		return
 	}
 	generated := ""
@@ -126,11 +137,23 @@ func (s *Server) handleAdminUpdateUser(w http.ResponseWriter, r *http.Request, a
 		auth.UserUpdate
 		Role     *auth.Role `json:"role"`
 		Disabled *bool      `json:"disabled"`
+		Reauth   reauthReq  `json:"reauth"`
 	}
 	if !readJSON(w, r, &req) {
 		return
 	}
 	ctx := r.Context()
+	if req.Role != nil {
+		// A role change to or from administrator needs fresh proof (M-2).
+		cur, err := s.auth.GetUser(ctx, id)
+		if err != nil {
+			s.writeAuthError(w, err)
+			return
+		}
+		if *req.Role != cur.Role && (*req.Role == auth.RoleAdmin || cur.Role == auth.RoleAdmin) && !s.adminStepUp(w, r, a, req.Reauth) {
+			return
+		}
+	}
 	if req.Email != nil || req.DisplayName != nil {
 		if _, err := s.auth.UpdateUser(ctx, id, req.UserUpdate); err != nil {
 			s.writeAuthError(w, err)
@@ -166,9 +189,19 @@ func (s *Server) handleAdminDeleteUser(w http.ResponseWriter, r *http.Request, a
 	if !ok {
 		return
 	}
+	var req struct {
+		Reauth reauthReq `json:"reauth"`
+	}
+	if !readJSON(w, r, &req) {
+		return
+	}
 	keep := r.URL.Query().Get("keepData") == "true"
-	if _, err := s.auth.GetUser(r.Context(), id); err != nil {
+	victim, err := s.auth.GetUser(r.Context(), id)
+	if err != nil {
 		s.writeAuthError(w, err)
+		return
+	}
+	if victim.Role == auth.RoleAdmin && !s.adminStepUp(w, r, a, req.Reauth) {
 		return
 	}
 	// Stop the user's App (sync, timers, open store) before the account and
@@ -189,10 +222,17 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 	if !ok {
 		return
 	}
-	var req struct {
-		Password string `json:"password"`
+	if id == a.User.ID {
+		// Resetting the own password here would skip the password change with
+		// its own checks; use the account settings (M-2).
+		writeError(w, http.StatusForbidden, "forbidden", "you cannot reset your own password here; change it in your account settings")
+		return
 	}
-	if !readJSON(w, r, &req) {
+	var req struct {
+		Password string    `json:"password"`
+		Reauth   reauthReq `json:"reauth"`
+	}
+	if !readJSON(w, r, &req) || !s.adminStepUp(w, r, a, req.Reauth) {
 		return
 	}
 	if req.Password != "" {
@@ -218,6 +258,16 @@ func (s *Server) handleAdminResetPassword(w http.ResponseWriter, r *http.Request
 func (s *Server) handleAdminReset2FA(w http.ResponseWriter, r *http.Request, a *authInfo) {
 	id, ok := pathID(w, r, "id")
 	if !ok {
+		return
+	}
+	if id == a.User.ID {
+		writeError(w, http.StatusForbidden, "forbidden", "you cannot reset your own two-factor authentication here; use your account settings")
+		return
+	}
+	var req struct {
+		Reauth reauthReq `json:"reauth"`
+	}
+	if !readJSON(w, r, &req) || !s.adminStepUp(w, r, a, req.Reauth) {
 		return
 	}
 	// Removes the second factors of every kind: TOTP with its recovery codes AND

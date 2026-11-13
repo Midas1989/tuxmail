@@ -459,7 +459,7 @@ func TestAdminAuthorization(t *testing.T) {
 	if len(m["users"].([]any)) != 2 {
 		t.Fatal(m)
 	}
-	resp, m := admin.do("POST", "/api/admin/users", map[string]string{"username": "fred", "email": "fred@example.de", "role": "readonly"})
+	resp, m := admin.do("POST", "/api/admin/users", map[string]any{"username": "fred", "email": "fred@example.de", "role": "readonly", "reauth": map[string]string{"password": pw}})
 	if resp.StatusCode != 201 || len(m["password"].(string)) < 20 {
 		t.Fatal(resp.Status, m)
 	}
@@ -475,17 +475,17 @@ func TestAdminAuthorization(t *testing.T) {
 		t.Fatal("disabled user logged in", resp.Status)
 	}
 	admin.do("PATCH", "/api/admin/users/"+itoa(fredID), map[string]any{"disabled": false})
-	_, m = admin.do("POST", "/api/admin/users/"+itoa(fredID)+"/reset-password", nil)
+	_, m = admin.do("POST", "/api/admin/users/"+itoa(fredID)+"/reset-password", map[string]any{"reauth": map[string]string{"password": pw}})
 	if len(m["password"].(string)) < 20 {
 		t.Fatal(m)
 	}
-	if resp, _ := admin.do("POST", "/api/admin/users/"+itoa(fredID)+"/reset-2fa", nil); resp.StatusCode != 204 {
+	if resp, _ := admin.do("POST", "/api/admin/users/"+itoa(fredID)+"/reset-2fa", map[string]any{"reauth": map[string]string{"password": pw}}); resp.StatusCode != 204 {
 		t.Fatal(resp.Status)
 	}
 	// Last admin cannot demote themselves.
 	_, me := admin.do("GET", "/api/auth/me", nil)
 	rootID := int(me["user"].(map[string]any)["id"].(float64))
-	if resp, m := admin.do("PATCH", "/api/admin/users/"+itoa(rootID), map[string]any{"role": "user"}); resp.StatusCode != 409 || m["error"] != "last_admin" {
+	if resp, m := admin.do("PATCH", "/api/admin/users/"+itoa(rootID), map[string]any{"role": "user", "reauth": map[string]string{"password": pw}}); resp.StatusCode != 409 || m["error"] != "last_admin" {
 		t.Fatal(resp.Status, m)
 	}
 	// Groups, templates, audit.

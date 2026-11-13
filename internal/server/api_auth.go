@@ -254,7 +254,7 @@ func (s *Server) handleTOTPConfirm(w http.ResponseWriter, r *http.Request, a *au
 	var req struct {
 		Code string `json:"code"`
 	}
-	if !readJSON(w, r, &req) {
+	if !readJSON(w, r, &req) || !s.limitLogin(w, r, a.User.Username) {
 		return
 	}
 	codes, err := s.auth.ConfirmTOTP(r.Context(), a.User.ID, req.Code)

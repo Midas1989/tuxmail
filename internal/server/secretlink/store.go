@@ -118,7 +118,8 @@ func (s *Store) Create(ctx context.Context, owner int64, ciphertext []byte, ttl 
 	return l, tx.Commit()
 }
 
-// Open returns the ciphertext and counts the view. The check and the count are one statement,
+// Open returns the ciphertext and counts the view. Links of a disabled owner
+// are gone for everybody until the account is enabled again (L-22). The check and the count are one statement,
 // so parallel requests cannot exceed max_views; the row is deleted with the last view.
 func (s *Store) Open(ctx context.Context, id string) ([]byte, error) {
 	if !ValidID(id) {
@@ -133,6 +134,7 @@ func (s *Store) Open(ctx context.Context, id string) ([]byte, error) {
 	var views, maxViews int
 	err = tx.QueryRowContext(ctx, `UPDATE secret_links SET views = views + 1
 		WHERE id = ? AND expires_at > ? AND views < max_views
+		AND owner_id NOT IN (SELECT id FROM users WHERE disabled <> 0)
 		RETURNING ciphertext, views, max_views`, id, s.now().Unix()).Scan(&ct, &views, &maxViews)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrGone

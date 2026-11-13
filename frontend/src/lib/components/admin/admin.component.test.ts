@@ -87,6 +87,15 @@ function typeInto(input: HTMLInputElement, value: string) {
   flushSync();
 }
 
+/** Answers the step-up form (M-2) that creating users, resetting passwords and the like ask for. */
+async function proof(password = 'admin-password') {
+  const form = document.querySelector<HTMLFormElement>('form.stepup')!;
+  expect(form).not.toBeNull();
+  typeInto(form.querySelector<HTMLInputElement>('input[type="password"]')!, password);
+  form.requestSubmit();
+  await settle();
+}
+
 describe('Users: unlock', () => {
   it('shows "Unlock" only for locked or attacked accounts', async () => {
     const c = new MockAdminClient({ latencyMs: 0 });
@@ -205,6 +214,7 @@ describe('Users: guards against locking out the administration', () => {
     typeInto(document.querySelector<HTMLInputElement>('[data-testid="delete-confirm"]')!, 'admin');
     document.querySelector<HTMLButtonElement>('[data-testid="delete-submit"]')!.click();
     await settle();
+    await proof(); // deleting an administrator asks for a fresh proof
     expect(dialog()!.querySelector('[role="alert"]')?.textContent).toBe('This is the only enabled administrator. Make another account administrator first.');
     expect(row('admin')).toBeTruthy();
   });
@@ -229,7 +239,7 @@ describe('Users: guards against locking out the administration', () => {
     flushSync();
     submit.click();
     await settle();
-    expect(del).toHaveBeenCalledWith(2, true);
+    expect(del).toHaveBeenCalledWith(2, true, undefined); // a plain user needs no step-up
     expect(row('anna')).toBeNull();
   });
 });
@@ -244,6 +254,7 @@ describe('Users: one-time password', () => {
     typeInto(document.querySelector<HTMLInputElement>('#au-username')!, 'neu');
     document.querySelector<HTMLButtonElement>('[data-testid="user-form-submit"]')!.click();
     await settle();
+    await proof();
 
     const field = document.querySelector<HTMLInputElement>('[data-testid="secret-value"]');
     expect(field).not.toBeNull();
@@ -285,6 +296,7 @@ describe('Users: one-time password', () => {
     typeInto(document.querySelector<HTMLInputElement>('#au-password')!, 'a-very-long-passphrase');
     document.querySelector<HTMLButtonElement>('[data-testid="user-form-submit"]')!.click();
     await settle();
+    await proof();
     expect(document.querySelector('[data-testid="secret-value"]')).toBeNull();
     expect(row('eigen')).toBeTruthy();
   });
@@ -301,6 +313,7 @@ describe('Users: one-time password', () => {
     typeInto(document.querySelector<HTMLInputElement>('#au-password')!, 'short');
     document.querySelector<HTMLButtonElement>('[data-testid="user-form-submit"]')!.click();
     await settle();
+    await proof();
     const alert = dialog()!.querySelector('[role="alert"]');
     expect(alert?.textContent).toMatch(/at least 12 characters/);
     expect(row('weak')).toBeNull();
@@ -317,7 +330,9 @@ describe('Users: one-time password', () => {
     expect(reset).not.toHaveBeenCalled(); // asks first
     byText(dialog()!, 'Reset password').click();
     await settle();
-    expect(reset).toHaveBeenCalledWith(2);
+    expect(reset).not.toHaveBeenCalled(); // and asks for the administrator's proof
+    await proof('my-admin-password');
+    expect(reset).toHaveBeenCalledWith(2, expect.objectContaining({ password: 'my-admin-password' }));
     const pw = document.querySelector<HTMLInputElement>('[data-testid="secret-value"]')!.value;
     expect(pw).toHaveLength(20);
     document.querySelector<HTMLButtonElement>('[data-testid="secret-done"]')!.click();
