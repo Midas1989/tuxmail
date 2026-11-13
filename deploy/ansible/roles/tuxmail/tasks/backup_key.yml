@@ -2,10 +2,24 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Der öffentliche age-Schlüssel wird in der Oberfläche erzeugt und vom Dienst in dieses Verzeichnis geschrieben;
 # das Backup-Skript (root) liest ihn dort. Nur der Dienstbenutzer darf schreiben, andere haben keinen Zugriff.
+# Der Dienstbenutzer darf in tuxmail_data_dir schreiben und könnte dort einen Symlink anlegen. Als root wird
+# deshalb nie einem Symlink gefolgt (Audit M-4): erst prüfen, dann mit follow: false anlegen.
+- name: Backup-Schlüsselverzeichnis prüfen (kein Symlink)
+  ansible.builtin.stat:
+    path: "{{ tuxmail_backup_key_dir }}"
+    follow: false
+  register: tuxmail_backup_key_dir_stat
+
+- name: Abbruch bei Symlink statt Verzeichnis
+  ansible.builtin.assert:
+    that: not (tuxmail_backup_key_dir_stat.stat.islnk | default(false))
+    fail_msg: "{{ tuxmail_backup_key_dir }} ist ein Symlink - Abbruch (Verdacht auf Manipulation durch den Dienstbenutzer)."
+
 - name: Verzeichnis des Backup-Schlüssels (dem Dienst gehörend)
   ansible.builtin.file:
     path: "{{ tuxmail_backup_key_dir }}"
     state: directory
+    follow: false
     owner: "{{ tuxmail_user }}"
     group: "{{ tuxmail_group }}"
     mode: "0750"
@@ -16,6 +30,7 @@
   ansible.builtin.copy:
     content: "{{ tuxmail_backup_age_recipients | join('\n') }}\n"
     dest: "{{ tuxmail_backup_key_dir }}/recipients.txt"
+    follow: false
     owner: "{{ tuxmail_user }}"
     group: "{{ tuxmail_group }}"
     mode: "0640"

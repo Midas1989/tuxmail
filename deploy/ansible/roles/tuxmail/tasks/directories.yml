@@ -36,6 +36,7 @@
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
+    follow: false
     owner: "{{ tuxmail_user }}"
     group: "{{ tuxmail_group }}"
     mode: "0750"

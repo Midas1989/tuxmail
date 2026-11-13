@@ -17,16 +17,16 @@ log:
 tls:
   mode: none   # TLS is terminated by a reverse proxy in front of the container
 
-# Reverse proxies whose X-Forwarded-* headers are trusted: loopback and the
-# private ranges used by Docker/Podman networks. Narrow this down if the
-# container is reachable from other hosts in these networks.
+# Reverse proxies whose X-Forwarded-* headers are trusted. Default: loopback
+# only (audit I-14); trusting whole private ranges would let any other
+# container/host in them forge client addresses. Behind a proxy that reaches
+# the container over the Docker/Podman network, mount an own config.yaml with
+# the exact address of the proxy (or the network gateway, see
+# `docker network inspect`), e.g. 172.18.0.1/32 - see
+# deploy/docker/docker-compose.example.yml.
 trusted_proxies:
   - 127.0.0.1/32
   - ::1/128
-  - 10.0.0.0/8
-  - 172.16.0.0/12
-  - 192.168.0.0/16
-  - fc00::/7
 
 auth:
   session_lifetime: 12h

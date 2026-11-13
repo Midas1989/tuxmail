@@ -98,14 +98,14 @@ richtet `scripts/dovecot-dev.sh` einen Wegwerf-Mailserver ein (root, Pakete
 `dovecot-imapd dovecot-lmtpd postfix openssl`):
 
 ```sh
-sudo scripts/dovecot-dev.sh start     # /tmp/tuxmail-dovecot: IMAP 143/993, SMTP 25, Submission 587
+sudo scripts/dovecot-dev.sh start     # /run/tuxmail-dovecot: IMAP 143/993, SMTP 25, Submission 587
 sudo scripts/dovecot-dev.sh stop
 ```
 
 - Benutzer `anna@tuxmail.test`, `ben@tuxmail.test`, Passwort `tuxmail-dev`.
 - Selbst signiertes Zertifikat für `localhost`/`127.0.0.1`; die CA liegt in
-  `/tmp/tuxmail-dovecot/ca.pem`. TuxMail prüft TLS immer – zum Testen wird die
-  CA mit `SSL_CERT_FILE=/tmp/tuxmail-dovecot/ca.pem` vertraut.
+  `/run/tuxmail-dovecot/ca.pem`. TuxMail prüft TLS immer – zum Testen wird die
+  CA mit `SSL_CERT_FILE=/run/tuxmail-dovecot/ca.pem` vertraut.
 - Postfix nimmt Mails für `tuxmail.test` auf Port 25 an und stellt sie per
   LMTP an Dovecot zu; Port 587 verlangt AUTH (SASL über Dovecot).
 - Bei jedem Start sind die Postfächer leer.
@@ -116,9 +116,9 @@ eigenen IMAP/SMTP-Server, sondern liefert nur Autoconfig (IMAPS 993 + Submission
 Steuer-API gegen Dovecot/Postfix an:
 
 ```sh
-bin/tuxmail devserver --external-imap 127.0.0.1:993 --external-ca /tmp/tuxmail-dovecot/ca.pem
+bin/tuxmail devserver --external-imap 127.0.0.1:993 --external-ca /run/tuxmail-dovecot/ca.pem
 # Keywords prüfen, z. B. nach dem Taggen in TuxMail:
-doveadm -c /tmp/tuxmail-dovecot/dovecot.conf fetch -u anna@tuxmail.test 'flags hdr.subject' mailbox INBOX
+doveadm -c /run/tuxmail-dovecot/dovecot.conf fetch -u anna@tuxmail.test 'flags hdr.subject' mailbox INBOX
 ```
 
 ## 4. Server-Modus (`tuxmail serve`)

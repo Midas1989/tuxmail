@@ -42,6 +42,12 @@
 # The macOS job is optional: when it fails, the release is published without macOS files.
 # The Android APKs are built and attached by android.yml.
 
+# Signing secrets (audit 2026-11-13 M-3): they are only available for tag builds
+# (v*). Branch builds (main, claude/**) run without them and stay unsigned;
+# the jobs use the GitHub environment "release" on tags (store the secrets as
+# environment secrets there, protect it with required reviewers) and the empty
+# environment "branch-build" otherwise. See docs/RELEASE.md.
+
 name: Release
 
 on:
@@ -182,6 +188,7 @@ jobs:
 
   linux-desktop:
     name: Linux desktop ${{ matrix.arch }}
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'branch-build' }}
     needs: [version, frontend]
     runs-on: ${{ matrix.runner }}
     strategy:
@@ -192,7 +199,7 @@ jobs:
           - { arch: arm64, runner: ubuntu-24.04-arm }
     env:
       TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
-      HAS_GPG_KEY: ${{ secrets.GPG_PRIVATE_KEY != '' }}
+      HAS_GPG_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.GPG_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -215,20 +222,20 @@ jobs:
 
       - name: Build desktop binary and stage files
         env:
-          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
+          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TUXMAIL_GOOGLE_CLIENT_SECRET || '' }}
         run: build/linux/build.sh
 
       - name: Prepare package signing key
         if: env.HAS_GPG_KEY == 'true'
         env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+          GPG_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.GPG_PRIVATE_KEY || '' }}
         run: |
           printf '%s\n' "$GPG_PRIVATE_KEY" > "$RUNNER_TEMP/nfpm-signing-key.asc"
           echo "NFPM_SIGNING_KEY_FILE=$RUNNER_TEMP/nfpm-signing-key.asc" >> "$GITHUB_ENV"
 
       - name: .deb and .rpm (nfpm)
         env:
-          NFPM_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          NFPM_PASSPHRASE: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.GPG_PASSPHRASE || '' }}
         run: build/linux/package-nfpm.sh
 
       - name: Remove package signing key
@@ -311,6 +318,7 @@ jobs:
 
   windows-desktop:
     name: Windows desktop ${{ matrix.arch }}
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'branch-build' }}
     needs: [version, frontend]
     runs-on: windows-latest
     strategy:
@@ -324,7 +332,7 @@ jobs:
     env:
       TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
       # SignPath (Authenticode) stays disabled until the token and variables exist.
-      SIGNPATH_ENABLED: ${{ secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
+      SIGNPATH_ENABLED: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.SIGNPATH_API_TOKEN != '' && vars.SIGNPATH_ORGANIZATION_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -342,7 +350,7 @@ jobs:
 
       - name: Build TuxMail.exe and the messenger plugins
         env:
-          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
+          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TUXMAIL_GOOGLE_CLIENT_SECRET || '' }}
         run: build/windows/build.sh "${{ matrix.arch }}"
 
       - name: Smoke test
@@ -546,6 +554,7 @@ jobs:
   # start (docs/INSTALLATION.md, macOS).
   macos-desktop:
     name: macOS desktop ${{ matrix.arch }}
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'branch-build' }}
     needs: [version, frontend]
     runs-on: macos-latest
     continue-on-error: true
@@ -557,8 +566,8 @@ jobs:
       TUXMAIL_VERSION: ${{ needs.version.outputs.version }}
       # No signal-cli for macOS (build/macos/build.sh).
       TUXMAIL_SIGNAL_CLI: skip
-      MACOS_SIGNING_ENABLED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' }}
-      MACOS_NOTARY_ENABLED: ${{ secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_NOTARY_KEY != '' && secrets.MACOS_NOTARY_KEY_ID != '' && secrets.MACOS_NOTARY_ISSUER_ID != '' }}
+      MACOS_SIGNING_ENABLED: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_CERTIFICATE_PASSWORD != '' }}
+      MACOS_NOTARY_ENABLED: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.MACOS_CERTIFICATE_P12 != '' && secrets.MACOS_NOTARY_KEY != '' && secrets.MACOS_NOTARY_KEY_ID != '' && secrets.MACOS_NOTARY_ISSUER_ID != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -583,7 +592,7 @@ jobs:
           echo "::warning::macOS ${{ matrix.arch }} is only ad-hoc signed (no MACOS_CERTIFICATE_P12), Gatekeeper asks on the first start."
       - name: Build TuxMail.app
         env:
-          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ secrets.TUXMAIL_GOOGLE_CLIENT_SECRET }}
+          TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.TUXMAIL_GOOGLE_CLIENT_SECRET || '' }}
         run: build/macos/build.sh "${{ matrix.arch }}"
       - name: Disk image (.dmg)
         run: build/macos/package-dmg.sh "${{ matrix.arch }}"
@@ -672,6 +681,7 @@ jobs:
 
   publish:
     name: Checksums and GitHub release
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'release' || 'branch-build' }}
     needs: [version, server, linux-desktop, windows-desktop, macos-desktop, docker]
     # macOS is optional: publish runs when every mandatory job succeeded,
     # whatever happened to macos-desktop (build/release-optional.sh drops what is incomplete).
@@ -729,8 +739,8 @@ jobs:
 
       - name: GPG signature of checksums.txt (optional)
         env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+          GPG_PRIVATE_KEY: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.GPG_PRIVATE_KEY || '' }}
+          GPG_PASSPHRASE: ${{ startsWith(github.ref, 'refs/tags/v') && secrets.GPG_PASSPHRASE || '' }}
         run: build/sign-gpg.sh dist/checksums.txt
 
       - name: Summary

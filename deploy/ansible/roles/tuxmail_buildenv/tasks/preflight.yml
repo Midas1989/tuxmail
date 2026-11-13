@@ -17,6 +17,7 @@
       - tuxmail_buildenv_go_low_memory | string | lower in ['auto', 'true', 'false']
       - tuxmail_buildenv_go_version is match('^[0-9]+\.[0-9]+(\.[0-9]+)?$')
       - tuxmail_buildenv_android_cmdline_tools_build is match('^[0-9]+$')
+      - tuxmail_buildenv_go_pinned_sha256 == '' or tuxmail_buildenv_go_pinned_sha256 is match('^[0-9a-f]{64}$')
       - tuxmail_buildenv_android_cmdline_tools_sha256 == '' or tuxmail_buildenv_android_cmdline_tools_sha256 is match('^[0-9a-f]{64}$')
     fail_msg: >-
       Ungültige Einstellung. tuxmail_buildenv_targets darf server, windows-desktop, android, linux-desktop, docker

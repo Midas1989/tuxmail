@@ -6,7 +6,7 @@
 # mail servers (docs/ENTWICKLUNG.md). Needs root and the Debian/Ubuntu
 # packages dovecot-imapd dovecot-lmtpd postfix openssl.
 #
-#   sudo scripts/dovecot-dev.sh start [DIR]   # default DIR /tmp/tuxmail-dovecot
+#   sudo scripts/dovecot-dev.sh start [DIR]   # default DIR /run/tuxmail-dovecot (root-only tmpfs)
 #   sudo scripts/dovecot-dev.sh stop  [DIR]
 #
 # Users: anna@tuxmail.test and ben@tuxmail.test, password "tuxmail-dev".
@@ -14,9 +14,23 @@
 # so that TLS connections to 127.0.0.1/localhost are verified.
 set -eu
 cmd=${1:-start}
-D=${2:-/tmp/tuxmail-dovecot}
+D=${2:-/run/tuxmail-dovecot}
 DOMAIN=tuxmail.test
 PW=tuxmail-dev
+
+# Runs as root: never work in a directory somebody else could have planted
+# (predictable /tmp path, symlink, foreign owner; audit L-19).
+[ "$(id -u)" = 0 ] || { echo "dovecot-dev.sh: needs root" >&2; exit 1; }
+if [ -L "$D" ]; then echo "dovecot-dev.sh: $D is a symlink, refusing" >&2; exit 1; fi
+if [ -e "$D" ]; then
+	[ -d "$D" ] || { echo "dovecot-dev.sh: $D is not a directory" >&2; exit 1; }
+	owner=$(stat -c %u "$D"); perm=$(stat -c %a "$D")
+	case $perm in *[2367]?|*[2367]) bad=1 ;; *) bad=0 ;; esac
+	if [ "$owner" != 0 ] || [ "$bad" = 1 ]; then
+		echo "dovecot-dev.sh: $D must be owned by root and not writable by group/others, refusing" >&2
+		exit 1
+	fi
+fi
 
 stop() {
 	[ -f "$D/dovecot.conf" ] && dovecot -c "$D/dovecot.conf" stop 2>/dev/null || true
@@ -29,6 +43,7 @@ if [ "$cmd" = stop ]; then
 fi
 
 stop
+[ -d "$D" ] || mkdir -m 0755 -p "$D"
 rm -rf "$D/mail" # throw-away mailboxes: every start begins empty
 mkdir -p "$D/mail" "$D/run" "$D/postfix" "$D/spool"
 id vmail >/dev/null 2>&1 || useradd -r -d "$D/mail" -s /usr/sbin/nologin vmail

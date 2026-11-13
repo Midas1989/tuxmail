@@ -12,9 +12,13 @@ tuxmail_buildenv_targets: [server, windows-desktop, android]
 # Checkout des Repositorys auf dem Zielrechner. Wenn vorhanden, schreibt die Rolle
 # mobile/android/local.properties (sdk.dir) und prüft am Ende mit build-all.sh --check.
 # Leer lassen, wenn der Checkout woanders liegt oder noch fehlt.
-tuxmail_buildenv_repo_dir: "/opt/tuxmail"
-# Benutzer, der baut (Eigentümer von local.properties; sein Login-Shell wird geprüft).
-tuxmail_buildenv_user: "root"
+# Bewusst NICHT /opt/tuxmail: das ist das Installationsverzeichnis des Servers (Rolle tuxmail).
+tuxmail_buildenv_repo_dir: "/opt/tuxmail-build"
+# Benutzer, der baut (Eigentümer von local.properties; sein Login-Shell wird geprüft). Standard: ein eigener
+# unprivilegierter Benutzer, der von der Rolle angelegt wird (nicht root, Audit L-18). Wird "root" gesetzt,
+# baut alles mit Vollrechten - nur für Wegwerf-Rechner.
+tuxmail_buildenv_user: "tuxmail-build"
+tuxmail_buildenv_create_user: true
 
 # --- Arbeitsspeicher ---------------------------------------------------------------
 # Das Telegram-Plugin (github.com/gotd/td/tg) braucht beim Kompilieren mehrere GB RAM.
@@ -38,6 +42,10 @@ tuxmail_buildenv_go_version: >-
       + (tuxmail_buildenv_go_mod | regex_findall('(?m)^go\s+(\d+\.\d+(?:\.\d+)?)\s*$'))
       + ['1.26.10']) | first }}
 tuxmail_buildenv_go_root: "/opt/go"
+# Fest eingetragene SHA-256 des Go-Archivs (für die Architektur des Zielrechners, 64 Hex-Zeichen). Leer = Prüfsumme
+# aus der go.dev-Liste (gleicher Ursprung wie das Archiv). Ermitteln unabhängig vom Download-Kanal, z. B. aus einem
+# zweiten Netz oder der Release-Ankündigung von Go. Es werden keine Werte mitgeliefert.
+tuxmail_buildenv_go_pinned_sha256: ""
 
 # --- Node ----------------------------------------------------------------------------
 # Vite 8 braucht Node 22.12 oder neuer; installiert wird nodejs/npm aus der Distribution.
@@ -53,7 +61,8 @@ tuxmail_buildenv_node_shadow_action: "rename"
 tuxmail_buildenv_android_sdk_root: "/opt/android-sdk"
 # Versionsnummer der Android-cmdline-tools (https://developer.android.com/studio, „Command line tools only“).
 tuxmail_buildenv_android_cmdline_tools_build: "13114758"
-# SHA-256 des cmdline-tools-ZIP. Leer = SHA-1 aus Googles Paketliste (repository2-3.xml) verwenden.
+# SHA-256 des cmdline-tools-ZIP (empfohlen fest eintragen, unabhängig vom Download ermittelt).
+# Leer = SHA-1 aus Googles Paketliste (repository2-3.xml, gleicher Ursprung wie das ZIP) verwenden.
 tuxmail_buildenv_android_cmdline_tools_sha256: ""
 tuxmail_buildenv_android_repository_url: "https://dl.google.com/android/repository"
 # Muss zu mobile/android/variables.gradle (compileSdkVersion) passen.

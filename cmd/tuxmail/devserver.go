@@ -21,7 +21,7 @@ import (
 // a hidden command for developers and the e2e tests (docs/ENTWICKLUNG.md):
 //
 //	tuxmail devserver [--imap ADDR] [--smtp ADDR] [--http ADDR] [--user ADDR:PASSWORD[:NAME]]... [--no-seed]
-//	tuxmail devserver --external-imap 127.0.0.1:993 --external-ca /tmp/tuxmail-dovecot/ca.pem   (Dovecot/Postfix)
+//	tuxmail devserver --external-imap 127.0.0.1:993 --external-ca /run/tuxmail-dovecot/ca.pem   (Dovecot/Postfix)
 func (c *cli) devserverCmd(ctx context.Context, args []string) error {
 	fs := flag.NewFlagSet("devserver", flag.ContinueOnError)
 	fs.SetOutput(c.stderr)
