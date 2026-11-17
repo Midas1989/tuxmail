@@ -4,7 +4,7 @@
 
 buildscript {
     // Same Kotlin version as the official Capacitor plugins (camera/filesystem).
-    ext.kotlin_version = '2.2.20'
+    ext.kotlin_version = '2.4.21'
     repositories {
         google()
         mavenCentral()
@@ -15,7 +15,7 @@ buildscript {
         // Only needed by the "play" flavor (FCM). F-Droid builds pass
         // -Ptuxmail.gms=false so no Google Gradle plugin is resolved at all.
         if (project.findProperty('tuxmail.gms') != 'false') {
-            classpath 'com.google.gms:google-services:4.4.4'
+            classpath 'com.google.gms:google-services:4.6.0'
         }
     }
 }
