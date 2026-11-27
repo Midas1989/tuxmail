@@ -1,0 +1,1 @@
+Keyboard-only terminal view, chats separated by channel, one-time links for secrets, much faster and more reliable.

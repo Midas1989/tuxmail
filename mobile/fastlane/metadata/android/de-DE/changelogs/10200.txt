@@ -1,0 +1,1 @@
+Terminal-Ansicht nur mit Tastatur, Chats nach Kanal getrennt, Einmal-Links für geheime Texte, deutlich schneller und zuverlässiger.
