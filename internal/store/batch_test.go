@@ -123,3 +123,43 @@ func TestBatchPauseReleasesWriteLock(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// Commits counts successful commits; Rollback only discards what came after
+// the last one.
+func TestBatchCommitsCount(t *testing.T) {
+	s := openTest(t)
+	ctx := context.Background()
+	bctx, b, err := s.BeginBatch(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b.Commits() != 0 {
+		t.Fatalf("commits = %d", b.Commits())
+	}
+	if _, _, err := s.EnsureTag(bctx, "a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Pause(); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Resume(); err != nil {
+		t.Fatal(err)
+	}
+	if b.Commits() != 1 {
+		t.Fatalf("commits after pause = %d", b.Commits())
+	}
+	if _, _, err := s.EnsureTag(bctx, "b"); err != nil {
+		t.Fatal(err)
+	}
+	b.Rollback()
+	if b.Commits() != 1 {
+		t.Fatalf("rollback changed commits: %d", b.Commits())
+	}
+	var n int
+	if err := s.DB().QueryRow(`SELECT COUNT(*) FROM tags WHERE path IN ('a','b')`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("tags kept = %d, want 1 (a committed, b rolled back)", n)
+	}
+}

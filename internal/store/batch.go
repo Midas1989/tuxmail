@@ -18,9 +18,10 @@ import (
 // Readers on other connections do not see the writes of a batch before it
 // is committed, so events about them are published after Commit.
 type Batch struct {
-	s   *Store
-	ctx context.Context
-	tx  *sql.Tx
+	s       *Store
+	ctx     context.Context
+	tx      *sql.Tx
+	commits int
 }
 
 type batchKey struct{ s *Store }
@@ -59,8 +60,17 @@ func (b *Batch) Pause() error {
 	}
 	tx := b.tx
 	b.tx = nil
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	b.commits++
+	return nil
 }
+
+// Commits counts the successful commits (Pause and Commit). Writes made while
+// Commits() returned n are durable once it returns more than n; a Rollback
+// discards only the writes after the last commit.
+func (b *Batch) Commits() int { return b.commits }
 
 // Commit commits the batch. The batch context stays usable (autocommit).
 func (b *Batch) Commit() error { return b.Pause() }

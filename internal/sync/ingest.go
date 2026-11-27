@@ -133,6 +133,9 @@ func (w *Worker) syncFolderChunk(ctx context.Context, f domain.Folder) (bool, er
 			return false, err // stop quickly; this chunk is fetched again next time
 		}
 		if err := w.ingestBatch(ctx, f, added[i:min(i+w.m.cfg.IngestBatch, len(added))], quiet, b); err != nil {
+			// Mails stored before the error are announced now: the chunk is
+			// fetched again, but then they are no longer new.
+			w.flush(ctx, f, b)
 			return false, err
 		}
 		n := b.changed
@@ -168,6 +171,7 @@ func (w *Worker) ingestBatch(ctx context.Context, f domain.Folder, msgs []domain
 		if err != nil {
 			if ctx.Err() != nil || IsNetworkError(err) {
 				sb.Rollback()
+				w.finishCommitted(ctx, f, done, sb.Commits(), quiet, b)
 				return err
 			}
 			w.log.Warn("sync: ingest failed", "folder", f.RemoteID, "ref", rm.Ref.ID, "err", err)
@@ -176,6 +180,7 @@ func (w *Worker) ingestBatch(ctx context.Context, f domain.Folder, msgs []domain
 			}
 			continue
 		}
+		in.commit = sb.Commits()
 		done = append(done, in)
 	}
 	if err := sb.Commit(); err != nil {
@@ -191,6 +196,23 @@ func (w *Worker) ingestBatch(ctx context.Context, f domain.Folder, msgs []domain
 		}
 	}
 	return nil
+}
+
+// finishCommitted finishes the mails of an interrupted batch whose rows were
+// already committed (a Pause before a body download commits what came
+// before). They are no longer new when the chunk is fetched again, so without
+// this they would never get tags, threading, categories, project rules and
+// mail.received (notifications, rules, invitations). The rolled back ones
+// are simply ingested again.
+func (w *Worker) finishCommitted(ctx context.Context, f domain.Folder, done []*ingested, commits int, quiet bool, b *batch) {
+	for _, in := range done {
+		if in.commit >= commits {
+			continue // rolled back
+		}
+		if err := w.finishIngest(ctx, f, in, quiet, b); err != nil {
+			w.log.Warn("sync: finish ingested mail after an interrupted batch", "folder", f.RemoteID, "message", in.id, "err", err)
+		}
+	}
 }
 
 // partialPrefix marks the stored sync state of a folder whose chunked
@@ -284,6 +306,9 @@ type ingested struct {
 	raw      []byte
 	flags    []domain.Flag
 	existing *store.Message
+	// commit is the batch's commit count when the rows were written: they are
+	// durable once the batch has committed more often (store.Batch.Commits).
+	commit int
 }
 
 // ingest stores one remote message (first phase: rows, content, search
