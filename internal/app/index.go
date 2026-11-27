@@ -70,6 +70,9 @@ func (a *App) ensureIndexed(ctx context.Context) error {
 			break
 		}
 	}
+	// Addresses already linked to a person in this pass (a frequent sender
+	// is looked up once, not once per mail).
+	persons := map[string]int64{}
 	for {
 		ids, err := a.st.MessagesWithoutCounterpart(ctx, indexBatch)
 		if err != nil {
@@ -82,10 +85,8 @@ func (a *App) ensureIndexed(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		for _, id := range ids {
-			if err := a.indexCounterpart(ctx, id, addrs[id], me); err != nil {
-				return err
-			}
+		if err := a.indexCounterparts(ctx, ids, addrs, me, persons); err != nil {
+			return err
 		}
 		if len(ids) < indexBatch {
 			break
@@ -172,13 +173,18 @@ func (a *App) meInfo(ctx context.Context) (meSet, error) {
 }
 
 // personForAddress returns (creating if needed) the person of an address.
-func (a *App) personForAddress(ctx context.Context, addr store.MessageAddress) (int64, error) {
+func (a *App) personForAddress(ctx context.Context, messageID int64, addr store.MessageAddress, known map[string]int64) (int64, error) {
 	if addr.PersonID != 0 {
 		return addr.PersonID, nil
 	}
 	email := strings.ToLower(strings.TrimSpace(addr.Email))
 	if email == "" {
 		return 0, nil
+	}
+	if id, ok := known[email]; ok {
+		// Linked earlier in this pass: only the rows of this mail are left
+		// (rows of other mails added since are linked when those are indexed).
+		return id, a.st.LinkMessageAddressToPerson(ctx, messageID, email, id)
 	}
 	p, err := a.st.FindPersonByHandle(ctx, store.HandleEmail, email)
 	switch {
@@ -202,13 +208,53 @@ func (a *App) personForAddress(ctx context.Context, addr store.MessageAddress) (
 	if _, err := a.st.LinkAddressesToPerson(ctx, email, p.ID); err != nil {
 		return 0, err
 	}
+	if known != nil {
+		known[email] = p.ID
+	}
 	return p.ID, nil
 }
 
-func (a *App) indexCounterpart(ctx context.Context, messageID int64, addrs []store.MessageAddress, me meSet) error {
+// indexCounterparts indexes the counterparts of messages ids. The writes of
+// up to counterpartCommitEvery mails share one store transaction: one commit
+// per mail made the first hybrid/chat list after a large sync take seconds.
+// The transaction is committed in between so that the sync engine is not held
+// up for long.
+func (a *App) indexCounterparts(ctx context.Context, ids []int64, addrs map[int64][]store.MessageAddress, me meSet, known map[string]int64) error {
+	bctx, sb, err := a.st.BeginBatch(ctx)
+	if err != nil {
+		return err
+	}
+	for i, id := range ids {
+		if err := a.indexCounterpart(bctx, id, addrs[id], me, known); err != nil {
+			sb.Rollback()
+			// Persons of the rolled back mails are linked again next time.
+			clear(known)
+			return err
+		}
+		if (i+1)%counterpartCommitEvery == 0 {
+			if err := sb.Pause(); err != nil {
+				clear(known)
+				return err
+			}
+			if err := sb.Resume(); err != nil {
+				return err
+			}
+		}
+	}
+	if err := sb.Commit(); err != nil {
+		sb.Rollback()
+		clear(known)
+		return err
+	}
+	return nil
+}
+
+const counterpartCommitEvery = 200
+
+func (a *App) indexCounterpart(ctx context.Context, messageID int64, addrs []store.MessageAddress, me meSet, known map[string]int64) error {
 	// Link every address to a person so that participants are known.
 	for i := range addrs {
-		pid, err := a.personForAddress(ctx, addrs[i])
+		pid, err := a.personForAddress(ctx, messageID, addrs[i], known)
 		if err != nil {
 			return err
 		}

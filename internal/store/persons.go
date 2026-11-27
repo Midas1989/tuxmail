@@ -298,6 +298,19 @@ func (s *Store) MergePersons(ctx context.Context, keep int64, others ...int64) e
 
 // LinkAddressesToPerson sets the person of all mail addresses with the given
 // e-mail address (case-insensitive) and returns the number of updated rows.
+// LinkMessageAddressToPerson links the unlinked rows of one message with
+// this address (index on message_id): for an address whose earlier rows are
+// linked already, LinkAddressesToPerson would walk all rows of the address
+// again for every further mail, which made indexing quadratic in the number
+// of mails per sender.
+func (s *Store) LinkMessageAddressToPerson(ctx context.Context, messageID int64, email string, personID int64) error {
+	// INDEXED BY: without statistics SQLite picks the lower(email) index for
+	// the equal-cost terms and walks every row of a frequent sender.
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE message_addresses INDEXED BY ix_addr_message SET person_id = ?1
+		WHERE message_id = ?2 AND lower(email) = ?3 AND person_id IS NULL`, nullID(personID), messageID, NormalizeHandle(HandleEmail, email))
+	return err
+}
+
 func (s *Store) LinkAddressesToPerson(ctx context.Context, email string, personID int64) (int64, error) {
 	// Only rows that are not linked yet are written: the indexer calls this
 	// for every address of every new mail, and rewriting all earlier rows of
