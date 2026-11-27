@@ -125,6 +125,14 @@ func (s *Service) resolveRotatedToken(ctx context.Context, h []byte, ip string) 
 	if !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
+	// A parallel first use may have promoted the successor between the caller's
+	// lookup of token_hash and the lookup of pending_token_hash above. The
+	// promotion moves the hash in one statement, so it is current now.
+	if sess, err := s.getSession(ctx, `token_hash = ?`, h); err == nil {
+		return sess, nil
+	} else if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
 	var sessionID, retiredAt int64
 	err = s.db.QueryRowContext(ctx, `SELECT session_id, retired_at FROM device_retired_tokens WHERE token_hash = ?`, h).Scan(&sessionID, &retiredAt)
 	if errors.Is(err, sql.ErrNoRows) {
