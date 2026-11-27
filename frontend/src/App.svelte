@@ -11,12 +11,16 @@
   import Composer from './lib/components/compose/Composer.svelte';
   import Toasts from './lib/components/common/Toasts.svelte';
   import MailScreen from './lib/screens/MailScreen.svelte';
-  import CalendarScreen from './lib/screens/CalendarScreen.svelte';
-  import ContactsScreen from './lib/screens/ContactsScreen.svelte';
-  import FilesScreen from './lib/screens/FilesScreen.svelte';
-  import SettingsScreen from './lib/screens/SettingsScreen.svelte';
-  import SearchScreen from './lib/screens/SearchScreen.svelte';
-  import ProjectsScreen from './lib/screens/ProjectsScreen.svelte';
+  // Screens other than mail load on first use: the start (mail) does not wait for
+  // settings, calendar, contacts, files, projects and search code.
+  const loadScreen = {
+    search: () => import('./lib/screens/SearchScreen.svelte'),
+    projects: () => import('./lib/screens/ProjectsScreen.svelte'),
+    calendar: () => import('./lib/screens/CalendarScreen.svelte'),
+    contacts: () => import('./lib/screens/ContactsScreen.svelte'),
+    files: () => import('./lib/screens/FilesScreen.svelte'),
+    settings: () => import('./lib/screens/SettingsScreen.svelte'),
+  } as const;
   import OrganizeDialogs from './lib/components/organize/OrganizeDialogs.svelte';
   import IosInstallHint from './lib/components/IosInstallHint.svelte';
   import Reminders from './lib/components/calendar/Reminders.svelte';
@@ -100,18 +104,15 @@
       </div>
     {:else if app.route === 'mail'}
       <MailScreen />
-    {:else if app.route === 'search'}
-      <SearchScreen />
-    {:else if app.route === 'projects'}
-      <ProjectsScreen />
-    {:else if app.route === 'calendar'}
-      <CalendarScreen />
-    {:else if app.route === 'contacts'}
-      <ContactsScreen />
-    {:else if app.route === 'files'}
-      <FilesScreen />
-    {:else if app.route === 'settings'}
-      <SettingsScreen />
+    {:else if app.route in loadScreen}
+      {#await loadScreen[app.route as keyof typeof loadScreen]() then screen}
+        <screen.default />
+      {:catch}
+        <div class="fatal" role="alert">
+          <h1>{t('errors.loadTitle')}</h1>
+          <button class="btn btn-primary" onclick={() => location.reload()}>{t('errors.retry')}</button>
+        </div>
+      {/await}
     {/if}
   </main>
 </div>
