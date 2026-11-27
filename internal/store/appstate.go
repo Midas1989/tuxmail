@@ -22,7 +22,7 @@ import (
 // false (and leaves v untouched) when nothing is stored.
 func (s *Store) GetAppSetting(ctx context.Context, key string, v any) (bool, error) {
 	var js string
-	err := s.db.QueryRowContext(ctx, `SELECT value_json FROM app_settings WHERE key = ?`, key).Scan(&js)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT value_json FROM app_settings WHERE key = ?`, key).Scan(&js)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}
@@ -38,7 +38,7 @@ func (s *Store) GetAppSetting(ctx context.Context, key string, v any) (bool, err
 // AppSettingTime returns when the document under key was last stored (zero if it does not exist).
 func (s *Store) AppSettingTime(ctx context.Context, key string) (time.Time, error) {
 	var at int64
-	err := s.db.QueryRowContext(ctx, `SELECT updated_at FROM app_settings WHERE key = ?`, key).Scan(&at)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT updated_at FROM app_settings WHERE key = ?`, key).Scan(&at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, nil
 	}
@@ -54,7 +54,7 @@ func (s *Store) SetAppSetting(ctx context.Context, key string, v any) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO app_settings(key, value_json, updated_at) VALUES (?, ?, ?)
+	_, err = s.q(ctx).ExecContext(ctx, `INSERT INTO app_settings(key, value_json, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
 		key, string(b), time.Now().Unix())
 	return err
@@ -62,7 +62,7 @@ func (s *Store) SetAppSetting(ctx context.Context, key string, v any) error {
 
 // DeleteAppSetting removes the document stored under key.
 func (s *Store) DeleteAppSetting(ctx context.Context, key string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM app_settings WHERE key = ?`, key)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM app_settings WHERE key = ?`, key)
 	return err
 }
 
@@ -82,7 +82,7 @@ type ConversationState struct {
 func (s *Store) GetConversationState(ctx context.Context, id int64) (ConversationState, error) {
 	st := ConversationState{ConversationID: id}
 	var snooze sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT favorite, marked_unread, blocked, snoozed_until, returned_from_snooze
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT favorite, marked_unread, blocked, snoozed_until, returned_from_snooze
 		FROM conversation_state WHERE conversation_id = ?`, id).
 		Scan(&st.Favorite, &st.MarkedUnread, &st.Blocked, &snooze, &st.ReturnedFromSnooze)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -94,7 +94,7 @@ func (s *Store) GetConversationState(ctx context.Context, id int64) (Conversatio
 
 // ConversationStates returns the stored states of all conversations that have one.
 func (s *Store) ConversationStates(ctx context.Context) (map[int64]ConversationState, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT conversation_id, favorite, marked_unread, blocked, snoozed_until, returned_from_snooze
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT conversation_id, favorite, marked_unread, blocked, snoozed_until, returned_from_snooze
 		FROM conversation_state`)
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func (s *Store) ConversationStates(ctx context.Context) (map[int64]ConversationS
 
 // PutConversationState stores the state of a conversation.
 func (s *Store) PutConversationState(ctx context.Context, st ConversationState) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO conversation_state(conversation_id, favorite, marked_unread, blocked,
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO conversation_state(conversation_id, favorite, marked_unread, blocked,
 			snoozed_until, returned_from_snooze, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(conversation_id) DO UPDATE SET favorite = excluded.favorite, marked_unread = excluded.marked_unread,
 			blocked = excluded.blocked, snoozed_until = excluded.snoozed_until,
@@ -131,7 +131,7 @@ func (s *Store) PutConversationState(ctx context.Context, st ConversationState) 
 // WakeSnoozed ends all snoozes that are due at now and marks the
 // conversations as returned; it returns the woken conversation ids.
 func (s *Store) WakeSnoozed(ctx context.Context, now time.Time) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `UPDATE conversation_state SET snoozed_until = NULL, returned_from_snooze = 1, updated_at = ?1
+	rows, err := s.q(ctx).QueryContext(ctx, `UPDATE conversation_state SET snoozed_until = NULL, returned_from_snooze = 1, updated_at = ?1
 		WHERE snoozed_until IS NOT NULL AND snoozed_until <= ?1 RETURNING conversation_id`, now.Unix())
 	if err != nil {
 		return nil, err
@@ -148,7 +148,7 @@ func (s *Store) WakeSnoozed(ctx context.Context, now time.Time) ([]int64, error)
 // creating it (with the given title) if needed.
 func (s *Store) PersonConversation(ctx context.Context, personID int64, title string) (int64, error) {
 	var id int64
-	err := s.db.QueryRowContext(ctx, `SELECT conversation_id FROM person_conversations WHERE person_id = ?`, personID).Scan(&id)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT conversation_id FROM person_conversations WHERE person_id = ?`, personID).Scan(&id)
 	if err == nil {
 		return id, nil
 	}
@@ -172,7 +172,7 @@ func (s *Store) PersonConversation(ctx context.Context, personID int64, title st
 // PersonOfConversation returns the person of a person_view conversation (0 if it is none).
 func (s *Store) PersonOfConversation(ctx context.Context, conversationID int64) (int64, error) {
 	var id int64
-	err := s.db.QueryRowContext(ctx, `SELECT person_id FROM person_conversations WHERE conversation_id = ?`, conversationID).Scan(&id)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT person_id FROM person_conversations WHERE conversation_id = ?`, conversationID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
@@ -181,7 +181,7 @@ func (s *Store) PersonOfConversation(ctx context.Context, conversationID int64) 
 
 // PersonConversations returns all person -> conversation mappings.
 func (s *Store) PersonConversations(ctx context.Context) (map[int64]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT person_id, conversation_id FROM person_conversations`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT person_id, conversation_id FROM person_conversations`)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func (s *Store) PersonConversations(ctx context.Context) (map[int64]int64, error
 // MessagesWithoutCounterpart returns ids of live messages that have no
 // counterpart row yet (at most limit, oldest first).
 func (s *Store) MessagesWithoutCounterpart(ctx context.Context, limit int) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id FROM messages m
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.id FROM messages m
 		LEFT JOIN message_counterparts mc ON mc.message_id = m.id
 		WHERE mc.message_id IS NULL AND m.state = 'live' ORDER BY m.id LIMIT ?`, limit)
 	if err != nil {
@@ -214,7 +214,7 @@ func (s *Store) MessagesWithoutCounterpart(ctx context.Context, limit int) ([]in
 
 // SetMessageCounterpart records the person a mail is "with".
 func (s *Store) SetMessageCounterpart(ctx context.Context, messageID, personID int64, outgoing bool) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO message_counterparts(message_id, person_id, outgoing) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO message_counterparts(message_id, person_id, outgoing) VALUES (?, ?, ?)
 		ON CONFLICT(message_id) DO UPDATE SET person_id = excluded.person_id, outgoing = excluded.outgoing`,
 		messageID, nullID(personID), boolInt(outgoing))
 	return err
@@ -223,7 +223,7 @@ func (s *Store) SetMessageCounterpart(ctx context.Context, messageID, personID i
 // MessageCounterpart returns the counterpart person of a mail (0 if unknown).
 func (s *Store) MessageCounterpart(ctx context.Context, messageID int64) (personID int64, outgoing bool, err error) {
 	var p sql.NullInt64
-	err = s.db.QueryRowContext(ctx, `SELECT person_id, outgoing FROM message_counterparts WHERE message_id = ?`, messageID).Scan(&p, &outgoing)
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT person_id, outgoing FROM message_counterparts WHERE message_id = ?`, messageID).Scan(&p, &outgoing)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
@@ -232,7 +232,7 @@ func (s *Store) MessageCounterpart(ctx context.Context, messageID int64) (person
 
 // ChatsWithoutCounterpart returns ids of chats that have no counterpart row yet.
 func (s *Store) ChatsWithoutCounterpart(ctx context.Context, limit int) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT c.id FROM chats c LEFT JOIN chat_counterparts cc ON cc.chat_id = c.id
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT c.id FROM chats c LEFT JOIN chat_counterparts cc ON cc.chat_id = c.id
 		WHERE cc.chat_id IS NULL ORDER BY c.id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -245,7 +245,7 @@ func (s *Store) ChatsWithoutCounterpart(ctx context.Context, limit int) ([]int64
 
 // SetChatCounterpart records the person of a direct chat (0 for groups).
 func (s *Store) SetChatCounterpart(ctx context.Context, chatID, personID int64) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO chat_counterparts(chat_id, person_id) VALUES (?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO chat_counterparts(chat_id, person_id) VALUES (?, ?)
 		ON CONFLICT(chat_id) DO UPDATE SET person_id = excluded.person_id`, chatID, nullID(personID))
 	return err
 }
@@ -274,17 +274,17 @@ type ItemStar struct {
 // SetItemStar stars (or unstars) an item.
 func (s *Store) SetItemStar(ctx context.Context, itemID string, conversationID int64, starred bool) error {
 	if !starred {
-		_, err := s.db.ExecContext(ctx, `DELETE FROM item_stars WHERE item_id = ?`, itemID)
+		_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM item_stars WHERE item_id = ?`, itemID)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO item_stars(item_id, conversation_id, starred_at) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO item_stars(item_id, conversation_id, starred_at) VALUES (?, ?, ?)
 		ON CONFLICT(item_id) DO UPDATE SET conversation_id = excluded.conversation_id`, itemID, conversationID, time.Now().Unix())
 	return err
 }
 
 // ListItemStars returns starred items, newest first.
 func (s *Store) ListItemStars(ctx context.Context) ([]ItemStar, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT item_id, conversation_id, starred_at FROM item_stars ORDER BY starred_at DESC, item_id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT item_id, conversation_id, starred_at FROM item_stars ORDER BY starred_at DESC, item_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +319,7 @@ const MaxPinnedItems = 3
 // SetItemPin pins (or unpins) an item in a conversation.
 func (s *Store) SetItemPin(ctx context.Context, conversationID int64, itemID string, pinned bool) error {
 	if !pinned {
-		_, err := s.db.ExecContext(ctx, `DELETE FROM item_pins WHERE conversation_id = ? AND item_id = ?`, conversationID, itemID)
+		_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM item_pins WHERE conversation_id = ? AND item_id = ?`, conversationID, itemID)
 		return err
 	}
 	return s.withTx(ctx, func(tx *sql.Tx) error {
@@ -343,7 +343,7 @@ func (s *Store) SetItemPin(ctx context.Context, conversationID int64, itemID str
 
 // PinnedItems returns the pinned item ids of a conversation, oldest pin first.
 func (s *Store) PinnedItems(ctx context.Context, conversationID int64) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT item_id FROM item_pins WHERE conversation_id = ? ORDER BY pinned_at, item_id`, conversationID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT item_id FROM item_pins WHERE conversation_id = ? ORDER BY pinned_at, item_id`, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -356,14 +356,14 @@ func (s *Store) PinnedItems(ctx context.Context, conversationID int64) ([]string
 // ToggleItemReaction toggles a reaction of the current user on an item and
 // returns whether it is now set.
 func (s *Store) ToggleItemReaction(ctx context.Context, itemID, emoji string) (bool, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM item_reactions WHERE item_id = ? AND emoji = ?`, itemID, emoji)
+	res, err := s.q(ctx).ExecContext(ctx, `DELETE FROM item_reactions WHERE item_id = ? AND emoji = ?`, itemID, emoji)
 	if err != nil {
 		return false, err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
 		return false, nil
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO item_reactions(item_id, emoji, created_at) VALUES (?, ?, ?)`, itemID, emoji, time.Now().Unix())
+	_, err = s.q(ctx).ExecContext(ctx, `INSERT INTO item_reactions(item_id, emoji, created_at) VALUES (?, ?, ?)`, itemID, emoji, time.Now().Unix())
 	return err == nil, err
 }
 
@@ -378,7 +378,7 @@ func (s *Store) ItemReactions(ctx context.Context, itemIDs []string) (map[string
 			args[i] = v
 		}
 		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-		rows, err := s.db.QueryContext(ctx, `SELECT item_id, emoji FROM item_reactions WHERE item_id IN (`+placeholders(len(chunk))+`)
+		rows, err := s.q(ctx).QueryContext(ctx, `SELECT item_id, emoji FROM item_reactions WHERE item_id IN (`+placeholders(len(chunk))+`)
 			ORDER BY created_at, emoji`, args...)
 		if err != nil {
 			return nil, err
@@ -400,13 +400,13 @@ func (s *Store) ItemReactions(ctx context.Context, itemIDs []string) (map[string
 
 // HideItem hides an item locally (e.g. a mail removed from the chat view).
 func (s *Store) HideItem(ctx context.Context, itemID string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO item_hidden(item_id, hidden_at) VALUES (?, ?)`, itemID, time.Now().Unix())
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT OR IGNORE INTO item_hidden(item_id, hidden_at) VALUES (?, ?)`, itemID, time.Now().Unix())
 	return err
 }
 
 // HiddenItemSet returns all hidden item ids.
 func (s *Store) HiddenItemSet(ctx context.Context) (map[string]bool, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT item_id FROM item_hidden`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT item_id FROM item_hidden`)
 	if err != nil {
 		return nil, err
 	}
@@ -437,7 +437,7 @@ type ChatFolderRecord struct {
 
 // ListChatFolders returns the chat folders in display order.
 func (s *Store) ListChatFolders(ctx context.Context) ([]ChatFolderRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, name, emoji, rules_json, sort_order FROM chat_folders ORDER BY sort_order, name, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id, name, emoji, rules_json, sort_order FROM chat_folders ORDER BY sort_order, name, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -455,7 +455,7 @@ func (s *Store) PutChatFolder(ctx context.Context, f ChatFolderRecord) error {
 	if f.ID == "" || f.Name == "" {
 		return errors.New("store: chat folder needs id and name")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO chat_folders(id, name, emoji, rules_json, sort_order, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO chat_folders(id, name, emoji, rules_json, sort_order, updated_at) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, emoji = excluded.emoji, rules_json = excluded.rules_json,
 			sort_order = excluded.sort_order, updated_at = excluded.updated_at`,
 		f.ID, f.Name, nullString(f.Emoji), f.RulesJSON, f.SortOrder, time.Now().Unix())
@@ -464,7 +464,7 @@ func (s *Store) PutChatFolder(ctx context.Context, f ChatFolderRecord) error {
 
 // DeleteChatFolder deletes a chat folder.
 func (s *Store) DeleteChatFolder(ctx context.Context, id string) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM chat_folders WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM chat_folders WHERE id = ?`, id))
 }
 
 // ==== Drafts ===================================================================
@@ -489,14 +489,14 @@ func scanDraft(sc scanner) (ChatDraft, error) {
 
 // GetChatDraft returns the draft of a conversation.
 func (s *Store) GetChatDraft(ctx context.Context, conversationID int64) (ChatDraft, error) {
-	d, err := scanDraft(s.db.QueryRowContext(ctx, `SELECT conversation_id, text, reply_to_item_id, channel_key, updated_at
+	d, err := scanDraft(s.q(ctx).QueryRowContext(ctx, `SELECT conversation_id, text, reply_to_item_id, channel_key, updated_at
 		FROM chat_drafts WHERE conversation_id = ?`, conversationID))
 	return d, notFound(err)
 }
 
 // ChatDrafts returns all drafts by conversation id.
 func (s *Store) ChatDrafts(ctx context.Context) (map[int64]ChatDraft, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT conversation_id, text, reply_to_item_id, channel_key, updated_at FROM chat_drafts`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT conversation_id, text, reply_to_item_id, channel_key, updated_at FROM chat_drafts`)
 	if err != nil {
 		return nil, err
 	}
@@ -519,7 +519,7 @@ func (s *Store) PutChatDraft(ctx context.Context, d ChatDraft) error {
 	if d.UpdatedAt.IsZero() {
 		d.UpdatedAt = time.Now()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO chat_drafts(conversation_id, text, reply_to_item_id, channel_key, updated_at)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO chat_drafts(conversation_id, text, reply_to_item_id, channel_key, updated_at)
 		VALUES (?, ?, ?, ?, ?) ON CONFLICT(conversation_id) DO UPDATE SET text = excluded.text,
 		reply_to_item_id = excluded.reply_to_item_id, channel_key = excluded.channel_key, updated_at = excluded.updated_at`,
 		d.ConversationID, d.Text, nullString(d.ReplyToItemID), nullString(d.ChannelKey), d.UpdatedAt.Unix())
@@ -528,7 +528,7 @@ func (s *Store) PutChatDraft(ctx context.Context, d ChatDraft) error {
 
 // DeleteChatDraft deletes the draft of a conversation (no error if none exists).
 func (s *Store) DeleteChatDraft(ctx context.Context, conversationID int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM chat_drafts WHERE conversation_id = ?`, conversationID)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM chat_drafts WHERE conversation_id = ?`, conversationID)
 	return err
 }
 
@@ -575,20 +575,20 @@ func (s *Store) CreateScheduledMessage(ctx context.Context, m ScheduledMessage) 
 	if m.ID == "" {
 		return errors.New("store: scheduled message needs an id")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO scheduled_messages(id, conversation_id, channel, send_at, text, message_json, state, created_at)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO scheduled_messages(id, conversation_id, channel, send_at, text, message_json, state, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)`, m.ID, nullID(m.ConversationID), m.Channel, m.SendAt.Unix(), m.Text, m.MessageJSON, time.Now().Unix())
 	return err
 }
 
 // GetScheduledMessage returns a scheduled message.
 func (s *Store) GetScheduledMessage(ctx context.Context, id string) (ScheduledMessage, error) {
-	m, err := scanScheduled(s.db.QueryRowContext(ctx, `SELECT `+scheduledCols+` FROM scheduled_messages WHERE id = ?`, id))
+	m, err := scanScheduled(s.q(ctx).QueryRowContext(ctx, `SELECT `+scheduledCols+` FROM scheduled_messages WHERE id = ?`, id))
 	return m, notFound(err)
 }
 
 // ListScheduledMessages returns pending messages (of one conversation, 0 = all) ordered by send time.
 func (s *Store) ListScheduledMessages(ctx context.Context, conversationID int64) ([]ScheduledMessage, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+scheduledCols+` FROM scheduled_messages
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+scheduledCols+` FROM scheduled_messages
 		WHERE state IN ('pending', 'failed') AND (?1 = 0 OR conversation_id = ?1) ORDER BY send_at, id`, conversationID)
 	if err != nil {
 		return nil, err
@@ -598,19 +598,19 @@ func (s *Store) ListScheduledMessages(ctx context.Context, conversationID int64)
 
 // UpdateScheduledMessage updates text, send time and message of a pending message.
 func (s *Store) UpdateScheduledMessage(ctx context.Context, m ScheduledMessage) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE scheduled_messages SET send_at = ?, text = ?, message_json = ?
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE scheduled_messages SET send_at = ?, text = ?, message_json = ?
 		WHERE id = ? AND state IN ('pending', 'failed')`, m.SendAt.Unix(), m.Text, m.MessageJSON, m.ID))
 }
 
 // SetScheduledState sets the state (and error) of a scheduled message.
 func (s *Store) SetScheduledState(ctx context.Context, id, state, lastErr string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE scheduled_messages SET state = ?, last_error = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE scheduled_messages SET state = ?, last_error = ? WHERE id = ?`,
 		state, nullString(lastErr), id))
 }
 
 // ClaimDueScheduled marks pending messages due at now as sending and returns them.
 func (s *Store) ClaimDueScheduled(ctx context.Context, now time.Time, limit int) ([]ScheduledMessage, error) {
-	rows, err := s.db.QueryContext(ctx, `UPDATE scheduled_messages SET state = 'sending'
+	rows, err := s.q(ctx).QueryContext(ctx, `UPDATE scheduled_messages SET state = 'sending'
 		WHERE id IN (SELECT id FROM scheduled_messages WHERE state = 'pending' AND send_at <= ? ORDER BY send_at LIMIT ?)
 		RETURNING `+scheduledCols, now.Unix(), limit)
 	if err != nil {
@@ -632,7 +632,7 @@ type Snippet struct {
 
 // ListSnippets returns all snippets ordered by trigger.
 func (s *Store) ListSnippets(ctx context.Context) ([]Snippet, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, trigger, title, text, sort_order FROM snippets ORDER BY sort_order, trigger, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id, trigger, title, text, sort_order FROM snippets ORDER BY sort_order, trigger, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -647,7 +647,7 @@ func (s *Store) PutSnippet(ctx context.Context, sn Snippet) error {
 	if sn.ID == "" || sn.Trigger == "" {
 		return errors.New("store: snippet needs id and trigger")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO snippets(id, trigger, title, text, sort_order, updated_at) VALUES (?, ?, ?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO snippets(id, trigger, title, text, sort_order, updated_at) VALUES (?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET trigger = excluded.trigger, title = excluded.title, text = excluded.text,
 			sort_order = excluded.sort_order, updated_at = excluded.updated_at`,
 		sn.ID, sn.Trigger, sn.Title, sn.Text, sn.SortOrder, time.Now().Unix())
@@ -656,7 +656,7 @@ func (s *Store) PutSnippet(ctx context.Context, sn Snippet) error {
 
 // DeleteSnippet deletes a snippet.
 func (s *Store) DeleteSnippet(ctx context.Context, id string) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM snippets WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM snippets WHERE id = ?`, id))
 }
 
 // ==== Workflow metadata ========================================================
@@ -670,7 +670,7 @@ type WorkflowMeta struct {
 
 // PutWorkflowMeta stores the metadata of an existing workflow.
 func (s *Store) PutWorkflowMeta(ctx context.Context, m WorkflowMeta) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO workflow_meta(workflow_id, project_id, template_id) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO workflow_meta(workflow_id, project_id, template_id) VALUES (?, ?, ?)
 		ON CONFLICT(workflow_id) DO UPDATE SET project_id = excluded.project_id, template_id = excluded.template_id`,
 		m.WorkflowID, nullID(m.ProjectID), nullString(m.TemplateID))
 	return err
@@ -678,7 +678,7 @@ func (s *Store) PutWorkflowMeta(ctx context.Context, m WorkflowMeta) error {
 
 // WorkflowMetas returns the metadata of all workflows by id.
 func (s *Store) WorkflowMetas(ctx context.Context) (map[string]WorkflowMeta, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT workflow_id, project_id, template_id FROM workflow_meta`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT workflow_id, project_id, template_id FROM workflow_meta`)
 	if err != nil {
 		return nil, err
 	}
@@ -714,7 +714,7 @@ type Upload struct {
 
 // CreateUpload records an upload.
 func (s *Store) CreateUpload(ctx context.Context, u Upload) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO uploads(token, filename, mime_type, size, blob_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO uploads(token, filename, mime_type, size, blob_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		u.Token, u.Filename, u.MIMEType, u.Size, u.BlobHash, time.Now().Unix())
 	return err
 }
@@ -723,7 +723,7 @@ func (s *Store) CreateUpload(ctx context.Context, u Upload) error {
 func (s *Store) GetUpload(ctx context.Context, token string) (Upload, error) {
 	var u Upload
 	var at int64
-	err := s.db.QueryRowContext(ctx, `SELECT token, filename, mime_type, size, blob_hash, created_at FROM uploads WHERE token = ?`, token).
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT token, filename, mime_type, size, blob_hash, created_at FROM uploads WHERE token = ?`, token).
 		Scan(&u.Token, &u.Filename, &u.MIMEType, &u.Size, &u.BlobHash, &at)
 	u.CreatedAt = time.Unix(at, 0).UTC()
 	return u, notFound(err)
@@ -731,7 +731,7 @@ func (s *Store) GetUpload(ctx context.Context, token string) (Upload, error) {
 
 // PurgeUploads deletes uploads created before the given time and returns their blob hashes.
 func (s *Store) PurgeUploads(ctx context.Context, before time.Time) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `DELETE FROM uploads WHERE created_at < ? RETURNING blob_hash`, before.Unix())
+	rows, err := s.q(ctx).QueryContext(ctx, `DELETE FROM uploads WHERE created_at < ? RETURNING blob_hash`, before.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -751,7 +751,7 @@ func (s *Store) PurgeUploads(ctx context.Context, before time.Time) ([]string, e
 
 // PutMeetingProposal stores a meeting proposal (JSON owned by internal/app).
 func (s *Store) PutMeetingProposal(ctx context.Context, id string, conversationID int64, itemID, js string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO meeting_proposals(id, conversation_id, item_id, proposal_json, created_at) VALUES (?, ?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO meeting_proposals(id, conversation_id, item_id, proposal_json, created_at) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET item_id = excluded.item_id, proposal_json = excluded.proposal_json`,
 		id, conversationID, nullString(itemID), js, time.Now().Unix())
 	return err
@@ -760,14 +760,14 @@ func (s *Store) PutMeetingProposal(ctx context.Context, id string, conversationI
 // GetMeetingProposal returns the JSON of a meeting proposal.
 func (s *Store) GetMeetingProposal(ctx context.Context, id string) (conversationID int64, itemID, js string, err error) {
 	var item sql.NullString
-	err = s.db.QueryRowContext(ctx, `SELECT conversation_id, item_id, proposal_json FROM meeting_proposals WHERE id = ?`, id).
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT conversation_id, item_id, proposal_json FROM meeting_proposals WHERE id = ?`, id).
 		Scan(&conversationID, &item, &js)
 	return conversationID, item.String, js, notFound(err)
 }
 
 // MeetingProposalsByItem returns proposal JSON by item id for a conversation.
 func (s *Store) MeetingProposalsByItem(ctx context.Context, conversationID int64) (map[string]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT item_id, proposal_json FROM meeting_proposals WHERE conversation_id = ? AND item_id IS NOT NULL`, conversationID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT item_id, proposal_json FROM meeting_proposals WHERE conversation_id = ? AND item_id IS NOT NULL`, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -785,7 +785,7 @@ func (s *Store) MeetingProposalsByItem(ctx context.Context, conversationID int64
 
 // PutContactCard stores the contact card JSON of a person.
 func (s *Store) PutContactCard(ctx context.Context, personID int64, js string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO contact_cards(person_id, card_json, updated_at) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO contact_cards(person_id, card_json, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(person_id) DO UPDATE SET card_json = excluded.card_json, updated_at = excluded.updated_at`,
 		personID, js, time.Now().Unix())
 	return err
@@ -800,7 +800,7 @@ type IdentityChat struct {
 
 // IdentityChatSettings returns the chat settings of all identities that have some.
 func (s *Store) IdentityChatSettings(ctx context.Context) (map[int64]IdentityChat, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT identity_id, signature_mode, signature_id FROM identity_chat`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT identity_id, signature_mode, signature_id FROM identity_chat`)
 	if err != nil {
 		return nil, err
 	}
@@ -824,7 +824,7 @@ func (s *Store) IdentityChatSettings(ctx context.Context) (map[int64]IdentityCha
 
 // PutIdentityChat stores the chat settings of an identity.
 func (s *Store) PutIdentityChat(ctx context.Context, c IdentityChat) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO identity_chat(identity_id, signature_mode, signature_id) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO identity_chat(identity_id, signature_mode, signature_id) VALUES (?, ?, ?)
 		ON CONFLICT(identity_id) DO UPDATE SET signature_mode = excluded.signature_mode, signature_id = excluded.signature_id`,
 		c.IdentityID, nullString(c.SignatureMode), nullID(c.SignatureID))
 	return err

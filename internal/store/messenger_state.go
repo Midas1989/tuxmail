@@ -49,7 +49,7 @@ const messengerPluginCols = `name, enabled, risk_accepted_at, settings_json, upd
 // GetMessengerPlugin returns the state of a plugin; a plugin without row is
 // disabled (no error).
 func (s *Store) GetMessengerPlugin(ctx context.Context, name string) (MessengerPlugin, error) {
-	p, err := scanMessengerPlugin(s.db.QueryRowContext(ctx, `SELECT `+messengerPluginCols+` FROM messenger_plugins WHERE name = ?`, name))
+	p, err := scanMessengerPlugin(s.q(ctx).QueryRowContext(ctx, `SELECT `+messengerPluginCols+` FROM messenger_plugins WHERE name = ?`, name))
 	if errors.Is(err, sql.ErrNoRows) {
 		return MessengerPlugin{Name: name, Settings: map[string]string{}}, nil
 	}
@@ -58,7 +58,7 @@ func (s *Store) GetMessengerPlugin(ctx context.Context, name string) (MessengerP
 
 // ListMessengerPlugins returns all stored plugin states.
 func (s *Store) ListMessengerPlugins(ctx context.Context) ([]MessengerPlugin, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+messengerPluginCols+` FROM messenger_plugins ORDER BY name`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+messengerPluginCols+` FROM messenger_plugins ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (s *Store) PutMessengerPlugin(ctx context.Context, p MessengerPlugin) error
 	if p.UpdatedAt.IsZero() {
 		p.UpdatedAt = time.Now()
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO messenger_plugins(name, enabled, risk_accepted_at, settings_json, updated_at)
+	_, err = s.q(ctx).ExecContext(ctx, `INSERT INTO messenger_plugins(name, enabled, risk_accepted_at, settings_json, updated_at)
 		VALUES (?, ?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET enabled = excluded.enabled,
 		risk_accepted_at = excluded.risk_accepted_at, settings_json = excluded.settings_json, updated_at = excluded.updated_at`,
 		p.Name, boolInt(p.Enabled), unixOrNull(p.RiskAcceptedAt), string(b), p.UpdatedAt.Unix())
@@ -149,21 +149,21 @@ func (s *Store) CreateMessengerAccount(ctx context.Context, a domain.Account, m 
 
 // GetMessengerAccount returns the plugin mapping of an account.
 func (s *Store) GetMessengerAccount(ctx context.Context, accountID int64) (MessengerAccount, error) {
-	m, err := scanMessengerAccount(s.db.QueryRowContext(ctx, `SELECT `+messengerAccountCols+` FROM messenger_accounts
+	m, err := scanMessengerAccount(s.q(ctx).QueryRowContext(ctx, `SELECT `+messengerAccountCols+` FROM messenger_accounts
 		WHERE account_id = ?`, accountID))
 	return m, notFound(err)
 }
 
 // MessengerAccountByPlugin finds the account of a plugin session.
 func (s *Store) MessengerAccountByPlugin(ctx context.Context, plugin, pluginAccount string) (MessengerAccount, error) {
-	m, err := scanMessengerAccount(s.db.QueryRowContext(ctx, `SELECT `+messengerAccountCols+` FROM messenger_accounts
+	m, err := scanMessengerAccount(s.q(ctx).QueryRowContext(ctx, `SELECT `+messengerAccountCols+` FROM messenger_accounts
 		WHERE plugin = ? AND plugin_account = ?`, plugin, pluginAccount))
 	return m, notFound(err)
 }
 
 // ListMessengerAccounts returns all messenger accounts (plugin "" = all).
 func (s *Store) ListMessengerAccounts(ctx context.Context, plugin string) ([]MessengerAccount, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+messengerAccountCols+` FROM messenger_accounts
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+messengerAccountCols+` FROM messenger_accounts
 		WHERE ?1 = '' OR plugin = ?1 ORDER BY account_id`, plugin)
 	if err != nil {
 		return nil, err
@@ -173,20 +173,20 @@ func (s *Store) ListMessengerAccounts(ctx context.Context, plugin string) ([]Mes
 
 // SetMessengerAccountState records the connection state of an account.
 func (s *Store) SetMessengerAccountState(ctx context.Context, accountID int64, state, lastError string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE messenger_accounts SET state = ?, last_error = ? WHERE account_id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE messenger_accounts SET state = ?, last_error = ? WHERE account_id = ?`,
 		nullString(state), nullString(lastError), accountID))
 }
 
 // SetMessengerAccountSynced records the time of the last full sync and the
 // own user id.
 func (s *Store) SetMessengerAccountSynced(ctx context.Context, accountID int64, selfID string, at time.Time) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE messenger_accounts SET synced_at = ?, self_id = COALESCE(?, self_id)
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE messenger_accounts SET synced_at = ?, self_id = COALESCE(?, self_id)
 		WHERE account_id = ?`, at.Unix(), nullString(selfID), accountID))
 }
 
 // PutChatMedia stores the plugin media reference of a chat message.
 func (s *Store) PutChatMedia(ctx context.Context, chatMessageID int64, ref string, size int64) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO messenger_media(chat_message_id, ref, size) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO messenger_media(chat_message_id, ref, size) VALUES (?, ?, ?)
 		ON CONFLICT(chat_message_id) DO UPDATE SET ref = excluded.ref, size = excluded.size`, chatMessageID, ref, size)
 	return err
 }
@@ -194,13 +194,13 @@ func (s *Store) PutChatMedia(ctx context.Context, chatMessageID int64, ref strin
 // ChatMedia returns the plugin media reference of a chat message.
 func (s *Store) ChatMedia(ctx context.Context, chatMessageID int64) (ref string, size int64, err error) {
 	var sz sql.NullInt64
-	err = s.db.QueryRowContext(ctx, `SELECT ref, size FROM messenger_media WHERE chat_message_id = ?`, chatMessageID).Scan(&ref, &sz)
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT ref, size FROM messenger_media WHERE chat_message_id = ?`, chatMessageID).Scan(&ref, &sz)
 	return ref, sz.Int64, notFound(err)
 }
 
 // SetChatMessageMedia stores the downloaded media of a chat message.
 func (s *Store) SetChatMessageMedia(ctx context.Context, id int64, blobHash, mime, name string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE chat_messages SET media_blob = ?, media_mime = COALESCE(?, media_mime),
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE chat_messages SET media_blob = ?, media_mime = COALESCE(?, media_mime),
 		media_name = COALESCE(?, media_name) WHERE id = ?`, nullString(blobHash), nullString(mime), nullString(name), id))
 }
 
@@ -225,7 +225,7 @@ func (s *Store) UpgradeChatStatus(ctx context.Context, chatID int64, remoteIDs [
 		q += ` AND COALESCE(sent_at, 0) <= ?`
 		args = append(args, upTo.Unix())
 	}
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := s.q(ctx).ExecContext(ctx, q, args...)
 	if err != nil {
 		return 0, err
 	}
@@ -236,7 +236,7 @@ func (s *Store) UpgradeChatStatus(ctx context.Context, chatID int64, remoteIDs [
 // LatestIncomingChatMessage returns the newest incoming message of a chat
 // (ErrNotFound if there is none).
 func (s *Store) LatestIncomingChatMessage(ctx context.Context, chatID int64) (ChatMessage, error) {
-	m, err := scanChatMessage(s.db.QueryRowContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages
+	m, err := scanChatMessage(s.q(ctx).QueryRowContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages
 		WHERE chat_id = ? AND from_me = 0 AND deleted = 0 ORDER BY COALESCE(sent_at, 0) DESC, id DESC LIMIT 1`, chatID))
 	return m, notFound(err)
 }
@@ -244,7 +244,7 @@ func (s *Store) LatestIncomingChatMessage(ctx context.Context, chatID int64) (Ch
 // UnreadIncomingRemoteIDs returns the remote ids of incoming messages after
 // the read marker of a chat (oldest first), for read receipts.
 func (s *Store) UnreadIncomingRemoteIDs(ctx context.Context, chatID int64, limit int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.remote_id FROM chat_messages m JOIN chats c ON c.id = m.chat_id
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.remote_id FROM chat_messages m JOIN chats c ON c.id = m.chat_id
 		WHERE m.chat_id = ? AND `+unreadChatCond+` ORDER BY COALESCE(m.sent_at, 0), m.id LIMIT ?`, chatID, limit)
 	if err != nil {
 		return nil, err

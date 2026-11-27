@@ -111,7 +111,22 @@ func (s *Store) Close() error { return s.db.Close() }
 func (s *Store) DB() *sql.DB { return s.db }
 
 // withTx runs fn inside a transaction and commits if fn returns nil.
+//
+// Inside a batch (BeginBatch) it runs in the batch transaction, guarded by a
+// savepoint so that an error still undoes exactly what fn wrote.
 func (s *Store) withTx(ctx context.Context, fn func(tx *sql.Tx) error) error {
+	if btx := s.batchTx(ctx); btx != nil {
+		if _, err := btx.ExecContext(ctx, `SAVEPOINT store_tx`); err != nil {
+			return err
+		}
+		if err := fn(btx); err != nil {
+			_, _ = btx.ExecContext(ctx, `ROLLBACK TO store_tx`)
+			_, _ = btx.ExecContext(ctx, `RELEASE store_tx`)
+			return err
+		}
+		_, err := btx.ExecContext(ctx, `RELEASE store_tx`)
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

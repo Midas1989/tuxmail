@@ -67,7 +67,7 @@ func Backoff(attempts int) time.Duration {
 // EnqueueOp appends an operation that is due immediately and returns its id.
 func (s *Store) EnqueueOp(ctx context.Context, accountID int64, kind, payload string) (int64, error) {
 	now := time.Now().Unix()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO ops(account_id, kind, payload, next_try_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO ops(account_id, kind, payload, next_try_at, created_at) VALUES (?, ?, ?, ?, ?)`,
 		nullID(accountID), kind, payload, now, now)
 	if err != nil {
 		return 0, fmt.Errorf("store: enqueue op: %w", err)
@@ -82,7 +82,7 @@ func (s *Store) EnqueueOp(ctx context.Context, accountID int64, kind, payload st
 // operation is only eligible when no older operation of that account is
 // pending or running. Operations without an account are not serialized.
 func (s *Store) ClaimNextOp(ctx context.Context, now time.Time) (op Op, ok bool, err error) {
-	op, err = scanOp(s.db.QueryRowContext(ctx, `UPDATE ops SET state = 'running', attempts = attempts + 1
+	op, err = scanOp(s.q(ctx).QueryRowContext(ctx, `UPDATE ops SET state = 'running', attempts = attempts + 1
 		WHERE id = (
 			SELECT o.id FROM ops o
 			WHERE o.state = 'pending' AND o.next_try_at <= ?
@@ -101,7 +101,7 @@ func (s *Store) ClaimNextOp(ctx context.Context, now time.Time) (op Op, ok bool,
 
 // MarkOpDone marks a running operation as successfully completed.
 func (s *Store) MarkOpDone(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE ops SET state = 'done', last_error = NULL WHERE id = ?`, id))
 }
 
 // MarkOpFailed records a failed attempt. If the operation has reached
@@ -131,14 +131,14 @@ func (s *Store) MarkOpFailed(ctx context.Context, id int64, cause error, now tim
 
 // RetryOp resets a failed operation so that it is retried immediately.
 func (s *Store) RetryOp(ctx context.Context, id int64, now time.Time) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE ops SET state = 'pending', attempts = 0, next_try_at = ?
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE ops SET state = 'pending', attempts = 0, next_try_at = ?
 		WHERE id = ? AND state = 'failed'`, now.Unix(), id))
 }
 
 // ResetRunningOps puts operations that were running when the program stopped
 // back into the pending state. Call it once at startup before any worker runs.
 func (s *Store) ResetRunningOps(ctx context.Context) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE ops SET state = 'pending' WHERE state = 'running'`)
+	res, err := s.q(ctx).ExecContext(ctx, `UPDATE ops SET state = 'pending' WHERE state = 'running'`)
 	if err != nil {
 		return 0, err
 	}
@@ -147,13 +147,13 @@ func (s *Store) ResetRunningOps(ctx context.Context) (int64, error) {
 
 // GetOp returns the operation with the given id.
 func (s *Store) GetOp(ctx context.Context, id int64) (Op, error) {
-	o, err := scanOp(s.db.QueryRowContext(ctx, `SELECT `+opCols+` FROM ops WHERE id = ?`, id))
+	o, err := scanOp(s.q(ctx).QueryRowContext(ctx, `SELECT `+opCols+` FROM ops WHERE id = ?`, id))
 	return o, notFound(err)
 }
 
 // ListOps returns operations in the given state (all states if state is "") in queue order.
 func (s *Store) ListOps(ctx context.Context, state OpState) ([]Op, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+opCols+` FROM ops WHERE ?1 = '' OR state = ?1 ORDER BY id`, string(state))
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+opCols+` FROM ops WHERE ?1 = '' OR state = ?1 ORDER BY id`, string(state))
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +162,7 @@ func (s *Store) ListOps(ctx context.Context, state OpState) ([]Op, error) {
 
 // PurgeDoneOps deletes completed operations created before the given time.
 func (s *Store) PurgeDoneOps(ctx context.Context, before time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM ops WHERE state = 'done' AND created_at < ?`, before.Unix())
+	res, err := s.q(ctx).ExecContext(ctx, `DELETE FROM ops WHERE state = 'done' AND created_at < ?`, before.Unix())
 	if err != nil {
 		return 0, err
 	}
@@ -171,6 +171,6 @@ func (s *Store) PurgeDoneOps(ctx context.Context, before time.Time) (int64, erro
 
 // DeleteOp removes an operation.
 func (s *Store) DeleteOp(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM ops WHERE id = ?`, id)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM ops WHERE id = ?`, id)
 	return err
 }

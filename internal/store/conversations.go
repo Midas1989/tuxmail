@@ -54,7 +54,7 @@ func (s *Store) InsertRelation(ctx context.Context, r Relation) (bool, error) {
 	if r.CreatedAt.IsZero() {
 		r.CreatedAt = time.Now()
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO message_relations(source_key, target_key, kind, origin, confidence, created_at)
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT OR IGNORE INTO message_relations(source_key, target_key, kind, origin, confidence, created_at)
 		VALUES (?, ?, ?, ?, ?, ?)`, r.SourceKey, r.TargetKey, r.Kind, r.Origin, r.Confidence, r.CreatedAt.Unix())
 	if err != nil {
 		return false, fmt.Errorf("store: insert relation: %w", err)
@@ -66,7 +66,7 @@ func (s *Store) InsertRelation(ctx context.Context, r Relation) (bool, error) {
 // RelationsByKey returns all relations in which key is source or target and
 // whose confidence is at least minConfidence.
 func (s *Store) RelationsByKey(ctx context.Context, key string, minConfidence float64) ([]Relation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, source_key, target_key, kind, origin, confidence, created_at
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id, source_key, target_key, kind, origin, confidence, created_at
 		FROM message_relations WHERE (source_key = ?1 OR target_key = ?1) AND confidence >= ?2 ORDER BY id`,
 		key, minConfidence)
 	if err != nil {
@@ -85,7 +85,7 @@ func (s *Store) RelationsByKey(ctx context.Context, key string, minConfidence fl
 
 // DeleteRelation deletes a relation by id (e.g. when the user splits a thread).
 func (s *Store) DeleteRelation(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM message_relations WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM message_relations WHERE id = ?`, id))
 }
 
 // ==== Conversations ===========================================================
@@ -124,7 +124,7 @@ func scanConversation(sc scanner) (Conversation, error) {
 
 // CreateConversation inserts a conversation and returns its id.
 func (s *Store) CreateConversation(ctx context.Context, c Conversation) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO conversations(kind, title, last_activity, unread_count, pinned, muted, archived)
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO conversations(kind, title, last_activity, unread_count, pinned, muted, archived)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`, c.Kind, nullString(c.Title), unixOrNull(c.LastActivity), c.UnreadCount,
 		boolInt(c.Pinned), boolInt(c.Muted), boolInt(c.Archived))
 	if err != nil {
@@ -135,27 +135,27 @@ func (s *Store) CreateConversation(ctx context.Context, c Conversation) (int64, 
 
 // UpdateConversation overwrites the conversation c.ID.
 func (s *Store) UpdateConversation(ctx context.Context, c Conversation) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE conversations SET kind = ?, title = ?, last_activity = ?,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE conversations SET kind = ?, title = ?, last_activity = ?,
 		unread_count = ?, pinned = ?, muted = ?, archived = ? WHERE id = ?`, c.Kind, nullString(c.Title),
 		unixOrNull(c.LastActivity), c.UnreadCount, boolInt(c.Pinned), boolInt(c.Muted), boolInt(c.Archived), c.ID))
 }
 
 // GetConversation returns the conversation with the given id.
 func (s *Store) GetConversation(ctx context.Context, id int64) (Conversation, error) {
-	c, err := scanConversation(s.db.QueryRowContext(ctx, `SELECT `+conversationCols+` FROM conversations WHERE id = ?`, id))
+	c, err := scanConversation(s.q(ctx).QueryRowContext(ctx, `SELECT `+conversationCols+` FROM conversations WHERE id = ?`, id))
 	return c, notFound(err)
 }
 
 // AssignConversation sets the conversation of a message (0 detaches it).
 func (s *Store) AssignConversation(ctx context.Context, messageID, conversationID int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE messages SET conversation_id = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE messages SET conversation_id = ? WHERE id = ?`,
 		nullID(conversationID), messageID))
 }
 
 // RefreshConversationStats recomputes last_activity and unread_count of an
 // email conversation from its live messages.
 func (s *Store) RefreshConversationStats(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE conversations SET
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE conversations SET
 			last_activity = (SELECT MAX(COALESCE(sent_at, received_at)) FROM messages WHERE conversation_id = ?1 AND +state = 'live'),
 			unread_count  = (SELECT COUNT(*) FROM messages WHERE conversation_id = ?1 AND +state = 'live' AND flags & ?2 = 0)
 		WHERE id = ?1`, id, FlagSeen))
@@ -252,7 +252,7 @@ type Override struct {
 
 // SetOverride stores (or replaces) the override for a message key.
 func (s *Store) SetOverride(ctx context.Context, o Override) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO conversation_overrides(message_key, conversation_id, action) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO conversation_overrides(message_key, conversation_id, action) VALUES (?, ?, ?)
 		ON CONFLICT(message_key) DO UPDATE SET conversation_id = excluded.conversation_id, action = excluded.action`,
 		o.MessageKey, nullID(o.ConversationID), o.Action)
 	return err
@@ -264,7 +264,7 @@ func (s *Store) GetOverride(ctx context.Context, key string) (Override, error) {
 		o    Override
 		conv sql.NullInt64
 	)
-	err := s.db.QueryRowContext(ctx, `SELECT message_key, conversation_id, action FROM conversation_overrides
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT message_key, conversation_id, action FROM conversation_overrides
 		WHERE message_key = ?`, key).Scan(&o.MessageKey, &conv, &o.Action)
 	o.ConversationID = conv.Int64
 	return o, notFound(err)
@@ -272,5 +272,5 @@ func (s *Store) GetOverride(ctx context.Context, key string) (Override, error) {
 
 // DeleteOverride removes the override for a message key.
 func (s *Store) DeleteOverride(ctx context.Context, key string) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM conversation_overrides WHERE message_key = ?`, key))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM conversation_overrides WHERE message_key = ?`, key))
 }

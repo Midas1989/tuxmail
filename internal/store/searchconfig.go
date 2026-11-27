@@ -118,7 +118,7 @@ func (st SearchSettings) Apply(q SearchQuery) SearchQuery {
 // GetSearchSettings returns the stored search settings or the defaults.
 func (s *Store) GetSearchSettings(ctx context.Context) (SearchSettings, error) {
 	var js string
-	err := s.db.QueryRowContext(ctx, `SELECT settings_json FROM search_settings WHERE id = 1`).Scan(&js)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT settings_json FROM search_settings WHERE id = 1`).Scan(&js)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultSearchSettings(), nil
 	}
@@ -138,7 +138,7 @@ func (s *Store) SetSearchSettings(ctx context.Context, st SearchSettings) error 
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO search_settings(id, settings_json, updated_at) VALUES (1, ?, ?)
+	_, err = s.q(ctx).ExecContext(ctx, `INSERT INTO search_settings(id, settings_json, updated_at) VALUES (1, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET settings_json = excluded.settings_json, updated_at = excluded.updated_at`,
 		string(b), time.Now().Unix())
 	return err
@@ -192,7 +192,7 @@ func (s *Store) CreateSearchProfile(ctx context.Context, p SearchProfile) (int64
 			return 0, fmt.Errorf("store: create search profile %q: %w", p.Name, err)
 		}
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO search_profiles(name, query_json, expert, pinned, sort_order, created_at, updated_at)
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO search_profiles(name, query_json, expert, pinned, sort_order, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?)`, p.Name, string(js), p.Expert, boolInt(p.Pinned), p.SortOrder, now, now)
 	if err != nil {
 		return 0, fmt.Errorf("store: create search profile %q: %w", p.Name, err)
@@ -211,27 +211,27 @@ func (s *Store) UpdateSearchProfile(ctx context.Context, p SearchProfile) error 
 			return fmt.Errorf("store: update search profile %q: %w", p.Name, err)
 		}
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE search_profiles SET name = ?, query_json = ?, expert = ?, pinned = ?,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE search_profiles SET name = ?, query_json = ?, expert = ?, pinned = ?,
 		sort_order = ?, updated_at = ? WHERE id = ?`, p.Name, string(js), p.Expert, boolInt(p.Pinned), p.SortOrder,
 		time.Now().Unix(), p.ID))
 }
 
 // GetSearchProfile returns the profile with the given id.
 func (s *Store) GetSearchProfile(ctx context.Context, id int64) (SearchProfile, error) {
-	p, err := scanSearchProfile(s.db.QueryRowContext(ctx, `SELECT `+searchProfileCols+` FROM search_profiles WHERE id = ?`, id))
+	p, err := scanSearchProfile(s.q(ctx).QueryRowContext(ctx, `SELECT `+searchProfileCols+` FROM search_profiles WHERE id = ?`, id))
 	return p, notFound(err)
 }
 
 // SearchProfileByName returns the profile with the given name.
 func (s *Store) SearchProfileByName(ctx context.Context, name string) (SearchProfile, error) {
-	p, err := scanSearchProfile(s.db.QueryRowContext(ctx, `SELECT `+searchProfileCols+` FROM search_profiles WHERE name = ?`, name))
+	p, err := scanSearchProfile(s.q(ctx).QueryRowContext(ctx, `SELECT `+searchProfileCols+` FROM search_profiles WHERE name = ?`, name))
 	return p, notFound(err)
 }
 
 // ListSearchProfiles returns the profiles ordered by sort order and name;
 // pinnedOnly returns only those shown as virtual folders.
 func (s *Store) ListSearchProfiles(ctx context.Context, pinnedOnly bool) ([]SearchProfile, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+searchProfileCols+` FROM search_profiles WHERE ? = 0 OR pinned = 1
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+searchProfileCols+` FROM search_profiles WHERE ? = 0 OR pinned = 1
 		ORDER BY sort_order, name, id`, boolInt(pinnedOnly))
 	if err != nil {
 		return nil, err
@@ -241,7 +241,7 @@ func (s *Store) ListSearchProfiles(ctx context.Context, pinnedOnly bool) ([]Sear
 
 // DeleteSearchProfile deletes a profile.
 func (s *Store) DeleteSearchProfile(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM search_profiles WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM search_profiles WHERE id = ?`, id))
 }
 
 // RunSearchProfile runs a saved search (e.g. to fill a virtual folder) with
@@ -306,7 +306,7 @@ func (s *Store) AddSearchHistory(ctx context.Context, q string, keep int) error 
 
 // SearchHistory returns up to limit recently used queries, most recent first.
 func (s *Store) SearchHistory(ctx context.Context, limit int) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT query FROM search_history ORDER BY used_at DESC LIMIT ?`, limit)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT query FROM search_history ORDER BY used_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +318,7 @@ func (s *Store) SearchHistory(ctx context.Context, limit int) ([]string, error) 
 
 // ClearSearchHistory deletes the query history.
 func (s *Store) ClearSearchHistory(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM search_history`)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM search_history`)
 	return err
 }
 
@@ -336,7 +336,7 @@ type SearchIndexStats struct {
 // SearchIndexStats returns size statistics of the search index.
 func (s *Store) SearchIndexStats(ctx context.Context) (SearchIndexStats, error) {
 	st := SearchIndexStats{Docs: map[SearchScope]int{}}
-	rows, err := s.db.QueryContext(ctx, `SELECT kind, COUNT(*) FROM fts_docs GROUP BY kind`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT kind, COUNT(*) FROM fts_docs GROUP BY kind`)
 	if err != nil {
 		return st, err
 	}
@@ -352,7 +352,7 @@ func (s *Store) SearchIndexStats(ctx context.Context) (SearchIndexStats, error) 
 	if err := rows.Err(); err != nil {
 		return st, err
 	}
-	err = s.db.QueryRowContext(ctx, `SELECT
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT
 			(SELECT COALESCE(SUM(length(subject) + length(body) + length(addresses) + length(attachments)
 				+ length(attachment_content)), 0) FROM fts_docs),
 			(SELECT COALESCE(SUM(length(block)), 0) FROM fts_items_data),
@@ -371,7 +371,7 @@ func (s *Store) OptimizeSearchIndex(ctx context.Context) error {
 	}
 	// Planner statistics (ANALYZE where useful) for the list queries of
 	// large mailboxes.
-	_, err := s.db.ExecContext(ctx, `PRAGMA optimize`)
+	_, err := s.q(ctx).ExecContext(ctx, `PRAGMA optimize`)
 	return err
 }
 

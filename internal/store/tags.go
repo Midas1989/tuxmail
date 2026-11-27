@@ -143,13 +143,13 @@ func (s *Store) TagByPath(ctx context.Context, path string) (Tag, error) {
 	if err != nil {
 		return Tag{}, err
 	}
-	t, err := scanTag(s.db.QueryRowContext(ctx, `SELECT `+tagCols+` FROM tags WHERE path_norm = ?`, tagNorm(p)))
+	t, err := scanTag(s.q(ctx).QueryRowContext(ctx, `SELECT `+tagCols+` FROM tags WHERE path_norm = ?`, tagNorm(p)))
 	return t, notFound(err)
 }
 
 // ListTags returns all tags ordered by path (parents before children).
 func (s *Store) ListTags(ctx context.Context) ([]Tag, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+tagCols+` FROM tags ORDER BY path_norm`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+tagCols+` FROM tags ORDER BY path_norm`)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +200,7 @@ func ensureTag(ctx context.Context, tx *sql.Tx, path string, now time.Time) (Tag
 // UpdateTag stores the color, icon and sort order of a tag (use RenameTag,
 // MoveTag and MergeTags to change its place in the tree).
 func (s *Store) UpdateTag(ctx context.Context, t Tag) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE tags SET color = ?, icon = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE tags SET color = ?, icon = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
 		nullString(t.Color), nullString(t.Icon), t.SortOrder, time.Now().Unix(), t.ID))
 }
 
@@ -673,7 +673,7 @@ func prefixCols(prefix, cols string) string {
 // ItemTags returns the tags of an item ordered by path.
 func (s *Store) ItemTags(ctx context.Context, it Item) ([]ItemTag, error) {
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("t.", tagCols)+`, it.source, it.created_at
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+prefixCols("t.", tagCols)+`, it.source, it.created_at
 		FROM item_tags it JOIN tags t ON t.id = it.tag_id WHERE it.item_kind = ? AND it.item_id = ? ORDER BY t.path_norm`, it.Kind, it.ID)
 	if err != nil {
 		return nil, err
@@ -718,7 +718,7 @@ func (s *Store) TagsForItems(ctx context.Context, kind ItemKind, ids []int64) (m
 		chunk := ids[:min(len(ids), 500)]
 		ids = ids[len(chunk):]
 		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-		rows, err := s.db.QueryContext(ctx, `SELECT it.item_id, `+prefixCols("t.", tagCols)+` FROM item_tags it JOIN tags t ON t.id = it.tag_id
+		rows, err := s.q(ctx).QueryContext(ctx, `SELECT it.item_id, `+prefixCols("t.", tagCols)+` FROM item_tags it JOIN tags t ON t.id = it.tag_id
 			WHERE it.item_kind = ? AND it.item_id IN (`+placeholders(len(chunk))+`) ORDER BY t.path_norm`,
 			append([]any{kind}, int64Args(chunk)...)...)
 		if err != nil {
@@ -771,7 +771,7 @@ func (s *Store) TagCounts(ctx context.Context) ([]TagCount, error) {
 		out[i] = TagCount{Tag: t, ByKind: map[ItemKind]int{}}
 		byID[t.ID] = &out[i]
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT tag_id, item_kind, COUNT(*) FROM item_tags GROUP BY tag_id, item_kind`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT tag_id, item_kind, COUNT(*) FROM item_tags GROUP BY tag_id, item_kind`)
 	if err != nil {
 		return nil, err
 	}
@@ -807,7 +807,7 @@ func (s *Store) TagCounts(ctx context.Context) ([]TagCount, error) {
 			WHERE m.flags & 1 = 0 AND m.state = 'live' GROUP BY it.tag_id`, func(c *TagCount, n int) { c.Unread = n }},
 	}
 	for _, p := range pairs {
-		rows, err := s.db.QueryContext(ctx, p.q)
+		rows, err := s.q(ctx).QueryContext(ctx, p.q)
 		if err != nil {
 			return nil, err
 		}
@@ -873,7 +873,7 @@ func (s *Store) ListTaggedItems(ctx context.Context, tagID int64, o TaggedItemsO
 	}
 	q += ` ORDER BY it.created_at DESC, it.item_kind, it.item_id LIMIT ? OFFSET ?`
 	args = append(args, limit, max(o.Offset, 0))
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -916,7 +916,7 @@ func (s *Store) PendingTagSync(ctx context.Context, accountID int64, limit int) 
 		q += ` WHERE account_id = ?`
 		args = append(args, accountID)
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY created_at, item_id LIMIT ?`, append(args, limit)...)
+	rows, err := s.q(ctx).QueryContext(ctx, q+` ORDER BY created_at, item_id LIMIT ?`, append(args, limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -1012,14 +1012,14 @@ func (s *Store) PurgeSystemKeywordTags(ctx context.Context) (int, error) {
 			continue
 		}
 		var other int
-		if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM item_tags WHERE tag_id = ? AND source <> ?`, t.ID,
+		if err := s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM item_tags WHERE tag_id = ? AND source <> ?`, t.ID,
 			string(TagSourceIMAPKeyword)).Scan(&other); err != nil {
 			return n, err
 		}
 		if other > 0 {
 			continue
 		}
-		if _, err := s.db.ExecContext(ctx, `DELETE FROM tags WHERE id = ?`, t.ID); err != nil {
+		if _, err := s.q(ctx).ExecContext(ctx, `DELETE FROM tags WHERE id = ?`, t.ID); err != nil {
 			return n, err
 		}
 		n++

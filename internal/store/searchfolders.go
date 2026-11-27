@@ -127,7 +127,7 @@ func (s *Store) CreateSearchFolder(ctx context.Context, f SearchFolder) (int64, 
 	}
 	now := time.Now().Unix()
 	var id int64
-	err = s.db.QueryRowContext(ctx, `INSERT INTO search_folders(name, icon, color, parent_id, account_id, project_id, query,
+	err = s.q(ctx).QueryRowContext(ctx, `INSERT INTO search_folders(name, icon, color, parent_id, account_id, project_id, query,
 		options_json, chat_folder, sort_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		strings.TrimSpace(f.Name), nullString(f.Icon), nullString(f.Color), nullID(f.ParentID), nullID(f.AccountID),
 		nullID(f.ProjectID), f.Query, string(opts), boolInt(f.ChatFolder), f.SortOrder, now, now).Scan(&id)
@@ -187,14 +187,14 @@ func mustMarshal(v any) string {
 
 // GetSearchFolder returns a search folder.
 func (s *Store) GetSearchFolder(ctx context.Context, id int64) (SearchFolder, error) {
-	f, err := scanSearchFolder(s.db.QueryRowContext(ctx, `SELECT `+searchFolderCols+` FROM search_folders WHERE id = ?`, id))
+	f, err := scanSearchFolder(s.q(ctx).QueryRowContext(ctx, `SELECT `+searchFolderCols+` FROM search_folders WHERE id = ?`, id))
 	return f, notFound(err)
 }
 
 // SearchFolderByName returns the first search folder with the given name
 // (case-insensitive).
 func (s *Store) SearchFolderByName(ctx context.Context, name string) (SearchFolder, error) {
-	f, err := scanSearchFolder(s.db.QueryRowContext(ctx, `SELECT `+searchFolderCols+` FROM search_folders
+	f, err := scanSearchFolder(s.q(ctx).QueryRowContext(ctx, `SELECT `+searchFolderCols+` FROM search_folders
 		WHERE lower(name) = lower(?) ORDER BY id LIMIT 1`, strings.TrimSpace(name)))
 	return f, notFound(err)
 }
@@ -229,7 +229,7 @@ func (s *Store) ListSearchFolders(ctx context.Context, f SearchFolderFilter) ([]
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, " AND ")
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY sort_order, lower(name), id`, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q+` ORDER BY sort_order, lower(name), id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +238,7 @@ func (s *Store) ListSearchFolders(ctx context.Context, f SearchFolderFilter) ([]
 
 // DeleteSearchFolder deletes a search folder and its sub folders.
 func (s *Store) DeleteSearchFolder(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM search_folders WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM search_folders WHERE id = ?`, id))
 }
 
 // RunSearchFolder runs the folder's query. Paging, facets and the time
@@ -294,7 +294,7 @@ func (s *Store) SearchFolderCounts(ctx context.Context, id int64, ttl time.Durat
 		return SearchFolderCount{}, err
 	}
 	at := time.Unix(now.Unix(), 0).UTC()
-	if _, err := s.db.ExecContext(ctx, `UPDATE search_folders SET cached_total = ?, cached_unread = ?, cached_at = ? WHERE id = ?`,
+	if _, err := s.q(ctx).ExecContext(ctx, `UPDATE search_folders SET cached_total = ?, cached_unread = ?, cached_at = ? WHERE id = ?`,
 		total, unread, at.Unix(), id); err != nil {
 		return SearchFolderCount{}, err
 	}
@@ -305,11 +305,11 @@ func (s *Store) SearchFolderCounts(ctx context.Context, id int64, ttl time.Durat
 // folders (none = all folders).
 func (s *Store) InvalidateSearchFolderCounts(ctx context.Context, ids ...int64) error {
 	if len(ids) == 0 {
-		_, err := s.db.ExecContext(ctx, `UPDATE search_folders SET cached_at = NULL`)
+		_, err := s.q(ctx).ExecContext(ctx, `UPDATE search_folders SET cached_at = NULL`)
 		return err
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	_, err := s.db.ExecContext(ctx, `UPDATE search_folders SET cached_at = NULL WHERE id IN (`+placeholders(len(ids))+`)`,
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE search_folders SET cached_at = NULL WHERE id IN (`+placeholders(len(ids))+`)`,
 		int64Args(ids)...)
 	return err
 }
@@ -397,7 +397,7 @@ func (s *Store) CountSearch(ctx context.Context, req SearchRequest) (int, error)
 		args = append(args, a.args...)
 	}
 	var n int
-	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM (`+strings.Join(parts, "\nUNION ALL\n")+`)`, args...).Scan(&n)
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM (`+strings.Join(parts, "\nUNION ALL\n")+`)`, args...).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("store: count search: %w", err)
 	}
@@ -430,7 +430,7 @@ func (s *Store) MatchItems(ctx context.Context, req SearchRequest, items []Item)
 				chunk := rest[:min(len(rest), 500)]
 				rest = rest[len(chunk):]
 				// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-				rows, err := s.db.QueryContext(ctx, `SELECT id FROM (`+a.sql+`) WHERE id IN (`+placeholders(len(chunk))+`)`,
+				rows, err := s.q(ctx).QueryContext(ctx, `SELECT id FROM (`+a.sql+`) WHERE id IN (`+placeholders(len(chunk))+`)`,
 					append(slices.Clone(a.args), int64Args(chunk)...)...)
 				if err != nil {
 					return nil, fmt.Errorf("store: match items: %w", err)

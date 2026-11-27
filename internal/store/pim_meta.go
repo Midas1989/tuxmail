@@ -53,7 +53,7 @@ func defaultCalMeta(id int64) CalendarMeta {
 // display order.
 func (s *Store) ListCalendarsWithMeta(ctx context.Context) ([]CalendarWithMeta, error) {
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("c.", calendarCols)+`, m.calendar_id, m.kind, m.url, m.ctag, m.visible,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+prefixed("c.", calendarCols)+`, m.calendar_id, m.kind, m.url, m.ctag, m.visible,
 		m.is_default, m.sort_order, m.components, m.refresh_min, m.server_scheduling, m.description, m.last_sync_at, m.last_error
 		FROM calendars c LEFT JOIN calendar_meta m ON m.calendar_id = c.id
 		ORDER BY c.account_id NULLS FIRST, COALESCE(m.sort_order, 0), c.name, c.id`)
@@ -65,7 +65,7 @@ func (s *Store) ListCalendarsWithMeta(ctx context.Context) ([]CalendarWithMeta, 
 
 // GetCalendarWithMeta returns one calendar with meta data.
 func (s *Store) GetCalendarWithMeta(ctx context.Context, id int64) (CalendarWithMeta, error) {
-	c, err := scanCalendarWithMeta(s.db.QueryRowContext(ctx, `SELECT `+prefixed("c.", calendarCols)+`, m.calendar_id, m.kind, m.url,
+	c, err := scanCalendarWithMeta(s.q(ctx).QueryRowContext(ctx, `SELECT `+prefixed("c.", calendarCols)+`, m.calendar_id, m.kind, m.url,
 		m.ctag, m.visible, m.is_default, m.sort_order, m.components, m.refresh_min, m.server_scheduling, m.description,
 		m.last_sync_at, m.last_error FROM calendars c LEFT JOIN calendar_meta m ON m.calendar_id = c.id WHERE c.id = ?`, id))
 	return c, notFound(err)
@@ -132,7 +132,7 @@ func (s *Store) PutCalendarMeta(ctx context.Context, m CalendarMeta) error {
 
 // SetCalendarSyncState records the result of a sync of a collection.
 func (s *Store) SetCalendarSyncState(ctx context.Context, id int64, ctag string, at time.Time, lastErr string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE calendar_meta SET ctag = COALESCE(?, ctag), last_sync_at = ?, last_error = ?
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE calendar_meta SET ctag = COALESCE(?, ctag), last_sync_at = ?, last_error = ?
 		WHERE calendar_id = ?`, nullString(ctag), unixOrNull(at), nullString(lastErr), id)
 	return err
 }
@@ -158,7 +158,7 @@ type AddressbookWithMeta struct {
 
 // ListAddressbooksWithMeta returns all address books with meta data.
 func (s *Store) ListAddressbooksWithMeta(ctx context.Context) ([]AddressbookWithMeta, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT a.id, a.account_id, a.remote_id, a.name, a.sync_token, m.addressbook_id, m.kind, m.url,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT a.id, a.account_id, a.remote_id, a.name, a.sync_token, m.addressbook_id, m.kind, m.url,
 		m.ctag, m.is_default, m.last_sync_at, m.last_error
 		FROM addressbooks a LEFT JOIN addressbook_meta m ON m.addressbook_id = a.id
 		ORDER BY a.account_id NULLS FIRST, a.name, a.id`)
@@ -204,7 +204,7 @@ func (s *Store) PutAddressbookMeta(ctx context.Context, m AddressbookMeta) error
 
 // SetAddressbookSyncState records the result of a sync.
 func (s *Store) SetAddressbookSyncState(ctx context.Context, id int64, ctag string, at time.Time, lastErr string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE addressbook_meta SET ctag = COALESCE(?, ctag), last_sync_at = ?, last_error = ?
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE addressbook_meta SET ctag = COALESCE(?, ctag), last_sync_at = ?, last_error = ?
 		WHERE addressbook_id = ?`, nullString(ctag), unixOrNull(at), nullString(lastErr), id)
 	return err
 }
@@ -257,7 +257,7 @@ func (s *Store) ListKeyedInstances(ctx context.Context, kind string, from, to ti
 		}
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("o.", calObjectCols)+`, i.start_at, i.end_at, i.rid, i.all_day
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+prefixed("o.", calObjectCols)+`, i.start_at, i.end_at, i.rid, i.all_day
 		FROM cal_instances i JOIN cal_objects o ON o.id = i.object_id
 		WHERE o.kind = ?3 AND `+fmt.Sprintf(overlapCond, "i.start_at", "i.end_at")+filter+` ORDER BY i.start_at, o.id`, args...)
 	if err != nil {
@@ -277,7 +277,7 @@ func (s *Store) ListKeyedInstances(ctx context.Context, kind string, from, to ti
 
 // RecurringObjects returns the objects with an RRULE (or several instances).
 func (s *Store) RecurringObjects(ctx context.Context, kind string) ([]CalObject, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects WHERE kind = ? AND (rrule IS NOT NULL AND rrule <> '')`, kind)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects WHERE kind = ? AND (rrule IS NOT NULL AND rrule <> '')`, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -294,7 +294,7 @@ func (s *Store) ListCalObjectsByKind(ctx context.Context, kind string, calendarI
 			args = append(args, id)
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY id`, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -303,7 +303,7 @@ func (s *Store) ListCalObjectsByKind(ctx context.Context, kind string, calendarI
 
 // CalObjectsByUID returns the objects with a UID in any calendar.
 func (s *Store) CalObjectsByUID(ctx context.Context, uid string) ([]CalObject, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects WHERE uid = ? ORDER BY id`, uid)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects WHERE uid = ? ORDER BY id`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +347,7 @@ func (s *Store) QueuePIMChange(ctx context.Context, c PIMChange) error {
 	if c.CreatedAt.IsZero() {
 		c.CreatedAt = time.Now()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO pim_changes(kind, collection_id, uid, op, href, etag, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO pim_changes(kind, collection_id, uid, op, href, etag, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(kind, collection_id, uid) DO UPDATE SET op = excluded.op,
 			href = COALESCE(excluded.href, pim_changes.href), etag = COALESCE(excluded.etag, pim_changes.etag),
 			created_at = excluded.created_at, attempts = 0, last_error = NULL`,
@@ -357,13 +357,13 @@ func (s *Store) QueuePIMChange(ctx context.Context, c PIMChange) error {
 
 // DropPIMChange removes a pending change.
 func (s *Store) DropPIMChange(ctx context.Context, kind string, collectionID int64, uid string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM pim_changes WHERE kind = ? AND collection_id = ? AND uid = ?`, kind, collectionID, uid)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM pim_changes WHERE kind = ? AND collection_id = ? AND uid = ?`, kind, collectionID, uid)
 	return err
 }
 
 // PendingPIMChanges returns the pending changes of a collection.
 func (s *Store) PendingPIMChanges(ctx context.Context, kind string, collectionID int64) ([]PIMChange, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, kind, collection_id, uid, op, href, etag, created_at, attempts, last_error
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id, kind, collection_id, uid, op, href, etag, created_at, attempts, last_error
 		FROM pim_changes WHERE kind = ? AND collection_id = ? ORDER BY id`, kind, collectionID)
 	if err != nil {
 		return nil, err
@@ -382,14 +382,14 @@ func (s *Store) PendingPIMChanges(ctx context.Context, kind string, collectionID
 
 // FailPIMChange records a failed push attempt.
 func (s *Store) FailPIMChange(ctx context.Context, id int64, msg string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE pim_changes SET attempts = attempts + 1, last_error = ? WHERE id = ?`, msg, id)
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE pim_changes SET attempts = attempts + 1, last_error = ? WHERE id = ?`, msg, id)
 	return err
 }
 
 // HasPendingPIMChange reports whether an object has a pending change.
 func (s *Store) HasPendingPIMChange(ctx context.Context, kind string, collectionID int64, uid string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM pim_changes WHERE kind = ? AND collection_id = ? AND uid = ?`,
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM pim_changes WHERE kind = ? AND collection_id = ? AND uid = ?`,
 		kind, collectionID, uid).Scan(&n)
 	return n > 0, err
 }
@@ -435,7 +435,7 @@ func (s *Store) PutInvitation(ctx context.Context, i Invitation) (int64, bool, e
 		i.Status = "pending"
 	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, `SELECT id FROM pim_invitations WHERE message_id IS ? AND uid = ? AND method = ?`,
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT id FROM pim_invitations WHERE message_id IS ? AND uid = ? AND method = ?`,
 		nullID(i.MessageID), i.UID, i.Method).Scan(&id)
 	if err == nil {
 		return id, false, nil
@@ -443,7 +443,7 @@ func (s *Store) PutInvitation(ctx context.Context, i Invitation) (int64, bool, e
 	if !errors.Is(err, sql.ErrNoRows) {
 		return 0, false, err
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO pim_invitations(message_id, account_id, uid, method, sequence, sender, ical, status,
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO pim_invitations(message_id, account_id, uid, method, sequence, sender, ical, status,
 		object_id, received_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, nullID(i.MessageID), nullID(i.AccountID), i.UID, i.Method,
 		i.Sequence, nullString(i.Sender), i.ICal, i.Status, nullID(i.ObjectID), i.ReceivedAt.Unix())
 	if err != nil {
@@ -455,13 +455,13 @@ func (s *Store) PutInvitation(ctx context.Context, i Invitation) (int64, bool, e
 
 // GetInvitation returns an invitation.
 func (s *Store) GetInvitation(ctx context.Context, id int64) (Invitation, error) {
-	i, err := scanInvitation(s.db.QueryRowContext(ctx, `SELECT `+invitationCols+` FROM pim_invitations WHERE id = ?`, id))
+	i, err := scanInvitation(s.q(ctx).QueryRowContext(ctx, `SELECT `+invitationCols+` FROM pim_invitations WHERE id = ?`, id))
 	return i, notFound(err)
 }
 
 // InvitationsOfMessage returns the invitations found in a mail.
 func (s *Store) InvitationsOfMessage(ctx context.Context, messageID int64) ([]Invitation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+invitationCols+` FROM pim_invitations WHERE message_id = ? ORDER BY id`, messageID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+invitationCols+` FROM pim_invitations WHERE message_id = ? ORDER BY id`, messageID)
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +470,7 @@ func (s *Store) InvitationsOfMessage(ctx context.Context, messageID int64) ([]In
 
 // InvitationsByStatus returns invitations with a status (newest first).
 func (s *Store) InvitationsByStatus(ctx context.Context, status string) ([]Invitation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+invitationCols+` FROM pim_invitations WHERE status = ? ORDER BY received_at DESC, id DESC`, status)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+invitationCols+` FROM pim_invitations WHERE status = ? ORDER BY received_at DESC, id DESC`, status)
 	if err != nil {
 		return nil, err
 	}
@@ -479,7 +479,7 @@ func (s *Store) InvitationsByStatus(ctx context.Context, status string) ([]Invit
 
 // InvitationsByUID returns the invitations of a UID (newest first).
 func (s *Store) InvitationsByUID(ctx context.Context, uid string) ([]Invitation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+invitationCols+` FROM pim_invitations WHERE uid = ? ORDER BY sequence DESC, received_at DESC, id DESC`, uid)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+invitationCols+` FROM pim_invitations WHERE uid = ? ORDER BY sequence DESC, received_at DESC, id DESC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ func (s *Store) InvitationsByUID(ctx context.Context, uid string) ([]Invitation,
 
 // SetInvitationStatus updates the status (and the linked object).
 func (s *Store) SetInvitationStatus(ctx context.Context, id int64, status string, objectID int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE pim_invitations SET status = ?, object_id = COALESCE(?, object_id) WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE pim_invitations SET status = ?, object_id = COALESCE(?, object_id) WHERE id = ?`,
 		status, nullID(objectID), id))
 }
 
@@ -501,7 +501,7 @@ func (s *Store) ReminderState(ctx context.Context, objectID int64, instance stri
 		state string
 		until sql.NullInt64
 	)
-	err := s.db.QueryRowContext(ctx, `SELECT state, snooze_until FROM pim_reminders WHERE object_id = ? AND instance = ? AND trigger_at = ?`,
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT state, snooze_until FROM pim_reminders WHERE object_id = ? AND instance = ? AND trigger_at = ?`,
 		objectID, instance, trigger.Unix()).Scan(&state, &until)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", time.Time{}, nil
@@ -511,7 +511,7 @@ func (s *Store) ReminderState(ctx context.Context, objectID int64, instance stri
 
 // SetReminderState records an alarm state.
 func (s *Store) SetReminderState(ctx context.Context, objectID int64, instance string, trigger time.Time, state string, snoozeUntil time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO pim_reminders(object_id, instance, trigger_at, state, snooze_until) VALUES (?, ?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO pim_reminders(object_id, instance, trigger_at, state, snooze_until) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(object_id, instance, trigger_at) DO UPDATE SET state = excluded.state, snooze_until = excluded.snooze_until`,
 		objectID, instance, trigger.Unix(), state, unixOrNull(snoozeUntil))
 	return err
@@ -523,7 +523,7 @@ func (s *Store) DueSnoozedReminders(ctx context.Context, now time.Time) ([]struc
 	Instance string
 	Trigger  time.Time
 }, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT object_id, instance, trigger_at FROM pim_reminders WHERE state = 'snoozed' AND snooze_until <= ?`, now.Unix())
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT object_id, instance, trigger_at FROM pim_reminders WHERE state = 'snoozed' AND snooze_until <= ?`, now.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -563,7 +563,7 @@ func (s *Store) RecentAddresses(ctx context.Context, q string, limit int) ([]Rec
 	}
 	pat := likeEscape(q) + "%"
 	word := "% " + likeEscape(q) + "%"
-	rows, err := s.db.QueryContext(ctx, `SELECT lower(a.email), MAX(COALESCE(a.name, '')), MAX(COALESCE(a.person_id, 0)), COUNT(*),
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT lower(a.email), MAX(COALESCE(a.name, '')), MAX(COALESCE(a.person_id, 0)), COUNT(*),
 			MAX(COALESCE(m.sent_at, m.received_at, 0))
 		FROM message_addresses a JOIN messages m ON m.id = a.message_id
 		WHERE a.email <> '' AND (lower(a.email) LIKE ?1 ESCAPE '\' OR lower(a.name) LIKE ?1 ESCAPE '\' OR lower(a.name) LIKE ?2 ESCAPE '\')

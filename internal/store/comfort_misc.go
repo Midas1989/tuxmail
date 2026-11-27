@@ -37,7 +37,7 @@ type SubscriptionState struct {
 // ListSubscriptions returns newsletters (mails with List-Unsubscribe),
 // most frequent first.
 func (s *Store) ListSubscriptions(ctx context.Context) ([]SubscriptionRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT COALESCE(mi.list_id, mi.sender) AS k, MAX(COALESCE(mi.sender, '')), COUNT(*),
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT COALESCE(mi.list_id, mi.sender) AS k, MAX(COALESCE(mi.sender, '')), COUNT(*),
 		MIN(COALESCE(m.sent_at, m.received_at, 0)), MAX(COALESCE(m.sent_at, m.received_at, 0)), MAX(m.id),
 		SUM(CASE WHEN m.flags & ? = 0 THEN 1 ELSE 0 END),
 		SUM(CASE WHEN EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id WHERE l.message_id = m.id AND f.role = 'inbox') THEN 1 ELSE 0 END),
@@ -88,7 +88,7 @@ func (s *Store) GetSubscription(ctx context.Context, key string) (SubscriptionSt
 	var unsub, wf sql.NullInt64
 	var method sql.NullString
 	var ign int
-	err := s.db.QueryRowContext(ctx, `SELECT unsubscribed_at, method, workflow_id, ignored FROM subscriptions WHERE sender = ?`, key).
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT unsubscribed_at, method, workflow_id, ignored FROM subscriptions WHERE sender = ?`, key).
 		Scan(&unsub, &method, &wf, &ign)
 	if errors.Is(err, sql.ErrNoRows) {
 		return st, nil
@@ -99,7 +99,7 @@ func (s *Store) GetSubscription(ctx context.Context, key string) (SubscriptionSt
 
 // PutSubscription stores the state of a subscription.
 func (s *Store) PutSubscription(ctx context.Context, st SubscriptionState) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO subscriptions(sender, unsubscribed_at, method, workflow_id, ignored) VALUES(?,?,?,?,?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO subscriptions(sender, unsubscribed_at, method, workflow_id, ignored) VALUES(?,?,?,?,?)
 		ON CONFLICT(sender) DO UPDATE SET unsubscribed_at = excluded.unsubscribed_at, method = excluded.method,
 		workflow_id = excluded.workflow_id, ignored = excluded.ignored`,
 		st.Key, unixOrNull(st.UnsubscribedAt), nullString(st.Method), nullID(st.WorkflowID), boolInt(st.Ignored))
@@ -110,7 +110,7 @@ func (s *Store) PutSubscription(ctx context.Context, st SubscriptionState) error
 
 // SpellWords returns the user's dictionary.
 func (s *Store) SpellWords(ctx context.Context) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT word FROM spell_words ORDER BY word`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT word FROM spell_words ORDER BY word`)
 	if err != nil {
 		return nil, err
 	}
@@ -128,13 +128,13 @@ func (s *Store) SpellWords(ctx context.Context) ([]string, error) {
 
 // AddSpellWord adds a word to the user's dictionary.
 func (s *Store) AddSpellWord(ctx context.Context, w string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT OR IGNORE INTO spell_words(word, created_at) VALUES(?, ?)`, strings.TrimSpace(w), time.Now().Unix())
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT OR IGNORE INTO spell_words(word, created_at) VALUES(?, ?)`, strings.TrimSpace(w), time.Now().Unix())
 	return err
 }
 
 // DeleteSpellWord removes a word.
 func (s *Store) DeleteSpellWord(ctx context.Context, w string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM spell_words WHERE word = ?`, w)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM spell_words WHERE word = ?`, w)
 	return err
 }
 
@@ -175,7 +175,7 @@ func (s *Store) PutSMIMECert(ctx context.Context, c SMIMECert) (int64, error) {
 		c.CreatedAt = time.Now()
 	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO smime_certs(fingerprint, email, subject, issuer, not_before, not_after, der, own, trusted, source, secret_ref, created_at)
+	err := s.q(ctx).QueryRowContext(ctx, `INSERT INTO smime_certs(fingerprint, email, subject, issuer, not_before, not_after, der, own, trusted, source, secret_ref, created_at)
 		VALUES(?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET email = excluded.email,
 		own = MAX(own, excluded.own), trusted = MAX(trusted, excluded.trusted),
 		source = CASE WHEN excluded.own = 1 THEN excluded.source ELSE source END,
@@ -192,7 +192,7 @@ func (s *Store) ListSMIMECerts(ctx context.Context, email string) ([]SMIMECert, 
 		q += ` WHERE email = ?`
 		args = append(args, strings.ToLower(email))
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY own DESC, email, not_after DESC`, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q+` ORDER BY own DESC, email, not_after DESC`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -210,7 +210,7 @@ func (s *Store) ListSMIMECerts(ctx context.Context, email string) ([]SMIMECert, 
 
 // GetSMIMECert returns one certificate.
 func (s *Store) GetSMIMECert(ctx context.Context, id int64) (SMIMECert, error) {
-	c, err := scanSMIME(s.db.QueryRowContext(ctx, `SELECT `+smimeCols+` FROM smime_certs WHERE id = ?`, id))
+	c, err := scanSMIME(s.q(ctx).QueryRowContext(ctx, `SELECT `+smimeCols+` FROM smime_certs WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, ErrNotFound
 	}
@@ -219,13 +219,13 @@ func (s *Store) GetSMIMECert(ctx context.Context, id int64) (SMIMECert, error) {
 
 // SetSMIMETrusted marks a certificate as approved by the user (or not).
 func (s *Store) SetSMIMETrusted(ctx context.Context, id int64, trusted bool) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE smime_certs SET trusted = ? WHERE id = ?`, boolInt(trusted), id)
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE smime_certs SET trusted = ? WHERE id = ?`, boolInt(trusted), id)
 	return err
 }
 
 // DeleteSMIMECert removes a certificate.
 func (s *Store) DeleteSMIMECert(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM smime_certs WHERE id = ?`, id)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM smime_certs WHERE id = ?`, id)
 	return err
 }
 
@@ -246,7 +246,7 @@ func (s *Store) PutMergeJob(ctx context.Context, j MergeJobRow) error {
 	if j.CreatedAt.IsZero() {
 		j.CreatedAt = now
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO merge_jobs(id, state, data, created_at, updated_at) VALUES(?,?,?,?,?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO merge_jobs(id, state, data, created_at, updated_at) VALUES(?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET state = excluded.state, data = excluded.data, updated_at = excluded.updated_at`,
 		j.ID, j.State, j.Data, j.CreatedAt.Unix(), now.Unix())
 	return err
@@ -257,7 +257,7 @@ func (s *Store) ListMergeJobs(ctx context.Context, limit int) ([]MergeJobRow, er
 	if limit <= 0 {
 		limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, state, data, created_at, updated_at FROM merge_jobs ORDER BY created_at DESC LIMIT ?`, limit)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id, state, data, created_at, updated_at FROM merge_jobs ORDER BY created_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +279,7 @@ func (s *Store) ListMergeJobs(ctx context.Context, limit int) ([]MergeJobRow, er
 func (s *Store) GetMergeJob(ctx context.Context, id string) (MergeJobRow, error) {
 	var j MergeJobRow
 	var c, u int64
-	err := s.db.QueryRowContext(ctx, `SELECT id, state, data, created_at, updated_at FROM merge_jobs WHERE id = ?`, id).Scan(&j.ID, &j.State, &j.Data, &c, &u)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT id, state, data, created_at, updated_at FROM merge_jobs WHERE id = ?`, id).Scan(&j.ID, &j.State, &j.Data, &c, &u)
 	if errors.Is(err, sql.ErrNoRows) {
 		return j, ErrNotFound
 	}

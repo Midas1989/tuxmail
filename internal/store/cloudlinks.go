@@ -60,7 +60,7 @@ func (s *Store) CreateCloudLink(ctx context.Context, l CloudLink) (int64, error)
 	if l.CreatedAt.IsZero() {
 		l.CreatedAt = time.Now()
 	}
-	res, err := s.db.ExecContext(ctx, `INSERT INTO cloud_links(account_id, provider, remote_path, share_id, url, password_ref,
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO cloud_links(account_id, provider, remote_path, share_id, url, password_ref,
 		file_name, message_id, expires_at, created_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		nullID(l.AccountID), nullString(l.Provider), nullString(l.RemotePath), nullString(l.ShareID), nullString(l.URL),
 		nullString(l.PasswordRef), nullString(l.FileName), nullID(l.MessageID), unixOrNull(l.ExpiresAt),
@@ -73,13 +73,13 @@ func (s *Store) CreateCloudLink(ctx context.Context, l CloudLink) (int64, error)
 
 // GetCloudLink returns the cloud link with the given id.
 func (s *Store) GetCloudLink(ctx context.Context, id int64) (CloudLink, error) {
-	l, err := scanCloudLink(s.db.QueryRowContext(ctx, `SELECT `+cloudLinkCols+` FROM cloud_links WHERE id = ?`, id))
+	l, err := scanCloudLink(s.q(ctx).QueryRowContext(ctx, `SELECT `+cloudLinkCols+` FROM cloud_links WHERE id = ?`, id))
 	return l, notFound(err)
 }
 
 // ListCloudLinks returns the links of an account (0 = all), newest first.
 func (s *Store) ListCloudLinks(ctx context.Context, accountID int64) ([]CloudLink, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+cloudLinkCols+` FROM cloud_links WHERE ?1 = 0 OR account_id = ?1
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+cloudLinkCols+` FROM cloud_links WHERE ?1 = 0 OR account_id = ?1
 		ORDER BY created_at DESC, id DESC`, accountID)
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (s *Store) ListCloudLinks(ctx context.Context, accountID int64) ([]CloudLin
 // ListCloudLinksByMessage returns the links belonging to a mail: those created
 // for it (MessageID) and those referenced by its attachments.
 func (s *Store) ListCloudLinksByMessage(ctx context.Context, messageID int64) ([]CloudLink, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+cloudLinkCols+` FROM cloud_links
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+cloudLinkCols+` FROM cloud_links
 		WHERE message_id = ?1 OR id IN (SELECT cloud_link_id FROM attachments WHERE message_id = ?1)
 		ORDER BY id`, messageID)
 	if err != nil {
@@ -101,7 +101,7 @@ func (s *Store) ListCloudLinksByMessage(ctx context.Context, messageID int64) ([
 
 // SetCloudLinkMessage records the mail a link was inserted into (0 clears it).
 func (s *Store) SetCloudLinkMessage(ctx context.Context, id, messageID int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE cloud_links SET message_id = ? WHERE id = ?`, nullID(messageID), id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE cloud_links SET message_id = ? WHERE id = ?`, nullID(messageID), id))
 }
 
 // MarkCloudLinkRevoked records that the share was revoked at the given time
@@ -110,14 +110,14 @@ func (s *Store) MarkCloudLinkRevoked(ctx context.Context, id int64, at time.Time
 	if at.IsZero() {
 		at = time.Now()
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE cloud_links SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE cloud_links SET revoked_at = COALESCE(revoked_at, ?) WHERE id = ?`,
 		at.Unix(), id))
 }
 
 // ListExpiringCloudLinks returns the links that are not revoked and expire at
 // or before the given time (this includes already expired ones), soonest first.
 func (s *Store) ListExpiringCloudLinks(ctx context.Context, before time.Time) ([]CloudLink, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+cloudLinkCols+` FROM cloud_links
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+cloudLinkCols+` FROM cloud_links
 		WHERE revoked_at IS NULL AND expires_at IS NOT NULL AND expires_at <= ? ORDER BY expires_at, id`, before.Unix())
 	if err != nil {
 		return nil, err
@@ -127,5 +127,5 @@ func (s *Store) ListExpiringCloudLinks(ctx context.Context, before time.Time) ([
 
 // DeleteCloudLink deletes a cloud link; attachments referencing it lose the reference.
 func (s *Store) DeleteCloudLink(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM cloud_links WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM cloud_links WHERE id = ?`, id))
 }

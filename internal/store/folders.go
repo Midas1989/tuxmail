@@ -71,27 +71,27 @@ func (s *Store) UpsertFolder(ctx context.Context, f domain.Folder) (int64, error
 
 // GetFolder returns the folder with the given id.
 func (s *Store) GetFolder(ctx context.Context, id int64) (domain.Folder, error) {
-	f, err := scanFolder(s.db.QueryRowContext(ctx, `SELECT `+folderCols+` FROM folders WHERE id = ?`, id))
+	f, err := scanFolder(s.q(ctx).QueryRowContext(ctx, `SELECT `+folderCols+` FROM folders WHERE id = ?`, id))
 	return f, notFound(err)
 }
 
 // FolderByRemoteID returns the folder of an account with the given remote id.
 func (s *Store) FolderByRemoteID(ctx context.Context, accountID int64, remoteID string) (domain.Folder, error) {
-	f, err := scanFolder(s.db.QueryRowContext(ctx, `SELECT `+folderCols+` FROM folders WHERE account_id = ? AND remote_id = ?`,
+	f, err := scanFolder(s.q(ctx).QueryRowContext(ctx, `SELECT `+folderCols+` FROM folders WHERE account_id = ? AND remote_id = ?`,
 		accountID, remoteID))
 	return f, notFound(err)
 }
 
 // FolderByRole returns the first folder of an account with the given role.
 func (s *Store) FolderByRole(ctx context.Context, accountID int64, role domain.FolderRole) (domain.Folder, error) {
-	f, err := scanFolder(s.db.QueryRowContext(ctx, `SELECT `+folderCols+` FROM folders WHERE account_id = ? AND role = ?
+	f, err := scanFolder(s.q(ctx).QueryRowContext(ctx, `SELECT `+folderCols+` FROM folders WHERE account_id = ? AND role = ?
 		ORDER BY id LIMIT 1`, accountID, string(role)))
 	return f, notFound(err)
 }
 
 // ListFolders returns all folders of an account ordered by remote id.
 func (s *Store) ListFolders(ctx context.Context, accountID int64) ([]domain.Folder, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+folderCols+` FROM folders WHERE account_id = ? ORDER BY remote_id`, accountID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+folderCols+` FROM folders WHERE account_id = ? ORDER BY remote_id`, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -101,13 +101,13 @@ func (s *Store) ListFolders(ctx context.Context, accountID int64) ([]domain.Fold
 // FolderSyncState returns the opaque provider sync state of a folder ("" if none).
 func (s *Store) FolderSyncState(ctx context.Context, folderID int64) (domain.SyncState, error) {
 	var st sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT sync_state FROM folders WHERE id = ?`, folderID).Scan(&st)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT sync_state FROM folders WHERE id = ?`, folderID).Scan(&st)
 	return domain.SyncState(st.String), notFound(err)
 }
 
 // SetFolderSyncState stores the opaque provider sync state of a folder.
 func (s *Store) SetFolderSyncState(ctx context.Context, folderID int64, st domain.SyncState) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE folders SET sync_state = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE folders SET sync_state = ? WHERE id = ?`,
 		nullString(string(st)), folderID))
 }
 

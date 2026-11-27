@@ -19,7 +19,7 @@ import (
 // pass accountID 0.
 func (s *Store) EnqueueOpAt(ctx context.Context, accountID int64, kind, payload string, due time.Time) (int64, error) {
 	now := time.Now().Unix()
-	res, err := s.db.ExecContext(ctx, `INSERT INTO ops(account_id, kind, payload, next_try_at, created_at) VALUES (?, ?, ?, ?, ?)`,
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO ops(account_id, kind, payload, next_try_at, created_at) VALUES (?, ?, ?, ?, ?)`,
 		nullID(accountID), kind, payload, due.Unix(), now)
 	if err != nil {
 		return 0, fmt.Errorf("store: enqueue op: %w", err)
@@ -31,7 +31,7 @@ func (s *Store) EnqueueOpAt(ctx context.Context, accountID int64, kind, payload 
 // claimed by a worker) and returns its payload. ok is false if the operation
 // does not exist or already started.
 func (s *Store) CancelPendingOp(ctx context.Context, id int64) (payload string, ok bool, err error) {
-	err = s.db.QueryRowContext(ctx, `DELETE FROM ops WHERE id = ? AND state = 'pending' RETURNING payload`, id).Scan(&payload)
+	err = s.q(ctx).QueryRowContext(ctx, `DELETE FROM ops WHERE id = ? AND state = 'pending' RETURNING payload`, id).Scan(&payload)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}

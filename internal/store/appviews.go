@@ -94,14 +94,14 @@ func (f MessageFilter) where() (string, []any) {
 func (s *Store) ListFilteredMessages(ctx context.Context, f MessageFilter, limit, offset int) ([]Message, int, error) {
 	where, args := f.where()
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages m WHERE `+where, args...).Scan(&total); err != nil {
+	if err := s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM messages m WHERE `+where, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	if limit <= 0 {
 		limit = 50
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("m.", messageCols)+` FROM messages m WHERE `+where+`
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+prefixed("m.", messageCols)+` FROM messages m WHERE `+where+`
 		ORDER BY COALESCE(m.sent_at, m.received_at, 0) DESC, m.id DESC LIMIT ? OFFSET ?`, append(args, limit, max(offset, 0))...)
 	if err != nil {
 		return nil, 0, err
@@ -114,7 +114,7 @@ func (s *Store) ListFilteredMessages(ctx context.Context, f MessageFilter, limit
 func (s *Store) MatchingMessageIDs(ctx context.Context, f MessageFilter) ([]int64, error) {
 	where, args := f.where()
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id FROM messages m WHERE `+where, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.id FROM messages m WHERE `+where, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -132,7 +132,7 @@ func (s *Store) GetMessages(ctx context.Context, ids []int64) ([]Message, error)
 		return nil, nil
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE id IN (`+int64List(ids)+`)`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE id IN (`+int64List(ids)+`)`)
 	if err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (s *Store) AddressesFor(ctx context.Context, ids []int64) (map[int64][]Mess
 		return out, nil
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT message_id, role, name, email, person_id FROM message_addresses
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT message_id, role, name, email, person_id FROM message_addresses
 		WHERE message_id IN (`+int64List(ids)+`) ORDER BY rowid`)
 	if err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func (s *Store) FoldersFor(ctx context.Context, ids []int64) (map[int64][]int64,
 		return out, nil
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT message_id, folder_id FROM message_locations WHERE message_id IN (`+int64List(ids)+`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT message_id, folder_id FROM message_locations WHERE message_id IN (`+int64List(ids)+`)
 		ORDER BY message_id, folder_id`)
 	if err != nil {
 		return nil, err
@@ -200,7 +200,7 @@ func (s *Store) ProjectsForItems(ctx context.Context, kind ItemKind, ids []int64
 		return out, nil
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT item_id, project_id FROM project_items WHERE item_kind = ? AND item_id IN (`+int64List(ids)+`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT item_id, project_id FROM project_items WHERE item_kind = ? AND item_id IN (`+int64List(ids)+`)
 		ORDER BY item_id, project_id`, kind)
 	if err != nil {
 		return nil, err
@@ -223,7 +223,7 @@ func (s *Store) TaggedItemIDs(ctx context.Context, kind ItemKind, tagIDs []int64
 		return []int64{}, nil
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT item_id FROM item_tags WHERE item_kind = ? AND tag_id IN (`+int64List(tagIDs)+`)`, kind)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT DISTINCT item_id FROM item_tags WHERE item_kind = ? AND tag_id IN (`+int64List(tagIDs)+`)`, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -353,7 +353,7 @@ func (s *Store) AggregateConversations(ctx context.Context, q ConvQuery) ([]Conv
 			join = `JOIN message_counterparts mc ON mc.message_id = m.id JOIN person_conversations pc ON pc.person_id = mc.person_id`
 		}
 		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-		rows, err := s.db.QueryContext(ctx, `SELECT `+conv+`, MAX(COALESCE(m.sent_at, m.received_at, 0)),
+		rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+conv+`, MAX(COALESCE(m.sent_at, m.received_at, 0)),
 				SUM(m.flags & ? = 0), COUNT(*), GROUP_CONCAT(DISTINCT m.account_id)
 			FROM messages m `+join+` WHERE `+conv+` IS NOT NULL AND `+where+` GROUP BY 1`, append([]any{FlagSeen}, args...)...)
 		if err != nil {
@@ -384,7 +384,7 @@ func (s *Store) AggregateConversations(ctx context.Context, q ConvQuery) ([]Conv
 			join = `LEFT JOIN chat_counterparts cc ON cc.chat_id = c.id LEFT JOIN person_conversations pc ON pc.person_id = cc.person_id`
 		}
 		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-		rows, err := s.db.QueryContext(ctx, `SELECT `+conv+` AS cid, MAX(COALESCE(cm.sent_at, 0)),
+		rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+conv+` AS cid, MAX(COALESCE(cm.sent_at, 0)),
 				SUM(cm.from_me = 0 AND COALESCE(cm.sent_at, 0) > COALESCE(c.last_read_at, 0)), COUNT(*),
 				GROUP_CONCAT(DISTINCT c.account_id), GROUP_CONCAT(DISTINCT COALESCE(c.channel, '')), MAX(c.kind <> 'direct')
 			FROM chats c JOIN chat_messages cm ON cm.chat_id = c.id `+join+`
@@ -433,7 +433,7 @@ func (s *Store) GetConversations(ctx context.Context, ids []int64) (map[int64]Co
 		return out, nil
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+conversationCols+` FROM conversations WHERE id IN (`+int64List(ids)+`)`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+conversationCols+` FROM conversations WHERE id IN (`+int64List(ids)+`)`)
 	if err != nil {
 		return nil, err
 	}
@@ -446,14 +446,14 @@ func (s *Store) GetConversations(ctx context.Context, ids []int64) (map[int64]Co
 
 // SetConversationFlags updates pinned, muted and archived of a conversation.
 func (s *Store) SetConversationFlags(ctx context.Context, id int64, pinned, muted, archived bool) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE conversations SET pinned = ?, muted = ?, archived = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE conversations SET pinned = ?, muted = ?, archived = ? WHERE id = ?`,
 		boolInt(pinned), boolInt(muted), boolInt(archived), id))
 }
 
 // MessagesWithoutConversation returns live messages that are not assigned to
 // a conversation yet (at most limit).
 func (s *Store) MessagesWithoutConversation(ctx context.Context, limit int) ([]Message, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE conversation_id IS NULL AND +state = 'live'
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE conversation_id IS NULL AND +state = 'live'
 		ORDER BY id LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
@@ -463,7 +463,7 @@ func (s *Store) MessagesWithoutConversation(ctx context.Context, limit int) ([]M
 
 // MessageIDsOfPerson returns the live messages whose counterpart is the person.
 func (s *Store) MessageIDsOfPerson(ctx context.Context, personID int64) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id FROM messages m JOIN message_counterparts mc ON mc.message_id = m.id
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.id FROM messages m JOIN message_counterparts mc ON mc.message_id = m.id
 		WHERE mc.person_id = ? AND m.state = 'live'`, personID)
 	if err != nil {
 		return nil, err
@@ -473,7 +473,7 @@ func (s *Store) MessageIDsOfPerson(ctx context.Context, personID int64) ([]int64
 
 // MessageIDsOfConversation returns the live messages of a thread conversation.
 func (s *Store) MessageIDsOfConversation(ctx context.Context, conversationID int64) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM messages WHERE conversation_id = ? AND +state = 'live'`, conversationID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id FROM messages WHERE conversation_id = ? AND +state = 'live'`, conversationID)
 	if err != nil {
 		return nil, err
 	}
@@ -488,7 +488,7 @@ func (s *Store) DirectChatsOfPerson(ctx context.Context, personID int64) ([]Chat
 // ChatCounterpart returns the counterpart person of a chat (0 if none).
 func (s *Store) ChatCounterpart(ctx context.Context, chatID int64) (int64, error) {
 	var p sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT person_id FROM chat_counterparts WHERE chat_id = ?`, chatID).Scan(&p)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT person_id FROM chat_counterparts WHERE chat_id = ?`, chatID).Scan(&p)
 	if err == sql.ErrNoRows {
 		return 0, nil
 	}
@@ -498,14 +498,14 @@ func (s *Store) ChatCounterpart(ctx context.Context, chatID int64) (int64, error
 // ChatMessagesAfter returns chat messages of a chat sent after t (for marking read).
 func (s *Store) LatestChatMessageTime(ctx context.Context, chatID int64) (time.Time, error) {
 	var t sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT MAX(sent_at) FROM chat_messages WHERE chat_id = ?`, chatID).Scan(&t)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT MAX(sent_at) FROM chat_messages WHERE chat_id = ?`, chatID).Scan(&t)
 	return timeFromNull(t), err
 }
 
 // ChatOfMessage returns the chat id of a chat message.
 func (s *Store) ChatOfMessage(ctx context.Context, chatMessageID int64) (int64, error) {
 	var id int64
-	err := s.db.QueryRowContext(ctx, `SELECT chat_id FROM chat_messages WHERE id = ?`, chatMessageID).Scan(&id)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT chat_id FROM chat_messages WHERE id = ?`, chatMessageID).Scan(&id)
 	return id, notFound(err)
 }
 
@@ -515,7 +515,7 @@ func (s *Store) ChatMessagesByIDs(ctx context.Context, ids []int64) ([]ChatMessa
 		return nil, nil
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages WHERE id IN (`+int64List(ids)+`)`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages WHERE id IN (`+int64List(ids)+`)`)
 	if err != nil {
 		return nil, err
 	}
@@ -526,14 +526,14 @@ func (s *Store) ChatMessagesByIDs(ctx context.Context, ids []int64) ([]ChatMessa
 // used to detect new mail cheaply.
 func (s *Store) MaxMessageID(ctx context.Context) (int64, error) {
 	var id sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT MAX(id) FROM messages`).Scan(&id)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT MAX(id) FROM messages`).Scan(&id)
 	return id.Int64, err
 }
 
 // MaxChatID returns the highest chat row id (0 if there are none).
 func (s *Store) MaxChatID(ctx context.Context) (int64, error) {
 	var id sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT MAX(id) FROM chats`).Scan(&id)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT MAX(id) FROM chats`).Scan(&id)
 	return id.Int64, err
 }
 
@@ -546,7 +546,7 @@ func (s *Store) ParticipantsOfConversations(ctx context.Context, ids []int64) (m
 	}
 	list := int64List(ids)
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT m.conversation_id, a.person_id FROM messages m
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT DISTINCT m.conversation_id, a.person_id FROM messages m
 			JOIN message_addresses a ON a.message_id = m.id
 			WHERE m.conversation_id IN (`+list+`) AND a.person_id IS NOT NULL AND +m.state = 'live'
 		UNION
@@ -569,7 +569,7 @@ func (s *Store) ParticipantsOfConversations(ctx context.Context, ids []int64) (m
 // PersonCounts returns how many mails were sent to each person by the user
 // (outgoing mails by counterpart), most frequent first.
 func (s *Store) OutgoingCountsByPerson(ctx context.Context, since time.Time, limit int) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT mc.person_id FROM message_counterparts mc JOIN messages m ON m.id = mc.message_id
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT mc.person_id FROM message_counterparts mc JOIN messages m ON m.id = mc.message_id
 		WHERE mc.outgoing = 1 AND mc.person_id IS NOT NULL AND COALESCE(m.sent_at, 0) >= ?
 		GROUP BY mc.person_id HAVING COUNT(*) >= 2 ORDER BY COUNT(*) DESC LIMIT ?`, since.Unix(), limit)
 	if err != nil {
@@ -581,7 +581,7 @@ func (s *Store) OutgoingCountsByPerson(ctx context.Context, since time.Time, lim
 // FolderCounts recomputes unread/total of the folders of an account from the
 // local messages (used when no sync engine maintains the server counters).
 func (s *Store) RecountFolders(ctx context.Context, accountID int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE folders SET
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE folders SET
 		total  = (SELECT COUNT(*) FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE l.folder_id = folders.id AND m.state = 'live'),
 		unread = (SELECT COUNT(*) FROM message_locations l JOIN messages m ON m.id = l.message_id WHERE l.folder_id = folders.id AND m.state = 'live' AND m.flags & ? = 0)
 		WHERE account_id = ?`, FlagSeen, accountID)
@@ -601,7 +601,7 @@ type AttachmentRow struct {
 
 // AttachmentsOf returns the attachment rows of a message in insertion order.
 func (s *Store) AttachmentsOf(ctx context.Context, messageID int64) ([]AttachmentRow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, message_id, filename, mime_type, size, content_id, blob_hash FROM attachments
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id, message_id, filename, mime_type, size, content_id, blob_hash FROM attachments
 		WHERE message_id = ? ORDER BY id`, messageID)
 	if err != nil {
 		return nil, err

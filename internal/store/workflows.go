@@ -49,7 +49,7 @@ func (s *Store) PutWorkflow(ctx context.Context, w WorkflowRecord) error {
 		return errors.New("store: workflow id is empty")
 	}
 	now := time.Now().Unix()
-	_, err := s.db.ExecContext(ctx, `INSERT INTO workflows(`+workflowCols+`) VALUES (?, ?, ?, ?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO workflows(`+workflowCols+`) VALUES (?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET name = excluded.name, enabled = excluded.enabled, yaml = excluded.yaml,
 		  external_confirmed = excluded.external_confirmed, updated_at = excluded.updated_at`,
 		w.ID, w.Name, boolInt(w.Enabled), w.YAML, boolInt(w.ExternalConfirmed), now, now)
@@ -61,13 +61,13 @@ func (s *Store) PutWorkflow(ctx context.Context, w WorkflowRecord) error {
 
 // GetWorkflow returns the workflow with the given id.
 func (s *Store) GetWorkflow(ctx context.Context, id string) (WorkflowRecord, error) {
-	w, err := scanWorkflow(s.db.QueryRowContext(ctx, `SELECT `+workflowCols+` FROM workflows WHERE id = ?`, id))
+	w, err := scanWorkflow(s.q(ctx).QueryRowContext(ctx, `SELECT `+workflowCols+` FROM workflows WHERE id = ?`, id))
 	return w, notFound(err)
 }
 
 // ListWorkflows returns all workflows ordered by name.
 func (s *Store) ListWorkflows(ctx context.Context) ([]WorkflowRecord, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+workflowCols+` FROM workflows ORDER BY name, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+workflowCols+` FROM workflows ORDER BY name, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func (s *Store) ListWorkflows(ctx context.Context) ([]WorkflowRecord, error) {
 
 // SetWorkflowEnabled changes the enabled flag (and the confirmation flag).
 func (s *Store) SetWorkflowEnabled(ctx context.Context, id string, enabled, externalConfirmed bool) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE workflows SET enabled = ?, external_confirmed = ?, updated_at = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE workflows SET enabled = ?, external_confirmed = ?, updated_at = ? WHERE id = ?`,
 		boolInt(enabled), boolInt(externalConfirmed), time.Now().Unix(), id))
 }
 
@@ -205,14 +205,14 @@ func (s *Store) UpdateWorkflowRun(ctx context.Context, r WorkflowRun) error {
 	if r.StepsJSON == "" {
 		r.StepsJSON = "[]"
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE workflow_runs SET status = ?, steps_json = ?, error = ?, attempts = ?,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE workflow_runs SET status = ?, steps_json = ?, error = ?, attempts = ?,
 		started_at = ?, finished_at = ? WHERE id = ?`,
 		r.Status, r.StepsJSON, nullString(r.Error), r.Attempts, unixOrNull(r.StartedAt), unixOrNull(r.FinishedAt), r.ID))
 }
 
 // GetWorkflowRun returns a run log entry.
 func (s *Store) GetWorkflowRun(ctx context.Context, id int64) (WorkflowRun, error) {
-	r, err := scanRun(s.db.QueryRowContext(ctx, `SELECT `+runCols+` FROM workflow_runs WHERE id = ?`, id))
+	r, err := scanRun(s.q(ctx).QueryRowContext(ctx, `SELECT `+runCols+` FROM workflow_runs WHERE id = ?`, id))
 	return r, notFound(err)
 }
 
@@ -222,7 +222,7 @@ func (s *Store) ListWorkflowRuns(ctx context.Context, workflowID string, limit i
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+runCols+` FROM workflow_runs WHERE ?1 = '' OR workflow_id = ?1
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+runCols+` FROM workflow_runs WHERE ?1 = '' OR workflow_id = ?1
 		ORDER BY id DESC LIMIT ?2`, workflowID, limit)
 	if err != nil {
 		return nil, err
@@ -232,7 +232,7 @@ func (s *Store) ListWorkflowRuns(ctx context.Context, workflowID string, limit i
 
 // PurgeWorkflowRuns deletes finished runs created before the given time.
 func (s *Store) PurgeWorkflowRuns(ctx context.Context, before time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM workflow_runs WHERE status IN ('succeeded', 'failed', 'skipped') AND created_at < ?`,
+	res, err := s.q(ctx).ExecContext(ctx, `DELETE FROM workflow_runs WHERE status IN ('succeeded', 'failed', 'skipped') AND created_at < ?`,
 		before.Unix())
 	if err != nil {
 		return 0, err
@@ -253,7 +253,7 @@ func (s *Store) ClaimNextOpOfKind(ctx context.Context, now time.Time, kinds ...s
 		ph[i] = "?"
 		args = append(args, k)
 	}
-	op, err = scanOp(s.db.QueryRowContext(ctx, `UPDATE ops SET state = 'running', attempts = attempts + 1
+	op, err = scanOp(s.q(ctx).QueryRowContext(ctx, `UPDATE ops SET state = 'running', attempts = attempts + 1
 		WHERE id = (
 			SELECT o.id FROM ops o
 			WHERE o.state = 'pending' AND o.next_try_at <= ? AND o.kind IN (`+strings.Join(ph, ",")+`)
@@ -372,13 +372,13 @@ func nonNil(s []string) []string {
 
 // GetFollowup returns a follow-up by id.
 func (s *Store) GetFollowup(ctx context.Context, id int64) (Followup, error) {
-	f, err := scanFollowup(s.db.QueryRowContext(ctx, `SELECT `+followupCols+` FROM followups WHERE id = ?`, id))
+	f, err := scanFollowup(s.q(ctx).QueryRowContext(ctx, `SELECT `+followupCols+` FROM followups WHERE id = ?`, id))
 	return f, notFound(err)
 }
 
 // ListFollowups returns follow-ups in the given state (all if "") ordered by due date.
 func (s *Store) ListFollowups(ctx context.Context, state FollowupState) ([]Followup, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+followupCols+` FROM followups WHERE ?1 = '' OR state = ?1 ORDER BY due_at, id`,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+followupCols+` FROM followups WHERE ?1 = '' OR state = ?1 ORDER BY due_at, id`,
 		string(state))
 	if err != nil {
 		return nil, err
@@ -391,7 +391,7 @@ func (s *Store) DueFollowups(ctx context.Context, now time.Time, limit int) ([]F
 	if limit <= 0 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT `+followupCols+` FROM followups WHERE state = 'pending' AND due_at <= ?
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+followupCols+` FROM followups WHERE state = 'pending' AND due_at <= ?
 		ORDER BY due_at, id LIMIT ?`, now.Unix(), limit)
 	if err != nil {
 		return nil, err
@@ -402,7 +402,7 @@ func (s *Store) DueFollowups(ctx context.Context, now time.Time, limit int) ([]F
 // NextFollowupDue returns the earliest due date of all pending follow-ups.
 func (s *Store) NextFollowupDue(ctx context.Context) (due time.Time, ok bool, err error) {
 	var v sql.NullInt64
-	if err := s.db.QueryRowContext(ctx, `SELECT MIN(due_at) FROM followups WHERE state = 'pending'`).Scan(&v); err != nil {
+	if err := s.q(ctx).QueryRowContext(ctx, `SELECT MIN(due_at) FROM followups WHERE state = 'pending'`).Scan(&v); err != nil {
 		return time.Time{}, false, err
 	}
 	if !v.Valid {
@@ -414,14 +414,14 @@ func (s *Store) NextFollowupDue(ctx context.Context) (due time.Time, ok bool, er
 // MarkFollowupFired closes a pending follow-up as fired. It returns
 // ErrNotFound if the follow-up is not pending (e.g. cancelled concurrently).
 func (s *Store) MarkFollowupFired(ctx context.Context, id int64, now time.Time) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE followups SET state = 'fired', closed_at = ? WHERE id = ? AND state = 'pending'`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE followups SET state = 'fired', closed_at = ? WHERE id = ? AND state = 'pending'`,
 		now.Unix(), id))
 }
 
 // CancelFollowups cancels the pending follow-up of messageKey (if any),
 // recording replyKey as the reason. It returns the number of cancelled rows.
 func (s *Store) CancelFollowups(ctx context.Context, messageKey, replyKey string, now time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE followups SET state = 'cancelled', reply_key = ?, closed_at = ?
+	res, err := s.q(ctx).ExecContext(ctx, `UPDATE followups SET state = 'cancelled', reply_key = ?, closed_at = ?
 		WHERE message_key = ? AND state = 'pending'`, nullString(replyKey), now.Unix(), messageKey)
 	if err != nil {
 		return 0, err
@@ -431,7 +431,7 @@ func (s *Store) CancelFollowups(ctx context.Context, messageKey, replyKey string
 
 // CancelFollowup cancels a single pending follow-up by id.
 func (s *Store) CancelFollowup(ctx context.Context, id int64, now time.Time) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE followups SET state = 'cancelled', closed_at = ? WHERE id = ? AND state = 'pending'`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE followups SET state = 'cancelled', closed_at = ? WHERE id = ? AND state = 'pending'`,
 		now.Unix(), id))
 }
 
@@ -440,13 +440,13 @@ func (s *Store) CancelFollowup(ctx context.Context, id int64, now time.Time) err
 // GetVacationSettings returns the stored settings JSON of an id.
 func (s *Store) GetVacationSettings(ctx context.Context, id string) (string, error) {
 	var js string
-	err := s.db.QueryRowContext(ctx, `SELECT json FROM vacation_settings WHERE id = ?`, id).Scan(&js)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT json FROM vacation_settings WHERE id = ?`, id).Scan(&js)
 	return js, notFound(err)
 }
 
 // PutVacationSettings stores the settings JSON of an id.
 func (s *Store) PutVacationSettings(ctx context.Context, id, js string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO vacation_settings(id, json, updated_at) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO vacation_settings(id, json, updated_at) VALUES (?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at`, id, js, time.Now().Unix())
 	return err
 }
@@ -477,7 +477,7 @@ func (s *Store) ClaimVacationReply(ctx context.Context, scope, sender string, no
 
 // ForgetVacationReply removes a sent-to entry (e.g. after a failed send).
 func (s *Store) ForgetVacationReply(ctx context.Context, scope, sender string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM vacation_replies WHERE scope = ? AND sender = ?`,
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM vacation_replies WHERE scope = ? AND sender = ?`,
 		scope, strings.ToLower(strings.TrimSpace(sender)))
 	return err
 }
@@ -485,6 +485,6 @@ func (s *Store) ForgetVacationReply(ctx context.Context, scope, sender string) e
 // ResetVacationReplies clears the sent-to log (all scopes if scope is "").
 // Call it when a new absence period starts.
 func (s *Store) ResetVacationReplies(ctx context.Context, scope string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM vacation_replies WHERE ?1 = '' OR scope = ?1`, scope)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM vacation_replies WHERE ?1 = '' OR scope = ?1`, scope)
 	return err
 }

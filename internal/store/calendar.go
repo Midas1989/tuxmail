@@ -76,7 +76,7 @@ func scanCalendar(sc scanner) (Calendar, error) {
 
 // CreateCalendar inserts a calendar and returns its id.
 func (s *Store) CreateCalendar(ctx context.Context, c Calendar) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO calendars(account_id, remote_id, name, color, sync_token, read_only)
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO calendars(account_id, remote_id, name, color, sync_token, read_only)
 		VALUES (?, ?, ?, ?, ?, ?)`, nullID(c.AccountID), nullString(c.RemoteID), c.Name, nullString(c.Color),
 		nullString(c.SyncToken), boolInt(c.ReadOnly))
 	if err != nil {
@@ -92,7 +92,7 @@ func (s *Store) UpsertCalendar(ctx context.Context, c Calendar) (int64, error) {
 		return 0, errors.New("store: upsert calendar: account and remote id are required")
 	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO calendars(account_id, remote_id, name, color, read_only) VALUES (?, ?, ?, ?, ?)
+	err := s.q(ctx).QueryRowContext(ctx, `INSERT INTO calendars(account_id, remote_id, name, color, read_only) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(account_id, remote_id) DO UPDATE SET name = excluded.name, color = excluded.color, read_only = excluded.read_only
 		RETURNING id`, c.AccountID, c.RemoteID, c.Name, nullString(c.Color), boolInt(c.ReadOnly)).Scan(&id)
 	if err != nil {
@@ -103,20 +103,20 @@ func (s *Store) UpsertCalendar(ctx context.Context, c Calendar) (int64, error) {
 
 // UpdateCalendar overwrites the calendar c.ID (including the sync token).
 func (s *Store) UpdateCalendar(ctx context.Context, c Calendar) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE calendars SET account_id = ?, remote_id = ?, name = ?, color = ?,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE calendars SET account_id = ?, remote_id = ?, name = ?, color = ?,
 		sync_token = ?, read_only = ? WHERE id = ?`, nullID(c.AccountID), nullString(c.RemoteID), c.Name, nullString(c.Color),
 		nullString(c.SyncToken), boolInt(c.ReadOnly), c.ID))
 }
 
 // GetCalendar returns the calendar with the given id.
 func (s *Store) GetCalendar(ctx context.Context, id int64) (Calendar, error) {
-	c, err := scanCalendar(s.db.QueryRowContext(ctx, `SELECT `+calendarCols+` FROM calendars WHERE id = ?`, id))
+	c, err := scanCalendar(s.q(ctx).QueryRowContext(ctx, `SELECT `+calendarCols+` FROM calendars WHERE id = ?`, id))
 	return c, notFound(err)
 }
 
 // ListCalendars returns all calendars ordered by account and name.
 func (s *Store) ListCalendars(ctx context.Context) ([]Calendar, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+calendarCols+` FROM calendars ORDER BY account_id NULLS FIRST, name, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+calendarCols+` FROM calendars ORDER BY account_id NULLS FIRST, name, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (s *Store) ListCalendars(ctx context.Context) ([]Calendar, error) {
 
 // ListAccountCalendars returns the calendars of an account (0 = local calendars).
 func (s *Store) ListAccountCalendars(ctx context.Context, accountID int64) ([]Calendar, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+calendarCols+` FROM calendars WHERE account_id IS ? ORDER BY name, id`,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+calendarCols+` FROM calendars WHERE account_id IS ? ORDER BY name, id`,
 		nullID(accountID))
 	if err != nil {
 		return nil, err
@@ -135,19 +135,19 @@ func (s *Store) ListAccountCalendars(ctx context.Context, accountID int64) ([]Ca
 
 // SetCalendarSyncToken stores the sync token (RFC 6578) of a calendar.
 func (s *Store) SetCalendarSyncToken(ctx context.Context, id int64, token string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE calendars SET sync_token = ? WHERE id = ?`, nullString(token), id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE calendars SET sync_token = ? WHERE id = ?`, nullString(token), id))
 }
 
 // CalendarSyncToken returns the sync token of a calendar ("" if none).
 func (s *Store) CalendarSyncToken(ctx context.Context, id int64) (string, error) {
 	var t sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT sync_token FROM calendars WHERE id = ?`, id).Scan(&t)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT sync_token FROM calendars WHERE id = ?`, id).Scan(&t)
 	return t.String, notFound(err)
 }
 
 // DeleteCalendar deletes a calendar and its objects.
 func (s *Store) DeleteCalendar(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM calendars WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM calendars WHERE id = ?`, id))
 }
 
 // ==== Calendar objects ========================================================
@@ -200,27 +200,27 @@ func (s *Store) UpsertCalObject(ctx context.Context, o CalObject) (id int64, cre
 
 // GetCalObject returns the calendar object with the given id.
 func (s *Store) GetCalObject(ctx context.Context, id int64) (CalObject, error) {
-	o, err := scanCalObject(s.db.QueryRowContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects WHERE id = ?`, id))
+	o, err := scanCalObject(s.q(ctx).QueryRowContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects WHERE id = ?`, id))
 	return o, notFound(err)
 }
 
 // CalObjectByUID returns the object of a calendar with the given UID.
 func (s *Store) CalObjectByUID(ctx context.Context, calendarID int64, uid string) (CalObject, error) {
-	o, err := scanCalObject(s.db.QueryRowContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects
+	o, err := scanCalObject(s.q(ctx).QueryRowContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects
 		WHERE calendar_id = ? AND uid = ?`, calendarID, uid))
 	return o, notFound(err)
 }
 
 // CalObjectByHref returns the object of a calendar stored at href (sync deletions).
 func (s *Store) CalObjectByHref(ctx context.Context, calendarID int64, href string) (CalObject, error) {
-	o, err := scanCalObject(s.db.QueryRowContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects
+	o, err := scanCalObject(s.q(ctx).QueryRowContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects
 		WHERE calendar_id = ? AND href = ? ORDER BY id LIMIT 1`, calendarID, href))
 	return o, notFound(err)
 }
 
 // ListCalObjects returns all objects of a calendar ordered by UID.
 func (s *Store) ListCalObjects(ctx context.Context, calendarID int64) ([]CalObject, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects WHERE calendar_id = ? ORDER BY uid`, calendarID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+calObjectCols+` FROM cal_objects WHERE calendar_id = ? ORDER BY uid`, calendarID)
 	if err != nil {
 		return nil, err
 	}
@@ -229,12 +229,12 @@ func (s *Store) ListCalObjects(ctx context.Context, calendarID int64) ([]CalObje
 
 // DeleteCalObject deletes a calendar object and its instances.
 func (s *Store) DeleteCalObject(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM cal_objects WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM cal_objects WHERE id = ?`, id))
 }
 
 // DeleteCalObjectByUID deletes the object of a calendar with the given UID.
 func (s *Store) DeleteCalObjectByUID(ctx context.Context, calendarID int64, uid string) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM cal_objects WHERE calendar_id = ? AND uid = ?`, calendarID, uid))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM cal_objects WHERE calendar_id = ? AND uid = ?`, calendarID, uid))
 }
 
 // ReplaceInstances replaces the precomputed occurrences of an object
@@ -265,7 +265,7 @@ func (s *Store) ReplaceInstances(ctx context.Context, objectID int64, insts []In
 
 // Instances returns the stored occurrences of an object in chronological order.
 func (s *Store) Instances(ctx context.Context, objectID int64) ([]Instance, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT start_at, end_at FROM cal_instances WHERE object_id = ? ORDER BY start_at, end_at`,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT start_at, end_at FROM cal_instances WHERE object_id = ? ORDER BY start_at, end_at`,
 		objectID)
 	if err != nil {
 		return nil, err
@@ -305,7 +305,7 @@ func (s *Store) ListEventsInRange(ctx context.Context, from, to time.Time, calen
 			  AND NOT EXISTS (SELECT 1 FROM cal_instances WHERE object_id = o.id)
 			  AND ` + fmt.Sprintf(overlapCond, "o.dtstart", "COALESCE(o.dtend, o.dtstart)") + calFilter + `
 		ORDER BY 15, 1`
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: list events: %w", err)
 	}
@@ -376,7 +376,7 @@ func (s *Store) ListTasks(ctx context.Context, f TaskFilter) ([]CalObject, error
 		args = append(args, f.DueAfter.Unix())
 	}
 	q += ` ORDER BY due_at NULLS LAST, summary COLLATE NOCASE, id`
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

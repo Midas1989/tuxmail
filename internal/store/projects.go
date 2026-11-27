@@ -336,7 +336,7 @@ func (s *Store) CreateProjectTemplate(ctx context.Context, t ProjectTemplate) (i
 	}
 	now := time.Now().Unix()
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO project_templates(name, description, key_prefix, default_status, fields_json,
+	err := s.q(ctx).QueryRowContext(ctx, `INSERT INTO project_templates(name, description, key_prefix, default_status, fields_json,
 		default_tags_json, default_workflows_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
 		strings.TrimSpace(t.Name), t.Description, t.KeyPrefix, t.DefaultStatus, jsonOr(t.Fields, "[]"), jsonOr(t.DefaultTags, "[]"),
 		jsonOr(t.DefaultWorkflows, "[]"), now, now).Scan(&id)
@@ -351,7 +351,7 @@ func (s *Store) UpdateProjectTemplate(ctx context.Context, t ProjectTemplate) er
 	if err := t.validate(); err != nil {
 		return err
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE project_templates SET name = ?, description = ?, key_prefix = ?,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE project_templates SET name = ?, description = ?, key_prefix = ?,
 		default_status = ?, fields_json = ?, default_tags_json = ?, default_workflows_json = ?, updated_at = ? WHERE id = ?`,
 		strings.TrimSpace(t.Name), t.Description, t.KeyPrefix, t.DefaultStatus, jsonOr(t.Fields, "[]"), jsonOr(t.DefaultTags, "[]"),
 		jsonOr(t.DefaultWorkflows, "[]"), time.Now().Unix(), t.ID))
@@ -359,20 +359,20 @@ func (s *Store) UpdateProjectTemplate(ctx context.Context, t ProjectTemplate) er
 
 // GetProjectTemplate returns a template by id.
 func (s *Store) GetProjectTemplate(ctx context.Context, id int64) (ProjectTemplate, error) {
-	t, err := scanTemplate(s.db.QueryRowContext(ctx, `SELECT `+templateCols+` FROM project_templates WHERE id = ?`, id))
+	t, err := scanTemplate(s.q(ctx).QueryRowContext(ctx, `SELECT `+templateCols+` FROM project_templates WHERE id = ?`, id))
 	return t, notFound(err)
 }
 
 // ProjectTemplateByName returns a template by name (case-insensitive).
 func (s *Store) ProjectTemplateByName(ctx context.Context, name string) (ProjectTemplate, error) {
-	t, err := scanTemplate(s.db.QueryRowContext(ctx, `SELECT `+templateCols+` FROM project_templates WHERE lower(name) = lower(?)`,
+	t, err := scanTemplate(s.q(ctx).QueryRowContext(ctx, `SELECT `+templateCols+` FROM project_templates WHERE lower(name) = lower(?)`,
 		strings.TrimSpace(name)))
 	return t, notFound(err)
 }
 
 // ListProjectTemplates returns all templates ordered by name.
 func (s *Store) ListProjectTemplates(ctx context.Context) ([]ProjectTemplate, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+templateCols+` FROM project_templates ORDER BY lower(name)`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+templateCols+` FROM project_templates ORDER BY lower(name)`)
 	if err != nil {
 		return nil, err
 	}
@@ -382,7 +382,7 @@ func (s *Store) ListProjectTemplates(ctx context.Context) ([]ProjectTemplate, er
 // DeleteProjectTemplate deletes a template (projects created from it keep
 // their fields).
 func (s *Store) DeleteProjectTemplate(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM project_templates WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM project_templates WHERE id = ?`, id))
 }
 
 // CloudFolder is the cloud folder linked to a project.
@@ -502,7 +502,7 @@ func (s *Store) CreateProject(ctx context.Context, p Project) (int64, error) {
 	}
 	now := time.Now().Unix()
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO projects(key, name, description, status, archived_from, color, icon,
+	err := s.q(ctx).QueryRowContext(ctx, `INSERT INTO projects(key, name, description, status, archived_from, color, icon,
 		customer_person_id, customer_contact_id, organization, start_at, due_at, budget_amount, budget_currency, template_id,
 		fields_json, notes, cloud_provider, cloud_account_id, cloud_path, sort_order, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
@@ -520,7 +520,7 @@ func (s *Store) UpdateProject(ctx context.Context, p Project) error {
 	if err := s.validateProject(ctx, s.db, &p); err != nil {
 		return err
 	}
-	err := checkAffected(s.db.ExecContext(ctx, `UPDATE projects SET key = ?, name = ?, description = ?, status = ?, archived_from = ?,
+	err := checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE projects SET key = ?, name = ?, description = ?, status = ?, archived_from = ?,
 		color = ?, icon = ?, customer_person_id = ?, customer_contact_id = ?, organization = ?, start_at = ?, due_at = ?,
 		budget_amount = ?, budget_currency = ?, template_id = ?, fields_json = ?, notes = ?, cloud_provider = ?,
 		cloud_account_id = ?, cloud_path = ?, sort_order = ?, updated_at = ? WHERE id = ?`,
@@ -533,7 +533,7 @@ func (s *Store) UpdateProject(ctx context.Context, p Project) error {
 
 // GetProject returns a project by id.
 func (s *Store) GetProject(ctx context.Context, id int64) (Project, error) {
-	p, err := scanProject(s.db.QueryRowContext(ctx, `SELECT `+projectCols+` FROM projects WHERE id = ?`, id))
+	p, err := scanProject(s.q(ctx).QueryRowContext(ctx, `SELECT `+projectCols+` FROM projects WHERE id = ?`, id))
 	return p, notFound(err)
 }
 
@@ -541,7 +541,7 @@ func (s *Store) GetProject(ctx context.Context, id int64) (Project, error) {
 // case-insensitive), then by numeric id.
 func (s *Store) ProjectByRef(ctx context.Context, ref string) (Project, error) {
 	ref = strings.TrimSpace(ref)
-	p, err := scanProject(s.db.QueryRowContext(ctx, `SELECT `+projectCols+` FROM projects
+	p, err := scanProject(s.q(ctx).QueryRowContext(ctx, `SELECT `+projectCols+` FROM projects
 		WHERE key = ? COLLATE NOCASE OR lower(name) = lower(?) ORDER BY (key = ? COLLATE NOCASE) DESC, id LIMIT 1`, ref, ref, ref))
 	if errors.Is(err, sql.ErrNoRows) {
 		var id int64
@@ -588,7 +588,7 @@ func (s *Store) ListProjects(ctx context.Context, f ProjectFilter) ([]Project, e
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, " AND ")
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY sort_order, due_at IS NULL, due_at, lower(name), id`, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q+` ORDER BY sort_order, due_at IS NULL, due_at, lower(name), id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -646,12 +646,12 @@ func (s *Store) UnarchiveProject(ctx context.Context, id int64) (ProjectStatus, 
 // DeleteProject deletes a project with its links, members and rules; the
 // linked items are kept. Search folders inside the project become global.
 func (s *Store) DeleteProject(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, id))
 }
 
 // NextProjectKey returns the next free key "<prefix><n>" (n = 1, 2, …).
 func (s *Store) NextProjectKey(ctx context.Context, prefix string) (string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT key FROM projects WHERE key IS NOT NULL AND substr(lower(key), 1, ?) = lower(?)`,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT key FROM projects WHERE key IS NOT NULL AND substr(lower(key), 1, ?) = lower(?)`,
 		len(prefix), prefix)
 	if err != nil {
 		return "", err
@@ -762,7 +762,7 @@ func (s *Store) RemoveProjectItems(ctx context.Context, projectID int64, items .
 
 // UpdateProjectItem changes the role and notes of a linked item.
 func (s *Store) UpdateProjectItem(ctx context.Context, projectID int64, it Item, role, notes string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE project_items SET role = ?, notes = ? WHERE project_id = ? AND item_kind = ?
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE project_items SET role = ?, notes = ? WHERE project_id = ? AND item_kind = ?
 		AND item_id = ?`, role, notes, projectID, it.Kind, it.ID))
 }
 
@@ -788,7 +788,7 @@ func (s *Store) ListProjectItems(ctx context.Context, projectID int64, kinds ...
 			args = append(args, k)
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY added_at DESC, item_kind, item_id`, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q+` ORDER BY added_at DESC, item_kind, item_id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -798,7 +798,7 @@ func (s *Store) ListProjectItems(ctx context.Context, projectID int64, kinds ...
 // ProjectsOfItem returns the projects an item is linked to.
 func (s *Store) ProjectsOfItem(ctx context.Context, it Item) ([]Project, error) {
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("p.", projectCols)+` FROM projects p
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+prefixCols("p.", projectCols)+` FROM projects p
 		JOIN project_items pi ON pi.project_id = p.id WHERE pi.item_kind = ? AND pi.item_id = ? ORDER BY lower(p.name)`, it.Kind, it.ID)
 	if err != nil {
 		return nil, err
@@ -819,7 +819,7 @@ type ProjectMember struct {
 
 // SetProjectMember adds a person to a project or changes their role.
 func (s *Store) SetProjectMember(ctx context.Context, projectID, personID int64, role string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO project_members(project_id, person_id, role, added_at) VALUES (?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO project_members(project_id, person_id, role, added_at) VALUES (?, ?, ?, ?)
 		ON CONFLICT(project_id, person_id) DO UPDATE SET role = excluded.role`, projectID, personID, role, time.Now().Unix())
 	if err != nil {
 		return fmt.Errorf("store: set project member: %w", err)
@@ -829,12 +829,12 @@ func (s *Store) SetProjectMember(ctx context.Context, projectID, personID int64,
 
 // RemoveProjectMember removes a person from a project.
 func (s *Store) RemoveProjectMember(ctx context.Context, projectID, personID int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM project_members WHERE project_id = ? AND person_id = ?`, projectID, personID))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM project_members WHERE project_id = ? AND person_id = ?`, projectID, personID))
 }
 
 // ListProjectMembers returns the members of a project ordered by name.
 func (s *Store) ListProjectMembers(ctx context.Context, projectID int64) ([]ProjectMember, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT pm.project_id, pm.person_id, COALESCE(p.display_name, ''), pm.role, pm.added_at
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT pm.project_id, pm.person_id, COALESCE(p.display_name, ''), pm.role, pm.added_at
 		FROM project_members pm JOIN persons p ON p.id = pm.person_id WHERE pm.project_id = ? ORDER BY lower(p.display_name), pm.person_id`,
 		projectID)
 	if err != nil {
@@ -924,7 +924,7 @@ func (s *Store) CreateProjectRule(ctx context.Context, r ProjectRule) (int64, er
 	}
 	now := time.Now().Unix()
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO project_rules(project_id, name, query, options_json, enabled, sort_order,
+	err := s.q(ctx).QueryRowContext(ctx, `INSERT INTO project_rules(project_id, name, query, options_json, enabled, sort_order,
 		created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`, r.ProjectID, r.Name, r.Query, jsonOr(r.Options, "{}"),
 		boolInt(r.Enabled), r.SortOrder, now, now).Scan(&id)
 	if err != nil {
@@ -938,19 +938,19 @@ func (s *Store) UpdateProjectRule(ctx context.Context, r ProjectRule) error {
 	if err := r.validate(); err != nil {
 		return err
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE project_rules SET name = ?, query = ?, options_json = ?, enabled = ?,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE project_rules SET name = ?, query = ?, options_json = ?, enabled = ?,
 		sort_order = ?, updated_at = ? WHERE id = ?`, r.Name, r.Query, jsonOr(r.Options, "{}"), boolInt(r.Enabled), r.SortOrder,
 		time.Now().Unix(), r.ID))
 }
 
 // DeleteProjectRule deletes a rule (items it assigned stay linked).
 func (s *Store) DeleteProjectRule(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM project_rules WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM project_rules WHERE id = ?`, id))
 }
 
 // ListProjectRules returns the rules of a project.
 func (s *Store) ListProjectRules(ctx context.Context, projectID int64) ([]ProjectRule, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+ruleCols+` FROM project_rules WHERE project_id = ? ORDER BY sort_order, id`, projectID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+ruleCols+` FROM project_rules WHERE project_id = ? ORDER BY sort_order, id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -961,7 +961,7 @@ func (s *Store) ListProjectRules(ctx context.Context, projectID int64) ([]Projec
 // (planned, active, on hold).
 func (s *Store) ListActiveProjectRules(ctx context.Context) ([]ProjectRule, error) {
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixCols("r.", ruleCols)+` FROM project_rules r JOIN projects p ON p.id = r.project_id
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+prefixCols("r.", ruleCols)+` FROM project_rules r JOIN projects p ON p.id = r.project_id
 		WHERE r.enabled = 1 AND p.status IN ('planned', 'active', 'on_hold') ORDER BY p.sort_order, p.id, r.sort_order, r.id`)
 	if err != nil {
 		return nil, err
@@ -974,7 +974,7 @@ func (s *Store) ListActiveProjectRules(ctx context.Context) ([]ProjectRule, erro
 // ProjectsDue returns open projects due before the given time for which no
 // due notification was recorded for their current due date.
 func (s *Store) ProjectsDue(ctx context.Context, before time.Time) ([]Project, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+projectCols+` FROM projects WHERE status IN ('planned', 'active', 'on_hold')
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+projectCols+` FROM projects WHERE status IN ('planned', 'active', 'on_hold')
 		AND due_at IS NOT NULL AND due_at <= ? AND (due_notified_at IS NULL OR due_notified_at <> due_at) ORDER BY due_at, id`,
 		before.Unix())
 	if err != nil {
@@ -986,7 +986,7 @@ func (s *Store) ProjectsDue(ctx context.Context, before time.Time) ([]Project, e
 // MarkProjectDueNotified records that the due notification for the given due
 // date was sent (a later change of the due date re-arms it).
 func (s *Store) MarkProjectDueNotified(ctx context.Context, id int64, due time.Time) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE projects SET due_notified_at = ? WHERE id = ?`, due.Unix(), id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE projects SET due_notified_at = ? WHERE id = ?`, due.Unix(), id))
 }
 
 // ==== Timeline and statistics ===================================================
@@ -1100,7 +1100,7 @@ func (s *Store) ProjectTimeline(ctx context.Context, projectID int64, o Timeline
 	}
 	q += ` ORDER BY t` + dir + `, kind, id` + dir + ` LIMIT ?`
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: project timeline: %w", err)
 	}
@@ -1137,7 +1137,7 @@ func (s *Store) ProjectStats(ctx context.Context, projectID int64, now time.Time
 		return ProjectStats{}, err
 	}
 	st := ProjectStats{Counts: map[ItemKind]int{}}
-	rows, err := s.db.QueryContext(ctx, `SELECT item_kind, COUNT(*) FROM project_items WHERE project_id = ? GROUP BY item_kind`, projectID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT item_kind, COUNT(*) FROM project_items WHERE project_id = ? GROUP BY item_kind`, projectID)
 	if err != nil {
 		return st, err
 	}
@@ -1157,7 +1157,7 @@ func (s *Store) ProjectStats(ctx context.Context, projectID int64, now time.Time
 		st.Total += r.n
 	}
 	cte, args := projectLinks(projectID, true)
-	err = s.db.QueryRowContext(ctx, `WITH `+cte+` SELECT
+	err = s.q(ctx).QueryRowContext(ctx, `WITH `+cte+` SELECT
 		(SELECT COUNT(*) FROM links l JOIN messages m ON l.kind = 'message' AND m.id = l.id WHERE m.state = 'live' AND m.flags & 1 = 0)
 		+ (SELECT COUNT(*) FROM links l JOIN chat_messages cm ON l.kind = 'chat_message' AND cm.id = l.id JOIN chats c ON c.id = cm.chat_id
 			WHERE cm.deleted = 0 AND cm.from_me = 0 AND COALESCE(cm.sent_at, 0) > COALESCE(c.last_read_at, 0)),
@@ -1171,7 +1171,7 @@ func (s *Store) ProjectStats(ctx context.Context, projectID int64, now time.Time
 		evTitle sql.NullString
 		evAt    sql.NullInt64
 	)
-	err = s.db.QueryRowContext(ctx, `SELECT o.id, COALESCE(o.summary, ''), MIN(COALESCE(i.start_at, o.dtstart)) AS st
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT o.id, COALESCE(o.summary, ''), MIN(COALESCE(i.start_at, o.dtstart)) AS st
 		FROM project_items pi JOIN cal_objects o ON pi.item_kind = 'event' AND o.id = pi.item_id AND o.kind = 'event'
 		LEFT JOIN cal_instances i ON i.object_id = o.id AND i.start_at >= ?
 		WHERE pi.project_id = ? AND (i.start_at IS NOT NULL

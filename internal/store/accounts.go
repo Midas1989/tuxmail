@@ -95,20 +95,20 @@ func (s *Store) UpdateAccount(ctx context.Context, a domain.Account) error {
 	if err != nil {
 		return err
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE accounts SET kind = ?, display_name = ?, color = ?, config_json = ?,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE accounts SET kind = ?, display_name = ?, color = ?, config_json = ?,
 		secret_ref = ?, enabled = ?, sort_order = ? WHERE id = ?`,
 		a.Kind, a.DisplayName, nullString(a.Color), cfg, nullString(a.SecretRef), boolInt(a.Enabled), a.SortOrder, a.ID))
 }
 
 // GetAccount returns the account with the given id.
 func (s *Store) GetAccount(ctx context.Context, id int64) (domain.Account, error) {
-	a, err := scanAccount(s.db.QueryRowContext(ctx, `SELECT `+accountCols+` FROM accounts WHERE id = ?`, id))
+	a, err := scanAccount(s.q(ctx).QueryRowContext(ctx, `SELECT `+accountCols+` FROM accounts WHERE id = ?`, id))
 	return a, notFound(err)
 }
 
 // ListAccounts returns all accounts ordered by sort order and id.
 func (s *Store) ListAccounts(ctx context.Context) ([]domain.Account, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+accountCols+` FROM accounts ORDER BY sort_order, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+accountCols+` FROM accounts ORDER BY sort_order, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (s *Store) ListAccounts(ctx context.Context) ([]domain.Account, error) {
 
 // DeleteAccount deletes an account and, via cascades, all its data.
 func (s *Store) DeleteAccount(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM accounts WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM accounts WHERE id = ?`, id))
 }
 
 // ==== Identities ==============================================================
@@ -186,13 +186,13 @@ func fixDefaultIdentity(ctx context.Context, tx *sql.Tx, id int64, i domain.Iden
 
 // GetIdentity returns the identity with the given id.
 func (s *Store) GetIdentity(ctx context.Context, id int64) (domain.Identity, error) {
-	i, err := scanIdentity(s.db.QueryRowContext(ctx, `SELECT `+identityCols+` FROM identities WHERE id = ?`, id))
+	i, err := scanIdentity(s.q(ctx).QueryRowContext(ctx, `SELECT `+identityCols+` FROM identities WHERE id = ?`, id))
 	return i, notFound(err)
 }
 
 // ListIdentities returns the identities of an account, default identity first.
 func (s *Store) ListIdentities(ctx context.Context, accountID int64) ([]domain.Identity, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+identityCols+` FROM identities WHERE account_id = ?
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+identityCols+` FROM identities WHERE account_id = ?
 		ORDER BY is_default DESC, id`, accountID)
 	if err != nil {
 		return nil, err
@@ -202,20 +202,20 @@ func (s *Store) ListIdentities(ctx context.Context, accountID int64) ([]domain.I
 
 // DeleteIdentity deletes an identity.
 func (s *Store) DeleteIdentity(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM identities WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM identities WHERE id = ?`, id))
 }
 
 // IdentityFolders returns the sent and drafts folder of an identity (0 = account default).
 func (s *Store) IdentityFolders(ctx context.Context, identityID int64) (sent, drafts int64, err error) {
 	var sn, dn sql.NullInt64
-	err = s.db.QueryRowContext(ctx, `SELECT sent_folder_id, drafts_folder_id FROM identities WHERE id = ?`, identityID).
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT sent_folder_id, drafts_folder_id FROM identities WHERE id = ?`, identityID).
 		Scan(&sn, &dn)
 	return sn.Int64, dn.Int64, notFound(err)
 }
 
 // SetIdentityFolders sets the sent and drafts folder of an identity (0 = account default).
 func (s *Store) SetIdentityFolders(ctx context.Context, identityID, sent, drafts int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE identities SET sent_folder_id = ?, drafts_folder_id = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE identities SET sent_folder_id = ?, drafts_folder_id = ? WHERE id = ?`,
 		nullID(sent), nullID(drafts), identityID))
 }
 
@@ -298,7 +298,7 @@ func (s *Store) signatureImages(ctx context.Context, sigs []domain.Signature) er
 		q += ` WHERE signature_id = ?`
 		args = append(args, sigs[0].ID)
 	}
-	rows, err := s.db.QueryContext(ctx, q+` ORDER BY signature_id, content_id`, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q+` ORDER BY signature_id, content_id`, args...)
 	if err != nil {
 		return err
 	}
@@ -318,7 +318,7 @@ func (s *Store) signatureImages(ctx context.Context, sigs []domain.Signature) er
 
 // GetSignature returns the signature with the given id.
 func (s *Store) GetSignature(ctx context.Context, id int64) (domain.Signature, error) {
-	sig, err := scanSignature(s.db.QueryRowContext(ctx, `SELECT `+signatureCols+` FROM signatures WHERE id = ?`, id))
+	sig, err := scanSignature(s.q(ctx).QueryRowContext(ctx, `SELECT `+signatureCols+` FROM signatures WHERE id = ?`, id))
 	if err != nil {
 		return sig, notFound(err)
 	}
@@ -329,7 +329,7 @@ func (s *Store) GetSignature(ctx context.Context, id int64) (domain.Signature, e
 
 // ListSignatures returns all signatures ordered by name.
 func (s *Store) ListSignatures(ctx context.Context) ([]domain.Signature, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+signatureCols+` FROM signatures ORDER BY name, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+signatureCols+` FROM signatures ORDER BY name, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -344,14 +344,14 @@ func (s *Store) ListSignatures(ctx context.Context) ([]domain.Signature, error) 
 // Content-ID (of any signature).
 func (s *Store) SignatureImageByCID(ctx context.Context, cid string) (domain.SignatureImage, error) {
 	var im domain.SignatureImage
-	err := s.db.QueryRowContext(ctx, `SELECT content_id, blob_hash, mime_type, filename, size FROM signature_images WHERE content_id = ? LIMIT 1`, cid).
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT content_id, blob_hash, mime_type, filename, size FROM signature_images WHERE content_id = ? LIMIT 1`, cid).
 		Scan(&im.ContentID, &im.BlobHash, &im.MIMEType, &im.Filename, &im.Size)
 	return im, notFound(err)
 }
 
 // DeleteSignature deletes a signature; identities referencing it fall back to none.
 func (s *Store) DeleteSignature(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM signatures WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM signatures WHERE id = ?`, id))
 }
 
 // blobRefsQuery counts the references to a blob hash from all tables that
@@ -370,7 +370,7 @@ func (s *Store) UnreferencedBlobs(ctx context.Context, hashes []string) ([]strin
 	var out []string
 	for _, h := range hashes {
 		var n int
-		if err := s.db.QueryRowContext(ctx, blobRefsQuery, h).Scan(&n); err != nil {
+		if err := s.q(ctx).QueryRowContext(ctx, blobRefsQuery, h).Scan(&n); err != nil {
 			return out, err
 		}
 		if n == 0 {

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"sync"
 	"testing"
@@ -220,5 +221,84 @@ func TestEventJSONRoundTrip(t *testing.T) {
 	d := Draft{To: []domain.Address{{Email: "a"}}, Cc: []domain.Address{{Email: "b"}}, Bcc: []domain.Address{{Email: "c"}}}
 	if len(d.Recipients()) != 3 {
 		t.Fatal("recipients")
+	}
+}
+
+// A Block subscriber that waits for buffer space must not hold up others:
+// Subscribe and other publishers go through meanwhile.
+func TestBlockingSubscriberDoesNotStallBus(t *testing.T) {
+	b := New()
+	slow := b.Subscribe(context.Background(), SubscribeOptions{Types: []Type{Manual}, Buffer: 1, Policy: Block,
+		BlockTimeout: 500 * time.Millisecond})
+	defer slow.Unsubscribe()
+	b.Publish(Event{Type: Manual})    // fills the slow buffer
+	go b.Publish(Event{Type: Manual}) // waits for the slow subscriber
+	time.Sleep(50 * time.Millisecond)
+
+	start := time.Now()
+	fast := b.Subscribe(context.Background(), SubscribeOptions{Buffer: 4})
+	defer fast.Unsubscribe()
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("Subscribe waited %v for a blocked publisher", d)
+	}
+	start = time.Now()
+	slow2 := b.Subscribe(context.Background(), SubscribeOptions{Types: []Type{MailReceived}, Buffer: 4})
+	defer slow2.Unsubscribe()
+	b.Publish(Event{Type: MailReceived})
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("an unrelated publish waited %v", d)
+	}
+}
+
+func TestQueuePolicyKeepsOrderAndDoesNotBlock(t *testing.T) {
+	b := New()
+	var drops []Event
+	var mu sync.Mutex
+	s := b.Subscribe(context.Background(), SubscribeOptions{Buffer: 2, Policy: Queue, MaxQueue: 50,
+		OnDrop: func(ev Event) { mu.Lock(); drops = append(drops, ev); mu.Unlock() }})
+	start := time.Now()
+	for i := range 60 { // 2 in the buffer, 50 queued, 8 dropped
+		b.Publish(Event{Type: Manual, ID: fmt.Sprint(i)})
+	}
+	if d := time.Since(start); d > 200*time.Millisecond {
+		t.Fatalf("publish blocked for %v", d)
+	}
+	if s.Dropped() != 8 || len(drops) != 8 || drops[0].ID != "52" {
+		t.Fatalf("dropped %d, callbacks %d, first %+v", s.Dropped(), len(drops), drops)
+	}
+	for i := range 52 {
+		select {
+		case ev := <-s.C:
+			if ev.ID != fmt.Sprint(i) {
+				t.Fatalf("event %d has id %s (order lost)", i, ev.ID)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("event %d not delivered", i)
+		}
+	}
+	// Once drained, events go straight through again, still in order.
+	b.Publish(Event{Type: Manual, ID: "late"})
+	if ev := <-s.C; ev.ID != "late" {
+		t.Fatalf("got %s", ev.ID)
+	}
+	s.Unsubscribe()
+	if _, ok := <-s.C; ok {
+		t.Fatal("channel not closed")
+	}
+}
+
+func TestQueuePolicyUnsubscribeWhileQueued(t *testing.T) {
+	for range 50 {
+		b := New()
+		s := b.Subscribe(context.Background(), SubscribeOptions{Buffer: 1, Policy: Queue})
+		for range 20 {
+			b.Publish(Event{Type: Manual})
+		}
+		go func() {
+			for range s.C {
+			}
+		}()
+		s.Unsubscribe() // must not panic (send on closed channel) or hang
+		b.Close()
 	}
 }

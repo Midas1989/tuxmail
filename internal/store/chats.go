@@ -98,7 +98,7 @@ func (s *Store) UpsertChat(ctx context.Context, c Chat) (int64, error) {
 		return 0, errors.New("store: upsert chat: remote id and kind are required")
 	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO chats(account_id, remote_id, kind, title, conversation_id, channel)
+	err := s.q(ctx).QueryRowContext(ctx, `INSERT INTO chats(account_id, remote_id, kind, title, conversation_id, channel)
 		VALUES (?1, ?2, ?3, ?4, ?5, COALESCE(?6, (SELECT kind FROM accounts WHERE id = ?1)))
 		ON CONFLICT(account_id, remote_id) DO UPDATE SET
 			kind = excluded.kind, title = excluded.title,
@@ -114,13 +114,13 @@ func (s *Store) UpsertChat(ctx context.Context, c Chat) (int64, error) {
 
 // GetChat returns the chat with the given id.
 func (s *Store) GetChat(ctx context.Context, id int64) (Chat, error) {
-	c, err := scanChat(s.db.QueryRowContext(ctx, `SELECT `+chatCols+` FROM chats WHERE id = ?`, id))
+	c, err := scanChat(s.q(ctx).QueryRowContext(ctx, `SELECT `+chatCols+` FROM chats WHERE id = ?`, id))
 	return c, notFound(err)
 }
 
 // ChatByRemoteID returns the chat of an account with the given remote id.
 func (s *Store) ChatByRemoteID(ctx context.Context, accountID int64, remoteID string) (Chat, error) {
-	c, err := scanChat(s.db.QueryRowContext(ctx, `SELECT `+chatCols+` FROM chats WHERE account_id = ? AND remote_id = ?`,
+	c, err := scanChat(s.q(ctx).QueryRowContext(ctx, `SELECT `+chatCols+` FROM chats WHERE account_id = ? AND remote_id = ?`,
 		accountID, remoteID))
 	return c, notFound(err)
 }
@@ -138,7 +138,7 @@ func (s *Store) ListChatsByConversation(ctx context.Context, conversationID int6
 
 func (s *Store) listChats(ctx context.Context, where string, args ...any) ([]Chat, error) {
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("c.", chatCols)+` FROM chats c
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+prefixed("c.", chatCols)+` FROM chats c
 		WHERE `+where+`
 		ORDER BY (SELECT MAX(sent_at) FROM chat_messages WHERE chat_id = c.id) DESC NULLS LAST, c.id`, args...)
 	if err != nil {
@@ -149,19 +149,19 @@ func (s *Store) listChats(ctx context.Context, where string, args ...any) ([]Cha
 
 // AssignChatConversation sets the conversation of a chat (0 detaches it).
 func (s *Store) AssignChatConversation(ctx context.Context, chatID, conversationID int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE chats SET conversation_id = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE chats SET conversation_id = ? WHERE id = ?`,
 		nullID(conversationID), chatID))
 }
 
 // MarkChatRead moves the read marker of a chat to upTo (it never moves back).
 func (s *Store) MarkChatRead(ctx context.Context, chatID int64, upTo time.Time) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE chats SET last_read_at = MAX(COALESCE(last_read_at, 0), ?) WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE chats SET last_read_at = MAX(COALESCE(last_read_at, 0), ?) WHERE id = ?`,
 		upTo.Unix(), chatID))
 }
 
 // DeleteChat deletes a chat and its messages.
 func (s *Store) DeleteChat(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM chats WHERE id = ?`, id))
 }
 
 // unreadChatCond selects unread messages of chat c (alias m for chat_messages).
@@ -170,7 +170,7 @@ const unreadChatCond = `m.from_me = 0 AND m.deleted = 0 AND COALESCE(m.sent_at, 
 // ChatUnreadCounts returns the number of unread incoming messages per chat of
 // an account (0 = all accounts). Chats without unread messages are omitted.
 func (s *Store) ChatUnreadCounts(ctx context.Context, accountID int64) (map[int64]int, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT c.id, COUNT(*) FROM chats c JOIN chat_messages m ON m.chat_id = c.id
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT c.id, COUNT(*) FROM chats c JOIN chat_messages m ON m.chat_id = c.id
 		WHERE (?1 = 0 OR c.account_id = ?1) AND `+unreadChatCond+` GROUP BY c.id`, accountID)
 	if err != nil {
 		return nil, err
@@ -268,13 +268,13 @@ func (s *Store) UpsertChatMessage(ctx context.Context, m ChatMessage) (id int64,
 
 // GetChatMessage returns the chat message with the given id.
 func (s *Store) GetChatMessage(ctx context.Context, id int64) (ChatMessage, error) {
-	m, err := scanChatMessage(s.db.QueryRowContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages WHERE id = ?`, id))
+	m, err := scanChatMessage(s.q(ctx).QueryRowContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages WHERE id = ?`, id))
 	return m, notFound(err)
 }
 
 // ChatMessageByRemoteID returns the message of a chat with the given remote id.
 func (s *Store) ChatMessageByRemoteID(ctx context.Context, chatID int64, remoteID string) (ChatMessage, error) {
-	m, err := scanChatMessage(s.db.QueryRowContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages
+	m, err := scanChatMessage(s.q(ctx).QueryRowContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages
 		WHERE chat_id = ? AND remote_id = ?`, chatID, remoteID))
 	return m, notFound(err)
 }
@@ -291,7 +291,7 @@ func (s *Store) ListChatMessages(ctx context.Context, chatID int64, before ChatC
 		args = append(args, before.SentAt.Unix(), before.ID)
 	}
 	q += ` ORDER BY COALESCE(sent_at, 0) DESC, id DESC LIMIT ?`
-	rows, err := s.db.QueryContext(ctx, q, append(args, limit)...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, append(args, limit)...)
 	if err != nil {
 		return nil, err
 	}
@@ -301,7 +301,7 @@ func (s *Store) ListChatMessages(ctx context.Context, chatID int64, before ChatC
 // ListChatMessagesSince returns up to limit messages of a chat newer than
 // after, oldest first (for catching up after a sync).
 func (s *Store) ListChatMessagesSince(ctx context.Context, chatID int64, after ChatCursor, limit int) ([]ChatMessage, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+chatMessageCols+` FROM chat_messages
 		WHERE chat_id = ? AND (COALESCE(sent_at, 0), id) > (?, ?)
 		ORDER BY COALESCE(sent_at, 0), id LIMIT ?`, chatID, after.SentAt.Unix(), after.ID, limit)
 	if err != nil {
@@ -312,7 +312,7 @@ func (s *Store) ListChatMessagesSince(ctx context.Context, chatID int64, after C
 
 // SetChatMessageStatus sets the delivery status of a message.
 func (s *Store) SetChatMessageStatus(ctx context.Context, id int64, status string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE chat_messages SET status = ? WHERE id = ?`, nullString(status), id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE chat_messages SET status = ? WHERE id = ?`, nullString(status), id))
 }
 
 // SetChatMessageReactions replaces the reactions of a message.
@@ -321,7 +321,7 @@ func (s *Store) SetChatMessageReactions(ctx context.Context, id int64, rs []Reac
 	if err != nil {
 		return err
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE chat_messages SET reactions_json = ? WHERE id = ?`, react, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE chat_messages SET reactions_json = ? WHERE id = ?`, react, id))
 }
 
 // EditChatMessage replaces the body of a message and records the edit time.
@@ -330,7 +330,7 @@ func (s *Store) EditChatMessage(ctx context.Context, id int64, body string, edit
 	if editedAt.IsZero() {
 		editedAt = time.Now()
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE chat_messages SET body = ?, edited_at = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE chat_messages SET body = ?, edited_at = ? WHERE id = ?`,
 		nullString(body), editedAt.Unix(), id))
 }
 
@@ -350,5 +350,5 @@ func (s *Store) MarkChatMessageDeleted(ctx context.Context, id int64) error {
 
 // DeleteChatMessage removes a message row completely.
 func (s *Store) DeleteChatMessage(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM chat_messages WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM chat_messages WHERE id = ?`, id))
 }

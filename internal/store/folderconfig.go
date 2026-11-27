@@ -126,7 +126,7 @@ func (s *Store) ClearFolderRoleOverrides(ctx context.Context, accountID int64) e
 
 // FolderRoleOverrides lists the overrides of an account in role order.
 func (s *Store) FolderRoleOverrides(ctx context.Context, accountID int64) ([]FolderRoleOverride, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT o.role, o.remote_id, f.id FROM folder_role_overrides o
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT o.role, o.remote_id, f.id FROM folder_role_overrides o
 		LEFT JOIN folders f ON f.account_id = o.account_id AND f.remote_id = o.remote_id
 		WHERE o.account_id = ? ORDER BY o.role`, accountID)
 	if err != nil {
@@ -145,7 +145,7 @@ func (s *Store) FolderRoleOverrides(ctx context.Context, accountID int64) ([]Fol
 // ApplyFolderRoles recomputes the effective roles of all folders of an
 // account (after the folder list changed).
 func (s *Store) ApplyFolderRoles(ctx context.Context, accountID int64) error {
-	_, err := s.db.ExecContext(ctx, applyRolesSQL+` WHERE account_id = ?`, accountID)
+	_, err := s.q(ctx).ExecContext(ctx, applyRolesSQL+` WHERE account_id = ?`, accountID)
 	return err
 }
 
@@ -159,7 +159,7 @@ type ServerRole struct {
 // ServerRoles returns the server-detected folder per role of an account
 // (the first folder by id if a provider reported a role twice).
 func (s *Store) ServerRoles(ctx context.Context, accountID int64) (map[domain.FolderRole]ServerRole, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, server_role, server_role_source FROM folders
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id, server_role, server_role_source FROM folders
 		WHERE account_id = ? AND server_role IS NOT NULL ORDER BY id`, accountID)
 	if err != nil {
 		return nil, err
@@ -291,7 +291,7 @@ func (f FolderSettings) Normalize() FolderSettings {
 // nothing is stored).
 func (s *Store) FolderSettings(ctx context.Context, accountID int64) (FolderSettings, error) {
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT settings_json FROM account_folder_settings WHERE account_id = ?`, accountID).Scan(&raw)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT settings_json FROM account_folder_settings WHERE account_id = ?`, accountID).Scan(&raw)
 	var fs FolderSettings
 	if errors.Is(err, sql.ErrNoRows) {
 		return fs.Normalize(), nil
@@ -311,7 +311,7 @@ func (s *Store) SetFolderSettings(ctx context.Context, accountID int64, fs Folde
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO account_folder_settings(account_id, settings_json) VALUES (?, ?)
+	_, err = s.q(ctx).ExecContext(ctx, `INSERT INTO account_folder_settings(account_id, settings_json) VALUES (?, ?)
 		ON CONFLICT(account_id) DO UPDATE SET settings_json = excluded.settings_json`, accountID, string(b))
 	return err
 }

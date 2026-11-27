@@ -202,7 +202,7 @@ func (s *Store) FindChatMessageByRemoteID(ctx context.Context, accountID int64, 
 		args = append(args, accountID)
 	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, q+` ORDER BY cm.id LIMIT 1`, args...).Scan(&id)
+	err := s.q(ctx).QueryRowContext(ctx, q+` ORDER BY cm.id LIMIT 1`, args...).Scan(&id)
 	return id, notFound(err)
 }
 
@@ -216,7 +216,7 @@ func (s *Store) FindCloudLinkByPath(ctx context.Context, accountID int64, path s
 		args = append(args, accountID)
 	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, q+` ORDER BY id LIMIT 1`, args...).Scan(&id)
+	err := s.q(ctx).QueryRowContext(ctx, q+` ORDER BY id LIMIT 1`, args...).Scan(&id)
 	return id, notFound(err)
 }
 
@@ -229,7 +229,7 @@ type AttachmentInfo struct {
 
 // MessageAttachments returns the attachment metadata of a message.
 func (s *Store) MessageAttachments(ctx context.Context, messageID int64) ([]AttachmentInfo, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT COALESCE(filename, ''), COALESCE(mime_type, ''), COALESCE(size, 0)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT COALESCE(filename, ''), COALESCE(mime_type, ''), COALESCE(size, 0)
 		FROM attachments WHERE message_id = ? ORDER BY id`, messageID)
 	if err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (s *Store) ItemSummary(ctx context.Context, it Item) (ItemSummary, error) {
 	sum := ItemSummary{Item: it}
 	var ts int64
 	var acc sql.NullInt64
-	err := s.db.QueryRowContext(ctx, q, it.ID).Scan(&sum.Title, &sum.Snippet, &sum.Sender, &ts, &acc, &sum.Unread)
+	err := s.q(ctx).QueryRowContext(ctx, q, it.ID).Scan(&sum.Title, &sum.Snippet, &sum.Sender, &ts, &acc, &sum.Unread)
 	if err != nil {
 		return ItemSummary{}, fmt.Errorf("store: item %s: %w", it, notFound(err))
 	}

@@ -49,7 +49,7 @@ func scanAddressbook(sc scanner) (Addressbook, error) {
 
 // CreateAddressbook inserts an address book and returns its id.
 func (s *Store) CreateAddressbook(ctx context.Context, a Addressbook) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO addressbooks(account_id, remote_id, name, sync_token) VALUES (?, ?, ?, ?)`,
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO addressbooks(account_id, remote_id, name, sync_token) VALUES (?, ?, ?, ?)`,
 		nullID(a.AccountID), nullString(a.RemoteID), a.Name, nullString(a.SyncToken))
 	if err != nil {
 		return 0, fmt.Errorf("store: create addressbook: %w", err)
@@ -64,7 +64,7 @@ func (s *Store) UpsertAddressbook(ctx context.Context, a Addressbook) (int64, er
 		return 0, errors.New("store: upsert addressbook: account and remote id are required")
 	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO addressbooks(account_id, remote_id, name) VALUES (?, ?, ?)
+	err := s.q(ctx).QueryRowContext(ctx, `INSERT INTO addressbooks(account_id, remote_id, name) VALUES (?, ?, ?)
 		ON CONFLICT(account_id, remote_id) DO UPDATE SET name = excluded.name RETURNING id`,
 		a.AccountID, a.RemoteID, a.Name).Scan(&id)
 	if err != nil {
@@ -75,19 +75,19 @@ func (s *Store) UpsertAddressbook(ctx context.Context, a Addressbook) (int64, er
 
 // UpdateAddressbook overwrites the address book a.ID (including the sync token).
 func (s *Store) UpdateAddressbook(ctx context.Context, a Addressbook) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE addressbooks SET account_id = ?, remote_id = ?, name = ?, sync_token = ?
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE addressbooks SET account_id = ?, remote_id = ?, name = ?, sync_token = ?
 		WHERE id = ?`, nullID(a.AccountID), nullString(a.RemoteID), a.Name, nullString(a.SyncToken), a.ID))
 }
 
 // GetAddressbook returns the address book with the given id.
 func (s *Store) GetAddressbook(ctx context.Context, id int64) (Addressbook, error) {
-	a, err := scanAddressbook(s.db.QueryRowContext(ctx, `SELECT `+addressbookCols+` FROM addressbooks WHERE id = ?`, id))
+	a, err := scanAddressbook(s.q(ctx).QueryRowContext(ctx, `SELECT `+addressbookCols+` FROM addressbooks WHERE id = ?`, id))
 	return a, notFound(err)
 }
 
 // ListAddressbooks returns all address books ordered by account and name.
 func (s *Store) ListAddressbooks(ctx context.Context) ([]Addressbook, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+addressbookCols+` FROM addressbooks ORDER BY account_id NULLS FIRST, name, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+addressbookCols+` FROM addressbooks ORDER BY account_id NULLS FIRST, name, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s *Store) ListAddressbooks(ctx context.Context) ([]Addressbook, error) {
 
 // ListAccountAddressbooks returns the address books of an account (0 = local ones).
 func (s *Store) ListAccountAddressbooks(ctx context.Context, accountID int64) ([]Addressbook, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+addressbookCols+` FROM addressbooks WHERE account_id IS ? ORDER BY name, id`,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+addressbookCols+` FROM addressbooks WHERE account_id IS ? ORDER BY name, id`,
 		nullID(accountID))
 	if err != nil {
 		return nil, err
@@ -106,19 +106,19 @@ func (s *Store) ListAccountAddressbooks(ctx context.Context, accountID int64) ([
 
 // SetAddressbookSyncToken stores the sync token of an address book.
 func (s *Store) SetAddressbookSyncToken(ctx context.Context, id int64, token string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE addressbooks SET sync_token = ? WHERE id = ?`, nullString(token), id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE addressbooks SET sync_token = ? WHERE id = ?`, nullString(token), id))
 }
 
 // AddressbookSyncToken returns the sync token of an address book ("" if none).
 func (s *Store) AddressbookSyncToken(ctx context.Context, id int64) (string, error) {
 	var t sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT sync_token FROM addressbooks WHERE id = ?`, id).Scan(&t)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT sync_token FROM addressbooks WHERE id = ?`, id).Scan(&t)
 	return t.String, notFound(err)
 }
 
 // DeleteAddressbook deletes an address book and its contacts.
 func (s *Store) DeleteAddressbook(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM addressbooks WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM addressbooks WHERE id = ?`, id))
 }
 
 // ==== Contacts ================================================================
@@ -194,13 +194,13 @@ func (s *Store) UpsertContact(ctx context.Context, c Contact) (id int64, created
 
 // GetContact returns the contact with the given id.
 func (s *Store) GetContact(ctx context.Context, id int64) (Contact, error) {
-	c, err := scanContact(s.db.QueryRowContext(ctx, `SELECT `+contactCols+` FROM contacts c WHERE c.id = ?`, id))
+	c, err := scanContact(s.q(ctx).QueryRowContext(ctx, `SELECT `+contactCols+` FROM contacts c WHERE c.id = ?`, id))
 	return c, notFound(err)
 }
 
 // ContactByUID returns the contact of an address book with the given UID.
 func (s *Store) ContactByUID(ctx context.Context, addressbookID int64, uid string) (Contact, error) {
-	c, err := scanContact(s.db.QueryRowContext(ctx, `SELECT `+contactCols+` FROM contacts c
+	c, err := scanContact(s.q(ctx).QueryRowContext(ctx, `SELECT `+contactCols+` FROM contacts c
 		WHERE c.addressbook_id = ? AND c.uid = ?`, addressbookID, uid))
 	return c, notFound(err)
 }
@@ -232,7 +232,7 @@ func (s *Store) SearchContacts(ctx context.Context, q string, limit int) ([]Cont
 	}
 	pat := "%" + likeEscape(strings.ToLower(q)) + "%"
 	prefix := likeEscape(strings.ToLower(q)) + "%"
-	rows, err := s.db.QueryContext(ctx, `SELECT `+contactCols+` FROM contacts c
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+contactCols+` FROM contacts c
 		WHERE lower(c.display_name) LIKE ?1 ESCAPE '\'
 		   OR c.id IN (SELECT contact_id FROM contact_emails WHERE email LIKE ?1 ESCAPE '\')
 		ORDER BY (lower(c.display_name) LIKE ?2 ESCAPE '\') DESC, c.display_name COLLATE NOCASE, c.id
@@ -245,7 +245,7 @@ func (s *Store) SearchContacts(ctx context.Context, q string, limit int) ([]Cont
 
 func (s *Store) listContacts(ctx context.Context, where string, args ...any) ([]Contact, error) {
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+contactCols+` FROM contacts c WHERE `+where+`
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+contactCols+` FROM contacts c WHERE `+where+`
 		ORDER BY c.display_name COLLATE NOCASE, c.id`, args...)
 	if err != nil {
 		return nil, err
@@ -255,17 +255,17 @@ func (s *Store) listContacts(ctx context.Context, where string, args ...any) ([]
 
 // LinkContactToPerson links a contact to a person (0 removes the link).
 func (s *Store) LinkContactToPerson(ctx context.Context, contactID, personID int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE contacts SET person_id = ? WHERE id = ?`, nullID(personID), contactID))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE contacts SET person_id = ? WHERE id = ?`, nullID(personID), contactID))
 }
 
 // DeleteContact deletes a contact.
 func (s *Store) DeleteContact(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM contacts WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM contacts WHERE id = ?`, id))
 }
 
 // DeleteContactByUID deletes the contact of an address book with the given UID.
 func (s *Store) DeleteContactByUID(ctx context.Context, addressbookID int64, uid string) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM contacts WHERE addressbook_id = ? AND uid = ?`, addressbookID, uid))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM contacts WHERE addressbook_id = ? AND uid = ?`, addressbookID, uid))
 }
 
 // likeEscape escapes the LIKE wildcards % and _ (and the escape character \).

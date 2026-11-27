@@ -44,14 +44,14 @@ func (s *Store) SetMessageAttachments(ctx context.Context, messageID int64, atts
 // SetMessageContent stores the results of downloading and parsing the raw
 // message: blob hash, snippet and the attachment flag.
 func (s *Store) SetMessageContent(ctx context.Context, id int64, blobHash, snippet string, hasAttachments bool) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE messages SET blob_hash = COALESCE(?, blob_hash), snippet = ?,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE messages SET blob_hash = COALESCE(?, blob_hash), snippet = ?,
 		has_attachments = ? WHERE id = ?`, nullString(blobHash), nullString(snippet), boolInt(hasAttachments), id))
 }
 
 // RefreshFolderCounts recomputes the total and unread counters of a folder
 // from the local locations of live messages and returns them.
 func (s *Store) RefreshFolderCounts(ctx context.Context, folderID int64) (total, unread int, err error) {
-	err = s.db.QueryRowContext(ctx, `UPDATE folders SET
+	err = s.q(ctx).QueryRowContext(ctx, `UPDATE folders SET
 			total  = (SELECT COUNT(DISTINCT l.message_id) FROM message_locations l JOIN messages m ON m.id = l.message_id
 			          WHERE l.folder_id = ?1 AND m.state = 'live'),
 			unread = (SELECT COUNT(DISTINCT l.message_id) FROM message_locations l JOIN messages m ON m.id = l.message_id
@@ -64,7 +64,7 @@ func (s *Store) RefreshFolderCounts(ctx context.Context, folderID int64) (total,
 // were marked deleted, so that callers can update dependent state (e.g.
 // remove them from their conversation).
 func (s *Store) GCOrphanedMessages(ctx context.Context, maxAge time.Duration, now time.Time) ([]Message, error) {
-	rows, err := s.db.QueryContext(ctx, `UPDATE messages SET state = 'deleted'
+	rows, err := s.q(ctx).QueryContext(ctx, `UPDATE messages SET state = 'deleted'
 		WHERE state = 'orphaned' AND orphaned_since <= ? RETURNING `+messageCols, now.Add(-maxAge).Unix())
 	if err != nil {
 		return nil, err
@@ -116,7 +116,7 @@ func (s *Store) ClaimNextAccountOp(ctx context.Context, now time.Time, accountID
 			args = append(args, k)
 		}
 	}
-	op, err = scanOp(s.db.QueryRowContext(ctx, `UPDATE ops SET state = 'running', attempts = attempts + 1
+	op, err = scanOp(s.q(ctx).QueryRowContext(ctx, `UPDATE ops SET state = 'running', attempts = attempts + 1
 		WHERE id = (
 			SELECT o.id FROM ops o
 			WHERE o.state = 'pending' AND o.next_try_at <= ? AND o.account_id = ?`+kindCond+`
@@ -145,7 +145,7 @@ func (s *Store) NextAccountOpDue(ctx context.Context, accountID int64, kinds ...
 		}
 	}
 	var v sql.NullInt64
-	err = s.db.QueryRowContext(ctx, `SELECT MIN(next_try_at) FROM ops WHERE state = 'pending' AND account_id = ?`+kindCond,
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT MIN(next_try_at) FROM ops WHERE state = 'pending' AND account_id = ?`+kindCond,
 		args...).Scan(&v)
 	if err != nil || !v.Valid {
 		return time.Time{}, false, err
@@ -161,7 +161,7 @@ func (s *Store) ReleaseOp(ctx context.Context, id int64, cause error, nextTry ti
 	if cause != nil {
 		msg = cause.Error()
 	}
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE ops SET state = 'pending', attempts = MAX(attempts - 1, 0),
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE ops SET state = 'pending', attempts = MAX(attempts - 1, 0),
 		last_error = ?, next_try_at = ? WHERE id = ? AND state = 'running'`, nullString(msg), nextTry.Unix(), id))
 }
 
@@ -204,7 +204,7 @@ type BodyTask struct {
 // Locations whose remote ref starts with skipRefPrefix (placeholders of
 // pending operations) are ignored.
 func (s *Store) MessagesWithoutBody(ctx context.Context, accountID int64, notBefore time.Time, maxSize int64, skipRefPrefix string, limit int) ([]BodyTask, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, f.id, f.remote_id, MIN(l.remote_ref)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.id, f.id, f.remote_id, MIN(l.remote_ref)
 		FROM messages m
 		JOIN message_locations l ON l.message_id = m.id
 		JOIN folders f ON f.id = l.folder_id
@@ -236,7 +236,7 @@ func (s *Store) LocationsByPrefix(ctx context.Context, accountID int64, prefix s
 	if prefix == "" {
 		return nil, errors.New("store: empty location prefix")
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT l.message_id, l.folder_id, l.remote_ref FROM message_locations l
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT l.message_id, l.folder_id, l.remote_ref FROM message_locations l
 		JOIN folders f ON f.id = l.folder_id
 		WHERE f.account_id = ? AND substr(l.remote_ref, 1, ?) = ? ORDER BY l.folder_id, l.remote_ref`,
 		accountID, len(prefix), prefix)
@@ -252,7 +252,7 @@ func (s *Store) LocationsByPrefix(ctx context.Context, accountID int64, prefix s
 // FolderRefs returns the remote refs of all locations in a folder mapped to
 // their message ids.
 func (s *Store) FolderRefs(ctx context.Context, folderID int64) (map[string]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT remote_ref, message_id FROM message_locations WHERE folder_id = ?`, folderID)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT remote_ref, message_id FROM message_locations WHERE folder_id = ?`, folderID)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,7 @@ func (s *Store) ConversationIDsOf(ctx context.Context, messageIDs ...int64) ([]i
 		args[i] = id
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT conversation_id FROM messages
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT DISTINCT conversation_id FROM messages
 		WHERE conversation_id IS NOT NULL AND id IN (`+placeholders(len(args))+`) ORDER BY conversation_id`, args...)
 	if err != nil {
 		return nil, err
@@ -309,7 +309,7 @@ func (s *Store) FindFolder(ctx context.Context, accountID int64, ref string) (do
 			return f, err
 		}
 	}
-	f, err := scanFolder(s.db.QueryRowContext(ctx, `SELECT `+folderCols+` FROM folders
+	f, err := scanFolder(s.q(ctx).QueryRowContext(ctx, `SELECT `+folderCols+` FROM folders
 		WHERE account_id = ? AND (lower(name) = lower(?) OR lower(remote_id) = lower(?)) ORDER BY id LIMIT 1`,
 		accountID, ref, ref))
 	return f, notFound(err)

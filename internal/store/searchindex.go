@@ -61,7 +61,7 @@ func (s *Store) indexItem(ctx context.Context, k docKind, itemID int64, accountQ
 
 func (s *Store) unindex(ctx context.Context, k docKind, itemID int64) error {
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	_, err := s.db.ExecContext(ctx, `DELETE FROM fts_docs WHERE `+k.idCol+` = ?`, itemID)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM fts_docs WHERE `+k.idCol+` = ?`, itemID)
 	return err
 }
 
@@ -195,7 +195,7 @@ func (s *Store) GetIndexPolicy(ctx context.Context, accountID int64) (IndexPolic
 
 // ListIndexPolicies returns all stored per-account policies.
 func (s *Store) ListIndexPolicies(ctx context.Context) ([]IndexPolicy, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT account_id, index_content, index_attachment_content, index_encrypted
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT account_id, index_content, index_attachment_content, index_encrypted
 		FROM search_index_policy ORDER BY account_id`)
 	if err != nil {
 		return nil, err

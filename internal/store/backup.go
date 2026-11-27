@@ -31,7 +31,7 @@ func (s *Store) Backup(ctx context.Context, dest string) error {
 	if err := os.Remove(tmp); err != nil {
 		return fmt.Errorf("store: backup: %w", err)
 	}
-	if _, err := s.db.ExecContext(ctx, `VACUUM INTO ?`, tmp); err != nil {
+	if _, err := s.q(ctx).ExecContext(ctx, `VACUUM INTO ?`, tmp); err != nil {
 		os.Remove(tmp)
 		return fmt.Errorf("store: backup: %w", err)
 	}

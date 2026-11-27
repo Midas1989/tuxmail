@@ -137,6 +137,22 @@ export interface Toast {
 }
 
 const PAGE = 200;
+/**
+ * Minimum distance between two event-driven reloads of a list that was
+ * scrolled far (more than one page loaded): every reload fetches everything
+ * loaded, so during a large sync a deep list would otherwise be fetched and
+ * rendered again about every second.
+ */
+export const LONG_LIST_REFRESH_MS = 4000;
+
+/**
+ * The first page of a fresh load followed by the older pages that were
+ * loaded before, without duplicates (mails that moved up into the first page).
+ */
+export function mergeLoaded<T extends { id: number }>(first: T[], rest: T[]): T[] {
+  const ids = new Set(first.map((m) => m.id));
+  return [...first, ...rest.filter((m) => !ids.has(m.id))];
+}
 
 function toastPhone(): boolean {
   return typeof matchMedia !== 'undefined' && matchMedia('(max-width: 639px), (pointer: coarse) and (max-height: 500px)').matches;
@@ -196,6 +212,8 @@ export class AppState {
   messages = $state<MessageSummary[]>([]);
   messagesTotal = $state(0);
   messagesLoading = $state(false);
+  /** Bumped by every full load of the mail list; results of older loads (also "load more") are discarded. */
+  private listGen = 0;
   selectedMessageId = $state<number | null>(null);
   message = $state<MessageDetail | null>(null);
   /** Incremented to ask the list to scroll the selected row into view. */
@@ -598,7 +616,44 @@ export class AppState {
   }, 120);
   private pendingFolderAccounts: number[] = [];
 
-  private reloadListDebounced = debounce(() => void this.reloadList({ keepSelection: true }), 150);
+  private reloadListDebounced = debounce(() => this.refreshList(), 150);
+  private listRefreshRunning = false;
+  private listRefreshAgain = false;
+  private listRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private listRefreshedAt = 0;
+
+  /**
+   * Event-driven refresh of the list: never two at once (a refresh requested
+   * while one runs follows once it is done), and a list scrolled beyond the
+   * first page is refreshed at most every LONG_LIST_REFRESH_MS.
+   */
+  private refreshList(): void {
+    if (this.listRefreshRunning) {
+      this.listRefreshAgain = true;
+      return;
+    }
+    if (this.listRefreshTimer) return;
+    const long = (this.messageListView ? this.messages.length : this.conversations.length) > PAGE;
+    const wait = long ? Math.max(0, this.listRefreshedAt + LONG_LIST_REFRESH_MS - Date.now()) : 0;
+    const run = async (): Promise<void> => {
+      this.listRefreshTimer = null;
+      this.listRefreshRunning = true;
+      try {
+        await this.reloadList({ keepSelection: true });
+      } catch {
+        /* the next event tries again */
+      } finally {
+        this.listRefreshRunning = false;
+        this.listRefreshedAt = Date.now();
+        if (this.listRefreshAgain) {
+          this.listRefreshAgain = false;
+          this.refreshList();
+        }
+      }
+    };
+    if (wait === 0) void run();
+    else this.listRefreshTimer = setTimeout(() => void run(), wait);
+  }
   private reloadItemsDebounced = debounce((focus?: string) => void this.reloadItems(focus), 80);
   private reloadSearchFoldersDebounced = debounce(() => void this.loadSearchFolders(), 400);
   // Sync creates persons for new senders/recipients (KONZEPT 10.2).
@@ -764,9 +819,12 @@ export class AppState {
   }
 
   async loadMessages(keepSelection = false): Promise<void> {
+    const gen = ++this.listGen;
     this.messagesLoading = true;
     try {
       const page = await this.api.listMessages({ scope: this.messageScope(), offset: 0, limit: Math.max(PAGE, this.messages.length), search: this.search || undefined });
+      // A newer load (other folder, search, a later refresh) was started meanwhile: its result wins.
+      if (gen !== this.listGen) return;
       this.messages = page.items;
       this.messagesTotal = page.total;
       if (!keepSelection && this.selectedMessageId != null && !page.items.some((m) => m.id === this.selectedMessageId)) {
@@ -774,19 +832,23 @@ export class AppState {
         this.message = null;
       }
     } finally {
-      this.messagesLoading = false;
+      if (gen === this.listGen) this.messagesLoading = false;
     }
   }
 
   async loadMoreMessages(): Promise<void> {
     if (this.messagesLoading || this.messages.length >= this.messagesTotal) return;
+    const gen = this.listGen;
     this.messagesLoading = true;
     try {
       const page = await this.api.listMessages({ scope: this.messageScope(), offset: this.messages.length, limit: PAGE, search: this.search || undefined });
-      this.messages = [...this.messages, ...page.items];
+      // The list was loaded again meanwhile: these offsets belong to the old list.
+      if (gen !== this.listGen) return;
+      // New mail moves older rows down by a few places: rows already shown are not added twice.
+      this.messages = mergeLoaded(this.messages, page.items);
       this.messagesTotal = page.total;
     } finally {
-      this.messagesLoading = false;
+      if (gen === this.listGen) this.messagesLoading = false;
     }
   }
 

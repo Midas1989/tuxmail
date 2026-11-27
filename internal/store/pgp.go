@@ -39,7 +39,7 @@ func scanPGPKey(sc scanner) (PGPKey, error) {
 func (s *Store) PutPGPKey(ctx context.Context, k PGPKey) (int64, error) {
 	now := time.Now()
 	var id int64
-	err := s.db.QueryRowContext(ctx, `INSERT INTO pgp_keys(fingerprint, email, user_id, public_key, source, secret_ref, created_at, updated_at)
+	err := s.q(ctx).QueryRowContext(ctx, `INSERT INTO pgp_keys(fingerprint, email, user_id, public_key, source, secret_ref, created_at, updated_at)
 		VALUES(?,?,?,?,COALESCE(NULLIF(?, ''), 'manual'),?,?,?) ON CONFLICT(fingerprint) DO UPDATE SET email = excluded.email, user_id = excluded.user_id,
 		public_key = excluded.public_key, source = CASE WHEN ? <> '' THEN excluded.source ELSE source END,
 		secret_ref = COALESCE(excluded.secret_ref, secret_ref), updated_at = excluded.updated_at RETURNING id`,
@@ -49,7 +49,7 @@ func (s *Store) PutPGPKey(ctx context.Context, k PGPKey) (int64, error) {
 
 // ListPGPKeys returns all keys.
 func (s *Store) ListPGPKeys(ctx context.Context) ([]PGPKey, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+pgpKeyCols+` FROM pgp_keys ORDER BY secret_ref IS NULL, email, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+pgpKeyCols+` FROM pgp_keys ORDER BY secret_ref IS NULL, email, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (s *Store) ListPGPKeys(ctx context.Context) ([]PGPKey, error) {
 
 // GetPGPKey returns a key by id.
 func (s *Store) GetPGPKey(ctx context.Context, id int64) (PGPKey, error) {
-	k, err := scanPGPKey(s.db.QueryRowContext(ctx, `SELECT `+pgpKeyCols+` FROM pgp_keys WHERE id = ?`, id))
+	k, err := scanPGPKey(s.q(ctx).QueryRowContext(ctx, `SELECT `+pgpKeyCols+` FROM pgp_keys WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return k, ErrNotFound
 	}
@@ -76,7 +76,7 @@ func (s *Store) GetPGPKey(ctx context.Context, id int64) (PGPKey, error) {
 
 // GetPGPKeyByFingerprint returns a key by fingerprint.
 func (s *Store) GetPGPKeyByFingerprint(ctx context.Context, fingerprint string) (PGPKey, error) {
-	k, err := scanPGPKey(s.db.QueryRowContext(ctx, `SELECT `+pgpKeyCols+` FROM pgp_keys WHERE fingerprint = ?`, fingerprint))
+	k, err := scanPGPKey(s.q(ctx).QueryRowContext(ctx, `SELECT `+pgpKeyCols+` FROM pgp_keys WHERE fingerprint = ?`, fingerprint))
 	if errors.Is(err, sql.ErrNoRows) {
 		return k, ErrNotFound
 	}
@@ -85,10 +85,10 @@ func (s *Store) GetPGPKeyByFingerprint(ctx context.Context, fingerprint string) 
 
 // DeletePGPKey removes a key and the trust decisions about it.
 func (s *Store) DeletePGPKey(ctx context.Context, fingerprint string) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM pgp_trust WHERE fingerprint = ?`, fingerprint); err != nil {
+	if _, err := s.q(ctx).ExecContext(ctx, `DELETE FROM pgp_trust WHERE fingerprint = ?`, fingerprint); err != nil {
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `DELETE FROM pgp_keys WHERE fingerprint = ?`, fingerprint)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM pgp_keys WHERE fingerprint = ?`, fingerprint)
 	return err
 }
 
@@ -116,7 +116,7 @@ func scanPGPTrust(sc scanner) (PGPTrust, error) {
 
 // GetPGPTrust returns the trust row of (address, fingerprint).
 func (s *Store) GetPGPTrust(ctx context.Context, address, fingerprint string) (PGPTrust, error) {
-	t, err := scanPGPTrust(s.db.QueryRowContext(ctx, `SELECT `+pgpTrustCols+` FROM pgp_trust WHERE address = ? AND fingerprint = ?`, address, fingerprint))
+	t, err := scanPGPTrust(s.q(ctx).QueryRowContext(ctx, `SELECT `+pgpTrustCols+` FROM pgp_trust WHERE address = ? AND fingerprint = ?`, address, fingerprint))
 	if errors.Is(err, sql.ErrNoRows) {
 		return t, ErrNotFound
 	}
@@ -125,7 +125,7 @@ func (s *Store) GetPGPTrust(ctx context.Context, address, fingerprint string) (P
 
 // PutPGPTrust stores a trust row.
 func (s *Store) PutPGPTrust(ctx context.Context, t PGPTrust) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO pgp_trust(address, fingerprint, level, source, first_seen, last_seen, verified_at, seen_count)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO pgp_trust(address, fingerprint, level, source, first_seen, last_seen, verified_at, seen_count)
 		VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(address, fingerprint) DO UPDATE SET level = excluded.level, source = excluded.source,
 		first_seen = excluded.first_seen, last_seen = excluded.last_seen, verified_at = excluded.verified_at, seen_count = excluded.seen_count`,
 		t.Address, t.Fingerprint, t.Level, t.Source, unixOrNull(t.FirstSeen), unixOrNull(t.LastSeen), unixOrNull(t.VerifiedAt), t.SeenCount)
@@ -134,7 +134,7 @@ func (s *Store) PutPGPTrust(ctx context.Context, t PGPTrust) error {
 
 // ListPGPTrust returns the trust rows of an address, most recently seen first.
 func (s *Store) ListPGPTrust(ctx context.Context, address string) ([]PGPTrust, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+pgpTrustCols+` FROM pgp_trust WHERE address = ? ORDER BY last_seen DESC`, address)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+pgpTrustCols+` FROM pgp_trust WHERE address = ? ORDER BY last_seen DESC`, address)
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +152,7 @@ func (s *Store) ListPGPTrust(ctx context.Context, address string) ([]PGPTrust, e
 
 // DeletePGPTrust removes a trust row.
 func (s *Store) DeletePGPTrust(ctx context.Context, address, fingerprint string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM pgp_trust WHERE address = ? AND fingerprint = ?`, address, fingerprint)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM pgp_trust WHERE address = ? AND fingerprint = ?`, address, fingerprint)
 	return err
 }
 
@@ -180,7 +180,7 @@ func scanPGPPeer(sc scanner) (PGPPeer, error) {
 
 // GetPGPPeer returns the peer state of an address.
 func (s *Store) GetPGPPeer(ctx context.Context, addr string) (PGPPeer, error) {
-	p, err := scanPGPPeer(s.db.QueryRowContext(ctx, `SELECT `+pgpPeerCols+` FROM pgp_peers WHERE addr = ?`, addr))
+	p, err := scanPGPPeer(s.q(ctx).QueryRowContext(ctx, `SELECT `+pgpPeerCols+` FROM pgp_peers WHERE addr = ?`, addr))
 	if errors.Is(err, sql.ErrNoRows) {
 		return p, ErrNotFound
 	}
@@ -189,7 +189,7 @@ func (s *Store) GetPGPPeer(ctx context.Context, addr string) (PGPPeer, error) {
 
 // PutPGPPeer stores the peer state of an address.
 func (s *Store) PutPGPPeer(ctx context.Context, p PGPPeer) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO pgp_peers(addr, last_seen, autocrypt_ts, public_key, prefer_encrypt, gossip_ts, gossip_key, key_changed)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO pgp_peers(addr, last_seen, autocrypt_ts, public_key, prefer_encrypt, gossip_ts, gossip_key, key_changed)
 		VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(addr) DO UPDATE SET last_seen = excluded.last_seen, autocrypt_ts = excluded.autocrypt_ts,
 		public_key = excluded.public_key, prefer_encrypt = excluded.prefer_encrypt, gossip_ts = excluded.gossip_ts,
 		gossip_key = excluded.gossip_key, key_changed = excluded.key_changed`,
@@ -199,7 +199,7 @@ func (s *Store) PutPGPPeer(ctx context.Context, p PGPPeer) error {
 
 // ListPGPPeers returns the peers that have a key, sorted by address.
 func (s *Store) ListPGPPeers(ctx context.Context) ([]PGPPeer, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+pgpPeerCols+` FROM pgp_peers WHERE public_key IS NOT NULL OR gossip_key IS NOT NULL ORDER BY addr`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+pgpPeerCols+` FROM pgp_peers WHERE public_key IS NOT NULL OR gossip_key IS NOT NULL ORDER BY addr`)
 	if err != nil {
 		return nil, err
 	}
@@ -217,6 +217,6 @@ func (s *Store) ListPGPPeers(ctx context.Context) ([]PGPPeer, error) {
 
 // DeletePGPPeer forgets the Autocrypt state of an address.
 func (s *Store) DeletePGPPeer(ctx context.Context, addr string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM pgp_peers WHERE addr = ?`, addr)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM pgp_peers WHERE addr = ?`, addr)
 	return err
 }

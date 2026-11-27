@@ -30,11 +30,11 @@ func (p *Provider) Watch(ctx context.Context, folderRemoteID string) (<-chan dom
 
 	// Establish the first session synchronously so configuration errors
 	// surface to the caller.
-	c, err := w.connect(ctx)
+	c, ac, err := w.connect(ctx)
 	if err != nil {
 		return nil, err
 	}
-	go w.run(ctx, c)
+	go w.run(ctx, c, ac)
 	return out, nil
 }
 
@@ -61,7 +61,7 @@ func (w *watcher) emit() {
 	}
 }
 
-func (w *watcher) connect(ctx context.Context) (*imapclient.Client, error) {
+func (w *watcher) connect(ctx context.Context) (*imapclient.Client, *activityConn, error) {
 	handler := &imapclient.UnilateralDataHandler{
 		Expunge: func(uint32) { w.signal() },
 		Mailbox: func(d *imapclient.UnilateralDataMailbox) {
@@ -76,24 +76,30 @@ func (w *watcher) connect(ctx context.Context) (*imapclient.Client, error) {
 			w.signal()
 		},
 	}
-	c, err := w.p.dial(ctx, handler)
+	c, ac, err := w.p.dial(ctx, handler)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
-	if _, err := c.Select(w.folder, &imap.SelectOptions{ReadOnly: true}).Wait(); err != nil {
+	unguard := guardStall(ac, w.p.cfg.CommandTimeout)
+	_, err = c.Select(w.folder, &imap.SelectOptions{ReadOnly: true}).Wait()
+	if unguard() {
 		c.Close()
-		return nil, ctxErr(ctx, err)
+		return nil, nil, ErrStalled
 	}
-	return c, nil
+	if err != nil {
+		c.Close()
+		return nil, nil, ctxErr(ctx, err)
+	}
+	return c, ac, nil
 }
 
-func (w *watcher) run(ctx context.Context, c *imapclient.Client) {
+func (w *watcher) run(ctx context.Context, c *imapclient.Client, ac *activityConn) {
 	defer close(w.out)
 	backoff := w.p.cfg.MinBackoff
 	for {
-		err := w.session(ctx, c)
+		err := w.session(ctx, c, ac)
 		c.Close()
 		if ctx.Err() != nil {
 			return
@@ -110,7 +116,7 @@ func (w *watcher) run(ctx context.Context, c *imapclient.Client) {
 			case <-t.C:
 			}
 			backoff = min(backoff*2, w.p.cfg.MaxBackoff)
-			c, err = w.connect(ctx)
+			c, ac, err = w.connect(ctx)
 			if err == nil {
 				break
 			}
@@ -126,7 +132,7 @@ func (w *watcher) run(ctx context.Context, c *imapclient.Client) {
 
 // session runs IDLE or NOOP polling on c until the connection fails or ctx
 // ends.
-func (w *watcher) session(ctx context.Context, c *imapclient.Client) error {
+func (w *watcher) session(ctx context.Context, c *imapclient.Client, ac *activityConn) error {
 	stop := context.AfterFunc(ctx, func() { c.Close() })
 	defer stop()
 
@@ -159,7 +165,12 @@ func (w *watcher) session(ctx context.Context, c *imapclient.Client) error {
 		case <-w.notify:
 			w.emit()
 		case <-t.C:
-			if err := c.Noop().Wait(); err != nil {
+			unguard := guardStall(ac, w.p.cfg.CommandTimeout)
+			err := c.Noop().Wait()
+			if unguard() {
+				return ErrStalled
+			}
+			if err != nil {
 				return err
 			}
 		case <-c.Closed():

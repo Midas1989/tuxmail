@@ -26,7 +26,7 @@ type ProxyCacheEntry struct {
 func (s *Store) GetProxyCache(ctx context.Context, key string, now time.Time) (ProxyCacheEntry, error) {
 	var e ProxyCacheEntry
 	var fetched, expires int64
-	err := s.db.QueryRowContext(ctx, `SELECT key, blob_hash, content_type, size, fetched_at, expires_at FROM proxy_cache
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT key, blob_hash, content_type, size, fetched_at, expires_at FROM proxy_cache
 		WHERE key = ? AND expires_at > ?`, key, now.Unix()).Scan(&e.Key, &e.BlobHash, &e.ContentType, &e.Size, &fetched, &expires)
 	if err != nil {
 		return e, notFound(err)
@@ -37,7 +37,7 @@ func (s *Store) GetProxyCache(ctx context.Context, key string, now time.Time) (P
 
 // PutProxyCache stores (or replaces) a cache entry.
 func (s *Store) PutProxyCache(ctx context.Context, e ProxyCacheEntry) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO proxy_cache(key, blob_hash, content_type, size, fetched_at, expires_at)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO proxy_cache(key, blob_hash, content_type, size, fetched_at, expires_at)
 		VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET blob_hash = excluded.blob_hash,
 		content_type = excluded.content_type, size = excluded.size, fetched_at = excluded.fetched_at, expires_at = excluded.expires_at`,
 		e.Key, e.BlobHash, e.ContentType, e.Size, e.FetchedAt.Unix(), e.ExpiresAt.Unix())
@@ -48,7 +48,7 @@ func (s *Store) PutProxyCache(ctx context.Context, e ProxyCacheEntry) error {
 // are no longer referenced by a cache entry or a message (the caller
 // deletes them from the blob store).
 func (s *Store) PurgeProxyCache(ctx context.Context, now time.Time) ([]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT DISTINCT blob_hash FROM proxy_cache WHERE expires_at <= ?`, now.Unix())
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT DISTINCT blob_hash FROM proxy_cache WHERE expires_at <= ?`, now.Unix())
 	if err != nil {
 		return nil, err
 	}
@@ -65,13 +65,13 @@ func (s *Store) PurgeProxyCache(ctx context.Context, now time.Time) ([]string, e
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM proxy_cache WHERE expires_at <= ?`, now.Unix()); err != nil {
+	if _, err := s.q(ctx).ExecContext(ctx, `DELETE FROM proxy_cache WHERE expires_at <= ?`, now.Unix()); err != nil {
 		return nil, err
 	}
 	var out []string
 	for _, h := range hashes {
 		var n int
-		if err := s.db.QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM proxy_cache WHERE blob_hash = ?)
+		if err := s.q(ctx).QueryRowContext(ctx, `SELECT (SELECT COUNT(*) FROM proxy_cache WHERE blob_hash = ?)
 			+ (SELECT COUNT(*) FROM messages WHERE blob_hash = ?) + (SELECT COUNT(*) FROM attachments WHERE blob_hash = ?)
 			+ (SELECT COUNT(*) FROM uploads WHERE blob_hash = ?) + (SELECT COUNT(*) FROM signature_images WHERE blob_hash = ?)`, h, h, h, h, h).Scan(&n); err != nil {
 			return out, err
@@ -123,7 +123,7 @@ func (s *Store) AddRemoteAllow(ctx context.Context, kind, value string) error {
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO remote_content_allow(kind, value, created_at) VALUES (?, ?, ?)
+	_, err = s.q(ctx).ExecContext(ctx, `INSERT INTO remote_content_allow(kind, value, created_at) VALUES (?, ?, ?)
 		ON CONFLICT(kind, value) DO NOTHING`, kind, value, time.Now().Unix())
 	return err
 }
@@ -134,13 +134,13 @@ func (s *Store) RemoveRemoteAllow(ctx context.Context, kind, value string) error
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `DELETE FROM remote_content_allow WHERE kind = ? AND value = ?`, kind, value)
+	_, err = s.q(ctx).ExecContext(ctx, `DELETE FROM remote_content_allow WHERE kind = ? AND value = ?`, kind, value)
 	return err
 }
 
 // ListRemoteAllow returns all allowlist entries.
 func (s *Store) ListRemoteAllow(ctx context.Context) ([]RemoteAllow, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT kind, value, created_at FROM remote_content_allow ORDER BY kind, value`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT kind, value, created_at FROM remote_content_allow ORDER BY kind, value`)
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +179,7 @@ func (s *Store) RemoteAllowed(ctx context.Context, sender string) (bool, error) 
 		dom = dom[i+1:]
 	}
 	var one int
-	err := s.db.QueryRowContext(ctx, q+` LIMIT 1`, args...).Scan(&one)
+	err := s.q(ctx).QueryRowContext(ctx, q+` LIMIT 1`, args...).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, nil
 	}

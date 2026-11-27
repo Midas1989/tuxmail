@@ -23,7 +23,7 @@ type OAuthClient struct {
 
 // ListOAuthClients returns the user's own client registrations.
 func (s *Store) ListOAuthClients(ctx context.Context) ([]OAuthClient, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT provider, client_id, tenant, secret_ref, updated_at FROM oauth_clients ORDER BY provider`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT provider, client_id, tenant, secret_ref, updated_at FROM oauth_clients ORDER BY provider`)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (s *Store) PutOAuthClient(ctx context.Context, c OAuthClient) error {
 	if c.Provider == "" || c.ClientID == "" {
 		return errors.New("store: oauth client: provider and client id are required")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO oauth_clients(provider, client_id, tenant, secret_ref, updated_at) VALUES (?, ?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO oauth_clients(provider, client_id, tenant, secret_ref, updated_at) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(provider) DO UPDATE SET client_id = excluded.client_id, tenant = excluded.tenant,
 		secret_ref = excluded.secret_ref, updated_at = excluded.updated_at`,
 		c.Provider, c.ClientID, nullString(c.Tenant), nullString(c.SecretRef), time.Now().Unix())
@@ -56,7 +56,7 @@ func (s *Store) PutOAuthClient(ctx context.Context, c OAuthClient) error {
 
 // DeleteOAuthClient removes a client registration.
 func (s *Store) DeleteOAuthClient(ctx context.Context, provider string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM oauth_clients WHERE provider = ?`, provider)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM oauth_clients WHERE provider = ?`, provider)
 	return err
 }
 
@@ -98,10 +98,10 @@ type IdentityDelegation struct {
 // delegation of an identity.
 func (s *Store) SetIdentityDelegation(ctx context.Context, d IdentityDelegation) error {
 	if d.Mode == "" {
-		_, err := s.db.ExecContext(ctx, `DELETE FROM identity_delegation WHERE identity_id = ?`, d.IdentityID)
+		_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM identity_delegation WHERE identity_id = ?`, d.IdentityID)
 		return err
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO identity_delegation(identity_id, mode, mailbox, owner_account_id) VALUES (?, ?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO identity_delegation(identity_id, mode, mailbox, owner_account_id) VALUES (?, ?, ?, ?)
 		ON CONFLICT(identity_id) DO UPDATE SET mode = excluded.mode, mailbox = excluded.mailbox, owner_account_id = excluded.owner_account_id`,
 		d.IdentityID, d.Mode, d.Mailbox, nullID(d.OwnerAccountID))
 	return err
@@ -109,7 +109,7 @@ func (s *Store) SetIdentityDelegation(ctx context.Context, d IdentityDelegation)
 
 // IdentityDelegations returns all delegations by identity id.
 func (s *Store) IdentityDelegations(ctx context.Context) (map[int64]IdentityDelegation, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT identity_id, mode, mailbox, owner_account_id FROM identity_delegation`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT identity_id, mode, mailbox, owner_account_id FROM identity_delegation`)
 	if err != nil {
 		return nil, err
 	}

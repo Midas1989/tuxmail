@@ -39,7 +39,7 @@ func (s *Store) IndexMessage(ctx context.Context, messageID int64, d SearchDoc) 
 
 // UnindexMessage removes a message from the full-text index.
 func (s *Store) UnindexMessage(ctx context.Context, messageID int64) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM fts_docs WHERE message_id = ?`, messageID)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM fts_docs WHERE message_id = ?`, messageID)
 	return err
 }
 
@@ -47,7 +47,7 @@ func (s *Store) UnindexMessage(ctx context.Context, messageID int64) error {
 // messages, best match first. The query is passed to FTS5 verbatim; use Search
 // for user input.
 func (s *Store) SearchMessages(ctx context.Context, query string, limit int) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT d.message_id FROM fts_items f
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT d.message_id FROM fts_items f
 		JOIN fts_docs d ON d.id = f.rowid
 		JOIN messages m ON m.id = d.message_id
 		WHERE fts_items MATCH ? AND m.state = 'live'
@@ -64,7 +64,7 @@ func (s *Store) SearchMessages(ctx context.Context, query string, limit int) ([]
 // MessagesToIndex returns up to limit live messages that have no full-text
 // index entry yet, oldest first (e.g. after migration 0003 rebuilt the index).
 func (s *Store) MessagesToIndex(ctx context.Context, limit int) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id FROM messages m
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.id FROM messages m
 		WHERE m.state = 'live' AND NOT EXISTS (SELECT 1 FROM fts_docs d WHERE d.message_id = m.id)
 		ORDER BY m.id LIMIT ?`, limit)
 	if err != nil {

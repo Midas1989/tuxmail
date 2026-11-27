@@ -111,7 +111,7 @@ func scanPerson(sc scanner) (Person, error) {
 
 // CreatePerson inserts a person and returns its id.
 func (s *Store) CreatePerson(ctx context.Context, p Person) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `INSERT INTO persons(display_name, avatar_blob, is_me) VALUES (?, ?, ?)`,
+	res, err := s.q(ctx).ExecContext(ctx, `INSERT INTO persons(display_name, avatar_blob, is_me) VALUES (?, ?, ?)`,
 		nullString(p.DisplayName), nullString(p.AvatarBlob), boolInt(p.IsMe))
 	if err != nil {
 		return 0, fmt.Errorf("store: create person: %w", err)
@@ -121,19 +121,19 @@ func (s *Store) CreatePerson(ctx context.Context, p Person) (int64, error) {
 
 // UpdatePerson overwrites the person p.ID.
 func (s *Store) UpdatePerson(ctx context.Context, p Person) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE persons SET display_name = ?, avatar_blob = ?, is_me = ? WHERE id = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE persons SET display_name = ?, avatar_blob = ?, is_me = ? WHERE id = ?`,
 		nullString(p.DisplayName), nullString(p.AvatarBlob), boolInt(p.IsMe), p.ID))
 }
 
 // GetPerson returns the person with the given id.
 func (s *Store) GetPerson(ctx context.Context, id int64) (Person, error) {
-	p, err := scanPerson(s.db.QueryRowContext(ctx, `SELECT `+personCols+` FROM persons WHERE id = ?`, id))
+	p, err := scanPerson(s.q(ctx).QueryRowContext(ctx, `SELECT `+personCols+` FROM persons WHERE id = ?`, id))
 	return p, notFound(err)
 }
 
 // ListPersons returns all persons ordered by display name.
 func (s *Store) ListPersons(ctx context.Context) ([]Person, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+personCols+` FROM persons ORDER BY display_name COLLATE NOCASE, id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+personCols+` FROM persons ORDER BY display_name COLLATE NOCASE, id`)
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +143,7 @@ func (s *Store) ListPersons(ctx context.Context) ([]Person, error) {
 // DeletePerson deletes a person. Its handles are deleted; contacts, addresses
 // and chat messages referencing it lose the reference.
 func (s *Store) DeletePerson(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM persons WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM persons WHERE id = ?`, id))
 }
 
 // AddHandle attaches a handle to a person; the value is normalized. Adding a
@@ -175,13 +175,13 @@ func (s *Store) AddHandle(ctx context.Context, h Handle) error {
 
 // RemoveHandle removes a handle (value is normalized).
 func (s *Store) RemoveHandle(ctx context.Context, kind, value string) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM person_handles WHERE kind = ? AND value = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM person_handles WHERE kind = ? AND value = ?`,
 		kind, NormalizeHandle(kind, value)))
 }
 
 // Handles returns the handles of a person ordered by kind and value.
 func (s *Store) Handles(ctx context.Context, personID int64) ([]Handle, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT person_id, kind, value, verified FROM person_handles
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT person_id, kind, value, verified FROM person_handles
 		WHERE person_id = ? ORDER BY kind, value`, personID)
 	if err != nil {
 		return nil, err
@@ -196,7 +196,7 @@ func scanHandle(sc scanner) (Handle, error) {
 
 // FindPersonByHandle returns the person owning the handle (value is normalized).
 func (s *Store) FindPersonByHandle(ctx context.Context, kind, value string) (Person, error) {
-	p, err := scanPerson(s.db.QueryRowContext(ctx, `SELECT `+prefixed("p.", personCols)+` FROM persons p
+	p, err := scanPerson(s.q(ctx).QueryRowContext(ctx, `SELECT `+prefixed("p.", personCols)+` FROM persons p
 		JOIN person_handles h ON h.person_id = p.id WHERE h.kind = ? AND h.value = ?`, kind, NormalizeHandle(kind, value)))
 	return p, notFound(err)
 }
@@ -208,7 +208,7 @@ func (s *Store) ListPersonsWithHandles(ctx context.Context) ([]PersonWithHandles
 	if err != nil {
 		return nil, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT person_id, kind, value, verified FROM person_handles ORDER BY person_id, kind, value`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT person_id, kind, value, verified FROM person_handles ORDER BY person_id, kind, value`)
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +302,7 @@ func (s *Store) LinkAddressesToPerson(ctx context.Context, email string, personI
 	// Only rows that are not linked yet are written: the indexer calls this
 	// for every address of every new mail, and rewriting all earlier rows of
 	// a frequent sender each time made large initial syncs quadratic.
-	res, err := s.db.ExecContext(ctx, `UPDATE message_addresses SET person_id = ?1 WHERE lower(email) = ?2
+	res, err := s.q(ctx).ExecContext(ctx, `UPDATE message_addresses SET person_id = ?1 WHERE lower(email) = ?2
 		AND person_id IS NOT ?1`, nullID(personID), NormalizeHandle(HandleEmail, email))
 	if err != nil {
 		return 0, err

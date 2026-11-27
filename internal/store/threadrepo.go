@@ -104,7 +104,7 @@ func (s *Store) MessagesByKey(ctx context.Context, key string) ([]Message, error
 		return nil, nil
 	}
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE `+where+` ORDER BY id`, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+messageCols+` FROM messages WHERE `+where+` ORDER BY id`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +119,7 @@ func (s *Store) KeyHasRows(ctx context.Context, key string) (bool, error) {
 		return false, nil
 	}
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE `+where+` AND state <> 'deleted'`, args...).Scan(&n)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE `+where+` AND state <> 'deleted'`, args...).Scan(&n)
 	return n > 0, err
 }
 

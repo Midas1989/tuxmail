@@ -216,12 +216,12 @@ func (s *Store) UpsertMessage(ctx context.Context, m Message) (id int64, created
 
 // GetMessage returns the message with the given id.
 func (s *Store) GetMessage(ctx context.Context, id int64) (Message, error) {
-	m, err := scanMessage(s.db.QueryRowContext(ctx, `SELECT `+messageCols+` FROM messages WHERE id = ?`, id))
+	m, err := scanMessage(s.q(ctx).QueryRowContext(ctx, `SELECT `+messageCols+` FROM messages WHERE id = ?`, id))
 	return m, notFound(err)
 }
 
 func (s *Store) findOne(ctx context.Context, where string, args ...any) (Message, error) {
-	m, err := scanMessage(s.db.QueryRowContext(ctx, `SELECT `+messageCols+` FROM messages WHERE `+where+` ORDER BY id LIMIT 1`, args...))
+	m, err := scanMessage(s.q(ctx).QueryRowContext(ctx, `SELECT `+messageCols+` FROM messages WHERE `+where+` ORDER BY id LIMIT 1`, args...))
 	return m, notFound(err)
 }
 
@@ -248,7 +248,7 @@ func (s *Store) FindMessageByLocation(ctx context.Context, folderID int64, remot
 
 // ListMessagesByConversation returns the live messages of a conversation in chronological order.
 func (s *Store) ListMessagesByConversation(ctx context.Context, conversationID int64) ([]Message, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+messageCols+` FROM messages
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+messageCols+` FROM messages
 		WHERE conversation_id = ? AND +state = 'live' ORDER BY sent_at, id`, conversationID)
 	if err != nil {
 		return nil, err
@@ -259,7 +259,7 @@ func (s *Store) ListMessagesByConversation(ctx context.Context, conversationID i
 // ListMessagesInFolder returns the messages located in a folder, newest first.
 func (s *Store) ListMessagesInFolder(ctx context.Context, folderID int64, limit, offset int) ([]Message, error) {
 	// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-	rows, err := s.db.QueryContext(ctx, `SELECT `+prefixed("m.", messageCols)+` FROM messages m
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+prefixed("m.", messageCols)+` FROM messages m
 		JOIN message_locations l ON l.message_id = m.id
 		WHERE l.folder_id = ? ORDER BY m.sent_at DESC, m.id DESC LIMIT ? OFFSET ?`, folderID, limit, offset)
 	if err != nil {
@@ -270,17 +270,17 @@ func (s *Store) ListMessagesInFolder(ctx context.Context, folderID int64, limit,
 
 // SetMessageFlags replaces the flags of a message.
 func (s *Store) SetMessageFlags(ctx context.Context, id int64, f Flags) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE messages SET flags = ? WHERE id = ?`, f, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE messages SET flags = ? WHERE id = ?`, f, id))
 }
 
 // SetMessageBlob sets the blob hash of the raw message.
 func (s *Store) SetMessageBlob(ctx context.Context, id int64, hash string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE messages SET blob_hash = ? WHERE id = ?`, nullString(hash), id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE messages SET blob_hash = ? WHERE id = ?`, nullString(hash), id))
 }
 
 // DeleteMessage removes a message row completely (relations are kept, they hang on keys).
 func (s *Store) DeleteMessage(ctx context.Context, id int64) error {
-	return checkAffected(s.db.ExecContext(ctx, `DELETE FROM messages WHERE id = ?`, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `DELETE FROM messages WHERE id = ?`, id))
 }
 
 // ==== Addresses ===============================================================
@@ -303,7 +303,7 @@ func (s *Store) SetMessageAddresses(ctx context.Context, messageID int64, addrs 
 
 // MessageAddresses returns the addresses of a message in insertion order.
 func (s *Store) MessageAddresses(ctx context.Context, messageID int64) ([]MessageAddress, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT role, name, email, person_id FROM message_addresses
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT role, name, email, person_id FROM message_addresses
 		WHERE message_id = ? ORDER BY rowid`, messageID)
 	if err != nil {
 		return nil, err
@@ -447,7 +447,7 @@ func (s *Store) RemoveAllLocations(ctx context.Context, folderID int64) (int64, 
 
 // Locations returns all locations of a message.
 func (s *Store) Locations(ctx context.Context, messageID int64) ([]Location, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT message_id, folder_id, remote_ref FROM message_locations
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT message_id, folder_id, remote_ref FROM message_locations
 		WHERE message_id = ? ORDER BY folder_id, remote_ref`, messageID)
 	if err != nil {
 		return nil, err
@@ -482,7 +482,7 @@ func (s *Store) MarkOrphaned(ctx context.Context, messageID int64) error {
 // deleted and returns how many were affected. Relations are kept because they
 // are keyed by message keys (KONZEPT 6.5).
 func (s *Store) GCOrphaned(ctx context.Context, maxAge time.Duration, now time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE messages SET state = 'deleted'
+	res, err := s.q(ctx).ExecContext(ctx, `UPDATE messages SET state = 'deleted'
 		WHERE state = 'orphaned' AND orphaned_since <= ?`, now.Add(-maxAge).Unix())
 	if err != nil {
 		return 0, err

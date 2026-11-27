@@ -15,10 +15,13 @@ import (
 //
 // Publish never blocks unboundedly: the sync engine and messenger plugins must
 // not stall because a consumer is slow. UI-style consumers that can recover
-// by re-reading the database use DropNewest (the default); consumers that must
-// see every event (the workflow engine) use Block, which waits at most
-// BlockTimeout for buffer space and only then drops. Every drop is counted
-// per subscription (Subscription.Dropped) and on the bus (Stats).
+// by re-reading the database use DropNewest (the default). Block waits at most
+// BlockTimeout for buffer space and only then drops. Consumers that must see
+// every event (the workflow engine) use Queue: events beyond the buffer are
+// kept in order in a queue of up to MaxQueue events, so a burst neither
+// stalls the publisher nor loses events. Every drop is counted per
+// subscription (Subscription.Dropped) and on the bus (Stats) and reported to
+// SubscribeOptions.OnDrop.
 type Policy int
 
 const (
@@ -26,7 +29,14 @@ const (
 	DropNewest Policy = iota
 	// Block waits up to SubscribeOptions.BlockTimeout for buffer space.
 	Block
+	// Queue keeps events beyond the buffer in an ordered queue of at most
+	// SubscribeOptions.MaxQueue events; only beyond that it drops.
+	Queue
 )
+
+// DefaultMaxQueue is the queue length of a Queue subscription without
+// MaxQueue.
+const DefaultMaxQueue = 100_000
 
 // DefaultBuffer is the channel capacity used when SubscribeOptions.Buffer is 0.
 const DefaultBuffer = 256
@@ -46,6 +56,11 @@ type SubscribeOptions struct {
 	Policy Policy
 	// BlockTimeout bounds the wait of a Block subscription.
 	BlockTimeout time.Duration
+	// MaxQueue bounds the queue of a Queue subscription (DefaultMaxQueue if 0).
+	MaxQueue int
+	// OnDrop, if set, is called for every event this subscriber misses. It
+	// runs in the publisher's goroutine and must return quickly.
+	OnDrop func(Event)
 }
 
 // Subscription is an active subscription. Read events from C; C is closed
@@ -62,6 +77,88 @@ type Subscription struct {
 	done    chan struct{}
 	once    sync.Once
 	bus     *Bus
+	onDrop  func(Event)
+
+	// sendMu is held (shared) by every send on ch outside the bus lock;
+	// Unsubscribe takes it exclusively before closing ch.
+	sendMu sync.RWMutex
+
+	// Queue policy.
+	qmu      sync.Mutex
+	queue    []Event
+	maxQueue int
+	qwake    chan struct{}
+}
+
+func (s *Subscription) drop(b *Bus, ev Event) {
+	s.dropped.Add(1)
+	b.dropped.Add(1)
+	if s.onDrop != nil {
+		s.onDrop(ev)
+	}
+}
+
+// enqueue delivers ev to a Queue subscription: directly while nothing is
+// queued and the buffer has room, else behind the queued events (order is
+// kept). It reports false when the queue is full.
+func (s *Subscription) enqueue(ev Event) bool {
+	s.qmu.Lock()
+	defer s.qmu.Unlock()
+	if len(s.queue) == 0 {
+		select {
+		case s.ch <- ev:
+			return true
+		default:
+		}
+	}
+	if len(s.queue) >= s.maxQueue {
+		return false
+	}
+	s.queue = append(s.queue, ev)
+	select {
+	case s.qwake <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+// pump moves queued events into the channel as the reader frees space.
+func (s *Subscription) pump() {
+	for {
+		s.qmu.Lock()
+		if len(s.queue) == 0 {
+			s.qmu.Unlock()
+			select {
+			case <-s.qwake:
+				continue
+			case <-s.done:
+				return
+			}
+		}
+		ev := s.queue[0]
+		s.qmu.Unlock()
+		s.sendMu.RLock()
+		select {
+		case <-s.done:
+			s.sendMu.RUnlock()
+			return
+		default:
+		}
+		select {
+		case s.ch <- ev:
+		case <-s.done:
+			s.sendMu.RUnlock()
+			return
+		}
+		s.sendMu.RUnlock()
+		s.qmu.Lock()
+		s.queue[0] = Event{}
+		s.queue = s.queue[1:]
+		if len(s.queue) == 0 {
+			s.queue = nil // release the backing array after a burst
+		}
+		s.qmu.Unlock()
+	}
 }
 
 // Dropped returns the number of events this subscriber missed.
@@ -78,7 +175,9 @@ func (s *Subscription) Unsubscribe() {
 		b.mu.Lock()
 		delete(b.subs, s)
 		b.mu.Unlock()
+		s.sendMu.Lock() // senders outside the bus lock have left
 		close(s.ch)
+		s.sendMu.Unlock()
 	})
 }
 
@@ -183,7 +282,14 @@ func (b *Bus) Subscribe(ctx context.Context, opts SubscribeOptions) *Subscriptio
 	ch := make(chan Event, buf)
 	s := &Subscription{
 		C: ch, ch: ch, name: opts.Name, policy: opts.Policy, timeout: timeout,
-		done: make(chan struct{}), bus: b,
+		done: make(chan struct{}), bus: b, onDrop: opts.OnDrop,
+	}
+	if s.policy == Queue {
+		s.maxQueue = opts.MaxQueue
+		if s.maxQueue <= 0 {
+			s.maxQueue = DefaultMaxQueue
+		}
+		s.qwake = make(chan struct{}, 1)
 	}
 	if len(opts.Types) > 0 {
 		s.types = make(map[Type]bool, len(opts.Types))
@@ -200,6 +306,9 @@ func (b *Bus) Subscribe(ctx context.Context, opts SubscribeOptions) *Subscriptio
 	}
 	b.subs[s] = struct{}{}
 	b.mu.Unlock()
+	if s.policy == Queue {
+		go s.pump()
+	}
 
 	go func() {
 		select {
@@ -223,15 +332,28 @@ func (b *Bus) Publish(ev Event) int {
 		ev.Time = b.now().UTC()
 	}
 	b.mu.RLock()
-	defer b.mu.RUnlock()
 	if b.closed {
+		b.mu.RUnlock()
 		return 0
 	}
 	b.published.Add(1)
 	delivered := 0
-	var blocking []*Subscription
+	var blocking, dropped []*Subscription
 	for s := range b.subs {
 		if !s.wants(ev.Type) {
+			continue
+		}
+		if s.policy == Queue {
+			select {
+			case <-s.done:
+				continue
+			default:
+			}
+			if s.enqueue(ev) {
+				delivered++
+			} else {
+				dropped = append(dropped, s)
+			}
 			continue
 		}
 		select {
@@ -246,24 +368,53 @@ func (b *Bus) Publish(ev Event) int {
 			blocking = append(blocking, s)
 			continue
 		}
-		s.dropped.Add(1)
-		b.dropped.Add(1)
+		dropped = append(dropped, s)
 	}
-	// Bounded blocking for subscribers that must not miss events. Done after
-	// the non-blocking pass so a slow subscriber cannot delay the others.
+	b.mu.RUnlock()
+	// Drop callbacks and bounded waits run outside the bus lock: a slow
+	// subscriber must not hold up Subscribe/Unsubscribe and, through the
+	// waiting writer, every other publisher.
+	for _, s := range dropped {
+		s.drop(b, ev)
+	}
 	for _, s := range blocking {
-		t := time.NewTimer(s.timeout)
-		select {
-		case s.ch <- ev:
+		switch s.blockingSend(ev) {
+		case sendDelivered:
 			delivered++
-		case <-s.done:
-		case <-t.C:
-			s.dropped.Add(1)
-			b.dropped.Add(1)
+		case sendTimedOut:
+			s.drop(b, ev)
 		}
-		t.Stop()
 	}
 	return delivered
+}
+
+type sendResult int
+
+const (
+	sendDelivered sendResult = iota
+	sendTimedOut
+	sendEnded // the subscription ended meanwhile
+)
+
+// blockingSend waits up to the subscription's timeout for buffer space.
+func (s *Subscription) blockingSend(ev Event) sendResult {
+	s.sendMu.RLock()
+	defer s.sendMu.RUnlock()
+	select {
+	case <-s.done:
+		return sendEnded
+	default:
+	}
+	t := time.NewTimer(s.timeout)
+	defer t.Stop()
+	select {
+	case s.ch <- ev:
+		return sendDelivered
+	case <-s.done:
+		return sendEnded
+	case <-t.C:
+		return sendTimedOut
+	}
 }
 
 // RegisterHook adds a synchronous hook for events of type t. Hooks run in

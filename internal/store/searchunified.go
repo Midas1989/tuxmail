@@ -327,7 +327,7 @@ func (s *Store) SearchAdvanced(ctx context.Context, req SearchRequest) (SearchRe
 	q := `SELECT kind, id, title, snippet, time, account, score, sender, size, channel, hasatt, docid FROM (` +
 		strings.Join(parts, "\nUNION ALL\n") + `) ORDER BY ` + orderBy(spec.keys) + ` LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return res, fmt.Errorf("store: search: %w", err)
 	}
@@ -455,7 +455,7 @@ func (s *Store) facets(ctx context.Context, c *compiler, root query.Node, size i
 		UNION ALL SELECT 'channel', channel, '', COUNT(*) FROM r WHERE channel <> '' GROUP BY 2
 		UNION ALL SELECT 'has_attachment', CAST(hasatt AS TEXT), '', COUNT(*) FROM r GROUP BY 2
 		UNION ALL ` + tagFacetSQL
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: search facets: %w", err)
 	}
@@ -1428,7 +1428,7 @@ func (s *Store) fillHighlights(ctx context.Context, arms []compiledArm, docIDs m
 			continue
 		}
 		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-		rows, err := s.db.QueryContext(ctx, `SELECT rowid, highlight(fts_items, 0, char(2), char(3)),
+		rows, err := s.q(ctx).QueryContext(ctx, `SELECT rowid, highlight(fts_items, 0, char(2), char(3)),
 				snippet(fts_items, -1, char(2), char(3), '…', 12)
 			FROM fts_items WHERE fts_items MATCH ? AND rowid IN (`+placeholders(len(ids))+`)`,
 			append([]any{a.match}, int64Args(ids)...)...)
@@ -1516,7 +1516,7 @@ func (s *Store) expandTerms(ctx context.Context, c *compiler, root query.Node) e
 		}
 		var rows *sql.Rows
 		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-		rows, err = s.db.QueryContext(ctx, `SELECT term FROM fts_vocab WHERE term >= ? AND term < ? AND `+filter+`
+		rows, err = s.q(ctx).QueryContext(ctx, `SELECT term FROM fts_vocab WHERE term >= ? AND term < ? AND `+filter+`
 			ORDER BY doc DESC LIMIT ?`, append(append([]any{lo, hi}, fargs...), maxExpansions+1)...)
 		if err != nil {
 			return false

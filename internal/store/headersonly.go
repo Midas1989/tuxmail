@@ -38,7 +38,7 @@ type PreviewTask struct {
 // before `before` whose preview was not requested yet, with one server
 // location each (refs with skipRefPrefix, e.g. placeholders, are ignored).
 func (s *Store) MessagesNeedingPreview(ctx context.Context, accountID int64, before time.Time, skipRefPrefix string, limit int) ([]PreviewTask, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, f.remote_id, MIN(l.remote_ref)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.id, f.remote_id, MIN(l.remote_ref)
 		FROM messages m
 		JOIN message_locations l ON l.message_id = m.id
 		JOIN folders f ON f.id = l.folder_id
@@ -63,14 +63,14 @@ func (s *Store) MessagesNeedingPreview(ctx context.Context, accountID int64, bef
 // as requested (also when the preview is empty). A mail whose body arrived
 // in the meantime keeps the snippet derived from the body.
 func (s *Store) SetMessagePreview(ctx context.Context, id int64, preview string) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE messages SET preview_tried = 1,
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE messages SET preview_tried = 1,
 		snippet = CASE WHEN blob_hash IS NULL AND ? <> '' THEN ? ELSE snippet END WHERE id = ?`, preview, preview, id)
 	return err
 }
 
 // SetContentTime records when the body of a message was stored locally.
 func (s *Store) SetContentTime(ctx context.Context, id int64, at time.Time) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE messages SET content_at = ? WHERE id = ?`, at.Unix(), id)
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE messages SET content_at = ? WHERE id = ?`, at.Unix(), id)
 	return err
 }
 
@@ -122,7 +122,7 @@ func (s *Store) ReleasableBodies(ctx context.Context, accountID int64, before, l
 		args = append(args, f)
 	}
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, `SELECT m.id, m.blob_hash, f0.id, f0.remote_id, MIN(l0.remote_ref) FROM messages m
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.id, m.blob_hash, f0.id, f0.remote_id, MIN(l0.remote_ref) FROM messages m
 		JOIN accounts a ON a.id = m.account_id
 		JOIN message_locations l0 ON l0.message_id = m.id
 		JOIN folders f0 ON f0.id = l0.folder_id
@@ -171,14 +171,14 @@ func (s *Store) ReleaseBody(ctx context.Context, id int64, blobHash string) (boo
 // KeepBody marks a message whose body must never be released (found to be
 // encrypted when checked).
 func (s *Store) KeepBody(ctx context.Context, id int64) error {
-	_, err := s.db.ExecContext(ctx, `UPDATE messages SET keep_body = 1 WHERE id = ?`, id)
+	_, err := s.q(ctx).ExecContext(ctx, `UPDATE messages SET keep_body = 1 WHERE id = ?`, id)
 	return err
 }
 
 // HeadersOnlyStats counts the mails of an account kept with header only
 // and those with a stored body.
 func (s *Store) HeadersOnlyStats(ctx context.Context, accountID int64) (headersOnly, complete int, err error) {
-	err = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(blob_hash IS NULL), 0), COALESCE(SUM(blob_hash IS NOT NULL), 0)
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT COALESCE(SUM(blob_hash IS NULL), 0), COALESCE(SUM(blob_hash IS NOT NULL), 0)
 		FROM messages WHERE account_id = ? AND state = 'live'`, accountID).Scan(&headersOnly, &complete)
 	return
 }
@@ -188,7 +188,7 @@ func (s *Store) HeadersOnlyStats(ctx context.Context, accountID int64) (headersO
 // RemoteCachedSummary returns the summary (JSON) of a loaded message.
 func (s *Store) RemoteCachedSummary(ctx context.Context, id int64) (string, bool, error) {
 	var js string
-	err := s.db.QueryRowContext(ctx, `SELECT summary_json FROM remote_cache_messages WHERE id = ?`, id).Scan(&js)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT summary_json FROM remote_cache_messages WHERE id = ?`, id).Scan(&js)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
@@ -198,7 +198,7 @@ func (s *Store) RemoteCachedSummary(ctx context.Context, id int64) (string, bool
 // RemoteCachedDate returns the date of a loaded message ("" if unknown).
 func (s *Store) RemoteCachedDate(ctx context.Context, id int64) (string, error) {
 	var d string
-	err := s.db.QueryRowContext(ctx, `SELECT msg_date FROM remote_cache_messages WHERE id = ?`, id).Scan(&d)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT msg_date FROM remote_cache_messages WHERE id = ?`, id).Scan(&d)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -208,7 +208,7 @@ func (s *Store) RemoteCachedDate(ctx context.Context, id int64) (string, error) 
 // HasRemoteCache reports whether an answer is kept (without touching it).
 func (s *Store) HasRemoteCache(ctx context.Context, key string) (bool, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM remote_cache WHERE cache_key = ?`, key).Scan(&n)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM remote_cache WHERE cache_key = ?`, key).Scan(&n)
 	return n > 0, err
 }
 
@@ -223,7 +223,7 @@ var remoteContentPrefixes = []string{"/api/messages/%d/attachments/", "/api/mess
 // release returns true, and replaces their search text with what release
 // returns (header and preview). The list entries stay.
 func (s *Store) ReleaseRemoteCachedBodies(ctx context.Context, release func(id int64, date, summaryJSON string) (string, bool)) error {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, msg_date, summary_json FROM remote_cache_messages`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT id, msg_date, summary_json FROM remote_cache_messages`)
 	if err != nil {
 		return err
 	}
@@ -287,7 +287,7 @@ func (s *Store) PendingBodies(ctx context.Context, accountID int64, notBefore ti
 		args = append(args, k)
 	}
 	args = append(args, unixOrZero(notBefore), maxSize, maxSize)
-	err = s.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(m.size), 0) FROM messages m JOIN accounts a ON a.id = m.account_id
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(m.size), 0) FROM messages m JOIN accounts a ON a.id = m.account_id
 		WHERE m.account_id = ? AND a.kind IN (`+kinds+`) AND a.enabled = 1 AND m.state = 'live' AND m.blob_hash IS NULL
 		  AND COALESCE(m.sent_at, m.received_at, 0) >= ? AND (? <= 0 OR m.size <= ?)
 		  AND EXISTS (SELECT 1 FROM message_locations l JOIN folders f ON f.id = l.folder_id

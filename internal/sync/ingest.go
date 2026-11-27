@@ -132,13 +132,8 @@ func (w *Worker) syncFolderChunk(ctx context.Context, f domain.Folder) (bool, er
 		if err := ctx.Err(); err != nil {
 			return false, err // stop quickly; this chunk is fetched again next time
 		}
-		for _, rm := range added[i:min(i+w.m.cfg.IngestBatch, len(added))] {
-			if err := w.ingest(ctx, f, rm, quiet, b); err != nil {
-				if ctx.Err() != nil || IsNetworkError(err) {
-					return false, err
-				}
-				w.log.Warn("sync: ingest failed", "folder", f.RemoteID, "ref", rm.Ref.ID, "err", err)
-			}
+		if err := w.ingestBatch(ctx, f, added[i:min(i+w.m.cfg.IngestBatch, len(added))], quiet, b); err != nil {
+			return false, err
 		}
 		n := b.changed
 		w.flush(ctx, f, b)
@@ -155,6 +150,47 @@ func (w *Worker) syncFolderChunk(ctx context.Context, f domain.Folder) (bool, er
 	}
 	w.flush(ctx, f, b)
 	return delta.More, nil
+}
+
+// ingestBatch ingests msgs with the row writes of all of them in one store
+// transaction (a few hundred single commits per batch cost more than the
+// whole rest of a header-only first sync), then finishes them one by one.
+// Errors of single messages are logged and skipped; network errors and a
+// failed commit end the batch (the chunk is fetched again).
+func (w *Worker) ingestBatch(ctx context.Context, f domain.Folder, msgs []domain.RemoteMessage, quiet bool, b *batch) error {
+	bctx, sb, err := w.m.st.BeginBatch(ctx)
+	if err != nil {
+		return err
+	}
+	done := make([]*ingested, 0, len(msgs))
+	for _, rm := range msgs {
+		in, err := w.ingest(bctx, f, rm, quiet, b, sb)
+		if err != nil {
+			if ctx.Err() != nil || IsNetworkError(err) {
+				sb.Rollback()
+				return err
+			}
+			w.log.Warn("sync: ingest failed", "folder", f.RemoteID, "ref", rm.Ref.ID, "err", err)
+			if err := sb.Resume(); err != nil { // a failed Pause/Resume left no transaction
+				return err
+			}
+			continue
+		}
+		done = append(done, in)
+	}
+	if err := sb.Commit(); err != nil {
+		sb.Rollback()
+		return fmt.Errorf("sync: commit batch: %w", err)
+	}
+	for _, in := range done {
+		if err := w.finishIngest(ctx, f, in, quiet, b); err != nil {
+			if ctx.Err() != nil || IsNetworkError(err) {
+				return err
+			}
+			w.log.Warn("sync: ingest failed", "folder", f.RemoteID, "message", in.id, "err", err)
+		}
+	}
+	return nil
 }
 
 // partialPrefix marks the stored sync state of a folder whose chunked
@@ -238,7 +274,23 @@ func (w *Worker) applyFlags(ctx context.Context, f domain.Folder, rm domain.Remo
 
 // ingest stores one message reported as added in folder f. quiet suppresses
 // mail.received (initial sync / backfill).
-func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMessage, quiet bool, b *batch) error {
+// ingested is what the second, unbatched phase of ingest needs.
+type ingested struct {
+	id       int64
+	created  bool
+	row      store.Message
+	h        domain.MessageHeaderInfo
+	ct       *content.Content
+	raw      []byte
+	flags    []domain.Flag
+	existing *store.Message
+}
+
+// ingest stores one remote message (first phase: rows, content, search
+// index). It runs inside the store batch sb (nil: no batch); everything that
+// takes locks of other components or announces the mail (tags, threading,
+// rules, events) follows in finishIngest after the batch is committed.
+func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMessage, quiet bool, b *batch, sb *store.Batch) (*ingested, error) {
 	m, st := w.m, w.m.st
 	h := rm.Header
 	h.MessageID = threading.NormalizeMessageID(h.MessageID)
@@ -248,7 +300,22 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 		if e, err := st.FindMessageByMessageID(ctx, w.acc.ID, h.MessageID); err == nil {
 			existing = &e
 		} else if !errors.Is(err, store.ErrNotFound) {
-			return err
+			return nil, err
+		}
+	}
+	// Received mail that reuses the Message-ID of a different stored mail
+	// (broken mailers, or a forged copy) is stored on its own instead of
+	// being folded into that mail, where its body would never be fetched.
+	// It is then identified like a mail without Message-ID (fingerprint).
+	keepHeader := false
+	if existing != nil && receivable(f.Role) {
+		if messageIDCollision(*existing, h) {
+			w.log.Warn("sync: Message-ID reused by a different mail; stored separately",
+				"folder", f.RemoteID, "ref", rm.Ref.ID, "existing", existing.ID)
+			h.MessageID, existing = "", nil
+		} else {
+			// Another copy of a known mail: the header seen first stays.
+			keepHeader = true
 		}
 	}
 	// Messages without Message-ID need their body for the fingerprint;
@@ -260,18 +327,29 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 		ct  *content.Content
 	)
 	if needRaw && (rm.Size <= 0 || rm.Size <= m.cfg.MaxBodySize) {
+		// No transaction stays open while waiting for the server.
+		if sb != nil {
+			if err := sb.Pause(); err != nil {
+				return nil, err
+			}
+		}
 		r, err := w.fetchRaw(ctx, rm.Ref)
 		switch {
 		case err == nil:
 			raw = r
 		case ctx.Err() != nil || IsNetworkError(err):
-			return err
+			return nil, err
 		default:
 			w.log.Info("sync: fetch body failed", "ref", rm.Ref.ID, "err", err)
 		}
-	}
-	if raw != nil {
-		ct = m.extract(raw)
+		if raw != nil {
+			ct = m.extract(raw)
+		}
+		if sb != nil {
+			if err := sb.Resume(); err != nil {
+				return nil, err
+			}
+		}
 	}
 	msg := store.Message{
 		AccountID: w.acc.ID, MessageIDHdr: h.MessageID, Fingerprint: fingerprint(h, ct),
@@ -281,42 +359,65 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 	}
 	if existing != nil {
 		msg.HasAttachments = msg.HasAttachments || existing.HasAttachments
+		if keepHeader {
+			// A second copy must not rewrite subject, sender or date of the
+			// stored mail (a forged copy with the same Message-ID and Date
+			// would otherwise relabel it).
+			if existing.Subject != "" {
+				msg.Subject = existing.Subject
+			}
+			if existing.From != "" {
+				msg.From = existing.From
+			}
+			if !existing.SentAt.IsZero() {
+				msg.SentAt = existing.SentAt
+			}
+		}
 	}
 	id, created, err := st.UpsertMessage(ctx, msg)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := st.AddLocation(ctx, store.Location{MessageID: id, FolderID: f.ID, RemoteRef: rm.Ref.ID}); err != nil {
-		return err
+		return nil, err
 	}
 	if created {
 		if err := st.SetMessageAddresses(ctx, id, store.AddressesFromHeader(h)); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	row, err := st.GetMessage(ctx, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	b.changed++
 	if raw != nil {
 		if row, err = m.storeContent(ctx, row, raw, ct); err != nil {
-			return err
+			return nil, err
 		}
 	} else if created {
 		// Kept with header only for now: a preview the server delivered with
 		// the header data (no extra request) is stored right away.
 		if p := m.previewOf(rm); p != "" && w.contentRule().release {
 			if err := st.SetMessagePreview(ctx, id, p); err != nil {
-				return err
+				return nil, err
 			}
 			row.Snippet = p
 		}
 		if err := m.indexMessage(ctx, row, nil); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	if err := m.setProviderTags(ctx, id, rm.Flags, !created); err != nil {
+	return &ingested{id: id, created: created, row: row, h: h, ct: ct, raw: raw, flags: rm.Flags, existing: existing}, nil
+}
+
+// finishIngest is the second phase of ingest, outside any store batch:
+// provider tags, threading, rules and events (they take locks of other
+// components and announce the mail to readers on other connections).
+func (w *Worker) finishIngest(ctx context.Context, f domain.Folder, in *ingested, quiet bool, b *batch) error {
+	m, st := w.m, w.m.st
+	id, created, row, h, ct, raw, existing := in.id, in.created, in.row, in.h, in.ct, in.raw, in.existing
+	if err := m.setProviderTags(ctx, id, in.flags, !created); err != nil {
 		return err
 	}
 	if created || row.ConversationID == 0 {
@@ -356,6 +457,23 @@ func (w *Worker) ingest(ctx context.Context, f domain.Folder, rm domain.RemoteMe
 		}
 	}
 	return nil
+}
+
+// messageIDCollisionTolerance is the largest difference between the Date
+// headers of two copies of the same mail. Copies share the Date header
+// byte for byte; the tolerance only absorbs providers that report the date
+// from their own metadata instead.
+const messageIDCollisionTolerance = 10 * time.Minute
+
+// messageIDCollision reports whether a received mail with header h reuses
+// the Message-ID of the different mail existing: both have a Date and they
+// are clearly apart.
+func messageIDCollision(existing store.Message, h domain.MessageHeaderInfo) bool {
+	if existing.SentAt.IsZero() || h.Date.IsZero() {
+		return false
+	}
+	d := existing.SentAt.Sub(h.Date)
+	return d > messageIDCollisionTolerance || d < -messageIDCollisionTolerance
 }
 
 // receivable reports whether new messages in a folder of this role are

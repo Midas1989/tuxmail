@@ -81,14 +81,14 @@ func (s *Store) BeginIdempotency(ctx context.Context, key, route, requestHash st
 
 // FinishIdempotency stores the response of a finished request.
 func (s *Store) FinishIdempotency(ctx context.Context, key string, status int, contentType string, body []byte) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE idempotency_keys SET state = 'done', status = ?, content_type = ?, body = ? WHERE idem_key = ?`,
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE idempotency_keys SET state = 'done', status = ?, content_type = ?, body = ? WHERE idem_key = ?`,
 		status, contentType, body, key))
 }
 
 // DoubtIdempotency records that a request failed without certainty that nothing
 // happened: the key is not free again, only a person can decide to repeat it.
 func (s *Store) DoubtIdempotency(ctx context.Context, key string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE idempotency_keys SET state = 'doubt' WHERE idem_key = ?`, key))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE idempotency_keys SET state = 'doubt' WHERE idem_key = ?`, key))
 }
 
 // IdempotencyStatus tells a client what became of a key, without running
@@ -100,7 +100,7 @@ func (s *Store) DoubtIdempotency(ctx context.Context, key string) error {
 func (s *Store) IdempotencyStatus(ctx context.Context, key string, now time.Time, stale time.Duration) (string, error) {
 	var state string
 	var created int64
-	err := s.db.QueryRowContext(ctx, `SELECT state, created_at FROM idempotency_keys WHERE idem_key = ?`, key).Scan(&state, &created)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT state, created_at FROM idempotency_keys WHERE idem_key = ?`, key).Scan(&state, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "unknown", nil
 	}
@@ -118,7 +118,7 @@ func (s *Store) IdempotencyStatus(ctx context.Context, key string, now time.Time
 
 // ReleaseIdempotency forgets a key whose request failed without an effect, so that it can be retried.
 func (s *Store) ReleaseIdempotency(ctx context.Context, key string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM idempotency_keys WHERE idem_key = ?`, key)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM idempotency_keys WHERE idem_key = ?`, key)
 	return err
 }
 
@@ -133,7 +133,7 @@ type RemoteCacheEntry struct {
 
 // PutRemoteCache stores a response.
 func (s *Store) PutRemoteCache(ctx context.Context, e RemoteCacheEntry, now time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO remote_cache(cache_key, content_type, disposition, body, size, stored_at, used_at)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO remote_cache(cache_key, content_type, disposition, body, size, stored_at, used_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET content_type = excluded.content_type,
 		disposition = excluded.disposition, body = excluded.body, size = excluded.size, stored_at = excluded.stored_at, used_at = excluded.used_at`,
 		e.Key, e.ContentType, e.Disposition, e.Body, len(e.Body), now.UnixMilli(), now.UnixMilli())
@@ -144,7 +144,7 @@ func (s *Store) PutRemoteCache(ctx context.Context, e RemoteCacheEntry, now time
 func (s *Store) GetRemoteCache(ctx context.Context, key string, now time.Time) (RemoteCacheEntry, bool, error) {
 	var e RemoteCacheEntry
 	var stored int64
-	err := s.db.QueryRowContext(ctx, `SELECT cache_key, content_type, disposition, body, stored_at FROM remote_cache WHERE cache_key = ?`, key).
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT cache_key, content_type, disposition, body, stored_at FROM remote_cache WHERE cache_key = ?`, key).
 		Scan(&e.Key, &e.ContentType, &e.Disposition, &e.Body, &stored)
 	if errors.Is(err, sql.ErrNoRows) {
 		return e, false, nil
@@ -153,7 +153,7 @@ func (s *Store) GetRemoteCache(ctx context.Context, key string, now time.Time) (
 		return e, false, err
 	}
 	e.StoredAt = time.UnixMilli(stored).UTC()
-	if _, err := s.db.ExecContext(ctx, `UPDATE remote_cache SET used_at = ? WHERE cache_key = ?`, now.UnixMilli(), key); err != nil {
+	if _, err := s.q(ctx).ExecContext(ctx, `UPDATE remote_cache SET used_at = ? WHERE cache_key = ?`, now.UnixMilli(), key); err != nil {
 		return e, true, err
 	}
 	return e, true, nil
@@ -163,7 +163,7 @@ func (s *Store) GetRemoteCache(ctx context.Context, key string, now time.Time) (
 // with prefix (a fixed string), newest first, at most limit.
 func (s *Store) ListRemoteCacheBodies(ctx context.Context, prefix string, limit int) ([][]byte, error) {
 	// A range instead of LIKE: prefix is a literal, may contain % or _.
-	rows, err := s.db.QueryContext(ctx, `SELECT body FROM remote_cache WHERE cache_key >= ? AND cache_key < ? ORDER BY stored_at DESC LIMIT ?`,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT body FROM remote_cache WHERE cache_key >= ? AND cache_key < ? ORDER BY stored_at DESC LIMIT ?`,
 		prefix, prefix+"\xff", limit)
 	if err != nil {
 		return nil, err
@@ -177,7 +177,7 @@ func (s *Store) ListRemoteCacheBodies(ctx context.Context, prefix string, limit 
 // RemoteCacheSize returns the bytes held by the read cache.
 func (s *Store) RemoteCacheSize(ctx context.Context) (int64, error) {
 	var n sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT (SELECT COALESCE(SUM(size), 0) FROM remote_cache)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT (SELECT COALESCE(SUM(size), 0) FROM remote_cache)
 		+ (SELECT COALESCE(SUM(LENGTH(summary_json) + LENGTH(search_text)), 0) FROM remote_cache_messages)`).Scan(&n)
 	return n.Int64, err
 }
@@ -196,15 +196,15 @@ func (s *Store) PruneRemoteCache(ctx context.Context, max int64) (int, error) {
 		}
 		// Oldest first over both tables, in small batches: the sizes are recomputed.
 		var cacheUsed, msgUsed sql.NullInt64
-		if err := s.db.QueryRowContext(ctx, `SELECT (SELECT MIN(used_at) FROM remote_cache), (SELECT MIN(used_at) FROM remote_cache_messages)`).Scan(&cacheUsed, &msgUsed); err != nil {
+		if err := s.q(ctx).QueryRowContext(ctx, `SELECT (SELECT MIN(used_at) FROM remote_cache), (SELECT MIN(used_at) FROM remote_cache_messages)`).Scan(&cacheUsed, &msgUsed); err != nil {
 			return removed, err
 		}
 		var res sql.Result
 		switch {
 		case cacheUsed.Valid && (!msgUsed.Valid || cacheUsed.Int64 <= msgUsed.Int64):
-			res, err = s.db.ExecContext(ctx, `DELETE FROM remote_cache WHERE cache_key IN (SELECT cache_key FROM remote_cache ORDER BY used_at LIMIT 10)`)
+			res, err = s.q(ctx).ExecContext(ctx, `DELETE FROM remote_cache WHERE cache_key IN (SELECT cache_key FROM remote_cache ORDER BY used_at LIMIT 10)`)
 		case msgUsed.Valid:
-			res, err = s.db.ExecContext(ctx, `DELETE FROM remote_cache_messages WHERE id IN (SELECT id FROM remote_cache_messages ORDER BY used_at LIMIT 50)`)
+			res, err = s.q(ctx).ExecContext(ctx, `DELETE FROM remote_cache_messages WHERE id IN (SELECT id FROM remote_cache_messages ORDER BY used_at LIMIT 50)`)
 		default:
 			return removed, nil
 		}
@@ -240,7 +240,7 @@ func (s *Store) ClearRemoteCache(ctx context.Context) error {
 func (s *Store) truncateWAL(ctx context.Context) error {
 	var busy, logPages, done int
 	for range 20 {
-		if err := s.db.QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logPages, &done); err != nil {
+		if err := s.q(ctx).QueryRowContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`).Scan(&busy, &logPages, &done); err != nil {
 			return fmt.Errorf("store: checkpoint: %w", err)
 		}
 		if busy == 0 {
@@ -331,13 +331,13 @@ func (s *Store) ListRemoteMessages(ctx context.Context, q RemoteMessageQuery) ([
 	}
 	cond := strings.Join(where, " AND ")
 	var total int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM remote_cache_messages m WHERE `+cond, args...).Scan(&total); err != nil {
+	if err := s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM remote_cache_messages m WHERE `+cond, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	if q.Limit <= 0 {
 		q.Limit = 50
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT m.summary_json FROM remote_cache_messages m WHERE `+cond+` ORDER BY m.msg_date DESC, m.id DESC LIMIT ? OFFSET ?`,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT m.summary_json FROM remote_cache_messages m WHERE `+cond+` ORDER BY m.msg_date DESC, m.id DESC LIMIT ? OFFSET ?`,
 		append(args, q.Limit, max(q.Offset, 0))...)
 	if err != nil {
 		return nil, 0, err
@@ -385,14 +385,14 @@ func scanRemoteOutbox(sc scanner) (RemoteOutboxItem, error) {
 
 // AddRemoteOutbox appends an action.
 func (s *Store) AddRemoteOutbox(ctx context.Context, it RemoteOutboxItem) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO remote_outbox(id, kind, method, path, body, title, recipients, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO remote_outbox(id, kind, method, path, body, title, recipients, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 		it.ID, it.Kind, it.Method, it.Path, it.Body, it.Title, it.Recipients, it.CreatedAt.Unix())
 	return err
 }
 
 // ListRemoteOutbox returns all actions in order. withBody loads the payload too.
 func (s *Store) ListRemoteOutbox(ctx context.Context) ([]RemoteOutboxItem, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT `+remoteOutboxCols+` FROM remote_outbox ORDER BY seq`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT `+remoteOutboxCols+` FROM remote_outbox ORDER BY seq`)
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +401,7 @@ func (s *Store) ListRemoteOutbox(ctx context.Context) ([]RemoteOutboxItem, error
 
 // SetRemoteOutboxState records the outcome of a replay attempt.
 func (s *Store) SetRemoteOutboxState(ctx context.Context, id, state, lastError string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE remote_outbox SET state = ?, last_error = ?, attempts = attempts + 1 WHERE id = ?`, state, lastError, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE remote_outbox SET state = ?, last_error = ?, attempts = attempts + 1 WHERE id = ?`, state, lastError, id))
 }
 
 // DeleteRemoteOutbox removes an action and the uploads only it used.
@@ -446,7 +446,7 @@ func (s *Store) PurgeRemoteUploads(ctx context.Context, before time.Time, keep [
 			args = append(args, k)
 		}
 	}
-	_, err := s.db.ExecContext(ctx, q, args...)
+	_, err := s.q(ctx).ExecContext(ctx, q, args...)
 	return err
 }
 
@@ -454,20 +454,20 @@ func (s *Store) PurgeRemoteUploads(ctx context.Context, before time.Time, keep [
 
 // AddSettingsTombstone records that a synchronised setting was deleted on purpose.
 func (s *Store) AddSettingsTombstone(ctx context.Context, kind, id string, now time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO settings_tombstones(kind, item_id, deleted_at) VALUES (?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO settings_tombstones(kind, item_id, deleted_at) VALUES (?, ?, ?)
 		ON CONFLICT(kind, item_id) DO UPDATE SET deleted_at = excluded.deleted_at`, kind, id, now.Unix())
 	return err
 }
 
 // RemoveSettingsTombstone: the thing exists again (restored, or the id reused).
 func (s *Store) RemoveSettingsTombstone(ctx context.Context, kind, id string) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM settings_tombstones WHERE kind = ? AND item_id = ?`, kind, id)
+	_, err := s.q(ctx).ExecContext(ctx, `DELETE FROM settings_tombstones WHERE kind = ? AND item_id = ?`, kind, id)
 	return err
 }
 
 // ListSettingsTombstones returns the deleted ids by kind.
 func (s *Store) ListSettingsTombstones(ctx context.Context) (map[string][]string, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT kind, item_id FROM settings_tombstones ORDER BY kind, item_id`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT kind, item_id FROM settings_tombstones ORDER BY kind, item_id`)
 	if err != nil {
 		return nil, err
 	}
@@ -491,7 +491,7 @@ type RemoteUpload struct {
 
 // PutRemoteUpload stores an attachment.
 func (s *Store) PutRemoteUpload(ctx context.Context, u RemoteUpload, now time.Time) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO remote_outbox_uploads(token, filename, mime_type, data, size, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO remote_outbox_uploads(token, filename, mime_type, data, size, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
 		u.Token, u.Filename, u.MIMEType, u.Data, len(u.Data), now.Unix())
 	return err
 }
@@ -499,7 +499,7 @@ func (s *Store) PutRemoteUpload(ctx context.Context, u RemoteUpload, now time.Ti
 // GetRemoteUpload returns an attachment.
 func (s *Store) GetRemoteUpload(ctx context.Context, token string) (RemoteUpload, error) {
 	var u RemoteUpload
-	err := s.db.QueryRowContext(ctx, `SELECT token, filename, mime_type, data FROM remote_outbox_uploads WHERE token = ?`, token).
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT token, filename, mime_type, data FROM remote_outbox_uploads WHERE token = ?`, token).
 		Scan(&u.Token, &u.Filename, &u.MIMEType, &u.Data)
 	return u, notFound(err)
 }
@@ -507,30 +507,30 @@ func (s *Store) GetRemoteUpload(ctx context.Context, token string) (RemoteUpload
 // RemoteUploadsSize returns the bytes held by attachments waiting to be sent.
 func (s *Store) RemoteUploadsSize(ctx context.Context) (int64, error) {
 	var n sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT SUM(size) FROM remote_outbox_uploads`).Scan(&n)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT SUM(size) FROM remote_outbox_uploads`).Scan(&n)
 	return n.Int64, err
 }
 
 // SetRemoteOutboxBody replaces the payload (uploads now live at the server).
 func (s *Store) SetRemoteOutboxBody(ctx context.Context, id string, body []byte) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE remote_outbox SET body = ? WHERE id = ?`, body, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE remote_outbox SET body = ? WHERE id = ?`, body, id))
 }
 
 // RequeueRemoteOutbox gives an item a new id (a new send decided by the user) and makes it pending.
 func (s *Store) RequeueRemoteOutbox(ctx context.Context, id, newID string) error {
-	return checkAffected(s.db.ExecContext(ctx, `UPDATE remote_outbox SET id = ?, state = 'pending', last_error = '', attempts = 0 WHERE id = ?`, newID, id))
+	return checkAffected(s.q(ctx).ExecContext(ctx, `UPDATE remote_outbox SET id = ?, state = 'pending', last_error = '', attempts = 0 WHERE id = ?`, newID, id))
 }
 
 // CountAccountMessages returns how many messages an account has locally.
 func (s *Store) CountAccountMessages(ctx context.Context, accountID int64) (int, error) {
 	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE account_id = ?`, accountID).Scan(&n)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE account_id = ?`, accountID).Scan(&n)
 	return n, err
 }
 
 // ListRemoteCacheEntries returns keys and bodies of entries whose key starts with prefix, newest first.
 func (s *Store) ListRemoteCacheEntries(ctx context.Context, prefix string, limit int) ([]RemoteCacheEntry, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT cache_key, body FROM remote_cache WHERE cache_key >= ? AND cache_key < ? ORDER BY stored_at DESC LIMIT ?`,
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT cache_key, body FROM remote_cache WHERE cache_key >= ? AND cache_key < ? ORDER BY stored_at DESC LIMIT ?`,
 		prefix, prefix+"\xff", limit)
 	if err != nil {
 		return nil, err

@@ -883,8 +883,16 @@ func (e *Engine) Run(ctx context.Context) error {
 			types = append(types, t)
 		}
 	}
-	sub := e.cfg.Bus.Subscribe(ctx, events.SubscribeOptions{Name: "workflow", Types: types, Policy: events.Block,
-		BlockTimeout: 5 * time.Second, Buffer: 1024})
+	// Queue: a burst (a large sync, an import) neither stalls the publishers
+	// nor loses the events rules react to; only beyond the queue limit an
+	// event is dropped, and that is logged.
+	var dropped atomic.Uint64
+	sub := e.cfg.Bus.Subscribe(ctx, events.SubscribeOptions{Name: "workflow", Types: types, Policy: events.Queue,
+		Buffer: 1024, OnDrop: func(ev events.Event) {
+			if n := dropped.Add(1); n == 1 || n%1000 == 0 {
+				e.log.Error("workflow: event queue full, rules miss events", "event", ev.Type, "dropped_total", n)
+			}
+		}})
 	unhook := e.cfg.Bus.RegisterHook(events.MailBeforeSend, "workflow", e.BeforeSend)
 	defer unhook()
 

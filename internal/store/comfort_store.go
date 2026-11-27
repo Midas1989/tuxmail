@@ -21,7 +21,7 @@ import (
 // ComfortGet returns a value of comfort_kv ("" if unset).
 func (s *Store) ComfortGet(ctx context.Context, key string) (string, error) {
 	var v string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM comfort_kv WHERE key = ?`, key).Scan(&v)
+	err := s.q(ctx).QueryRowContext(ctx, `SELECT value FROM comfort_kv WHERE key = ?`, key).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil
 	}
@@ -30,7 +30,7 @@ func (s *Store) ComfortGet(ctx context.Context, key string) (string, error) {
 
 // ComfortSet stores a value in comfort_kv.
 func (s *Store) ComfortSet(ctx context.Context, key, value string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO comfort_kv(key, value) VALUES(?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO comfort_kv(key, value) VALUES(?, ?)
 		ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
 	return err
 }
@@ -72,7 +72,7 @@ func (s *Store) SpamTokenCounts(ctx context.Context, hashes []int64) (map[int64]
 	for start := 0; start < len(hashes); start += 500 {
 		chunk := hashes[start:min(start+500, len(hashes))]
 		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-		rows, err := s.db.QueryContext(ctx, `SELECT h, spam, ham FROM spam_tokens WHERE h IN (`+placeholders(len(chunk))+`)`, int64Args(chunk)...)
+		rows, err := s.q(ctx).QueryContext(ctx, `SELECT h, spam, ham FROM spam_tokens WHERE h IN (`+placeholders(len(chunk))+`)`, int64Args(chunk)...)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +123,7 @@ func (s *Store) SpamTrain(ctx context.Context, hashes []int64, spam bool, delta 
 // SpamTrainedAs returns how a message was trained (ok = false if never).
 func (s *Store) SpamTrainedAs(ctx context.Context, key string) (spam, ok bool, err error) {
 	var v int
-	err = s.db.QueryRowContext(ctx, `SELECT spam FROM spam_trained WHERE message_key = ?`, key).Scan(&v)
+	err = s.q(ctx).QueryRowContext(ctx, `SELECT spam FROM spam_trained WHERE message_key = ?`, key).Scan(&v)
 	if errors.Is(err, sql.ErrNoRows) {
 		return false, false, nil
 	}
@@ -132,7 +132,7 @@ func (s *Store) SpamTrainedAs(ctx context.Context, key string) (spam, ok bool, e
 
 // SetSpamTrained records the training of a message.
 func (s *Store) SetSpamTrained(ctx context.Context, key string, spam bool) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO spam_trained(message_key, spam, trained_at) VALUES(?, ?, ?)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO spam_trained(message_key, spam, trained_at) VALUES(?, ?, ?)
 		ON CONFLICT(message_key) DO UPDATE SET spam = excluded.spam, trained_at = excluded.trained_at`, key, boolInt(spam), time.Now().Unix())
 	return err
 }
@@ -149,7 +149,7 @@ func (s *Store) CategoryCounts(ctx context.Context, tokens []string) (map[string
 			args[i] = t
 		}
 		// #nosec G202 -- SQL is built from constant column lists, generated placeholders and compiled conditions; all values are bound parameters (AUDIT-C)
-		rows, err := s.db.QueryContext(ctx, `SELECT category, token, n FROM category_tokens WHERE token IN (`+placeholders(len(chunk))+`)`, args...)
+		rows, err := s.q(ctx).QueryContext(ctx, `SELECT category, token, n FROM category_tokens WHERE token IN (`+placeholders(len(chunk))+`)`, args...)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -168,7 +168,7 @@ func (s *Store) CategoryCounts(ctx context.Context, tokens []string) (map[string
 		rows.Close()
 	}
 	docs := map[string]int{}
-	rows, err := s.db.QueryContext(ctx, `SELECT key, value FROM comfort_kv WHERE key LIKE 'category.docs.%'`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT key, value FROM comfort_kv WHERE key LIKE 'category.docs.%'`)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -231,7 +231,7 @@ func (s *Store) PutInsight(ctx context.Context, in Insight) error {
 	if in.UpdatedAt.IsZero() {
 		in.UpdatedAt = time.Now()
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO message_insights(message_id, spam_score, spam_level, category, category_source,
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO message_insights(message_id, spam_score, spam_level, category, category_source,
 		category_conf, sender, list_id, unsubscribe, invoice, smime, updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(message_id) DO UPDATE SET spam_score=excluded.spam_score, spam_level=excluded.spam_level, category=excluded.category,
 		category_source=excluded.category_source, category_conf=excluded.category_conf, sender=excluded.sender, list_id=excluded.list_id,
@@ -257,7 +257,7 @@ func scanInsight(sc scanner) (Insight, error) {
 
 // GetInsight returns the insight of a message (ErrNotFound if none).
 func (s *Store) GetInsight(ctx context.Context, messageID int64) (Insight, error) {
-	in, err := scanInsight(s.db.QueryRowContext(ctx, `SELECT `+insightCols+` FROM message_insights WHERE message_id = ?`, messageID))
+	in, err := scanInsight(s.q(ctx).QueryRowContext(ctx, `SELECT `+insightCols+` FROM message_insights WHERE message_id = ?`, messageID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return in, ErrNotFound
 	}
@@ -266,7 +266,7 @@ func (s *Store) GetInsight(ctx context.Context, messageID int64) (Insight, error
 
 // SetMessageCategory changes only the category of a message.
 func (s *Store) SetMessageCategory(ctx context.Context, messageID int64, category, source string) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO message_insights(message_id, category, category_source, category_conf, updated_at)
+	_, err := s.q(ctx).ExecContext(ctx, `INSERT INTO message_insights(message_id, category, category_source, category_conf, updated_at)
 		VALUES(?, ?, ?, 1, ?) ON CONFLICT(message_id) DO UPDATE SET category = excluded.category,
 		category_source = excluded.category_source, category_conf = 1, updated_at = excluded.updated_at`,
 		messageID, category, source, time.Now().Unix())
@@ -292,7 +292,7 @@ func (s *Store) CategoryTotals(ctx context.Context, role string) ([]CategoryCoun
 		args = append(args, role)
 	}
 	q += ` GROUP BY mi.category ORDER BY mi.category`
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -326,7 +326,7 @@ func (s *Store) MessagesInCategory(ctx context.Context, category, role string, l
 }
 
 func (s *Store) ids(ctx context.Context, q string, args ...any) ([]int64, error) {
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.q(ctx).QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}

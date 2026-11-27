@@ -82,6 +82,11 @@ type Config struct {
 	MaxFolderMessages int
 	// DebugWriter receives the raw protocol trace (contains credentials!).
 	DebugWriter io.Writer
+	// CommandTimeout is how long a command (and the login) may run without
+	// any data moving before the connection is dropped with ErrStalled.
+	// Default DefaultCommandTimeout; negative disables the check. IDLE is
+	// not affected (silence is normal there).
+	CommandTimeout time.Duration
 }
 
 // ErrMessageNotFound is returned when a referenced message no longer exists.
@@ -97,6 +102,7 @@ type Provider struct {
 
 	mu       sync.Mutex
 	c        *imapclient.Client
+	conn     *activityConn // transport of c (stall detection)
 	caps     imap.CapSet
 	delim    rune
 	lastUsed time.Time
@@ -153,6 +159,9 @@ func New(cfg Config) (*Provider, error) {
 	}
 	if cfg.MaxFolderMessages <= 0 {
 		cfg.MaxFolderMessages = DefaultMaxFolderMessages
+	}
+	if cfg.CommandTimeout == 0 {
+		cfg.CommandTimeout = DefaultCommandTimeout
 	}
 	log := cfg.Logger
 	if log == nil {
@@ -216,33 +225,49 @@ func (p *Provider) tlsConfig() *tls.Config {
 // dialRaw opens the TCP connection and, for implicit TLS, completes the
 // handshake. STARTTLS is left to the caller.
 func (p *Provider) dialRaw(ctx context.Context) (net.Conn, error) {
+	conn, _, err := p.dialRawActivity(ctx)
+	return conn, err
+}
+
+// dialRawActivity is dialRaw that also returns the activity-tracking
+// transport below TLS (for stall detection).
+func (p *Provider) dialRawActivity(ctx context.Context) (net.Conn, *activityConn, error) {
 	dial := p.cfg.DialContext
 	if dial == nil {
 		dial = netguard.Dialer(&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext
 	}
-	conn, err := dial(ctx, "tcp", p.addr())
+	raw, err := dial(ctx, "tcp", p.addr())
 	if err != nil {
-		return nil, fmt.Errorf("imap: dial %s: %w", p.addr(), err)
+		return nil, nil, fmt.Errorf("imap: dial %s: %w", p.addr(), err)
 	}
+	ac := newActivityConn(raw)
 	if p.cfg.Server.TLS == domain.TLSImplicit {
-		tc := tls.Client(conn, p.tlsConfig())
+		tc := tls.Client(ac, p.tlsConfig())
 		if err := tc.HandshakeContext(ctx); err != nil {
-			conn.Close()
-			return nil, fmt.Errorf("imap: TLS handshake: %w", err)
+			ac.Close()
+			return nil, nil, fmt.Errorf("imap: TLS handshake: %w", err)
 		}
-		return tc, nil
+		return tc, ac, nil
 	}
-	return conn, nil
+	return ac, ac, nil
 }
 
 // dial returns a connected, authenticated client.
-func (p *Provider) dial(ctx context.Context, handler *imapclient.UnilateralDataHandler) (*imapclient.Client, error) {
-	conn, err := p.dialRaw(ctx)
+func (p *Provider) dial(ctx context.Context, handler *imapclient.UnilateralDataHandler) (_ *imapclient.Client, _ *activityConn, err error) {
+	conn, ac, err := p.dialRawActivity(ctx)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	stop := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stop()
+	// Greeting, STARTTLS and login: a server that accepts the connection and
+	// then stays silent must not block the caller.
+	unguard := guardStall(ac, p.cfg.CommandTimeout)
+	defer func() {
+		if unguard() && err != nil && ctx.Err() == nil {
+			err = fmt.Errorf("imap: login: %w", ErrStalled)
+		}
+	}()
 
 	opts := &imapclient.Options{
 		TLSConfig:             p.tlsConfig(),
@@ -254,29 +279,29 @@ func (p *Provider) dial(ctx context.Context, handler *imapclient.UnilateralDataH
 	case domain.TLSStartTLS:
 		c, err = imapclient.NewStartTLS(conn, opts)
 		if err != nil {
-			return nil, fmt.Errorf("imap: STARTTLS: %w", ctxErr(ctx, err))
+			return nil, nil, fmt.Errorf("imap: STARTTLS: %w", ctxErr(ctx, err))
 		}
 	case domain.TLSImplicit, domain.TLSNone:
 		c = imapclient.New(conn, opts)
 	default:
 		conn.Close()
-		return nil, fmt.Errorf("imap: unknown TLS mode %q", p.cfg.Server.TLS)
+		return nil, nil, fmt.Errorf("imap: unknown TLS mode %q", p.cfg.Server.TLS)
 	}
 	if err := c.WaitGreeting(); err != nil {
 		c.Close()
-		return nil, fmt.Errorf("imap: greeting: %w", ctxErr(ctx, err))
+		return nil, nil, fmt.Errorf("imap: greeting: %w", ctxErr(ctx, err))
 	}
 	if c.State() == imap.ConnStateNotAuthenticated {
 		if err := p.authenticate(ctx, c); err != nil {
 			c.Close()
-			return nil, ctxErr(ctx, err)
+			return nil, nil, ctxErr(ctx, err)
 		}
 	}
 	if ctx.Err() != nil {
 		c.Close()
-		return nil, ctx.Err()
+		return nil, nil, ctx.Err()
 	}
-	return c, nil
+	return c, ac, nil
 }
 
 func ctxErr(ctx context.Context, err error) error {
@@ -312,28 +337,40 @@ func (p *Provider) do(ctx context.Context, fn func(c *imapclient.Client) error) 
 		// non-idempotent commands on them.
 		c := p.c
 		stop := context.AfterFunc(ctx, func() { c.Close() })
+		unguard := guardStall(p.conn, p.cfg.CommandTimeout)
 		if isClosed(c) || c.Noop().Wait() != nil {
 			p.dropLocked()
 		}
+		unguard() // a stalled NOOP just means: reconnect
 		if !stop() {
 			p.dropLocked()
 			return ctx.Err()
 		}
 	}
 	if p.c == nil {
-		c, err := p.dial(ctx, nil)
+		c, ac, err := p.dial(ctx, nil)
 		if err != nil {
 			return err
 		}
-		p.c, p.caps, p.delim = c, c.Caps(), 0
+		p.c, p.conn, p.caps, p.delim = c, ac, c.Caps(), 0
 		p.lastUsed = time.Now()
 	}
 	c := p.c
 	stop := context.AfterFunc(ctx, func() { c.Close() })
+	unguard := guardStall(p.conn, p.cfg.CommandTimeout)
 	err := fn(c)
+	stalled := unguard()
 	if !stop() {
 		p.dropLocked()
 		return ctx.Err()
+	}
+	if stalled {
+		p.dropLocked()
+		p.log.Warn("imap: server stopped responding; connection dropped", "timeout", p.cfg.CommandTimeout)
+		if err == nil {
+			return ErrStalled
+		}
+		return fmt.Errorf("%w (%v)", ErrStalled, err)
 	}
 	p.lastUsed = time.Now()
 	if isClosed(c) {
@@ -345,7 +382,7 @@ func (p *Provider) do(ctx context.Context, fn func(c *imapclient.Client) error) 
 func (p *Provider) dropLocked() {
 	if p.c != nil {
 		p.c.Close()
-		p.c = nil
+		p.c, p.conn = nil, nil
 	}
 }
 
@@ -372,7 +409,7 @@ func (p *Provider) Close() error {
 	case <-time.After(5 * time.Second):
 	}
 	err := p.c.Close()
-	p.c = nil
+	p.c, p.conn = nil, nil
 	if err != nil && !errors.Is(err, net.ErrClosed) {
 		return err
 	}

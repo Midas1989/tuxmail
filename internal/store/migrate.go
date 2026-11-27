@@ -75,7 +75,7 @@ func (s *Store) migrate(ctx context.Context) error {
 }
 
 func (s *Store) applyMigrations(ctx context.Context, ms []migration) error {
-	if _, err := s.db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
+	if _, err := s.q(ctx).ExecContext(ctx, `CREATE TABLE IF NOT EXISTS schema_version (
 		version    INTEGER PRIMARY KEY,
 		applied_at INTEGER NOT NULL
 	)`); err != nil {
@@ -114,7 +114,7 @@ func (s *Store) applyMigrations(ctx context.Context, ms []migration) error {
 		known[m.version] = true
 		maxKnown = max(maxKnown, m.version)
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT version FROM schema_version ORDER BY version`)
+	rows, err := s.q(ctx).QueryContext(ctx, `SELECT version FROM schema_version ORDER BY version`)
 	if err != nil {
 		return err
 	}
