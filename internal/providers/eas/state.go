@@ -55,7 +55,11 @@ type folderRec struct {
 
 // accountState is the persisted account-level state.
 type accountState struct {
-	URL          string      `json:"url,omitempty"`
+	URL string `json:"url,omitempty"`
+	// Base is the configured endpoint URL was learned for (by a 451 redirect,
+	// or URL is Base itself). A stored URL is only reused while the account
+	// is still configured with this endpoint.
+	Base         string      `json:"base,omitempty"`
 	Version      string      `json:"v,omitempty"`
 	PolicyKey    string      `json:"pk,omitempty"`
 	HierarchyKey string      `json:"hk,omitempty"`

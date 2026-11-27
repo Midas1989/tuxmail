@@ -246,6 +246,7 @@ type Client struct {
 	provGen   int
 	provTimes []time.Time // recent automatic provisioning runs
 	anchor    *url.URL    // configured endpoint credentials are bound to
+	base      string      // configured endpoint (accountState.Base)
 	provMu    sync.Mutex
 	state     accountState
 	stateErr  error
@@ -297,7 +298,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		}
 	}
 	anchor, _ := url.Parse(u)
-	c := &Client{cfg: cfg, log: log, http: hc, url: u, anchor: anchor}
+	c := &Client{cfg: cfg, log: log, http: hc, url: u, anchor: anchor, base: u}
 	return c, nil
 }
 
@@ -334,7 +335,15 @@ func (c *Client) loadState(ctx context.Context) {
 		return
 	}
 	c.state = st
-	if st.URL != "" {
+	switch {
+	case st.URL == "":
+	case st.Base != c.base && (st.Base != "" || st.URL != c.base):
+		// The account was configured with another server (or port, path)
+		// since: the endpoint learned for the old one is not used, otherwise
+		// a moved or switched-off old server would stay in use. State from
+		// before Base existed is only kept when it equals the configuration.
+		c.log.Info("eas: configured server changed; stored endpoint not used", "stored", st.URL)
+	default:
 		// A stored endpoint (451 redirect) is only trusted while it still
 		// lies within the configured server's trust boundary.
 		if pu, perr := url.Parse(st.URL); perr == nil && c.endpointAllowed(pu) {
@@ -353,7 +362,7 @@ func (c *Client) stateKey() string { return c.cfg.Username + "|" + c.cfg.DeviceI
 
 // saveLocked persists the account state; c.mu must be held.
 func (c *Client) saveLocked(ctx context.Context) {
-	c.state.URL, c.state.Version, c.state.PolicyKey = c.url, c.version, c.policyKey
+	c.state.URL, c.state.Base, c.state.Version, c.state.PolicyKey = c.url, c.base, c.version, c.policyKey
 	if err := saveAccountState(ctx, c.cfg.State, c.stateKey(), c.state); err != nil {
 		c.log.Warn("eas: cannot save account state", "err", err)
 	}
