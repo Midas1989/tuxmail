@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -552,6 +553,16 @@ func buildTuxmail(t *testing.T) string {
 }
 
 // systemdScript is deploy/systemd/tuxmail-backup.sh with other directories.
+// currentUser is the login name of the user running the tests.
+func currentUser(t *testing.T) string {
+	t.Helper()
+	u, err := user.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return u.Username
+}
+
 func systemdScript(t *testing.T, dataDir string) backupScript {
 	t.Helper()
 	bin := buildTuxmail(t)
@@ -567,6 +578,9 @@ func systemdScript(t *testing.T, dataDir string) backupScript {
 		"BACKUP_DIR=/var/backups/tuxmail\n":          "BACKUP_DIR=" + backupDir + "\n",
 		"KEY_DIR=/var/lib/tuxmail/backup\n":          "KEY_DIR=" + filepath.Join(dataDir, backupKeyDirName) + "\n",
 		"TUXMAIL_BIN=/opt/tuxmail/current/tuxmail\n": "TUXMAIL_BIN=" + bin + "\n",
+		// Run as root (containers, CI) the script writes its status as the
+		// service user; test machines have no "tuxmail" account.
+		"SERVICE_USER=tuxmail\n": "SERVICE_USER=" + currentUser(t) + "\n",
 	} {
 		if !strings.Contains(s, old) {
 			t.Fatalf("script no longer has %q", old)
@@ -597,7 +611,7 @@ func templateScript(t *testing.T, dataDir string) backupScript {
 	vars, _ := json.Marshal(map[string]any{
 		"tuxmail_data_dir": dataDir, "tuxmail_backup_dir": backupDir, "tuxmail_service_name": "tuxmail",
 		"tuxmail_backup_compression": "zstd", "tuxmail_backup_key_dir": filepath.Join(dataDir, backupKeyDirName),
-		"tuxmail_user": "tuxmail", "tuxmail_backup_allow_plaintext": false, "tuxmail_binary": buildTuxmail(t),
+		"tuxmail_user": currentUser(t), "tuxmail_backup_allow_plaintext": false, "tuxmail_binary": buildTuxmail(t),
 	})
 	cmd := exec.Command("ansible", "localhost", "-c", "local", "-m", "ansible.builtin.template", "-a", "src="+src+" dest="+path, "-e", string(vars))
 	cmd.Env = append(os.Environ(), "ANSIBLE_LOCAL_TEMP="+dir, "ANSIBLE_REMOTE_TEMP="+dir, "ANSIBLE_HOME="+dir)
@@ -692,7 +706,7 @@ func TestBackupKeyRoundTripWithJob(t *testing.T) {
 }
 
 func TestBackupJobWithoutKey(t *testing.T) {
-	needTools(t, "tar")
+	needTools(t, "tar", "zstd") // the plaintext run below compresses
 	eachScript(t, func(t *testing.T, script func(string) backupScript) {
 		e, admin := backupAdmin(t, Options{})
 		if err := os.MkdirAll(filepath.Join(e.cfg.DataDir, backupKeyDirName), 0o750); err != nil {
