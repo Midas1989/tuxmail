@@ -25,9 +25,9 @@ ARG FRONTEND=build
 # Pinned by digest of the multi-arch index (re-audit ND-08). Dependabot's
 # docker ecosystem (.github/dependabot.yml, directory /build/docker) keeps tag
 # and digest current. The digests were read from the registry on 2026-11-05 (golang: 2026-11-28).
-FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS node-base
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26.11-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS go-base
-FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime-base
+FROM --platform=$BUILDPLATFORM docker.io/library/node:26-alpine@sha256:6bd9ab43c0ec0190ca7b2d193906cb8b7edf6e7f4afa43ddeccd6452710bffb5 AS node-base
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.27.4-alpine@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS go-base
+FROM docker.io/library/debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS runtime-base
 
 # ---------------------------------------------------------------- frontend
 FROM node-base AS frontend-build
