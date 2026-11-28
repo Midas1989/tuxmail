@@ -69,3 +69,8 @@ updates:
     groups:
       android-minor-patch:
         update-types: [minor, patch]
+    # Gradle 9.6+ needs the Android Gradle plugin 9 (AGP 8 uses a removed internal
+    # API); both are moved together by hand.
+    ignore:
+      - dependency-name: gradle-wrapper
+        update-types: ["version-update:semver-major"]
