@@ -117,7 +117,8 @@ if [ "$offline" = 1 ]; then
 	export GOPROXY=off GOFLAGS="${GOFLAGS:+$GOFLAGS }-mod=mod" npm_config_offline=true
 	export TUXMAIL_SIGNAL_CLI=${TUXMAIL_SIGNAL_CLI:-skip}
 fi
-export PATH="$PATH:$(go env GOPATH 2>/dev/null)/bin"
+gopath=$(go env GOPATH 2>/dev/null || true)
+export PATH="$PATH:$gopath/bin"
 
 # ---- prerequisite checks ---------------------------------------------------
 # missing_<target> holds the reasons a target cannot be built here.

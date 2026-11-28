@@ -5,6 +5,7 @@ package query
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -749,6 +750,15 @@ func (p *parser) readWord(t *Term) error {
 		return p.errAt(p.pos, "unexpected end of query")
 	}
 	w := string(rs)
+	// A pattern keeps no escapes: every '*' and '?' in a Wildcard value is a
+	// wildcard (the search backends cannot match a literal one there). So once a
+	// word has an unescaped wildcard, escaped ones count as wildcards as well;
+	// otherwise String would not round-trip ("0*\*" -> "0**" -> prefix "0").
+	if slices.Contains(wild, true) {
+		for i, r := range rs {
+			wild[i] = wild[i] || r == '*' || r == '?'
+		}
+	}
 	// Classify: trailing unescaped '*' only -> prefix; only '*' -> all.
 	end := len(rs)
 	for end > 0 && wild[end-1] && rs[end-1] == '*' {

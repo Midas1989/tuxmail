@@ -50,7 +50,7 @@ go_ldflags() {
 # loopback redirects; a server binary has no use for it and must not carry
 # it. Server operators configure their own registration (docs/MICROSOFT-GOOGLE.md).
 go_ldflags_server() {
-	TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET= go_ldflags "$@"
+	TUXMAIL_BUILD_GOOGLE_CLIENT_SECRET='' go_ldflags "$@"
 }
 
 # check_frontend: warn loudly when web/dist holds no built frontend.
