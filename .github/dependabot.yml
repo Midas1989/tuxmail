@@ -52,6 +52,13 @@ updates:
     groups:
       docker-base-images:
         patterns: ["*"]
+    # Node follows the LTS line the CI uses (NODE_VERSION), Go follows go.mod:
+    # only patch updates come automatically, the rest is a deliberate switch.
+    ignore:
+      - dependency-name: node
+        update-types: ["version-update:semver-major"]
+      - dependency-name: golang
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
 
   # Android Gradle plugin, Kotlin, AndroidX, Firebase BOM, UnifiedPush ...
   # (mobile/android; the Gradle wrapper is validated in android.yml).

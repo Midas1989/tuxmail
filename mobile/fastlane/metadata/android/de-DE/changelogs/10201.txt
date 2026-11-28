@@ -1,0 +1,1 @@
+Aktualisierte Bibliotheken (u. a. SQLite, Matrix, WebDAV) und Build-Werkzeuge.
