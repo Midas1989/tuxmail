@@ -33,6 +33,10 @@ git tag -a v0.2.0 -m "TuxMail 0.2.0"
 git push origin v0.2.0
 ```
 
+Ohne lokalen Klon: **GitHub → Actions → Tag release → Run workflow** (Branch `main`, Version `0.2.0`).
+Der Workflow prüft die Version wie oben, setzt den Tag auf den aktuellen Stand von `main` und startet
+`release.yml` und `android.yml` für den Tag.
+
 Der Text für GitHub steht bei großen Versionen in `docs/releases/<v>.md`. Der Tag startet `release.yml` und `android.yml`. Nach etwa 20–30 Minuten liegt unter
 **GitHub → Releases → v0.2.0** ein Release mit allen Dateien und automatisch erzeugten Release Notes
 (aus den Pull Requests; bei Bedarf im Web nachbearbeiten).
