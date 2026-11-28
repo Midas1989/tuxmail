@@ -24,9 +24,9 @@ ARG FRONTEND=build
 # ---------------------------------------------------------------- base images
 # Pinned by digest of the multi-arch index (re-audit ND-08). Dependabot's
 # docker ecosystem (.github/dependabot.yml, directory /build/docker) keeps tag
-# and digest current. The digests were read from the registry on 2026-11-05.
+# and digest current. The digests were read from the registry on 2026-11-05 (golang: 2026-11-28).
 FROM --platform=$BUILDPLATFORM docker.io/library/node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914 AS node-base
-FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26-alpine@sha256:df23b876380eb556f22bbba2fa57493e8684fc4fcabf06399fbfb65359978d28 AS go-base
+FROM --platform=$BUILDPLATFORM docker.io/library/golang:1.26.11-alpine@sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab AS go-base
 FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS runtime-base
 
 # ---------------------------------------------------------------- frontend

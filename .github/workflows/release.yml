@@ -766,7 +766,7 @@ jobs:
         if: needs.version.outputs.release == 'true'
         run: |
           # Without macOS files (optional job failed) the macOS rows go.
-          if ls dist/TuxMail-*-macos-*.dmg > /dev/null 2>&1; then filter=cat; else filter="grep -v macOS"; fi
+          if ls dist/TuxMail-*-macos-*.dmg > /dev/null 2>&1; then filter="cat"; else filter="grep -v macOS"; fi
           sed "s/<v>/$TUXMAIL_VERSION/g" build/release-notes.md | $filter > "$RUNNER_TEMP/release-notes.md"
 
       - name: GitHub release

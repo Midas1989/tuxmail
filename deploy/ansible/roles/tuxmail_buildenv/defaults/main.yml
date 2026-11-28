@@ -40,7 +40,7 @@ tuxmail_buildenv_go_mod: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/../
 tuxmail_buildenv_go_version: >-
   {{ ((tuxmail_buildenv_go_mod | regex_findall('(?m)^toolchain\s+go(\d+\.\d+(?:\.\d+)?)\s*$'))
       + (tuxmail_buildenv_go_mod | regex_findall('(?m)^go\s+(\d+\.\d+(?:\.\d+)?)\s*$'))
-      + ['1.26.10']) | first }}
+      + ['1.26.11']) | first }}
 tuxmail_buildenv_go_root: "/opt/go"
 # Fest eingetragene SHA-256 des Go-Archivs (für die Architektur des Zielrechners, 64 Hex-Zeichen). Leer = Prüfsumme
 # aus der go.dev-Liste (gleicher Ursprung wie das Archiv). Ermitteln unabhängig vom Download-Kanal, z. B. aus einem

@@ -33,7 +33,7 @@ clangarch=$goarch
 [ "$goarch" = amd64 ] && clangarch=x86_64
 log "building desktop binary darwin/$goarch version $VERSION"
 (cd "$ROOT" && CGO_ENABLED=1 GOOS=darwin GOARCH=$goarch \
-	CGO_CFLAGS="-arch $clangarch -mmacosx-version-min=11.0" CGO_LDFLAGS="-arch $clangarch -mmacosx-version-min=11.0" \
+	CGO_CFLAGS="-arch $clangarch -mmacosx-version-min=11.0" CGO_LDFLAGS="-arch $clangarch -mmacosx-version-min=11.0 -framework UniformTypeIdentifiers" \
 	go build -trimpath -tags desktop,production -ldflags "$(go_ldflags)" \
 	-o "$app/Contents/MacOS/tuxmail" ./cmd/tuxmail)
 

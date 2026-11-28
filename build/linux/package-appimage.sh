@@ -137,7 +137,9 @@ out=$DIST/TuxMail-$VERSION-linux-$goarch.AppImage
 mkdir -p "$DIST"
 rm -f "$out"
 log "appimagetool -> $out"
-"$APPIMAGETOOL" --no-appstream "$appdir" "$out"
+# appimagetool sets the squashfs time itself; mksquashfs refuses it together
+# with SOURCE_DATE_EPOCH ("can't be used at the same time").
+env -u SOURCE_DATE_EPOCH "$APPIMAGETOOL" --no-appstream "$appdir" "$out"
 chmod +x "$out"
 
 log "smoke test: $out version"

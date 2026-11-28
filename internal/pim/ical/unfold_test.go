@@ -133,7 +133,11 @@ func TestParseRejectsDeepNesting(t *testing.T) {
 	if _, err := ParseAll(huge); !errors.Is(err, ErrTooDeep) {
 		t.Fatalf("3M nested: err = %v", err)
 	}
-	if d := time.Since(start); d > 5*time.Second {
+	limit := 5 * time.Second
+	if raceEnabled {
+		limit = 30 * time.Second // the race detector slows this loop down about tenfold
+	}
+	if d := time.Since(start); d > limit {
 		t.Errorf("3M nested BEGIN lines took %v", d)
 	}
 	// Ordinary calendars are unaffected.
