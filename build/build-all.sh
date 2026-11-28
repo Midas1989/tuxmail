@@ -1,4 +1,6 @@
 #!/bin/bash
+# The t_* target functions are called by name through run_target.
+# shellcheck disable=SC2317,SC2329
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (C) 2026 Midas Wollinger and TuxMail contributors
 #
@@ -139,7 +141,9 @@ check_go() {
 	fi
 }
 check_node() {
-	have node && have npm || add_missing frontend "node/npm not found (Node 22.12 or newer)"
+	if ! have node || ! have npm; then
+		add_missing frontend "node/npm not found (Node 22.12 or newer)"
+	fi
 	if have node; then
 		# Vite 8 / Rolldown need Node 22.12+ (or 20.19+): npm silently skips the native
 		# Rolldown package on an older Node and the build then fails with "Cannot find native binding".
@@ -337,7 +341,7 @@ for r in "${results[@]}"; do
 done
 if [ -d "${DIST:-$ROOT/dist}" ]; then
 	printf '\nFiles in %s:\n' "${DIST:-$ROOT/dist}"
-	(cd "${DIST:-$ROOT/dist}" && ls -1sh 2>/dev/null | sed '1d;s/^/  /')
+	(cd "${DIST:-$ROOT/dist}" && find . -maxdepth 1 -type f -printf '  %f (%s bytes)\n' | LC_ALL=C sort)
 fi
 [ "$skipped" -gt 0 ] && printf '\n%d target(s) skipped; run "build/build-all.sh --check" for the reasons.\n' "$skipped"
 [ "$failed" -gt 0 ] && exit 1

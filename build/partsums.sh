@@ -66,7 +66,7 @@ verify)
 	done
 	dup=$(sort "$listed" | uniq -d)
 	[ -z "$dup" ] || die "listed by more than one job: $dup"
-	extra=$(cd "$dist" && find . -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | grep -vxF -f "$listed" || true)
+	extra=$(find "$dist" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort | { grep -vxF -f "$listed" || true; })
 	[ -z "$extra" ] || die "files in $dist that no build job recorded: $extra"
 	printf 'partsums.sh: %s files match the checksums of the build jobs\n' "$n"
 	;;

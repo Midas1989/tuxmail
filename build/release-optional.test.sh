@@ -29,7 +29,9 @@ setup() {
 # 1. both macOS jobs complete: everything stays
 setup
 "$here/release-optional.sh" "$t/dist" "$t/parts" macos > /dev/null
-[ -f "$t/dist/TuxMail-1.1.0-macos-arm64.dmg" ] && [ -f "$t/dist/TuxMail-1.1.0-macos-amd64.dmg" ] || fail "complete macOS files were removed"
+if [ ! -f "$t/dist/TuxMail-1.1.0-macos-arm64.dmg" ] || [ ! -f "$t/dist/TuxMail-1.1.0-macos-amd64.dmg" ]; then
+	fail "complete macOS files were removed"
+fi
 "$here/partsums.sh" verify "$t/dist" "$t/parts" > /dev/null || fail "verify after complete macOS"
 
 # 2. amd64 failed after its list was uploaded (dmg missing): its list goes, arm64 stays
