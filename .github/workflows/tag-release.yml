@@ -1,0 +1,57 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Sets the release tag from GitHub, without a local clone (docs/RELEASE.md).
+# Only started by hand. It tags the current main after the same version check
+# the release uses, then starts release.yml and android.yml for the tag: a tag
+# pushed with GITHUB_TOKEN starts no workflows by itself, workflow_dispatch does.
+name: Tag release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version without v, must match VERSION (e.g. 1.2.0)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tag-release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    name: Tag v${{ inputs.version }}
+    runs-on: ubuntu-24.04
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write # create the tag
+      actions: write # start release.yml and android.yml
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check version and create the tag
+        run: |
+          case "$VERSION" in
+            *[!0-9.]* | "" ) echo "::error::version must look like 1.2.0"; exit 1 ;;
+          esac
+          tag="v$VERSION"
+          build/version.sh --check-tag "$tag"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null; then
+            echo "::error::$tag exists already"; exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "TuxMail $VERSION" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
+          echo "Tagged $tag at $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - name: Start the release builds for the tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "v$VERSION"
+          gh workflow run android.yml --repo "$GITHUB_REPOSITORY" --ref "v$VERSION"
