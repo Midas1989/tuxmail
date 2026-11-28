@@ -1,0 +1,13 @@
+# CodeQL scope: product code only. Tests, the demo/mock transports (fake data,
+# fake passwords) and e2e helper scripts are not shipped as attack surface and
+# only produced false alerts (code scanning triage 2026-11-28,
+# docs/security/CODE-SCANNING-2026-11-28.md).
+name: tuxmail
+paths-ignore:
+  - "**/*.test.ts"
+  - "**/*.test.js"
+  - "**/*_test.go"
+  - frontend/scripts
+  - frontend/src/lib/api/mock.ts
+  - frontend/src/lib/api/mockCloud.ts
+  - frontend/src/lib/api/comfortMock.ts

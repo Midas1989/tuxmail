@@ -380,7 +380,7 @@ export function simpleQuery(text: string): QueryNode {
 }
 
 function quote(v: string): string {
-  return /[\s()":]/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
+  return /[\s()":]/.test(v) ? `"${v.replace(/[\\"]/g, '\\$&')}"` : v;
 }
 
 function bucketize(entries: { key: string; label: string; clause: string }[]): FacetBucket[] {

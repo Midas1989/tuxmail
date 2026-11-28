@@ -29,6 +29,10 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('message', (event) => {
+  // Only pages of this origin may ask for the update (a service worker only gets
+  // messages from its own clients; the check makes that explicit).
+  const src = event.source;
+  if (!src || !('url' in src) || new URL(src.url).origin !== self.location.origin) return;
   if (event.data && event.data.type === 'skip-waiting') self.skipWaiting();
 });
 
@@ -135,6 +139,3 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'skip-waiting') self.skipWaiting();
-});

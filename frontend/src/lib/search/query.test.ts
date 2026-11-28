@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 import { describe, expect, it } from 'vitest';
-import { contextAt, matchParens, parse, tokenize } from './query';
+import { contextAt, matchParens, parse, quoteValue, tokenize } from './query';
 import { parseDateRange, parseSize, textMatches } from './engine';
 import { MockTransport } from '../api/mock';
 import type { SearchQuery } from '../types';
@@ -247,5 +247,14 @@ describe('suggestions', () => {
     expect(text).toBe('from:anna.mueller@mueller-gmbh.de AND ');
     s = suggestionsFor(contextAt(text, text.length), data).find((x) => x.label === 'subject:')!;
     expect(applySuggestion(text, contextAt(text, text.length), s).text).toBe('from:anna.mueller@mueller-gmbh.de AND subject:');
+  });
+});
+
+describe('quoteValue', () => {
+  it('round-trips quotes and backslashes through the parser', () => {
+    for (const v of ['a b', 'say "hi"', 'C:\\mail dir\\', 'end\\', 'x\\"y z']) {
+      const r = parse(`from:${quoteValue(v)}`);
+      expect(r.ok && r.ast).toMatchObject({ t: 'term', field: 'from', value: v });
+    }
   });
 });

@@ -449,5 +449,5 @@ export function contextAt(text: string, caret: number): CompletionContext {
 
 /** Quote a value for insertion if it contains spaces or syntax characters. */
 export function quoteValue(v: string): string {
-  return /[\s()":]/.test(v) ? `"${v.replace(/"/g, '\\"')}"` : v;
+  return /[\s()":]/.test(v) ? `"${v.replace(/[\\"]/g, '\\$&')}"` : v;
 }

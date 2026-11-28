@@ -240,7 +240,8 @@ func (n *Notifier) Subscribe(ctx context.Context, c *Client, resource string) (<
 // ServeHTTP handles the validation handshake and notifications.
 func (n *Notifier) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if tok := r.URL.Query().Get("validationToken"); tok != "" {
-		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
 		_, _ = io.WriteString(w, tok)
 		return
 	}

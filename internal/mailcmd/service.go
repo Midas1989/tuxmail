@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/mail"
 	"slices"
@@ -286,6 +287,9 @@ func (s *Service) Refused() error { return s.refused() }
 
 const defaultLimit = 50
 
+// maxLimit bounds one page (also keeps the int conversion below safe on 32-bit).
+const maxLimit = 1000
+
 // Execute runs a command. sel is the current message of an interactive view
 // (0 on the command line, where the id is then required).
 func (s *Service) Execute(ctx context.Context, cmd Command, sel int64) (Result, error) {
@@ -494,9 +498,11 @@ func (s *Service) List(ctx context.Context, folder string, account int64, query 
 	if err != nil {
 		return nil, err
 	}
-	if limit == 0 {
+	if limit <= 0 {
 		limit = defaultLimit
 	}
+	limit = min(limit, maxLimit)
+	offset = max(0, min(offset, math.MaxInt32))
 	p, err := s.B.ListMessages(ctx, app.MessageQuery{Scope: sc, Limit: int(limit), Offset: int(offset), Search: query})
 	if err != nil {
 		return nil, err

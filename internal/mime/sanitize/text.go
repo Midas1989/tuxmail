@@ -208,7 +208,8 @@ func (w *textWriter) node(n *html.Node) {
 		before := w.cur.Len()
 		w.children(n)
 		href := strings.TrimSpace(attr(n, "href"))
-		if href == "" || strings.HasPrefix(href, "#") || strings.HasPrefix(strings.ToLower(href), "javascript:") {
+		if lh := strings.ToLower(href); href == "" || strings.HasPrefix(href, "#") || strings.HasPrefix(lh, "javascript:") ||
+			strings.HasPrefix(lh, "vbscript:") || strings.HasPrefix(lh, "data:") {
 			return
 		}
 		var label string
