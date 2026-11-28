@@ -216,3 +216,33 @@ func TestReaderConcurrentClose(t *testing.T) {
 		wg.Wait()
 	}
 }
+
+// A request body is still read by the transport goroutine when the caller's
+// defer closes it (the server answered before reading the whole body; data
+// race seen in CI with TestCloudNextcloudFilesAndShares).
+func TestReaderReadDuringClose(t *testing.T) {
+	s, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := s.Put(strings.NewReader(strings.Repeat("blob data ", 200_000)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		rc, err := s.Open(h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, _ = io.Copy(io.Discard, rc) // ends with os.ErrClosed or EOF
+		}()
+		rc.Close()
+		<-done
+		if _, err := rc.Read(make([]byte, 1)); !errors.Is(err, os.ErrClosed) {
+			t.Fatalf("read after close: %v", err)
+		}
+	}
+}

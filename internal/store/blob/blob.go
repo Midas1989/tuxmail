@@ -138,19 +138,32 @@ type reader struct {
 	dec *zstd.Decoder
 	f   *os.File
 
-	// Close may be called twice and concurrently, e.g. by net/http's
-	// transport (request body) and by the caller's defer.
-	once     sync.Once
+	// Read and Close may run concurrently: as a request body the reader is
+	// read and closed by net/http's transport goroutine while the caller's
+	// defer closes it too (the response can arrive before the body is sent).
+	// The zstd decoder is not safe for that, so both take mu.
+	mu       sync.Mutex
+	closed   bool
 	closeErr error
 }
 
-func (r *reader) Read(p []byte) (int, error) { return r.dec.Read(p) }
+func (r *reader) Read(p []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return 0, os.ErrClosed
+	}
+	return r.dec.Read(p)
+}
 
 func (r *reader) Close() error {
-	r.once.Do(func() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !r.closed {
+		r.closed = true
 		r.dec.Close()
 		r.closeErr = r.f.Close()
-	})
+	}
 	return r.closeErr
 }
 
